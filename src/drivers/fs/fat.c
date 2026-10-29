@@ -907,6 +907,7 @@ drv_fat_probe_type(
 	struct disk *disk,
 	enum bootfat_type *type)
 {
+	int unsupported;
 	int error;
 
 	/* A call that names no disk or nowhere to report. */
@@ -914,7 +915,8 @@ drv_fat_probe_type(
 		return EOPNOTSUPP;
 
 	/* A disk whose blocks are not whole sectors is not one of these. */
-	if (disk_sector_supported(disk) != 0)
+	unsupported = disk_sector_supported(disk);
+	if (unsupported != 0)
 		return EOPNOTSUPP;
 
 	/* Asks the shared probe which of the three widths this disk carries. */
@@ -1466,18 +1468,17 @@ fat_engine_zero_run(
 	/*
 	 * Finds where the run starts on the leaf disk, whose block numbers
 	 * the cache's lines are aligned to.  A run that cannot be resolved is
-	 * cut from its own start; the write below then reports why.
+	 * cut from its own start; the write below then reports why.  A disk
+	 * of larger blocks starts its partitions on whole blocks, which are
+	 * whole lines' fractions, so the run's own start is aligned as the
+	 * leaf's is and the run is not resolved.
 	 */
 	error = EOPNOTSUPP;
 	if (filesystem->disk->d_block_size == DISK_SECTOR_SIZE)
 		error = disk_resolve_range(filesystem->disk, lba, count, &leaf,
 					   &mapped);
 
-	/*
-	 * A disk of larger blocks starts its partitions on whole blocks, which
-	 * are whole lines' fractions, so the run's own start is aligned as the
-	 * leaf's is.
-	 */
+	/* Cuts an unresolved run from its own start. */
 	if (error != 0)
 		mapped = lba;
 
@@ -1703,14 +1704,6 @@ fat_engine_cluster_lba(
 }
 
 /*
- * Reads the BIOS parameter block and derives the volume layout from it.
- *
- * The block gives sizes and counts, not addresses; where each area of the
- * volume starts has to be added up from them.  Every sum is checked for
- * overflow before it is made, because a malformed block would otherwise
- * produce an address that appears to lie inside the volume.
- */
-/*
  * How many 512-byte units a logical sector of the given bytes is: 1, 2, 4
  * or 8 for 512, 1024, 2048 or 4096 bytes, and 0 for another size.
  */
@@ -1748,6 +1741,14 @@ fat_disk_sectors(
 	return disk->d_block_count * per_block;
 }
 
+/*
+ * Reads the BIOS parameter block and derives the volume layout from it.
+ *
+ * The block gives sizes and counts, not addresses; where each area of the
+ * volume starts has to be added up from them.  Every sum is checked for
+ * overflow before it is made, because a malformed block would otherwise
+ * produce an address that appears to lie inside the volume.
+ */
 static int
 parse_bpb(
 	struct fat_mount_state *fat)
@@ -1757,6 +1758,7 @@ parse_bpb(
 	uint32_t total, total_physical, data_sectors;
 	uint16_t bytes, fat16_sectors;
 	uint8_t sectors_per_cluster;
+	uint64_t disk_sectors;
 	int error;
 
 	/* Reads the first sector, which is where the block lives. */
@@ -1853,7 +1855,8 @@ parse_bpb(
 		return EIO;	/* Failed. */
 
 	/* And a volume larger than its disk was never written there. */
-	if (total_physical > fat_disk_sectors(fat->disk))
+	disk_sectors = fat_disk_sectors(fat->disk);
+	if (total_physical > disk_sectors)
 		return EIO;	/* Failed. */
 
 	/* The same conversion for the two areas in front of the data. */
@@ -11880,6 +11883,8 @@ fat_identify(
 	uint16_t reserved_sectors;
 	unsigned label_offset;
 	unsigned serial_offset;
+	uint64_t disk_sectors;
+	int unsupported;
 	int error;
 	int difference;
 
@@ -11888,7 +11893,10 @@ fat_identify(
 		return EINVAL;
 
 	/* This driver reads disks whose blocks are whole sectors. */
-	if (disk_sector_supported(disk) != 0 || disk->d_block_count == 0U)
+	unsupported = disk_sector_supported(disk);
+	if (unsupported != 0)
+		return EOPNOTSUPP;
+	if (disk->d_block_count == 0U)
 		return EOPNOTSUPP;
 
 	/* Reads the boot sector, which is where every field below lives. */
@@ -11946,8 +11954,10 @@ fat_identify(
 		return EOPNOTSUPP;	/* Failed. */
 
 	/* A volume that claims more sectors than the disk holds is damaged. */
-	if (declared_sectors > UINT32_MAX / sector_scale ||
-	    (uint64_t)declared_sectors * sector_scale > fat_disk_sectors(disk))
+	disk_sectors = fat_disk_sectors(disk);
+	if (declared_sectors > UINT32_MAX / sector_scale)
+		return EINVAL;
+	if ((uint64_t)declared_sectors * sector_scale > disk_sectors)
 		return EINVAL;
 
 	/* Asks the shared probe which of the three widths this is. */

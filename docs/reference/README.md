@@ -48,3 +48,5 @@ structures, constants, errors and permissions that programs and people use
 - [Structured block and file command output](block-command-output.md): diskpart machine records, blkid export and stat formats.
 
 - [Regular-file image formatters](image-formatters.md): UFS/ZEDSWAP2 initialization and read-only pristine verification.
+
+- [Installer, install-admin and efiboot](installer.md): the amd64 UEFI installer's image and its rule, the installer's screens, the helper's requests, the installed system's layout and UEFI boot entries.

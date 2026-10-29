@@ -4824,6 +4824,8 @@ disk_sector_transfer(
 				break;
 		}
 
+
+		/* Moves past the sectors this block took. */
 		sector += part;
 		count -= part;
 		bytes += (size_t)part * DISK_SECTOR_SIZE;

@@ -60,6 +60,8 @@ zbl_uefi_root_config_split(
 	size_t index;
 	size_t skipped;
 	int prefixed;
+	int on_kernel_line;
+	int on_logo_line;
 	int is_rootpart;
 	int is_partuuid;
 	int rootpart_lines;
@@ -96,10 +98,12 @@ zbl_uefi_root_config_split(
 
 		/* Leaves the prefix out of a kernel= or logo= line that carries it. */
 		prefixed = 0;
-		if (starts_with(line, line_length, "kernel=" ROOT_PREFIX, 7U + ROOT_PREFIX_LENGTH)) {
+		on_kernel_line = starts_with(line, line_length, "kernel=" ROOT_PREFIX, 7U + ROOT_PREFIX_LENGTH);
+		on_logo_line = starts_with(line, line_length, "logo=" ROOT_PREFIX, 5U + ROOT_PREFIX_LENGTH);
+		if (on_kernel_line) {
 			root->kernel_on_root = 1;
 			prefixed = 7;
-		} else if (starts_with(line, line_length, "logo=" ROOT_PREFIX, 5U + ROOT_PREFIX_LENGTH)) {
+		} else if (on_logo_line) {
 			root->logo_on_root = 1;
 			prefixed = 5;
 		}
@@ -115,6 +119,8 @@ zbl_uefi_root_config_split(
 			if ((size_t)prefixed + skipped < line_length && line[prefixed + skipped] == '/')
 				skipped++;
 		}
+
+		/* Writes each byte of the line but the prefix. */
 		for (index = 0; index < line_length; index++) {
 			if (prefixed != 0 && index >= (size_t)prefixed && index < (size_t)prefixed + skipped)
 				continue;

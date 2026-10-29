@@ -28,6 +28,9 @@
 #include <time.h>
 #include <unistd.h>
 
+/* Marks an argument a function must take but does not use. */
+#define UNUSED_PARAMETER(name)	((void)(name))
+
 /* The longest path component the helper opens under the root. */
 #define TARGET_COMPONENT_MAX	128U
 
@@ -84,6 +87,7 @@ target_passwd_user(
 	unsigned i;
 	int found;
 	int is_user;
+	int named;
 	int error;
 
 	/* Each line, copied but for the default user's. */
@@ -106,7 +110,8 @@ target_passwd_user(
 
 		/* Another account: copied, unless it has the new name. */
 		if (!is_user) {
-			if (target_field_is(field[0], field_length[0], name))
+			named = target_field_is(field[0], field_length[0], name);
+			if (named)
 				return EEXIST;
 			error = target_put(edit, line.text, line.piece);
 			if (error != 0)
@@ -178,6 +183,8 @@ target_record_rename(
 	size_t offset;
 	int found;
 	int same;
+	int named;
+	int old_record;
 	int error;
 
 	/* Each line, copied but for its name. */
@@ -194,7 +201,10 @@ target_record_rename(
 			return error;
 
 		/* The record renamed: the new name, then the line from its first colon. */
-		if (!found && field_length < line.length && target_field_is(field, field_length, old_name)) {
+		old_record = 0;
+		if (!found && field_length < line.length)
+			old_record = target_field_is(field, field_length, old_name);
+		if (old_record) {
 			error = target_puts(edit, name);
 			if (error == 0)
 				error = target_put(edit, line.text + field_length, line.piece - field_length);
@@ -205,7 +215,10 @@ target_record_rename(
 		}
 
 		/* Another record with the new name. */
-		if (same != 0 && target_field_is(field, field_length, name))
+		named = 0;
+		if (same != 0)
+			named = target_field_is(field, field_length, name);
+		if (named)
 			return EEXIST;
 
 		/* Copied as it is. */
@@ -244,6 +257,8 @@ target_group_user(
 	int complete;
 	int own;
 	int same;
+	int old_group;
+	int named;
 	int error;
 
 	/* Each line. */
@@ -263,6 +278,8 @@ target_group_user(
 			if (error != 0)
 				complete = 0;
 		}
+
+		/* Copies a line without the four fields unchanged. */
 		if (!complete) {
 			error = target_put(edit, line.text, line.piece);
 			if (error != 0)
@@ -272,9 +289,15 @@ target_group_user(
 
 		/* The user's own group, or another with the new name. */
 		own = 0;
-		if (target_field_is(field[2], field_length[2], "1000") && target_field_is(field[0], field_length[0], old_name))
+		old_group = target_field_is(field[2], field_length[2], "1000");
+		if (old_group)
+			old_group = target_field_is(field[0], field_length[0], old_name);
+		if (old_group)
 			own = 1;
-		if (!own && same != 0 && target_field_is(field[0], field_length[0], name))
+		named = 0;
+		if (!own && same != 0)
+			named = target_field_is(field[0], field_length[0], name);
+		if (named)
 			return EEXIST;
 
 		/* The name, renamed for the user's own group. */
@@ -284,6 +307,8 @@ target_group_user(
 		} else {
 			error = target_put(edit, field[0], field_length[0]);
 		}
+
+		/* Reports a name that could not be written. */
 		if (error != 0)
 			return error;
 
@@ -319,10 +344,12 @@ target_hostname(
 	size_t offset;
 	int found;
 	int differs;
+	int valid;
 	int error;
 
 	/* A name /etc/rc.conf may hold as it is. */
-	if (!plan_hostname_valid(hostname))
+	valid = plan_hostname_valid(hostname);
+	if (!valid)
 		return EINVAL;
 
 	/* Each line, the hostname's replaced. */
@@ -377,6 +404,7 @@ target_sshd_no_root(
 	struct target_line line;
 	size_t offset;
 	int found;
+	int keyword;
 	int error;
 
 	/* Whether a line sets it already. */
@@ -386,7 +414,8 @@ target_sshd_no_root(
 		error = target_next_line(edit->text, edit->length, &offset, &line);
 		if (error == ENOENT)
 			break;
-		if (target_sshd_keyword(&line))
+		keyword = target_sshd_keyword(&line);
+		if (keyword)
 			found = 1;
 	}
 
@@ -404,7 +433,8 @@ target_sshd_no_root(
 		error = target_next_line(edit->text, edit->length, &offset, &line);
 		if (error == ENOENT)
 			break;
-		if (target_sshd_keyword(&line))
+		keyword = target_sshd_keyword(&line);
+		if (keyword)
 			error = target_puts(edit, "PermitRootLogin no\n");
 		else
 			error = target_put(edit, line.text, line.piece);
@@ -497,6 +527,7 @@ target_shadow_hash(
 	const char *field;
 	size_t field_length;
 	size_t offset;
+	int named;
 	int error;
 
 	/* Each line, until the user's. */
@@ -508,7 +539,8 @@ target_shadow_hash(
 		error = target_field(&line, 0, &field, &field_length);
 		if (error != 0)
 			return error;
-		if (target_field_is(field, field_length, name))
+		named = target_field_is(field, field_length, name);
+		if (named)
 			break;
 	}
 
@@ -544,6 +576,7 @@ target_file_read(
 	size_t used;
 	ssize_t count;
 	int directory;
+	int regular;
 	int fd;
 	int error;
 
@@ -564,10 +597,15 @@ target_file_read(
 		close(fd);
 		return error;
 	}
-	if (!S_ISREG(status.st_mode)) {
+
+	/* Refuses anything but a regular file. */
+	regular = S_ISREG(status.st_mode);
+	if (!regular) {
 		close(fd);
 		return EINVAL;
 	}
+
+	/* Refuses a file larger than the room given. */
 	if ((uint64_t)status.st_size > capacity) {
 		close(fd);
 		return EFBIG;
@@ -584,6 +622,8 @@ target_file_read(
 			close(fd);
 			return error;
 		}
+
+		/* Ends the read at the end of the file. */
 		if (count == 0)
 			break;
 		used += (size_t)count;
@@ -592,6 +632,8 @@ target_file_read(
 			return EFBIG;
 		}
 	}
+
+	/* Releases the file once its text is read. */
 	close(fd);
 
 	/* Succeeded: the file's text. */
@@ -617,6 +659,8 @@ target_file_replace(
 	char temporary[TARGET_COMPONENT_MAX + sizeof(TARGET_TEMPORARY)];
 	struct stat status;
 	int directory;
+	int regular;
+	int reported;
 	int fd;
 	int error;
 
@@ -630,7 +674,10 @@ target_file_replace(
 		close(directory);
 		return error;
 	}
-	if (!S_ISREG(status.st_mode)) {
+
+	/* Refuses anything but a regular file. */
+	regular = S_ISREG(status.st_mode);
+	if (!regular) {
 		close(directory);
 		return EINVAL;
 	}
@@ -647,13 +694,29 @@ target_file_replace(
 
 	/* The text, the old file's owner and mode, on the disk. */
 	error = target_write_all(fd, text, length);
-	if (error == 0 && fchown(fd, status.st_uid, status.st_gid) != 0)
-		error = errno;
-	if (error == 0 && fchmod(fd, status.st_mode & 07777) != 0)
-		error = errno;
-	if (error == 0 && fsync(fd) != 0)
-		error = errno;
-	if (close(fd) != 0 && error == 0)
+	if (error == 0) {
+		reported = fchown(fd, status.st_uid, status.st_gid);
+		if (reported != 0)
+			error = errno;
+	}
+
+	/* Gives the new file the old file's mode. */
+	if (error == 0) {
+		reported = fchmod(fd, status.st_mode & 07777);
+		if (reported != 0)
+			error = errno;
+	}
+
+	/* Puts the new file's bytes on the disk. */
+	if (error == 0) {
+		reported = fsync(fd);
+		if (reported != 0)
+			error = errno;
+	}
+
+	/* Closes the new file, and reports a close that failed. */
+	reported = close(fd);
+	if (reported != 0 && error == 0)
 		error = errno;
 	if (error != 0) {
 		(void)unlinkat(directory, temporary, 0);
@@ -669,6 +732,8 @@ target_file_replace(
 		close(directory);
 		return error;
 	}
+
+	/* Puts the directory entry of the new file on the disk. */
 	error = fsync(directory);
 	if (error != 0)
 		error = errno;
@@ -975,6 +1040,7 @@ target_put_members(
 	const char *comma;
 	const char *end;
 	size_t member_length;
+	int is_old;
 	int error;
 
 	/* An empty list. */
@@ -991,7 +1057,8 @@ target_put_members(
 		member_length = (size_t)(comma - member);
 
 		/* The member, renamed when it is the user. */
-		if (target_field_is(member, member_length, old_name))
+		is_old = target_field_is(member, member_length, old_name);
+		if (is_old)
 			error = target_puts(edit, name);
 		else
 			error = target_put(edit, member, member_length);
@@ -1066,6 +1133,8 @@ target_open_parent(
 	size_t length;
 	int current;
 	int next;
+	int dot;
+	int dotdot;
 	int error;
 
 	/* Each component before the last, opened under the one before. */
@@ -1085,9 +1154,13 @@ target_open_parent(
 				error = ENAMETOOLONG;
 			break;
 		}
+
+		/* Copies the component out of the path, and refuses "." and "..". */
 		memcpy(component, start, length);
 		component[length] = '\0';
-		if (strcmp(component, ".") == 0 || strcmp(component, "..") == 0) {
+		dot = strcmp(component, ".");
+		dotdot = strcmp(component, "..");
+		if (dot == 0 || dotdot == 0) {
 			error = EINVAL;
 			break;
 		}
@@ -1098,6 +1171,8 @@ target_open_parent(
 				error = EINVAL;
 				break;
 			}
+
+			/* Hands back the last component as the leaf. */
 			memcpy(leaf, component, length + 1U);
 			*directory = current;
 			return 0;
@@ -1181,6 +1256,8 @@ target_edit_file(
 		edit.written = 0;
 		error = change(&edit, argument);
 	}
+
+	/* Replaces the file with the edited text. */
 	if (error == 0)
 		error = target_file_replace(root, path, edit.output, edit.written);
 	free(output);
@@ -1219,7 +1296,7 @@ target_change_sshd(
 {
 	int error;
 
-	(void)argument;
+	UNUSED_PARAMETER(argument);
 
 	/* The setting. */
 	error = target_sshd_no_root(edit);
@@ -1238,7 +1315,7 @@ target_change_fstab(
 {
 	int error;
 
-	(void)argument;
+	UNUSED_PARAMETER(argument);
 
 	/* The swap file's line. */
 	error = target_fstab_swapfile(edit);
@@ -1364,6 +1441,8 @@ target_home_rename(
 			return 0;
 		return error;
 	}
+
+	/* Refuses a new home that exists already. */
 	error = fstatat(directory, name, &status, AT_SYMLINK_NOFOLLOW);
 	if (error == 0) {
 		close(directory);
@@ -1377,6 +1456,8 @@ target_home_rename(
 		close(directory);
 		return error;
 	}
+
+	/* Releases the directory once the rename is done. */
 	close(directory);
 
 	/* Succeeded: the home has the new name. */

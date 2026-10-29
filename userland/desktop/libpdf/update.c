@@ -2434,7 +2434,7 @@ free_layout(
 }
 
 /*
- * Chooses the prefix of an update's names (design.md [M4]): "ZedBSD", or
+ * Chooses the prefix of an update's names: "ZedBSD", or
  * "ZedBSD1_" to "ZedBSD9_", the first that begins no name of any page's
  * ExtGState, XObject, Font or Pattern resources (Notes' own names of an earlier
  * revision, for one).  The last is taken when all are used; the

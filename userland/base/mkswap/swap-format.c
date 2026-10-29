@@ -235,6 +235,7 @@ verify_header(
 	uint8_t header[SWAP_PAGE_SIZE];
 	uint8_t expected[SWAP_PAGE_SIZE];
 	ssize_t done;
+	int different;
 	int error;
 
 	/* Reads the complete reserved page, retrying only interrupted reads. */
@@ -254,14 +255,18 @@ verify_header(
 		return error;
 
 	/* Requires version two and the exact positive caller-sized slot count. */
-	if (parsed.version != 2 || parsed.slot_count == 0 ||
-	    parsed.slot_count != bytes / SWAP_PAGE_SIZE - 1)
+	if (parsed.version != 2)
+		return EIO;
+	if (parsed.slot_count == 0)
+		return EIO;
+	if (parsed.slot_count != bytes / SWAP_PAGE_SIZE - 1)
 		return EIO;
 
 	/* Verifies the identity, checksum, and cleared reserved page contents. */
 	memset(expected, 0, sizeof(expected));
 	make_header(expected, bytes);
-	if (memcmp(header, expected, sizeof(header)) != 0)
+	different = memcmp(header, expected, sizeof(header));
+	if (different != 0)
 		return EIO;
 
 	/* Succeeded: the header page is the canonical one. */

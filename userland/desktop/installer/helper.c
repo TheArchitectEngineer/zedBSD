@@ -112,7 +112,7 @@ inst_helper_request(
 	if (helper->session_pid > 0 && helper->session_in < 0)
 		return EBUSY;
 
-	/* A session bound to another disk ends first (spec 5.2). */
+	/* A session bound to another disk ends first. */
 	if (helper->session_pid > 0 && helper->session_disk != disk) {
 		inst_helper_end_session(app);
 		return EBUSY;
@@ -263,8 +263,12 @@ helper_spawn(
 			(void)close(input[0]);
 			(void)close(input[1]);
 		}
+
+		/* Reports why the child could not be made. */
 		return error;
 	}
+
+	/* The child side: runs the helper in place of this process. */
 	if (child == 0) {
 		if (input[0] >= 0)
 			(void)dup2(input[0], 0);
@@ -277,7 +281,7 @@ helper_spawn(
 		_exit(127);
 	}
 
-	/* The installer's ends: the output read without waiting, the input written whole. */
+	/* Keeps the installer's ends: the output read without waiting, the input written whole. */
 	(void)close(output[1]);
 	flags = fcntl(output[0], F_GETFL);
 	if (flags >= 0)
@@ -289,6 +293,8 @@ helper_spawn(
 		(void)fcntl(input[1], F_SETFD, FD_CLOEXEC);
 		*to_child = input[1];
 	}
+
+	/* Tells the caller which process runs the helper. */
 	*pid = child;
 
 	/* Succeeded: the helper runs. */
@@ -317,6 +323,7 @@ helper_read(
 
 		/* Each byte into the line; a newline ends it (a line too long is dropped whole). */
 		for (i = 0; i < count; i++) {
+			/* A newline ends the line: gives it on unless it was too long. */
 			if (buffer[i] == '\n') {
 				helper->line[helper->line_used] = '\0';
 				if (!helper->line_long)
@@ -325,10 +332,14 @@ helper_read(
 				helper->line_long = 0;
 				continue;
 			}
+
+			/* A line that fills the buffer is dropped when its newline comes. */
 			if (helper->line_used + 1U >= sizeof(helper->line)) {
 				helper->line_long = 1;
 				continue;
 			}
+
+			/* Appends the byte to the line. */
 			helper->line[helper->line_used] = buffer[i];
 			helper->line_used++;
 		}
@@ -406,8 +417,13 @@ helper_hangup(
 	helper->session_pid = 0;
 	helper->session_disk = 0;
 	helper->job = INST_JOB_NONE;
-	if (job != INST_JOB_NONE)
-		inst_flow_ended(app, job, status == 0 ? 0 : -1);
+	if (job != INST_JOB_NONE) {
+		/* A session that ended with a failure status reports -1. */
+		if (status == 0)
+			inst_flow_ended(app, job, 0);
+		else
+			inst_flow_ended(app, job, -1);
+	}
 }
 
 /* Reports whether a line of the session ends the request it answers. */

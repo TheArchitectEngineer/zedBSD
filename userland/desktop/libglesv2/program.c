@@ -285,7 +285,7 @@ glCompileShader(
 {
 	uint64_t started;
 
-	/* The call, timed when ZEDBSD_GLES_COMPUTE_TRACE is 2 (ws101-p016). */
+	/* The call, timed when ZEDBSD_GLES_COMPUTE_TRACE is 2. */
 	started = gles_time_begin();
 	timed_compile_shader(name);
 	gles_time_end("compile-shader", started, 0U);
@@ -763,7 +763,7 @@ glLinkProgram(
 {
 	uint64_t started;
 
-	/* The call, timed when ZEDBSD_GLES_COMPUTE_TRACE is 2 (ws101-p016). */
+	/* The call, timed when ZEDBSD_GLES_COMPUTE_TRACE is 2. */
 	started = gles_time_begin();
 	timed_link_program(name);
 	gles_time_end("link-program", started, 0U);
