@@ -3,7 +3,7 @@
 # ws313-p010: Mali-G310（Valhall v10）の shader compiler
 
 Status: in-progress（実装済み・実機未試験）
-Queue: q1675-i02（P7 の配下 C）、q1675-i05 の一部（P7 と配下 P7-A: textureGrad・SampleId・stencil の書き込み・共通の front end の OpFunctionCall の inline）
+Queue: q1675-i02（P7 の配下 C）、q1675-i05 の一部（P7 と配下 P7-A: textureGrad・SampleId・stencil の書き込み・共通の front end の OpFunctionCall の inline）、q1687-i01 の一部（P7: program の writes_memory、texel offset の試験）
 WS: [WS313](../ws.md)、設計 [gpu.md](../gpu.md) §11・§12
 
 ## 目的
@@ -173,7 +173,20 @@ uniform buffer を持たないので関係無い）。実機での LOAD.i96・i1
 
 未確認・気になる点:
 - explicit の LOD の詰め方が Mesa と違う（Mesa は [-16, 16] に clamp して 16 bit を 0 拡張、ここは lod×256 の F32_TO_S32 で負なら上位 16 bit が 0xFFFF）。hardware が上位 16 bit を読むかは不明。既存の listing が変わるので触っていない。負の LOD の textureLod・cube の textureGrad が夜に変なら最初に疑う。
-- textureGradOffset は試験していない。
+- textureGradOffset は試験していない。→ q1687-i01 で試験した（下）。
+
+## 実装の追加（q1687-i01、P7、2026-10-29、実機未試験）
+
+| 機能 | 中身 | 状態 |
+| --- | --- | --- |
+| program の `writes_memory` | `shader.h` に印、`va-compile.c` が storage buffer の store・storage image の store・buffer と image の atomic で立てる（shared memory の atomic・store は立てない）。driver（[phase011](../phase011/phase.md) の q1687-i01）が draw の pixel kill を late にするのに使う | 済み（host のみ） |
+| texel offset の試験 | 模型（`tests/mali-compiler-model.c`）が texel offset を照合するようにした。それまでは offset を全く見ていなかった（handle の上の語も offsets の staging も読み捨て）。模型: handle の上の語の符号付き nibble s 3:0・t 7:4・r 11:8（Mesa の pan_nir_lower_tex.c の narrow の形）か、texel_offset の bit の時は offsets の語の符号付き byte、を texel の第 4 成分に重み付きで足す。参照: IR の offset（u 11:8・v 7:4・r 3:0）を同じ式で。handle の上の語に bit 12 以上（narrow の level・layer）があれば FAIL。新しい shader `grad-offset.frag`（textureGradOffset の 2D・2D array・3D・shadow）と `fetch-offset.frag`（texelFetchOffset、level は shader が計算） | 済み（host のみ） |
+
+確かめ（host だけ。GPU の証拠ではない）:
+- `sh plan/ws313/tests/mali-compiler-host-test.sh 20` → 33 module PASS（grad-offset・fetch-offset を含む）、`mali-compiler-desktop-test.sh 30` → 60/60 PASS。
+- 突然変異（手で、build/p7e-grad/mut の写し）: narrow の offset を 0 に → grad-offset が FAIL、s と t の nibble を入れ替え → FAIL。模型の変更の前は offset を 0 にしても PASS だった。
+- desktop の 60 program を host の compiler に通した probe（build/p7e-probe/、試験の file にはしていない）: `writes_memory` は 60 本とも 0（fragment で discard するのは 2 本）。storage の store・atomic・image の store の fragment は 1、shared の atomic の compute は 0。
+- 調べて分かった事: texelFetchOffset の offset は共通の front end が整数の座標に足す（listing の IADD_IMM、handle の上の語は 0）。textureGatherOffset も narrow を 0 にした写しで PASS のままなので、offset は TEX の外で座標に入っている見込み（未確認）。
 
 ## 判断（推しで進めた所、夜の試験で確かめる）
 
