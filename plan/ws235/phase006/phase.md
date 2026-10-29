@@ -73,8 +73,9 @@
 
 ### 読み（2026-10-29 10:3x P1）
 
-- send: TX の割り込みを外して driver の CPU を 68% → 15% に下げても、同じ置き場所の回（1 と 4）の send は 3568 → 3547 で変わらない。律速は driver の外
-  （送りの thread の CPU（cpu13 86%、回 5・6 は cpu0・cpu1 の 2 つ）＝TCP の分割・checksum・user からの copy、と置き場所）。
+- send: TX の割り込みを外して driver の CPU を 68% → 10% に下げても、回 1（3568）→ 回 4（3547）で send は変わらず、driver の CPU が同じ 15〜18% の回 5〜7 で
+  4519〜5505 と振れる。send の値は driver の CPU でなく、driver の外（送りの thread の CPU＝TCP の分割・checksum・user からの copy、と thread の置き場所）で決まる
+  （置き場所との関係は CPU ごとの負荷からの見込みで未確認）。
 - recv: CPU が飽和せず、相手が再送している。driver の CPU は 28〜30% で、全てを 0 にしても飽和していない律速は解けない。取りこぼしが NIC の ring なら driver の側（ring の大きさ・補充の速さ）、
   stack なら WS221 p010。次の枠の k5a（missed）・k5b（ring 1024）で分ける。
 
