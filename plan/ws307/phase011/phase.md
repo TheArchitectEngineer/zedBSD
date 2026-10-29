@@ -3,7 +3,7 @@
 # ws307-p011 通しの試験
 
 - 親: [WS307](../ws.md)。仕様: [spec.md](../spec.md) §12。Queue: q1665 / q1665-i08（担当 P4、2026-10-29、worktree p4-ws307l）、q1665-i10（P4、2026-10-29、worktree p4-ws307n、基点 main 8ba9bdbbb: BUG-356・357 の直しを含む）。
-- Status: in-progress（q1665-i10: BUG-356・357 の直しの後に流し直す）
+- Status: in-progress（q1665-i10: 5 回目を途中で止めた。q1688（UFS の遅さ BUG-355・358）の後に流し直す）
 - 承認: q1665-i01 と同じ（Q1 の中継）。2026-10-29 Q1 の判断: p004 抜きで進める（GTK4 の app の build の確かめだけを p004 の後に残す）。
 - 前提: p010（installer の app）、p009（install-admin）、p006・p008 の 4096。
 
@@ -38,9 +38,19 @@
 - 縮めた組（NVMe 512＋「他の OS」の SATA、p010 と同じ組）の 2 回（`p011.0yxo6eq4`、`p011.8egqibob`）も live の system が SSH に出なかった。p010-screens.py の対照の 2 回（`p010s.61y2ae0f`、`p010s.ortbr5wz`）は SSH は出たが、installer が最初の `kl_window_present_resize` の EIO で終わった（`INSTALLER FAILED operation=present error=5`）。同じ組で 13:00 前の p010 の 3 回目は PASS しているので、起動しない・present の EIO は disk の組だけで決まらず、host の Venus（virgl_render_server・llvmpipe）の状態か時刻で揺れると見られる（未確認）。installer は present とその作り直しの失敗を何回か待って再試行するよう直した（be0f02fa1・daf0c60fe）。
 - その後の 1 回（`p011.tcubp4gi`、daf0c60fe の image、縮めた組）も live の system が SSH に出なかった。p011 の受け入れ（GUI の通しの導入と導入先の起動）は未達。BUG-356 の解析の後に `python3 plan/ws307/tests/p011-install.py IMAGE` を流し直す（縮めた組、BUG-356 が直れば外した disk を戻す）。
 
+- q1665-i10（P4、2026-10-29、image `build/ws307n-img/installer-image.img`、この branch の tree から `make … installer-image` rc 0）:
+  - 1 回目（`p011.64jmegwb`、16:48、前の起動）: live の system が 600 s で SSH に答えず FAIL。後の 4 回では再現せず、解析していない（未確認）。
+  - 2 回目（`p011.rx1mdyms`）: live は SSH に上がった（7 台＋live の USB、Venus）。STEP map が fail: 試験の script の誤り（`installer_walk.Run.root` が command を quote せず guest.py の `run` に渡し、`sh -c` が最初の語だけを実行）。1ab8b8169 で `shlex.quote`。
+  - 3 回目（`p011.g7w4mwzu`）: map・refused-tiny・refused-live ok、MBR の disk（2 GiB）が S2 で「小さすぎる」で押せず FAIL。試験の disk の大きさの誤り（spec §5.6: 全体の最小＝ESP＋swap 1 GiB＋root の最小）。def85c332 で MBR の disk を 4 GiB に。
+  - 4 回目（`p011.hfdv7fqg`）: map・refused-tiny・refused-live・refused-mbr・refused-zcfg・cancel（NVMe 512、約 9 分で S10、`failed step=unpack`）・damage ok。failure（4096 の NVMe の全体、既定の項目 165 MiB）が 1800 s で S10 に届かず FAIL: 4096 の native UFS の書きが 22 分で約 50 MB（BUG-358）。ae125c7d4 で回避（failure を NVMe 512 へ、4096 は最後に S7 で desktop・firmware・fonts を外す、timeout 3600 s）。
+  - 5 回目（`p011.tjf9naoi`）: refused-zcfg まで ok、cancel の途中（23:23）でユーザーの指示により止めた（q1688: 先に UFS の遅さ BUG-355・358 を直してから流し直す。4096 の導入は既定の項目に戻す）。
+  - 条件の変更（走らせた後）: ae125c7d4 の回避（4096 の項目を減らす）は q1688 の後に戻す（ユーザーの指示）。
+- p011 の受け入れは未達（MBR・zedbsd.cfg・1 GiB・live の拒みの GUI の確かめは 4・5 回目で ok）。
+
 ## 未実施・残り
 
-- 4096 の disk・swap file（空の GPT の USB）・MBR と zedbsd.cfg の拒む disk の GUI の試験（BUG-356: これらの disk を付けると live の system が起動しない）。
+- q1688（BUG-355・358 の直し）の後に p011 を流し直す（4096 の導入を既定の項目に戻して）。その後に日本語の画面（`p010-screens.py --language ja`）。
+- 導入（cancel の後の failure・nvme・other・usb・k4）・host の検査・導入先の起動・SSH は未実施。
 - GTK4 の app の build の確かめ（p004 の後、Q1 の判断）。
 - Boot#### の確かめ（p007 の承認待ち）。
 - 同じ image を dd した disk との同居（spec §11.2 の既知の制限: 同じ image の 2 台は PARTUUID が重なり曖昧）。
