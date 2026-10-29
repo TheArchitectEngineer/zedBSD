@@ -803,9 +803,19 @@ ipv6_address_add(
 {
 	struct ipv6_interface *interface;
 	unsigned long irq;
+	unsigned device_flags;
 	uint64_t now;
 	int added;
 	int error;
+
+	/*
+	 * The loopback device has no other node to take an address, and the
+	 * timer runs no detection there: its addresses are used at once
+	 * (RFC 4862 section 5.4), not left tentative.
+	 */
+	device_flags = net_device_flags_get(device);
+	if ((device_flags & NET_DEVICE_LOOPBACK) != 0U)
+		flags |= IN6_ADDRESS_NODAD;
 
 	/* The address in the device's table. */
 	now = ipv6_now_ms();
