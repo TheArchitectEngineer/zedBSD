@@ -46,7 +46,7 @@ mark() {
 }
 collect() {
 	z "tail -n +$((lines + 1)) $SESSION" > "$out/$1-session.log" 2>&1
-	grep -E 'KWL (SCANOUT|MODE|DISPLAY change|OUTPUT (open|closed)|FAILED|VULKAN_ERROR)' "$out/$1-session.log" | sed "s/^/$1 /" | tee -a "$summary"
+	grep -E 'KWL (SCANOUT|MODE [a-z]|DISPLAY change|OUTPUT (open|closed)|FAILED|VULKAN_ERROR)' "$out/$1-session.log" | sed "s/^/$1 /" | tee -a "$summary"
 	if grep -qE 'KWL (FAILED|VULKAN_ERROR)' "$out/$1-session.log"; then
 		failed=1
 	fi
