@@ -1,5 +1,5 @@
 #!/bin/sh
-# ws220-p001: the host model of a TCP transfer.  Builds src/kern/net/tcp.c, socket.c, packet-buf.c, checksum.c and in6.c
+# ws220-p001: the host model of a TCP transfer.  Builds src/kern/net/tcp.c, tcp-cubic.c, socket.c, packet-buf.c, checksum.c and in6.c
 # as the kernel builds them (freestanding, the kernel's headers) with shim.c and model.c, and runs the transfer
 # scenarios: A sends to B over a modelled link; the model prints each interval's rate and both ends' state.
 #   plan/ws220/tests/tcp-model/run.sh                 the scenarios against WS220's targets, a summary line each and PASS/FAIL
@@ -16,7 +16,7 @@ cc=${CC:-clang}
 flags="-std=c11 -O2 -g -nostdlibinc -Iinclude -Isrc -I. -Iplan/ws220/tests/tcp-model -DKERN_UAPI_NATIVE -DKERN_KCRT_NATIVE
 	-DHAL_ARCH_AMD64 -DHAL_BOARD_PCAT -DKERN_USER_ABI_LP64 -ffreestanding -fno-builtin -Wall -Wextra -Werror ${MODEL_CFLAGS:-}"
 objects=
-for source in src/kern/net/tcp.c src/kern/net/socket.c src/kern/net/packet-buf.c src/kern/net/checksum.c \
+for source in src/kern/net/tcp.c src/kern/net/tcp-cubic.c src/kern/net/socket.c src/kern/net/packet-buf.c src/kern/net/checksum.c \
     src/kern/net/in6.c plan/ws220/tests/tcp-model/shim.c plan/ws220/tests/tcp-model/model.c; do
 	object=$out/$(basename "$source" .c).o
 	# shellcheck disable=SC2086
@@ -25,6 +25,23 @@ for source in src/kern/net/tcp.c src/kern/net/socket.c src/kern/net/packet-buf.c
 done
 # shellcheck disable=SC2086
 $cc -o "$out/tcp-model" $objects -lc || { echo "tcp-model: link failed"; exit 2; }
+# ws311-p002: a second build whose limits let A's window and B's take a bottleneck's round trip (the send ring, B's
+# receive queue and reorder queue raised to 1024; the kernel's defaults are 256, 128 and 128): the congestion scenarios.
+# The model's two hosts share one packet pool, so it is four times the kernel's 1024 (ws311-p003: A's copies and B's
+# queues of a 1 MB window took all 1024, and the connection died).
+mkdir -p "$out/big"
+big_flags="-DCONFIG_TCP_SEND_QUEUE_MAX=1024 -DCONFIG_TCP_RECEIVE_PACKETS=1024 -DCONFIG_TCP_REORDER_MAX=1024
+	-DCONFIG_PACKET_BUF_POOL_COUNT=4096U"
+objects=
+for source in src/kern/net/tcp.c src/kern/net/tcp-cubic.c src/kern/net/socket.c src/kern/net/packet-buf.c src/kern/net/checksum.c \
+    src/kern/net/in6.c plan/ws220/tests/tcp-model/shim.c plan/ws220/tests/tcp-model/model.c; do
+	object=$out/big/$(basename "$source" .c).o
+	# shellcheck disable=SC2086
+	$cc $flags $big_flags -c "$source" -o "$object" || { echo "tcp-model: build of $source (big) failed"; exit 2; }
+	objects="$objects $object"
+done
+# shellcheck disable=SC2086
+$cc -o "$out/big/tcp-model" $objects -lc || { echo "tcp-model: link (big) failed"; exit 2; }
 
 if [ "${1:-}" = "--" ]; then
 	shift
@@ -226,8 +243,10 @@ scenario delayed-ack-stream 30 --bytes 16777216 --ack-delay-ms 200 --expect-retr
 # more than the flight (ws221-p008: the 64 KB window, 64 of the model's 1024-byte segments; before, the ring's 8).
 # (ws221-p008: a timeout goes back to the oldest segment and resends the flight in slow start; after this spurious one
 # the resends of segments B had come back as duplicates, which may bring one fast retransmit, as on BSD.)
+# (ws311-p004: with CUBIC, the default since, a timeout leaves the threshold at 0.7 of the flight rather than half, so
+# the slow start after the second spurious timeout resends a few more segments B had: 69 (Reno 57), at most 72.)
 scenario rtt-step 0 --bytes 1048576 --delay-step-at-ms 2 --delay-step-us 300000 --peer-window 65535 --limit-s 120 \
-    --expect-retransmits-max 64 --expect-srtt-us 500000:700000 --expect-fast-retransmits 0:1
+    --expect-retransmits-max 72 --expect-srtt-us 500000:700000 --expect-fast-retransmits 0:1
 # ws220-p005: the same with zedBSD as the receiver (its window moves): no resend on a reopened window keeps the sample.
 # (ws221-p009: zedBSD's 128 KB window, 128 segments of the flight; the Linux-like peer above keeps 64 KB.)
 scenario rtt-step-zedbsd 0 --bytes 1048576 --delay-step-at-ms 2 --delay-step-us 300000 --limit-s 120 \
@@ -317,6 +336,27 @@ giveup() {
 giveup data-giveup --bytes 1073741824 --blackhole-at-ms 500 --limit-s 400
 # ws220-p002: A's SYN is lost from the start: the connect gives up only after 3 minutes (R2 for a SYN).
 scenario syn-giveup 0 --connect-blackhole
+# ws311-p002: A's data frames are all lost for 700 ms: the timer's resends are lost too, and each timeout repeated within
+# the recovery the first started holds the slow start threshold (RFC 5681 section 3.1; before: 2 segments).
+scenario timeout-repeated 10 --bytes 33554432 --drop-ab-run 100:700000 --peer-window 65535 --limit-s 120 \
+    --expect-ssthresh-held --expect-timeouts-max 3
+# ws311-p002: the congestion window's use (RFC 7661) over a bottleneck, with the big build: a 100 Mbps router with a
+# drop-tail queue of a quarter of the 250 KB the 20 ms round trip holds, B's buffers at 1 MB.  A's window limits it most of
+# the time, its slow start doubles each round trip, its congestion avoidance grows a segment a round trip (Reno), and its
+# window never grows past twice what it sent (the check of every run).  60 s, timed; the rate is what the losses leave.
+big_scenario() {
+	saved=$out
+	out=$out/big
+	scenario "$@"
+	out=$saved
+}
+big_scenario reno-bottleneck 4 --cc reno --run-s 60 --delay-us 10000 --bottleneck-mbps 100 --bottleneck-queue 62500 \
+    --send-buffer 1048576 --receive-buffer 1048576 --write-bytes 65536 --expect-slow-start --expect-ca-growth 0.8 \
+    --expect-cwnd-limited 0.8
+# ws311-p002: a second connection 5 s in over the same router (the "fair:" line gives the shares; p003 sets what they
+# must be): both streams arrive intact (the least rate is the first connection's, which shares the router).
+big_scenario reno-two-flows 1 --cc reno --second-flow-cc reno --run-s 60 --delay-us 10000 --bottleneck-mbps 100 --bottleneck-queue 62500 \
+    --send-buffer 1048576 --receive-buffer 1048576 --write-bytes 65536 --second-flow-at-ms 5000
 
 [ $status = 0 ] && echo "tcp-model: PASS" || echo "tcp-model: FAIL"
 exit $status

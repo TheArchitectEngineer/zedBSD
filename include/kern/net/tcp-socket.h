@@ -48,6 +48,10 @@ enum tcp_state {
 #endif
 #define TCP_SEND_QUEUE_MAX ((unsigned)CONFIG_TCP_SEND_QUEUE_MAX)
 
+/* The congestion controls a connection may use: RFC 5681's (NewReno, RFC 6582) and CUBIC (RFC 9438). */
+#define TCP_CC_RENO	0U
+#define TCP_CC_CUBIC	1U
+
 /*
  * How many segments that came ahead of a gap a connection keeps until the
  * gap is filled (BUG-222).  On the 64-bit machines it is the whole receive
@@ -59,8 +63,12 @@ enum tcp_state {
  * of the speed).  The window counts only the receive queue's free slots,
  * so the queue and the segments kept ahead stay within about one window
  * of packets together.  The 32-bit boards keep a few (tcp.c).
+ * CONFIG_TCP_REORDER_MAX sets another (a build that measures longer round
+ * trips, with CONFIG_TCP_RECEIVE_PACKETS).
  */
-#if defined(HAL_ARCH_AMD64) || defined(HAL_ARCH_ARM64) || \
+#if defined(CONFIG_TCP_REORDER_MAX)
+#define TCP_REORDER_MAX ((unsigned)CONFIG_TCP_REORDER_MAX)
+#elif defined(HAL_ARCH_AMD64) || defined(HAL_ARCH_ARM64) || \
     defined(HAL_ARCH_RISCV64)
 #define TCP_REORDER_MAX 128U
 #else
@@ -194,6 +202,46 @@ struct tcp_socket {
 	uint32_t cwnd;
 	uint32_t ssthresh;
 	uint32_t cwnd_acked;
+	/*
+	 * Whether the congestion window is what limits the sending (RFC 7661),
+	 * measured over rounds: a round ends when the acknowledgements reach
+	 * cwnd_round_end, the end of what was sent when it began.
+	 * cwnd_round_flight is the most sent and not acknowledged (the bytes
+	 * handed to the device, not those queued behind them) within the
+	 * round, cwnd_prev_flight that of the round before; cwnd_blocked says
+	 * the window held back a queued segment within the round (a write it
+	 * refuses has the flight within a segment of it already).  The window
+	 * grows only while a round uses it.
+	 */
+	uint32_t cwnd_round_end;
+	uint32_t cwnd_round_flight;
+	uint32_t cwnd_prev_flight;
+	unsigned cwnd_blocked;
+	/* The congestion control that grows and cuts the window (TCP_CC_*). */
+	unsigned cc;
+	/*
+	 * CUBIC's state (RFC 9438), in bytes and milliseconds: the window
+	 * before the last loss (W_max) and the window then (cwnd_prior); the
+	 * epoch of congestion avoidance, while cubic_epoch_started, with its
+	 * start, the window function's origin and K, and the estimate of
+	 * Reno's window (W_est); when the window began to go unused within
+	 * the epoch (cubic_limited_since_ms, 0 while it is used), which
+	 * moves the epoch on by that time; the remainders the integer growth
+	 * of W_est and of the window carry; and cubic_after_timeout, set by a
+	 * timeout for the next epoch outside a recovery to start at the
+	 * window it finds (K = 0).
+	 */
+	uint32_t cubic_w_max;
+	uint32_t cubic_cwnd_prior;
+	uint32_t cubic_origin;
+	uint32_t cubic_k_ms;
+	uint32_t cubic_w_est;
+	uint32_t cubic_est_rem;
+	uint32_t cubic_grow_rem;
+	uint64_t cubic_epoch_ms;
+	uint64_t cubic_limited_since_ms;
+	unsigned cubic_epoch_started;
+	unsigned cubic_after_timeout;
 	/*
 	 * Delayed acknowledgements (RFC 1122 4.2.3.2, RFC 5681 4.2): the
 	 * in-order segments received since this end last sent anything, which
@@ -442,5 +490,18 @@ tcp_stats_copy(
 	size_t capacity,
 	size_t *needed,
 	int superuser);
+const char *
+tcp_cc_name(
+	unsigned cc);
+int
+tcp_cc_lookup(
+	const char *name,
+	size_t length,
+	unsigned *cc);
+unsigned
+tcp_cc_default(void);
+void
+tcp_cc_set_default(
+	unsigned cc);
 
 #endif

@@ -326,8 +326,18 @@ _Static_assert(sizeof(struct thermal_entry) == 64U,
  */
 #define NET_TCPSTATS	1
 
-/* The version of the net.tcpstats layout. */
-#define TCP_STATS_VERSION	1U
+/*
+ * net.tcp.congestion: the congestion control a new TCP socket starts with,
+ * as its name ("reno" or "cubic", TCP_CONGESTION's names).  Reading gives
+ * the name and its NUL; the superuser sets another by its name (EINVAL for
+ * an empty one, ESRCH for one the kernel does not have).  A socket that
+ * already exists keeps its own.
+ */
+#define NET_TCP			2
+#define NET_TCP_CONGESTION	1
+
+/* The version of the net.tcpstats layout (2: the congestion control's fields at the end of an entry). */
+#define TCP_STATS_VERSION	2U
 
 /* The address family of an entry: its addresses are IPv4 (4 bytes) or IPv6 (16). */
 #define TCP_STATS_FAMILY_INET	4U
@@ -346,6 +356,24 @@ _Static_assert(sizeof(struct thermal_entry) == 64U,
  * netstat shows them on other systems.
  */
 #define TCP_STATS_HAVE_SEQUENCE	0x00000020U
+/*
+ * cc, cubic_w_max_kb, cubic_k_ms and cwnd_state are kept (the congestion
+ * control: TCP_STATS_CC_*).
+ */
+#define TCP_STATS_HAVE_CC	0x00000040U
+
+/* The congestion control of an entry (cc): RFC 5681's (NewReno) or CUBIC (RFC 9438). */
+#define TCP_STATS_CC_RENO	0U
+#define TCP_STATS_CC_CUBIC	1U
+
+/*
+ * cwnd_state's bits: the window held back a queued segment in this round
+ * (it is in use); a CUBIC epoch runs; the next CUBIC epoch starts after a
+ * timeout (K = 0).
+ */
+#define TCP_STATS_CWND_BLOCKED		0x00000001U
+#define TCP_STATS_CWND_EPOCH		0x00000002U
+#define TCP_STATS_CWND_AFTER_TIMEOUT	0x00000004U
 
 /*
  * The head of net.tcpstats: the layout's version, the header's size, one
@@ -425,6 +453,10 @@ struct tcp_stats_header {
  * (out_of_order_in, of them out_of_order_kept); in-order segments the
  * receive queue had no room for (receive_refused); and fast
  * retransmissions (with TCP_STATS_HAVE_FAST_RETRANSMIT).
+ *
+ * With TCP_STATS_HAVE_CC: the congestion control (cc, TCP_STATS_CC_*);
+ * CUBIC's window before the last loss in KiB and its K in milliseconds
+ * (0 for Reno); and cwnd_state (TCP_STATS_CWND_*).
  */
 struct tcp_stats_entry {
 	uint32_t family;
@@ -478,11 +510,15 @@ struct tcp_stats_entry {
 	uint64_t out_of_order_kept;
 	uint64_t receive_refused;
 	uint64_t fast_retransmits;
+	uint32_t cc;
+	uint32_t cubic_w_max_kb;
+	uint32_t cubic_k_ms;
+	uint32_t cwnd_state;
 };
 
 _Static_assert(sizeof(struct tcp_stats_header) == 72U,
     "net.tcpstats header ABI must be identical on ILP32 and LP64");
-_Static_assert(sizeof(struct tcp_stats_entry) == 312U,
+_Static_assert(sizeof(struct tcp_stats_entry) == 328U,
     "net.tcpstats entry ABI must be identical on ILP32 and LP64");
 
 /* Firmware RAM and actually managed RAM are distinct. */
