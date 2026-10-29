@@ -2570,7 +2570,10 @@ int kwl_home_launched(struct kwl_server *server, int32_t *rect);
 int kwl_home_open_app(struct kwl_server *server, const char *name, const char *via, int *running);
 void kwl_home_dismiss(struct kwl_server *server, const char *via);
 void kwl_home_toggle(struct kwl_server *server, const char *via);
-pid_t kwl_spawn(struct kwl_server *server, const char *command);
+/* The programs the compositor starts, on the file I/O thread (spawn.c): then hears the process ID, or 0 and the errno. */
+typedef void kwl_spawn_fn(struct kwl_server *server, pid_t pid, int error, void *context);
+int kwl_spawn(struct kwl_server *server, const char *command, kwl_spawn_fn *then, void *context);
+int kwl_spawn_lent(struct kwl_server *server, const char *path, const char *argument, const char *variable, int descriptor, kwl_spawn_fn *then, void *context);
 
 /* The top-right corner's swipe that brings Notes (corner.c; the drawing is in glass.h). */
 int kwl_corner_contact_begin(struct kwl_server *server, enum kwl_contact_source source, int32_t x, int32_t y, uint32_t time);
