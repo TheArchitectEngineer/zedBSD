@@ -10,7 +10,7 @@
 
 1. 「USB4は5330についているのですが、これって対応するにはどういうことが必要ですか？どんなHCIなんでしょうか。」（Q1 の説明: NHI（class 0x0C0340）・TCSS の xHCI・PCIe の tunnel の root port・DP の tunnel、firmware の CM か software の CM、PCIe の hot-plug、security level と IOMMU、AQC107 の driver）
 2. 「USB4+AQC 10GbEのWSを立てます。」
-3. hot-plug の device の承認は deviced で（ユーザーの案、[WS317](../ws317/ws.md) で扱う予定、2026-10-30 の原文はそちら）。
+3. hot-plug の device の承認は deviced で（[WS317](../ws317/ws.md) の hotplugd、原文はそちら）。
 
 ## 段取りの案（Q1、2026-10-30）
 
