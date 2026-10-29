@@ -734,7 +734,7 @@ kwl_input_attach_all(
  * the order its callbacks came; and ends the compositor when an
  * acknowledgement has been awaited past KWL_INPUT_DETACH_WAIT_MS (the
  * input thread does not let go of a descriptor that may become another
- * file's, design 6.1 N-1).  Called once a pass, after kwl_input_drain.
+ * file's).  Called once a pass, after kwl_input_drain.
  */
 void
 kwl_input_answer(
@@ -1844,8 +1844,7 @@ input_attach(
  * acknowledgement comes after the device's last event (apply_detached),
  * and the detach's number is kept for the answers it makes due.  The
  * compositor ends if the input thread cannot be asked, as a descriptor
- * number it might still read could be another file's after a close
- * (design 6.1 N-1).
+ * number it might still read could be another file's after a close.
  */
 static void
 input_detach(

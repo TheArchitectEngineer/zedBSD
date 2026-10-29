@@ -24,8 +24,7 @@
  * has stopped using the descriptor (the main thread looks for it each
  * pass, kwl_input_thread_acked, or waits for it, kwl_input_thread_detach_wait);
  * only then is the descriptor closed or given back to the seat, so a
- * descriptor number reused by another file is never read as a device
- * (design 6.1 N-1).
+ * descriptor number reused by another file is never read as a device.
  */
 
 #ifndef KWL_INPUT_THREAD_H

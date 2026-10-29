@@ -127,6 +127,8 @@ kwl_lane_submit(
 	} else {
 		lane->pending_tail->next = job;
 	}
+
+	/* The job is now the last of those not started, and the thread is woken. */
 	lane->pending_tail = job;
 	pthread_cond_signal(&lane->work);
 
@@ -179,6 +181,8 @@ kwl_lane_take(
 		} else {
 			job->ops->done(context, job);
 		}
+
+		/* Counts the job taken and goes on to the next. */
 		taken++;
 		job = next;
 	}
@@ -377,6 +381,8 @@ lane_finished_append(
 	} else {
 		lane->finished_tail->next = job;
 	}
+
+	/* The job is now the last finished one. */
 	lane->finished_tail = job;
 
 	/* main_woken holds one byte on the pipe for every finished job until the main thread takes them. */
@@ -417,6 +423,8 @@ lane_cancel_key(
 		} else {
 			previous->next = next;
 		}
+
+		/* The tail moves back when the job was the last one. */
 		if (lane->pending_tail == job)
 			lane->pending_tail = previous;
 

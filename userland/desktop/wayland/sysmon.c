@@ -367,10 +367,14 @@ sysmon_done(
 		sysmon_state.current_info = job->read;
 		sysmon_state.info_serial++;
 	}
+
+	/* The sample, when it was read. */
 	if (job->error == 0) {
 		sysmon_state.current = job->sample;
 		sysmon_state.current_serial++;
 	}
+
+	/* Frees the job, whose results are copied. */
 	free(job);
 
 	/* Told to every object that may hear it, while the sampling runs. */

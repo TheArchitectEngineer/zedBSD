@@ -1047,6 +1047,8 @@ kwl_compose_client_gone(
 				link = &callback->callback_next;
 				continue;
 			}
+
+			/* Takes the callback out of the list and retires it. */
 			*link = callback->callback_next;
 			callback->callback_next = NULL;
 			kwl_object_destroy(callback);
@@ -2985,6 +2987,8 @@ kwl_compose_bury(
 		kwl_fatal("KWL FAILED site=compose_bury errno=%d", ENOMEM);
 		_exit(1);
 	}
+
+	/* Records what the grave waits for, and how to destroy it. */
 	grave->drawings = compose->drawings_given + compose->drawing_open;
 	grave->record = *import;
 	grave->destroy = destroy;
@@ -5092,6 +5096,8 @@ compose_op_run(
 		outcome->heads[index] = 1U;
 		outcome->head_results[index] = vkQueuePresentKHR(compose->queue, &present);
 	}
+
+	/* Lets the queue go once all the presents are made. */
 	kwl_queue_unlock(compose);
 
 	/* The present's end, and the render thread's time of the job. */

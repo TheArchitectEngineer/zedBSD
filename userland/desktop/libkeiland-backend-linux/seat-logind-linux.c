@@ -236,6 +236,8 @@ linux_logind_seat_close(
 		if (seat_answers[index].action == LOGIND_ANSWER_CLOSE)
 			(void)close(seat_answers[index].descriptor);
 	}
+
+	/* Forgets the answers, all of which have been carried out. */
 	seat_answer_count = 0;
 	seat_display_answer = 0;
 
@@ -284,8 +286,12 @@ linux_logind_device_open(
 				errno = EINPROGRESS;
 				return -1;
 			}
+
+			/* A slot with a take under way for another path is not free. */
 			continue;
 		}
+
+		/* Remembers the first slot nothing owns. */
 		if (seat_devices[index].owned == 0 && free_slot == LOGIND_DEVICES)
 			free_slot = index;
 	}
@@ -448,6 +454,8 @@ linux_logind_device_let_go(
 		if (seat_answers[index].descriptor == descriptor)
 			break;
 	}
+
+	/* Ignores a descriptor nothing waits for. */
 	if (index == seat_answer_count)
 		return;
 	answer = seat_answers[index];
@@ -471,8 +479,12 @@ linux_logind_device_let_go(
 			break;
 		}
 	}
+
+	/* Ignores a device that is gone or no longer paused. */
 	if (device == NULL || device->paused == 0)
 		return;
+
+	/* Tells logind that the pause is acknowledged. */
 	error = seat_device_send("PauseDeviceComplete", answer.major, answer.minor);
 	if (error != 0)
 		fprintf(stderr, "wayland: logind pause complete %u:%u errno=%d\n", answer.major, answer.minor, error);
@@ -754,6 +766,8 @@ seat_take_answered(
 			break;
 		}
 	}
+
+	/* Ignores an answer that matches no take under way. */
 	if (device == NULL)
 		return;
 	device->taking = 0;
@@ -1027,6 +1041,8 @@ seat_pause(
 			seat_release(device);
 			return ENODEV;
 		}
+
+		/* Asks the compositor to let go of the device it may be reading. */
 		later = 0;
 		if (backend->host.input_gone != NULL)
 			later = backend->host.input_gone(backend->host.data, device->path);

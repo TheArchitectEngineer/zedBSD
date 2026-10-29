@@ -6,7 +6,7 @@
  */
 
 /*
- * The display thread and the changes of the display (design 4.3): what
+ * The display thread and the changes of the display: what
  * waits when the output opens, closes or moves -- the swapchain's and the
  * surface's creation and destruction (which claim and give back the
  * display), the cursor plane's, the cursor thread's stop, the device's
@@ -792,6 +792,8 @@ kwl_compose_output_close(
 		kwl_fatal("KWL FAILED site=display errno=%d step=close", ENOMEM);
 		_exit(1);
 	}
+
+	/* Begins the close inline, so that its steps run on this thread. */
 	compose->display_inline++;
 	error = kwl_display_begin(server, display_close_parked, change);
 	compose->display_inline--;
@@ -819,6 +821,8 @@ display_job_new(
 			kwl_fatal("KWL FAILED site=display errno=%d step=job", ENOMEM);
 			_exit(1);
 		}
+
+		/* Takes the spare job, which only one change can hold at a time. */
 		display_spare_used = 1U;
 		memset(&display_spare, 0, sizeof(display_spare));
 		job = &display_spare;
@@ -1242,6 +1246,8 @@ display_open_run(
 		job->readback = 0;
 		result = vkdemo_display_create_swapchain(compose->physical, compose->device, compose->family, &job->output, 0);
 	}
+
+	/* Refuses a swapchain the compositor cannot use: it failed, has too many images or has another format. */
 	if (result != VK_SUCCESS ||
 	    job->output.image_count > KWL_SWAPCHAIN_MAX ||
 	    job->output.format != compose->format) {
@@ -1251,6 +1257,8 @@ display_open_run(
 		job->error = EIO;
 		return;
 	}
+
+	/* Reports how long the swapchain took. */
 	printf("KWL STARTUP step=output-swapchain ms=%llu\n", (unsigned long long)(kwl_milliseconds() - started));
 
 	/* The cursor plane's objects, when the output has such a plane (it borrows the output's claim). */
@@ -1330,7 +1338,7 @@ display_open_opened(
 
 	/*
 	 * The change ends, then the desktop follows what the output shows now
-	 * against what it showed when it last opened (review-4 C7): another
+	 * against what it showed when it last opened: another
 	 * logical size (a move to a display of another size), another angle.
 	 */
 	then = change->then;

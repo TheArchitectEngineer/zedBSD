@@ -15,7 +15,7 @@
  *
  * The record also says since when an acknowledgement is awaited: an input
  * thread that does not let go in time leaves a descriptor it may still read,
- * which the compositor cannot give back safely (design 6.1 N-1).
+ * which the compositor cannot give back safely.
  *
  * The main thread alone uses it.
  */

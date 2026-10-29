@@ -115,7 +115,7 @@ struct kwl_import {
 	uint32_t version;
 	/*
 	 * The staging's rows written since the last take (last excluded): the
-	 * frame that takes the image copies only those rows (q1534).  Empty
+	 * frame that takes the image copies only those rows.  Empty
 	 * when first equals last.
 	 */
 	uint32_t dirty_first;
@@ -828,7 +828,7 @@ struct kwl_compose {
 	unsigned ready_valid;
 	unsigned park_depth;
 	/*
-	 * The display thread (display-thread.c, design 4.3): one thread of a
+	 * The display thread (display-thread.c): one thread of a
 	 * lane that makes and destroys the output's swapchain, its surface and
 	 * the cursor plane's, takes and gives back the display and asks the
 	 * backend about the game mode, while the event loop goes on.

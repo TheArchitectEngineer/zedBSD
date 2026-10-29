@@ -304,7 +304,7 @@ kwl_cursor_plane_stop(
 /*
  * Finishes a plane's close on the main thread, after its thread stopped
  * (error is kwl_cursor_plane_stop's; a copy that did not finish ends the
- * compositor at once, design 4.8): the copies and the record go, and the
+ * compositor at once): the copies and the record go, and the
  * box shows nothing and has no copies.
  */
 void

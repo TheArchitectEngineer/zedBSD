@@ -586,10 +586,14 @@ kwl_glass_close(
 		kwl_lane_stop(&glass_blur);
 		glass_blur_running = 0U;
 	}
+
+	/* Lets go of a blur held for a pass. */
 	if (glass_blur_held != NULL) {
 		blur_free(glass_blur_held);
 		glass_blur_held = NULL;
 	}
+
+	/* Forgets the answer the look kept. */
 	memset(&glass_answer, 0, sizeof(glass_answer));
 
 	/* A picture read ahead that the look never took is let go too. */
@@ -899,6 +903,8 @@ blur_submit(
 		memset(&inline_job, 0, sizeof(inline_job));
 		job = &inline_job;
 	}
+
+	/* The job takes the picture, the size and the answer. */
 	job->picture = *picture;
 	memset(picture, 0, sizeof(*picture));
 	job->width = server->width;
@@ -988,6 +994,8 @@ blur_done(
 			blur_apply(server, glass_blur_held);
 			blur_free(glass_blur_held);
 		}
+
+		/* Holds the job for that pass. */
 		glass_blur_held = job;
 		glass_blur_held_ms = kwl_milliseconds();
 		return;
@@ -1170,6 +1178,8 @@ wallpaper_renew(
 		kwl_host_image_release(server->compose, &blurred);
 		return EIO;
 	}
+
+	/* Renews the wallpaper image at the display's size. */
 	error = glass_image_renew(server, &glass->wallpaper, width, height, server->compose->sampler);
 	if (error != 0) {
 		kwl_host_image_release(server->compose, &blurred);
@@ -4742,6 +4752,8 @@ glass_take_color(
 		row = (uint32_t *)((unsigned char *)glass->atlas.map + (size_t)(cell->glyph.y + (uint32_t)line) * glass->atlas.row_pitch);
 		memcpy(row + cell->glyph.x, job->image.pixels + (size_t)line * (size_t)job->image.width, (size_t)job->image.width * sizeof(uint32_t));
 	}
+
+	/* Tells the atlas it was written, and marks the glyph ready. */
 	kwl_host_image_written(&glass->atlas);
 	cell->glyph.pending = 0U;
 }

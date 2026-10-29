@@ -452,6 +452,8 @@ worker_read(
 		job->error = ENOENT;
 		return;
 	}
+
+	/* Opens the file. */
 	descriptor = open(job->path, O_RDONLY | O_CLOEXEC | O_NONBLOCK);
 	if (descriptor < 0) {
 		job->error = errno;
@@ -465,12 +467,16 @@ worker_read(
 		close(descriptor);
 		return;
 	}
+
+	/* Refuses what is not a regular file with bytes in it. */
 	regular = S_ISREG(status.st_mode);
 	if (!regular || status.st_size <= 0) {
 		job->error = EINVAL;
 		close(descriptor);
 		return;
 	}
+
+	/* Reads the file's size, up to the most a font file may have. */
 	capacity = KWL_GLYPH_FILE_MAX;
 	if ((uint64_t)status.st_size < KWL_GLYPH_FILE_MAX)
 		capacity = (size_t)status.st_size;

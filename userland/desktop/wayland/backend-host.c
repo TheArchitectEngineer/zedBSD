@@ -407,8 +407,12 @@ kwl_lid_follow(
 				kwl_display_settle(server);
 				error = kwl_output_use_external(server, lid_external_moved, NULL);
 			}
+
+			/* Leaves the rest to the move when it began. */
 			if (error == 0)
 				return;
+
+			/* A move that could not begin ends at once with its error. */
 			lid_external_moved(server, error, NULL);
 			return;
 		}
@@ -422,8 +426,12 @@ kwl_lid_follow(
 			kwl_display_settle(server);
 			error = kwl_output_use_internal(server, lid_internal_moved, NULL);
 		}
+
+		/* Leaves the rest to the move when it began. */
 		if (error == 0)
 			return;
+
+		/* A move that could not begin ends at once with its error. */
 		lid_internal_moved(server, error, NULL);
 		return;
 	}
@@ -614,6 +622,8 @@ kwl_power_read_later(
 		kwl_power_read(server);
 		return;
 	}
+
+	/* Hands the job the backend the power is read from. */
 	job->backend = server->backend;
 
 	/* The thread reads; without it, it is read here. */

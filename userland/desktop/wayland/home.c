@@ -1698,6 +1698,8 @@ home_read_apps(
 			home_apps_reading = 1U;
 			return;
 		}
+
+		/* Frees a job the thread did not take. */
 		free(job);
 	}
 
