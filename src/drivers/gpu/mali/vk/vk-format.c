@@ -49,27 +49,34 @@
  * Values referenced:
  * Mesa 26.2.6 src/panfrost/genxml/v10.xml (enum "Format": R8 UNORM 163,
  * RG8 UNORM 171, RGBA8 UNORM 187, RGBA16F 223, R32UI 133, R32F 167,
- * RG32F 175, RGB32F 183, RGBA32F 191, RGBA8UI 155, R16F 199, RG16F 207;
+ * RG32F 175, RGB32F 183, RGBA32F 191, RGBA8UI 155, R16F 199, RG16F 207,
+ * R32I 197, Z16 UNORM 75, Z32 76;
  * enum "Color Buffer Internal Format": R8G8B8A8 1; enum "Color Format":
  * R8 16, R8G8 17, R8G8B8A8 19); src/panfrost/lib/pan_format.c (the
- * Valhall format and blendable tables: the order of each format).
+ * Valhall format and blendable tables: the order of each format; the
+ * depth formats sampled as Z16 UNORM and Z32 in RGBA order on v9 and
+ * later); the Vulkan specification (the formats a storage image must
+ * take, and R32_UINT and R32_SINT the atomic ones).
  */
 static const struct mali_vk_format formats[] = {
-	{ VK_FORMAT_R8_UNORM, 1, PIXEL(163, ORDER_RGB1, 0), 1, 16, SWIZZLE_IDENTITY, true, true, true },
-	{ VK_FORMAT_R8G8_UNORM, 2, PIXEL(171, ORDER_RGB1, 0), 1, 17, SWIZZLE_IDENTITY, true, true, true },
-	{ VK_FORMAT_R8G8B8A8_UNORM, 4, PIXEL(187, ORDER_RGBA, 0), 1, 19, SWIZZLE_IDENTITY, true, true, true },
-	{ VK_FORMAT_R8G8B8A8_SRGB, 4, PIXEL(187, ORDER_RGBA, 1), 1, 19, SWIZZLE_IDENTITY, true, true, false },
-	{ VK_FORMAT_B8G8R8A8_UNORM, 4, PIXEL(187, ORDER_BGRA, 0), 1, 19, SWIZZLE_SWAP_RB, true, true, true },
-	{ VK_FORMAT_B8G8R8A8_SRGB, 4, PIXEL(187, ORDER_BGRA, 1), 1, 19, SWIZZLE_SWAP_RB, true, true, false },
-	{ VK_FORMAT_R8G8B8A8_UINT, 4, PIXEL(155, ORDER_RGBA, 0), 0, 0, 0, false, true, true },
-	{ VK_FORMAT_R16_SFLOAT, 2, PIXEL(199, ORDER_RGB1, 0), 0, 0, 0, false, true, true },
-	{ VK_FORMAT_R16G16_SFLOAT, 4, PIXEL(207, ORDER_RGB1, 0), 0, 0, 0, false, true, true },
-	{ VK_FORMAT_R16G16B16A16_SFLOAT, 8, PIXEL(223, ORDER_RGBA, 0), 0, 0, 0, false, true, true },
-	{ VK_FORMAT_R32_UINT, 4, PIXEL(133, ORDER_RGB1, 0), 0, 0, 0, false, true, true },
-	{ VK_FORMAT_R32_SFLOAT, 4, PIXEL(167, ORDER_RGB1, 0), 0, 0, 0, false, true, true },
-	{ VK_FORMAT_R32G32_SFLOAT, 8, PIXEL(175, ORDER_RGB1, 0), 0, 0, 0, false, true, true },
-	{ VK_FORMAT_R32G32B32_SFLOAT, 12, PIXEL(183, ORDER_RGB1, 0), 0, 0, 0, false, false, true },
-	{ VK_FORMAT_R32G32B32A32_SFLOAT, 16, PIXEL(191, ORDER_RGBA, 0), 0, 0, 0, false, true, true },
+	{ VK_FORMAT_R8_UNORM, 1, PIXEL(163, ORDER_RGB1, 0), 1, 16, SWIZZLE_IDENTITY, true, true, true, false, false, false },
+	{ VK_FORMAT_R8G8_UNORM, 2, PIXEL(171, ORDER_RGB1, 0), 1, 17, SWIZZLE_IDENTITY, true, true, true, false, false, false },
+	{ VK_FORMAT_R8G8B8A8_UNORM, 4, PIXEL(187, ORDER_RGBA, 0), 1, 19, SWIZZLE_IDENTITY, true, true, true, true, false, false },
+	{ VK_FORMAT_R8G8B8A8_SRGB, 4, PIXEL(187, ORDER_RGBA, 1), 1, 19, SWIZZLE_IDENTITY, true, true, false, false, false, false },
+	{ VK_FORMAT_B8G8R8A8_UNORM, 4, PIXEL(187, ORDER_BGRA, 0), 1, 19, SWIZZLE_SWAP_RB, true, true, true, false, false, false },
+	{ VK_FORMAT_B8G8R8A8_SRGB, 4, PIXEL(187, ORDER_BGRA, 1), 1, 19, SWIZZLE_SWAP_RB, true, true, false, false, false, false },
+	{ VK_FORMAT_R8G8B8A8_UINT, 4, PIXEL(155, ORDER_RGBA, 0), 0, 0, 0, false, true, true, true, false, false },
+	{ VK_FORMAT_R16_SFLOAT, 2, PIXEL(199, ORDER_RGB1, 0), 0, 0, 0, false, true, true, false, false, false },
+	{ VK_FORMAT_R16G16_SFLOAT, 4, PIXEL(207, ORDER_RGB1, 0), 0, 0, 0, false, true, true, false, false, false },
+	{ VK_FORMAT_R16G16B16A16_SFLOAT, 8, PIXEL(223, ORDER_RGBA, 0), 0, 0, 0, false, true, true, true, false, false },
+	{ VK_FORMAT_R32_UINT, 4, PIXEL(133, ORDER_RGB1, 0), 0, 0, 0, false, true, true, true, true, false },
+	{ VK_FORMAT_R32_SINT, 4, PIXEL(197, ORDER_RGB1, 0), 0, 0, 0, false, true, false, true, true, false },
+	{ VK_FORMAT_R32_SFLOAT, 4, PIXEL(167, ORDER_RGB1, 0), 0, 0, 0, false, true, true, true, false, false },
+	{ VK_FORMAT_R32G32_SFLOAT, 8, PIXEL(175, ORDER_RGB1, 0), 0, 0, 0, false, true, true, true, false, false },
+	{ VK_FORMAT_R32G32B32_SFLOAT, 12, PIXEL(183, ORDER_RGB1, 0), 0, 0, 0, false, false, true, false, false, false },
+	{ VK_FORMAT_R32G32B32A32_SFLOAT, 16, PIXEL(191, ORDER_RGBA, 0), 0, 0, 0, false, true, true, true, false, false },
+	{ VK_FORMAT_D16_UNORM, 2, PIXEL(75, ORDER_RGBA, 0), 0, 0, 0, false, true, false, false, false, true },
+	{ VK_FORMAT_D32_SFLOAT, 4, PIXEL(76, ORDER_RGBA, 0), 0, 0, 0, false, true, false, false, false, true },
 };
 
 /* Finds a format the executor takes, or NULL. */
@@ -115,8 +122,14 @@ mali_vk_format_features(
 
 	/* Every image format is copied; the others as the table says. */
 	features = VK_FORMAT_FEATURE_TRANSFER_SRC_BIT | VK_FORMAT_FEATURE_TRANSFER_DST_BIT;
-	if (format->sample)
+	if (format->sample && format->depth)
+		features |= VK_FORMAT_FEATURE_SAMPLED_IMAGE_BIT;
+	if (format->sample && !format->depth)
 		features |= VK_FORMAT_FEATURE_SAMPLED_IMAGE_BIT | VK_FORMAT_FEATURE_SAMPLED_IMAGE_FILTER_LINEAR_BIT | VK_FORMAT_FEATURE_BLIT_SRC_BIT;
+	if (format->storage)
+		features |= VK_FORMAT_FEATURE_STORAGE_IMAGE_BIT;
+	if (format->atomic)
+		features |= VK_FORMAT_FEATURE_STORAGE_IMAGE_ATOMIC_BIT;
 	if (format->render)
 		features |= VK_FORMAT_FEATURE_COLOR_ATTACHMENT_BIT | VK_FORMAT_FEATURE_COLOR_ATTACHMENT_BLEND_BIT | VK_FORMAT_FEATURE_BLIT_DST_BIT;
 

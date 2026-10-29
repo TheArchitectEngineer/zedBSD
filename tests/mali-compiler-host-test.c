@@ -463,6 +463,8 @@ test_module(
 	fprintf(listing, "registers %u preload %04x fau %u textures %u buffers %u varyings %08x (%u bytes) colors %02x\n",
 		program->work_registers, program->preload, program->fau_words, program->texture_count, program->buffer_count,
 		program->varying_mask, program->varying_bytes, program->color_mask);
+	if (program->tls_bytes != 0U || program->image_count != 0U)
+		fprintf(listing, "thread local storage %u bytes, storage images %u\n", program->tls_bytes, program->image_count);
 	if (listing != stdout)
 		fclose(listing);
 	if (failed != 0) {

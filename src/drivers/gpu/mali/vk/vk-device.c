@@ -50,6 +50,7 @@ static int enumerate(struct mali_vk_session *session, struct i915_wire_reader *r
 static void fill_properties(VkPhysicalDeviceProperties *record);
 static int properties(struct mali_vk_session *session, struct i915_wire_reader *reader, struct i915_wire_writer *reply);
 static int identity(struct mali_vk_session *session, struct i915_wire_reader *reader, struct i915_wire_writer *reply);
+static void supported_features(VkPhysicalDeviceFeatures *record);
 static int features(struct i915_wire_reader *reader, struct i915_wire_writer *reply);
 static int memory_properties(struct i915_wire_reader *reader, struct i915_wire_writer *reply);
 static int families(struct i915_wire_reader *reader, struct i915_wire_writer *reply);
@@ -230,8 +231,8 @@ fill_properties(
 	limit->maxImageDimension1D = MALI_VK_IMAGE_EDGE;
 	limit->maxImageDimension2D = MALI_VK_IMAGE_EDGE;
 	limit->maxImageDimension3D = 1;
-	limit->maxImageDimensionCube = 1;
-	limit->maxImageArrayLayers = 1;
+	limit->maxImageDimensionCube = MALI_VK_IMAGE_EDGE;
+	limit->maxImageArrayLayers = MALI_VK_IMAGE_LAYERS;
 	limit->maxTexelBufferElements = 65536;
 	limit->maxUniformBufferRange = 65536;
 	limit->maxStorageBufferRange = 1U << 27;
@@ -245,16 +246,16 @@ fill_properties(
 	limit->maxPerStageDescriptorUniformBuffers = MALI_SHADER_BUFFERS;
 	limit->maxPerStageDescriptorStorageBuffers = MALI_SHADER_BUFFERS;
 	limit->maxPerStageDescriptorSampledImages = MALI_SHADER_TEXTURES;
-	limit->maxPerStageDescriptorStorageImages = 0;
+	limit->maxPerStageDescriptorStorageImages = MALI_SHADER_IMAGES;
 	limit->maxPerStageDescriptorInputAttachments = 0;
-	limit->maxPerStageResources = 2U * MALI_SHADER_BUFFERS + MALI_SHADER_TEXTURES;
+	limit->maxPerStageResources = 2U * MALI_SHADER_BUFFERS + MALI_SHADER_TEXTURES + MALI_SHADER_IMAGES;
 	limit->maxDescriptorSetSamplers = MALI_SHADER_TEXTURES;
 	limit->maxDescriptorSetUniformBuffers = MALI_SHADER_BUFFERS;
 	limit->maxDescriptorSetUniformBuffersDynamic = 0;
 	limit->maxDescriptorSetStorageBuffers = MALI_SHADER_BUFFERS;
 	limit->maxDescriptorSetStorageBuffersDynamic = 0;
 	limit->maxDescriptorSetSampledImages = MALI_SHADER_TEXTURES;
-	limit->maxDescriptorSetStorageImages = 0;
+	limit->maxDescriptorSetStorageImages = MALI_SHADER_IMAGES;
 	limit->maxDescriptorSetInputAttachments = 0;
 
 	/* The vertex, fragment and compute limits. */
@@ -414,7 +415,20 @@ identity(
 	return 0;
 }
 
-/* vkGetPhysicalDeviceFeatures: [device][present] -> [present][features]: none of the optional ones. */
+/*
+ * Lists the optional features the executor has: cube array images
+ * (the compiler samples them and the views take them).
+ */
+static void
+supported_features(
+	VkPhysicalDeviceFeatures *record)
+{
+	/* Every other optional feature off. */
+	kern_memset(record, 0, sizeof(*record));
+	record->imageCubeArray = VK_TRUE;
+}
+
+/* vkGetPhysicalDeviceFeatures: [device][present] -> [present][features]: the optional ones supported_features() lists. */
 static int
 features(
 	struct i915_wire_reader *reader,
@@ -428,8 +442,8 @@ features(
 	if (reader->error != 0)
 		return EINVAL;
 
-	/* Every optional feature off. */
-	kern_memset(&record, 0, sizeof(record));
+	/* The optional features the executor has. */
+	supported_features(&record);
 
 	/* Succeeded: the reply. */
 	drv_i915_wire_reply_u64(reply, 1);
@@ -542,7 +556,10 @@ format(
 	return 0;
 }
 
-/* vkGetPhysicalDeviceImageFormatProperties: 2D images of one level, layer and sample of a taken format. */
+/*
+ * vkGetPhysicalDeviceImageFormatProperties: 2D images of one level and
+ * sample of a taken format, of layers (cube compatible ones too).
+ */
 static int
 image_format(
 	struct i915_wire_reader *reader,
@@ -575,10 +592,14 @@ image_format(
 		supported |= VK_IMAGE_USAGE_SAMPLED_BIT;
 	if (entry != NULL && entry->render)
 		supported |= VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT;
+	if (entry != NULL && entry->storage)
+		supported |= VK_IMAGE_USAGE_STORAGE_BIT;
 
-	/* Refuses another type, a flag, an unknown format or a usage it does not allow. */
+	/* Refuses another type, another flag, an unknown format or a usage it does not allow. */
 	result = (uint32_t)VK_SUCCESS;
-	if (entry == NULL || type != VK_IMAGE_TYPE_2D || flags != 0U || usage == 0U || (usage & ~supported) != 0U)
+	if (entry == NULL || type != VK_IMAGE_TYPE_2D || usage == 0U || (usage & ~supported) != 0U)
+		result = (uint32_t)VK_ERROR_FORMAT_NOT_SUPPORTED;
+	if ((flags & ~(uint32_t)(VK_IMAGE_CREATE_CUBE_COMPATIBLE_BIT | VK_IMAGE_CREATE_MUTABLE_FORMAT_BIT)) != 0U)
 		result = (uint32_t)VK_ERROR_FORMAT_NOT_SUPPORTED;
 
 	/* The limits. */
@@ -588,7 +609,7 @@ image_format(
 		record.maxExtent.height = MALI_VK_IMAGE_EDGE;
 		record.maxExtent.depth = 1;
 		record.maxMipLevels = 1;
-		record.maxArrayLayers = 1;
+		record.maxArrayLayers = MALI_VK_IMAGE_LAYERS;
 		record.sampleCounts = VK_SAMPLE_COUNT_1_BIT;
 		record.maxResourceSize = MALI_RENDER_MAX_BYTES;
 	}
@@ -609,6 +630,8 @@ create_device(
 {
 	VkDeviceCreateInfo info;
 	VkPhysicalDeviceFeatures none;
+	const VkBool32 *asked;
+	const VkBool32 *offered;
 	uint64_t present;
 	uint64_t created;
 	uint32_t index;
@@ -633,10 +656,16 @@ create_device(
 		}
 	}
 
-	/* No optional feature. */
+	/* Only optional features the executor has (every member of the record is a VkBool32). */
 	if (info.pEnabledFeatures != NULL) {
-		kern_memset(&none, 0, sizeof(none));
-		different = kern_memcmp(&none, info.pEnabledFeatures, sizeof(none));
+		supported_features(&none);
+		asked = (const VkBool32 *)(const void *)info.pEnabledFeatures;
+		offered = (const VkBool32 *)(const void *)&none;
+		different = 0;
+		for (index = 0; index < sizeof(none) / sizeof(VkBool32); index++) {
+			if (asked[index] != VK_FALSE && offered[index] == VK_FALSE)
+				different = 1;
+		}
 		if (different != 0) {
 			drv_i915_wire_reply_u32(reply, (uint32_t)VK_ERROR_FEATURE_NOT_PRESENT);
 			return 0;
