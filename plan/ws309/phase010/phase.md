@@ -49,7 +49,7 @@
 - 出力の大きさの変化（`kwl_glass_resize`）: T9 があれば古い image のまま描き（引き伸ばし）、loader が空いていれば今の壁紙の path で A1 → T9（`KWL GLASS resize width= height= ms= images=`）、
   走っていればその結果が大きさの違いで描き直される。T9 が無い時は今の main の経路。
 - 変えた log: `KWL GLASS wallpaper path=... ms=N images=same|new` の ms は「依頼から表示まで」（thread の時間を含む。main の時間ではない）。wallpaper-time.sh・settings-p007.sh の正規表現は変えずに合う。
-- 確かめ: amd64 bin/wayland・Linux（keiland-linux.mk、-Werror）exit 0・warning 0。arm64・riscv64 は下の確かめに書く。QEMU Venus `grave-guest.sh`:
+- 確かめ: amd64 bin/wayland・Linux（keiland-linux.mk、-Werror）exit 0・warning 0。arm64（`config/ci/config-rpi5.mk` の build/rpi5/bin/wayland）・riscv64（`config/ci/config-visionfive2-keiland.mk` の build/visionfive2/bin/wayland）も exit 0・warning 0。QEMU Venus `grave-guest.sh`:
   `build/ws309/p010a`（hold の前）PASS（graves=4、壁紙 682 ms images=new、landscape 2302 ms images=new）、`p010b` は guest が SSH に答えず（wayland を入れる前、compositor と無関係と見て同じ条件で 1 回やり直し）、
   `p010c`（hold の後）: 壁紙 318 ms・landscape 1867 ms、どちらも images=same、他の判定は全て通り、graves=0 で当時の判定の「墓の破棄が 1 つ以上」だけ落ちた。
   墓の数は image を手放した時に frame が飛んでいたかで決まるので判定から外し、表示だけにした（b6b5b788c。墓の経路は p009c・p009d・p010a で graves 2〜4 を見た）。
