@@ -15,3 +15,4 @@ CONFIG_DRIVER_BCM2711_WIFI|bcm43455-firmware
 CONFIG_DRIVER_BCM2711_BT|brcmbt-firmware
 CONFIG_DRIVER_PCI_AMDRDNA|amd-navi-firmware
 CONFIG_DRIVER_POWERVR|powervr-firmware
+CONFIG_DRIVER_MALI_GPU|mali-csf-firmware
