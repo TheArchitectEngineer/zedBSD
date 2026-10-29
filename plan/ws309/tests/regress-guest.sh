@@ -7,7 +7,7 @@
 # did not get an answer from the guest (SSH) is run once more after RETRY_WAIT seconds (the host's load, 2026-10-30
 # user via Q1).  OUT/summary.txt has one line per test (PASS, FAIL, or NOANSWER) and the last line is
 # "regress-guest: PASS" when every test passed.
-#   usage: plan/ws309/tests/regress-guest.sh OUT BUILD [TEST...]
+#   usage: [WAYLAND=PATH] plan/ws309/tests/regress-guest.sh OUT BUILD [TEST...]   (WAYLAND: another compositor put in)
 # Copyright (C) 2026 Awe Morris; SPDX-License-Identifier: Zlib
 set -u
 out=${1:?usage: regress-guest.sh OUT BUILD [TEST...]}
@@ -16,7 +16,7 @@ shift 2
 tests=${*:-"grave resize hand scanout rotate task io-device io-device2 io-file io-read daemon font spawn-closefrom spawn forge fence"}
 retry_wait=${RETRY_WAIT:-600}
 image=$build/hdd-image.img
-wl=$build/bin/wayland
+wl=${WAYLAND:-$build/bin/wayland}
 lib=$build/dynamic/libkeiland.so
 libc=$build/dynamic/libc.so
 mkdir -p "$out"
