@@ -184,5 +184,6 @@
 ### p011 の見立て（host で次に進める）
 
 - vkQueueSubmit は GPU を待つ（vk-execute.c の execute_flush → nvrtx_vk_gpu_run が fence を待つ）。amdrdna は待たない形（slot と parked の marker、
-  completer の thread）。GPU が 1 frame に約 19.6 ms なので、待たない形で CPU の約 4 ms を重ねれば 50 fps 前後に届く見込み。足りなければ
+  completer の thread）。GPU が 1 frame に約 19.6 ms なので、待たない形で CPU の約 4 ms を重ねれば 50 fps 前後に届く見込み（この件は WS291 の表の
+  とおり WS250 p005 との分担を Q1 が決めてから）。足りなければ
   vertex の program（SM75 の compiler）の質を見る。

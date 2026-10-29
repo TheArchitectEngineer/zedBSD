@@ -215,4 +215,4 @@ GPU ごとに同じ手順（desktop の 60 fps、重い 3D の model の 50 fps�
 
 - 承認は q1670 と同じ。再開点（10:46 P2）: depth は実機で動く（mview copies 1 が Linux の参照と 2 画素差、[p010a](phase010a/phase.md) の q1670-i04 の節）。
   前回の「全体が消える」は、mailbox の mview の後の mview の window が出ない別の件だった。scene-5000 は 42.2 fps（GPU は 1 frame に約 19.6 ms）。
-  次は p011: vkQueueSubmit を GPU を待たない形にする（amdrdna の手本）。
+  次は p011。見立ては vkQueueSubmit を GPU を待たない形にする（amdrdna の手本）だが、GPU の待ちの件は表のとおり WS250 p005 との分担を Q1 が決めてから。
