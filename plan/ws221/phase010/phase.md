@@ -63,5 +63,6 @@ Queue: q1679 / q1679-i01（P3）
 
 - 最終の tree（直の経路を戻した後）で確かめた事: tcp-model PASS、amd64・pcat・rpi5・zybo・rpi4 と plan/tools/rtl8127/config-amd64-rtl8127.mk の vmunix の build warning 0、style-check の件数は変えた file で増えない（tcp.c 117 → 115）、RDNA 機の最終の測り（上の表）。RTL8127 の checksum の offload が実地で通る事（send・recv・ssh が production の kernel で動いた、errors 0）。
 - c47894277 で確かめた事: tcp-model PASS（`plan/ws220/tests/tcp-model/run.sh`、shim に uaccess の stub）、checksum の host 試験 PASS（`run-copy-sum-host-test.sh`、64・32 bit）、QEMU `qemu-tcp.sh "" 15 inet,inet6` PASS（read(2) の直の経路を tcp-perf と sshd が通る。QEMU の NIC は offload の能力が無いので software の経路）、amd64・pcat・rpi5・zybo・rpi4 と plan/tools/rtl8127/config-amd64-rtl8127.mk の vmunix の build warning 0、style-check の件数は変えた file で増えない。
-- 未実施: QEMU の qemu-tcp を最終の tree で（c47894277 では PASS、戻したのは read の経路だけで基点の形）、VF2・5330 の非退行（checksum の offload は RTL8127 だけが能力を立てるので他の NIC は software の経路のまま）、規約の全文の見直し（p007 の後の hunk）、checksum の offload の効きの切り分け（send は PCIe の上限の近くで差が見えない）。
+- 最終の tree の QEMU `qemu-tcp.sh "" 15 inet,inet6` PASS（9b31ef897）。
+- 未実施: VF2・5330 の非退行（checksum の offload は RTL8127 だけが能力を立てるので他の NIC は software の経路のまま）、規約の全文の見直し（p007 の後の hunk）、checksum の offload の効きの切り分け（send は PCIe の上限の近くで差が見えない）。
 - SACK が無いことが大きい窓・10GbE の損失の回復を律する（F-WS311-sack に関係、Q1 が記録）。
