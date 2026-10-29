@@ -2036,6 +2036,7 @@ tcp6_route_cached(
 	struct ipv6_way *way)
 {
 	struct net_device *output;
+	unsigned long generation;
 	unsigned long irq;
 	unsigned ifindex;
 	int valid;
@@ -2043,8 +2044,10 @@ tcp6_route_cached(
 	/* What was kept, while the table and the addresses are as they were. */
 	irq = spin_lock_irqsave(&endpoint->tcp.inet.socket.lock);
 
-	valid = endpoint->tcp.route_cached != 0 &&
-	    endpoint->tcp.route_generation_seen == route_generation();
+	generation = route_generation();
+	valid = 0;
+	if (endpoint->tcp.route_cached != 0 && endpoint->tcp.route_generation_seen == generation)
+		valid = 1;
 	*source = endpoint->tcp.inet.local6;
 	way->next_hop = endpoint->tcp.route_next_hop6;
 	way->hop_limit = endpoint->tcp.route_hop_limit;
