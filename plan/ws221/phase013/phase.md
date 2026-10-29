@@ -1,7 +1,7 @@
 <!-- awesome-plan project=zedbsd record=ws221-p013 -->
 # ws221-p013: USB CDC NCM の送受信の速さ（5330 の RTL8156）
 
-Status: in-progress（2026-10-30 P3: 実装、codec の host 試験 PASS、5330 は未測）
+Status: in-progress（2026-10-30 P3: 5330 で send 272 → 1513、recv 1225 → 1411 Mbit/s（Linux r8152 2353）。残りは xHCI の endpoint ごとの要求 1 つ（HCD の変更は Q1 の判断）と規約の全文の見直し）
 Parent: [WS221](../ws.md)
 Queue: q1689 / q1689-i01（P3）
 依存: p003（CDC NCM の jumbo）、p012（ACK の間隔: 5330 の受けが 555〜696 → 1225 Mbit/s）
@@ -38,3 +38,14 @@ Queue: q1689 / q1689-i01（P3）
 | Linux の r8152（vendor の mode、WS221 p003 の記録） | 2353（向きの記録なし） | — | — |
 
 - send は 5 倍。TX の dropped は queue 64 の満杯（TCP が保って送り直す）。RX errors 9 は前の run にもある（4・8）。
+
+| 試し（kernel だけを入れ替え、`MODE=--nvme-kernel`、30 s） | send | recv | 所見 |
+| --- | --- | --- | --- |
+| TX の block の上限 64 KB | 1514.1 | 1412.9 | device の dwNtbOutMaxSize は 17404（attach の ntb_out） |
+| TX 32 KB（device の 17404）、queue 64（採った形、bff52ee82） | 1512.8 | 1411.4 | RX errors 11、TX dropped 667615 |
+| 同じで queue 128 | 1529.5 | 1362.5 | 差は揺れの中、64 のまま |
+| RX の block 64 KB・datagram 64 | 1526.9 | 1281.0 | device の dwNtbInMaxSize は 36860、recv は良くならない、32 KB・32 のまま |
+
+- TX の dropped は損失でなく背圧: queue が満杯の時 `ncm_transmit` が ENOBUFS を返し、TCP はその segment を unsent のまま保ち、転送の完了が回す network worker の pass で送る（`send_refused`、再送ではない）。net_device は満杯の拒否を `tx_dropped` だけに数える（8ea1d234c）。
+- 残りの天井（推定）: 方向ごとに転送 1 つ。送りは 17404 byte の block を 1 秒に約 1.1 万（1 回 約 92 µs、bus の上の時間は 約 40 µs）、受けは 32 KB を約 5400（約 185 µs、bus 約 75 µs）。完了から次の転送を出すまでの間（割り込み → poll → 組み立て・parse → submit）が残りの半分ほど。xHCI の driver は非 isochronous の endpoint ごとに要求 1 つ（`xhci_request_publish_locked`）なので、転送を重ねるには HCD の変更が要る（Q1 に数字と案を送った）。
+- build: amd64・pcat・rpi4・rpi5・zybo・5330 の config の vmunix の warning 0（bff52ee82 の tree、5330 の vmunix は試した物と同じ byte 列）。
