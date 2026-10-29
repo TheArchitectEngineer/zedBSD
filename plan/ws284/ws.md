@@ -27,6 +27,7 @@
 
 ## 現在の状態・再開点
 
+- **再開点（2026-10-29 23:23、P6 の引き継ぎ）: [handover.md](handover.md)**。全 Phase は実装済み・試験未実施で main（7be3822e6）にある。別の tree の session は handover.md の §0（host の試験・build・image・前提）と §2（再開の順）から試験を続ける。
 - 2026-10-23: 作成。p001 の設計から始める。
 - 2026-10-23 P1: p001 の設計の第 1 版（[design.md](design.md)）。Phase の案 p002〜p007（計 29〜41 LW）。再開: design-reviewer とユーザーの判断 D1〜D9（design §7）の後に p002。
 - 2026-10-23 P1: p001 の第 2 版（review F1〜F22 とユーザーの判断。重みは build の中で変換）。Phase に p008（V3D 7.1 の host の compile）を足し、計 35〜49 LW。再開: Q1 の判定とユーザーの D10（license の yes/no を出すか、推し: 出さない）・D11（COCO の試験の画像を tree に、推し: 入れる）の後に p002。
