@@ -494,7 +494,7 @@ static int tcp_nagle_holds_locked(const struct tcp_endpoint *endpoint);
 static int tcp_unsent_fits_cwnd_locked(const struct tcp_endpoint *endpoint);
 static size_t tcp_tail_room_locked(const struct tcp_endpoint *endpoint);
 static void tcp_cwnd_grow_locked(struct tcp_endpoint *endpoint, uint32_t acked);
-static void tcp_cwnd_loss_locked(struct tcp_endpoint *endpoint, int timeout);
+static void tcp_cwnd_loss_locked(struct tcp_endpoint *endpoint, int timeout, int repeated);
 static void tcp_cwnd_round_reset_locked(struct tcp_endpoint *endpoint);
 static void tcp_cwnd_note_sent_locked(struct tcp_endpoint *endpoint);
 static int tcp_cwnd_limited_locked(const struct tcp_endpoint *endpoint, uint32_t mss);
@@ -905,6 +905,7 @@ tcp_timer_run(
 	int persist;
 	int reset_peer;
 	int before;
+	int repeated;
 	uint32_t sent_end;
 	uint32_t reset_sequence;
 
@@ -1158,7 +1159,11 @@ tcp_timer_run(
 		 * acknowledgements as before.
 		 */
 		if (!immediate && !persist) {
-			tcp_cwnd_loss_locked(endpoint, 1);
+			/* Repeated within the recovery an earlier timeout started, or the first. */
+			repeated = 0;
+			if (endpoint->tcp.recovery_by_timeout != 0)
+				repeated = 1;
+			tcp_cwnd_loss_locked(endpoint, 1, repeated);
 			endpoint->tcp.recover = endpoint->tcp.send_max;
 			sent_end = tcp_sent_end_locked(endpoint);
 			before = tcp_sequence_before(endpoint->tcp.recover, sent_end);
@@ -3935,12 +3940,16 @@ tcp_cwnd_grow_locked(
  * Takes a loss into the congestion window (RFC 5681 sections 3.1 and
  * 3.2): the threshold becomes half of what was in flight, at least two
  * segments; the window becomes the threshold after a fast retransmit, one
- * segment after a timeout.  The caller holds the socket lock.
+ * segment after a timeout.  A timeout repeated within the recovery an
+ * earlier timeout started (what it resends the timer has resent already)
+ * holds the threshold and only takes the window to one segment.  The
+ * caller holds the socket lock.
  */
 static void
 tcp_cwnd_loss_locked(
 	struct tcp_endpoint *endpoint,
-	int timeout)
+	int timeout,
+	int repeated)
 {
 	uint32_t flight;
 	uint32_t mss;
@@ -3950,6 +3959,16 @@ tcp_cwnd_loss_locked(
 	if (endpoint->tcp.cwnd == 0)
 		return;
 	mss = tcp_segment_size_locked(endpoint);
+
+	/*
+	 * A repeated timeout: the threshold is held constant (RFC 5681
+	 * section 3.1, the segment having been resent by way of the timer).
+	 */
+	if (timeout && repeated) {
+		endpoint->tcp.cwnd = mss;
+		endpoint->tcp.cwnd_acked = 0;
+		return;
+	}
 
 	/* Half of what was sent and not acknowledged, at least two segments. */
 	flight = tcp_sent_end_locked(endpoint) - endpoint->tcp.send_unacknowledged;
@@ -7714,7 +7733,7 @@ tcp_segment_input(
 
 		/* The fast retransmit: the window halved, a recovery up to what was sent, and the oldest resent at once. */
 		if (fast) {
-			tcp_cwnd_loss_locked(endpoint, 0);
+			tcp_cwnd_loss_locked(endpoint, 0, 0);
 			endpoint->tcp.recover = tcp_sent_end_locked(endpoint);
 			endpoint->tcp.recovery = 1;
 			endpoint->tcp.recovery_by_timeout = 0;

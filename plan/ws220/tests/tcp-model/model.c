@@ -37,6 +37,7 @@
  *             [--bottleneck-mbps R --bottleneck-queue BYTES] [--run-s S]
  *             [--receive-buffer N] [--second-flow-at-ms T] [--fair-skip-s S]
  *             [--expect-slow-start] [--expect-ca-growth N] [--expect-cwnd-limited SHARE]
+ *             [--expect-ssthresh-held]
  *             [--quiet]
  *
  * --loss-ab is the share (percent) of the frames from A to B (the data) the
@@ -127,10 +128,13 @@
  * share of the time the congestion window was what limited A (what A had
  * sent within a segment of it, below the peer's window); --expect-cwnd-
  * limited SHARE checks that share.  --expect-slow-start checks that while
- * A's slow start is limited by its window it doubles at least every two
- * round trips; --expect-ca-growth N that in each span of congestion
+ * A's slow start is limited by its window it doubles at least every three
+ * round trips (A's estimate lags a queue that fills); --expect-ca-growth N that in each span of congestion
  * avoidance of eight round trips or more (the window limiting A for 80 %
- * of it) A's window grows by at least N segments a round trip.
+ * of it) A's window grows by at least N segments a round trip;
+ * --expect-ssthresh-held that a timeout repeated before a round-trip
+ * sample leaves the slow start threshold as the timeout before it left
+ * it (RFC 5681 section 3.1), the "timeouts:" line counting them.
  */
 
 #include "kern/net/tcp-socket.h"
@@ -294,6 +298,7 @@ struct model_settings {
 	uint64_t fair_skip_ns;
 	/* The congestion window's checks: slow start, congestion avoidance's growth, and its share as the limit. */
 	int expect_slow_start;
+	int expect_ssthresh_held;
 	double expect_ca_growth;
 	double expect_cwnd_limited;
 	int quiet;
@@ -426,6 +431,11 @@ static unsigned resends_in_row_last;
 static uint64_t data_frames_ab;
 static uint64_t timeouts;
 static unsigned backoff_last;
+
+/* Timeouts repeated before a sample, the threshold the last timeout left, and the repeats that moved it. */
+static uint64_t repeated_timeouts;
+static uint32_t ssthresh_after_timeout;
+static uint64_t ssthresh_moved;
 
 /*
  * When A's connection closed (0: not), whether A's writer has shut its
@@ -1169,6 +1179,10 @@ parse_settings(
 		}
 		if (strcmp(argv[index], "--expect-retransmits-losses") == 0) {
 			settings.expect_retransmits_losses = 1;
+			continue;
+		}
+		if (strcmp(argv[index], "--expect-ssthresh-held") == 0) {
+			settings.expect_ssthresh_held = 1;
 			continue;
 		}
 		if (strcmp(argv[index], "--expect-slow-start") == 0) {
@@ -2181,9 +2195,20 @@ step(
 	if (a->rtt_samples != 0 && a->srtt_us > srtt_max_us)
 		srtt_max_us = a->srtt_us;
 
-	/* A timeout that really expired doubles the backoff. */
-	if (a->rto_backoff > backoff_last)
+	/*
+	 * A timeout that really expired doubles the backoff; one while the
+	 * backoff of an earlier one holds (no sample between) repeats it, and
+	 * the threshold should stay as that one left it.
+	 */
+	if (a->rto_backoff > backoff_last) {
 		timeouts += a->rto_backoff - backoff_last;
+		if (backoff_last != 0) {
+			repeated_timeouts++;
+			if (a->ssthresh != ssthresh_after_timeout)
+				ssthresh_moved++;
+		}
+		ssthresh_after_timeout = a->ssthresh;
+	}
 	backoff_last = a->rto_backoff;
 
 	/* The resends of one segment in a row, the times a resend was lost again, and the backoff. */
@@ -2315,8 +2340,8 @@ check_tcpstats(
 			return 1;
 		}
 
-		/* A's entry gives A's estimate and a timeout. */
-		if (entry->local_port != MODEL_PORT && entry->state == TCP_ESTABLISHED &&
+		/* A's entry (of its first connection) gives A's estimate and a timeout. */
+		if (entry->local_port == sender_tcp->inet.local_port && entry->state == TCP_ESTABLISHED &&
 		    (entry->srtt_us != sender_tcp->srtt_us || entry->rto_ms == 0)) {
 			printf("tcpstats: FAIL: A's srtt_us %u (socket %u), rto_ms %u\n", entry->srtt_us, sender_tcp->srtt_us,
 			    entry->rto_ms);
@@ -2571,9 +2596,22 @@ check_cc(
 		failed = 1;
 	}
 
-	/* A slow start that doubled, never taking more than two round trips for it. */
-	if (settings.expect_slow_start && (cc.doublings == 0 || cc.double_rtts_max > 2.0)) {
-		printf("check: FAIL: the slow start doubled %u times, the slowest in %.2f round trips (more than 2)\n",
+	/* A timeout repeated before a sample holds the threshold (RFC 5681 section 3.1). */
+	printf("timeouts: repeated=%llu ssthresh_moved=%llu\n", (unsigned long long)repeated_timeouts,
+	    (unsigned long long)ssthresh_moved);
+	if (settings.expect_ssthresh_held && (repeated_timeouts == 0 || ssthresh_moved != 0)) {
+		printf("check: FAIL: %llu repeated timeouts, %llu of them moved the threshold\n",
+		    (unsigned long long)repeated_timeouts, (unsigned long long)ssthresh_moved);
+		failed = 1;
+	}
+
+	/*
+	 * A slow start that doubled, never taking more than three round trips
+	 * for it (one, and the round trip a filling queue adds before A's
+	 * estimate follows; a window that stops growing takes many).
+	 */
+	if (settings.expect_slow_start && (cc.doublings == 0 || cc.double_rtts_max > 3.0)) {
+		printf("check: FAIL: the slow start doubled %u times, the slowest in %.2f round trips (more than 3)\n",
 		    cc.doublings, cc.double_rtts_max);
 		failed = 1;
 	}
