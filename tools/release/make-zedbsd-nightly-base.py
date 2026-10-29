@@ -1,10 +1,12 @@
 #!/usr/bin/env python3
-# Build the image-less Kei-nightly base archive from the original WINQ-EMU
-# package (ws088-p001).
+# Build the image-less zedbsd-nightly base archive from the original WINQ-EMU
+# package.
 # Copyright (C) 2026 Awe Morris; SPDX-License-Identifier: Zlib
 #
-# The base archive is the original Kei-nightly.zip with the two unused QEMU
-# executables removed, the corrected README.txt, THIRD-PARTY.txt and the
+# The base archive is the original package (Kei-nightly.zip, the project's
+# earlier name) with its top directory renamed to zedbsd-nightly/, the two
+# unused QEMU executables removed, the NVMe disk's serial in boot.ps1 named
+# after the system, the corrected README.txt, THIRD-PARTY.txt and the
 # license texts under LICENSES/. Every input is pinned by SHA-256
 # (tools/release/zedbsd-nightly/inputs.txt), and the output is deterministic for
 # the same inputs: entries are sorted, original entries keep their original
@@ -22,9 +24,14 @@ import urllib.request
 import zipfile
 
 ORIGINAL_SHA256 = "2a66519e0f9153b50600cb5f9703d084e6536f4e51f0eb3c3638fa0e976a3ca0"
-ROOT = "Kei-nightly/"
-REMOVED = ("Kei-nightly/qemu-built.exe", "Kei-nightly/qemu-system-x86_64w.exe")
-FORBIDDEN = ("Kei-nightly/data/hdd-image.img",)
+# The original's top directory, fixed by its SHA-256, and the base's.
+ORIGINAL_ROOT = "Kei-nightly/"
+ROOT = "zedbsd-nightly/"
+REMOVED = (ORIGINAL_ROOT + "qemu-built.exe", ORIGINAL_ROOT + "qemu-system-x86_64w.exe")
+FORBIDDEN = (ORIGINAL_ROOT + "data/hdd-image.img",)
+# The NVMe disk's serial in the original boot.ps1, and the base's.
+ORIGINAL_SERIAL = b"nvme,serial=kei-boot,"
+SERIAL = b"nvme,serial=zedbsd-boot,"
 ADDED_TIME = (2026, 9, 29, 0, 0, 0)
 
 # Bundled DLL -> MSYS2 package that must contain a byte-identical copy.
@@ -134,7 +141,7 @@ def main():
     here = os.path.dirname(os.path.abspath(__file__))
     data = os.path.join(here, "zedbsd-nightly")
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--original", required=True, help="the original Kei-nightly.zip")
+    parser.add_argument("--original", required=True, help="the original WINQ-EMU package (Kei-nightly.zip)")
     parser.add_argument("--cache", required=True, help="directory for the pinned inputs")
     parser.add_argument("--output", required=True, help="base archive to write")
     parser.add_argument("--qemu-commit", help="commit of the QEMU fork the binaries were built from")
@@ -207,9 +214,9 @@ def main():
         with zipfile.ZipFile(args.original) as original:
             infos = {info.filename: info for info in original.infolist()}
             for name in infos:
-                if not name.startswith(ROOT) or ".." in name.split("/") or "\\" in name:
+                if not name.startswith(ORIGINAL_ROOT) or ".." in name.split("/") or "\\" in name:
                     fail("unexpected member %s" % name)
-            for name in REMOVED + (ROOT + "README.txt",):
+            for name in REMOVED + (ORIGINAL_ROOT + "README.txt", ORIGINAL_ROOT + "boot.ps1"):
                 if name not in infos:
                     fail("the original lacks %s" % name)
             for name in FORBIDDEN:
@@ -218,19 +225,25 @@ def main():
             for dll, package in MSYS2_DLLS.items():
                 source = "mingw-w64-ucrt-x86_64-%s-any.pkg.tar.zst" % package
                 with open(os.path.join(work, source, "ucrt64/bin", dll), "rb") as stream:
-                    if original.read(ROOT + dll) != stream.read():
+                    if original.read(ORIGINAL_ROOT + dll) != stream.read():
                         fail("%s differs from %s" % (dll, package))
 
             members = {}
             for name, info in infos.items():
                 if name in REMOVED:
                     continue
-                if name == ROOT + "README.txt":
-                    members[name] = (info.date_time, readme)
+                renamed = ROOT + name[len(ORIGINAL_ROOT):]
+                if name == ORIGINAL_ROOT + "README.txt":
+                    members[renamed] = (info.date_time, readme)
+                elif name == ORIGINAL_ROOT + "boot.ps1":
+                    script = original.read(name)
+                    if script.count(ORIGINAL_SERIAL) != 1:
+                        fail("boot.ps1 does not name the disk's serial once")
+                    members[renamed] = (info.date_time, script.replace(ORIGINAL_SERIAL, SERIAL))
                 elif info.is_dir():
-                    members[name] = (info.date_time, None)
+                    members[renamed] = (info.date_time, None)
                 else:
-                    members[name] = (info.date_time, original.read(name))
+                    members[renamed] = (info.date_time, original.read(name))
             for name, content in added.items():
                 if name in members:
                     fail("%s already exists in the original" % name)

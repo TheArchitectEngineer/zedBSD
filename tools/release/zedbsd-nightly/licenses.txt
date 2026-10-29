@@ -1,4 +1,4 @@
-# License texts copied into Kei-nightly/LICENSES/ (ws088-p001).
+# License texts copied into zedbsd-nightly/LICENSES/.
 # Format: <path under LICENSES/> <input file from inputs.txt> <member of that input>.
 # An input without a member ("-") is itself the license text.
 qemu/COPYING qemu-11.0.0.tar.xz qemu-11.0.0/COPYING

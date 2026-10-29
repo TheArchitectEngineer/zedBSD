@@ -1,5 +1,5 @@
-Kei
-===
+zedBSD
+======
 
 zedBSD: https://github.com/awemorris/zedBSD
 
@@ -9,7 +9,7 @@ Double click the `boot.bat`.
 
 ## How to run on Linux
 
-Run this in the `Kei-nightly` directory, with a QEMU and virglrenderer
+Run this in the `zedbsd-nightly` directory, with a QEMU and virglrenderer
 that support Venus (Vulkan) installed on the host:
 
 ```
@@ -22,7 +22,7 @@ qemu-system-x86_64 \
   -drive if=pflash,format=raw,file=data/ovmf-vars.fd \
   -device qemu-xhci,id=xhci \
   -drive if=none,id=boot,file=data/hdd-image.img,format=raw \
-  -device nvme,serial=kei-boot,drive=boot,bootindex=1 \
+  -device nvme,serial=zedbsd-boot,drive=boot,bootindex=1 \
   -device virtio-vga-gl,blob=on,hostmem=256M,venus=on \
   -display sdl,gl=on \
   -device usb-kbd,bus=xhci.0,port=3 \
