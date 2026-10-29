@@ -176,11 +176,16 @@ mali_sched_run(
 	bool waited;
 	bool failed;
 	bool preloaded;
+	uint32_t meta;
 	int error;
 
 	/* Whether the stream runs a pre-frame draw (said while it was built); the next stream starts without. */
 	preloaded = session->preload_used;
 	session->preload_used = false;
+
+	/* The executor's own programs the stream runs (said while it was built); the next stream starts without. */
+	meta = session->meta_used;
+	session->meta_used = 0;
 
 	/* Nothing to call. */
 	kern_memset(&fault, 0, sizeof(fault));
@@ -287,6 +292,22 @@ mali_sched_run(
 		spin_unlock_irqrestore(&render->guard, enabled);
 
 		kern_logf("mali: render: submission %u ran a pre-frame load; later loads draw on cleared tiles\n", render->submissions);
+	}
+
+	/*
+	 * A failed submission that ran the executor's own programs (a scaled
+	 * blit, a clear inside a pass) stops the node from using them: that
+	 * work is left out again, as without them, rather than risk the fault
+	 * again.
+	 */
+	if (failed && meta != 0U) {
+		enabled = spin_lock_irqsave(&render->guard);
+
+		render->meta_refused |= meta;
+
+		spin_unlock_irqrestore(&render->guard, enabled);
+
+		kern_logf("mali: render: submission %u ran the executor's own programs (%x); later blits and clears that need them are not run\n", render->submissions, (unsigned)meta);
 	}
 
 	/* A lost session's core is told; it stops the session. */

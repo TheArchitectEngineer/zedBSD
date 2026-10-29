@@ -55,6 +55,10 @@
 #define MALI_DESC_TLS_MIN_BYTES		16U
 #define MALI_DESC_TLS_MAX_BYTES		(16U << 20)
 
+/* The least bytes of a workgroup's instance of workgroup memory, and the most. */
+#define MALI_DESC_WLS_MIN_BYTES		128U
+#define MALI_DESC_WLS_MAX_BYTES		(1U << 20)
+
 /*
  * What a texture descriptor describes: its dimension, its pixel format,
  * its extent (a 3D image's depth, 1 otherwise), its levels, its array
@@ -112,6 +116,8 @@ uint32_t mali_desc_clump_format(uint32_t texel_bytes);
 void mali_desc_texture_view(uint32_t *words, const struct mali_desc_view *view);
 void mali_desc_thread_storage(uint32_t *words, uint32_t tls_bytes, uint64_t tls_base);
 uint32_t mali_desc_tls_size(uint32_t tls_bytes);
+uint32_t mali_desc_wls_bytes(uint32_t shared_bytes);
+void mali_desc_workgroup_storage(uint32_t *words, uint32_t instances, uint32_t instance_bytes, uint64_t wls_base);
 uint32_t mali_desc_sampler_compare(uint32_t compare_op);
 
 #endif

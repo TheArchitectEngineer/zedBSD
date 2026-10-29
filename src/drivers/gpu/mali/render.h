@@ -66,6 +66,14 @@ struct drv_gpu_scanout_backing;
 #define MALI_RENDER_SUBMIT_MS		5000U
 
 /*
+ * The executor's own programs (vk-meta.c): the blit that scales or
+ * converts, the vertex program of a clear inside a pass, and the
+ * fragment program of such a clear for each of the eight colour
+ * locations.
+ */
+#define MALI_RENDER_META_PROGRAMS	10U
+
+/*
  * One buffer object: a run of memory that one or more resources map.
  *
  * references counts its holders (each resource, each export); the run
@@ -171,6 +179,22 @@ struct mali_session {
 	bool preload_failed;
 	bool load_warned;
 	bool preload_used;
+
+	/*
+	 * The GPU addresses of the session's copies of the executor's own
+	 * programs (vk-meta.c), zero until the session first needs one; their
+	 * resources are among the session's and go with them.  meta_failed
+	 * has bit n set when copy n could not be made (said once); that work
+	 * of the session is then left out as before.  meta_used has bit n set
+	 * when the stream being built runs program n; the submission takes
+	 * it, so a failed one stops the node from using those programs.
+	 * wls_warned says a dispatch's workgroup memory was refused (said once
+	 * a session).
+	 */
+	uint64_t meta_code[MALI_RENDER_META_PROGRAMS];
+	uint32_t meta_failed;
+	uint32_t meta_used;
+	bool wls_warned;
 };
 
 /*
@@ -210,6 +234,17 @@ struct mali_render {
 	 */
 	struct mali_shader_program *preload;
 	bool preload_refused;
+
+	/*
+	 * The executor's own programs (vk-meta.c), each compiled the first
+	 * time a submission needs it and kept for the node's life;
+	 * meta_refused has bit n set when program n did not compile or did
+	 * not have its shape (said once), or a submission running it failed,
+	 * and that work is then left out as before.  Both are set under
+	 * guard.
+	 */
+	struct mali_shader_program *meta[MALI_RENDER_META_PROGRAMS];
+	uint32_t meta_refused;
 };
 
 /* The buffer objects and resources of render.c. */

@@ -34,6 +34,8 @@ ARM64_MALI_SOURCES := \
 	src/drivers/gpu/mali/vk/vk-draw.c \
 	src/drivers/gpu/mali/vk/vk-frame.c \
 	src/drivers/gpu/mali/vk/vk-preload.c \
+	src/drivers/gpu/mali/vk/vk-meta.c \
+	src/drivers/gpu/mali/vk/vk-meta-spirv.c \
 	src/drivers/gpu/mali/compiler/va-compile.c \
 	src/drivers/gpu/mali/compiler/va-encode.c \
 	src/drivers/gpu/mali/compiler/va-schedule.c \
