@@ -244,9 +244,11 @@ nvrtx_vk_memory_import(
 			break;
 	}
 
-	/* A blob of the session's that holds the whole memory. */
+	/* A VRAM blob of the session's (not one only the CPU touches) that holds the whole memory. */
 	if (resource == NULL)
 		return ENOENT;
+	if (resource->kind != NVRTX_RESOURCE_BLOB)
+		return EINVAL;
 	held = resource->backing;
 	if (held->bo.size < bytes)
 		return EINVAL;

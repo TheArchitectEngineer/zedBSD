@@ -3,7 +3,7 @@
 # ws291-p011 NVIDIA: scene-5000 を 50 fps（非同期の submit）
 
 - 親: [WS291](../ws.md)。依存: [p010a](../phase010a/phase.md)（cleared）。
-- 状態: in-progress（2026-10-29 12:15 P2、q1670-i05。scene-5000 49.1〜49.5 fps（NVK 50.1、単独の run 49.1）、50 の判定は Q1）。
+- 状態: cleared（2026-10-30 Q1 の判定: NVK と揺れの内で同等。文の「50 fps 以上」そのものは未達（49.5〜49.7 fps）。2026-10-29 の q1670-i05 は 49.1〜49.5、2026-10-30 の q1693-i01 は 49.50・49.69、NVK は平均 50.1・単独の run 49.1）。
 - 出典: WS291 の表の p011 の行。2026-10-29 Q1「p011 の非同期の submit（GPU の待ちを lock の外へ）は Q1 の判断でこの p011 で行う。
   WS250 は担当が無く止まっているので、plan/ws250/design.md の期限の STOP・session ごとの worker と食い違わない形にして（WS250 はその上に作る）」。
 - 基準: NVK（Linux）の scene-5000 は 50.1 fps（p010）。zedBSD の起点は 42.24 fps（p010a の s1）。
@@ -119,3 +119,36 @@
 - 起点 42.24 → 49.1〜49.5 fps。frame 20.2〜20.3 ms のうち GPU 19.5 ms、CPU（acquire・record・submit・present）約 0.5 ms と fence の残り約 0.2 ms。
   NVK の 50.1 との差は約 0.3 ms、NVK 自身の run の幅（49.1〜50.1）の中。50 以上を確かにするには GPU の側（vertex の program の質、1 frame 19.5 ms）
   を p012 以降の予備で詰める。cleared の判定（50.1 に対する 49.1〜49.5 の扱い）は Q1 に頼む。
+
+## q1693-i01（2026-10-30 P5、worktree p5-ws291、基点 main c70e11b35）
+
+- 承認: Queue q1693-i01（2026-10-30 ユーザー「…そのあと、デスクトップ機では、RTXドライバの最適化に進んでください。エージェントは再利用しても新規で立ててもOKです。」）。
+- 見立て: p011 の再開点の「GPU の側（vertex の program の質）」を確かめる。
+
+### 実装（commit 9d0adf916・374eb20c3、Q1 が main に merge）
+
+- SM75 の compiler（src/drivers/gpu/nvrtx/compiler/sm75）: 一度だけ FADD・FSUB に読まれる FMUL を FFMA に融合（間に loop の境・MOVE が無い時）。
+  定数・push 定数・UBO の語を、読む算術（FADD・FSUB の被減数・FMUL・FMIN・FMAX・FFMA）の 1 つの imm・cbuf operand として直に読む（MOV を省き register を取らない）。
+  NoContraction の module は融合しない（frontend は decoration を IR に運ばないので module の OpDecorate を走査。今の frontend は NoContraction の module を拒否する）。
+- mview.vert 108 → 59 命令（register 64 → 54）、mview.frag 26 → 20。
+- host: nvrtx-sm75-desktop-test --strict 186 compiled・0 refused・0 disagreed、nvrtx-sm75-host-test 299/0（contract.comp・precise.comp を追加）、
+  nvrtx-vk-host-test 94/0、nvrtx-vk-d3-host-test 218/0、qmd PASS。vmunix（plan/ws291/tests/config.mk）warning 0・amd64 vmunix check PASS。
+  試験の解釈器 plan/tools/nvrtx/sm75-machine.c に FFMA と FORM_CB_SRC2 を追加。
+
+### 実機（10.0.10.3 RTX 2070、2026-10-30 03:22〜03:40 の枠、`plan/ws291/tests/rtx-async-check.sh`、hang 無し）
+
+| kernel | scene-5000 fps（perf 無し・有り） | copies 1 fps | STAGES（frame・record・submit・fence ms） | kernel の perf |
+| --- | --- | --- | --- | --- |
+| base（main c70e11b35、cksum 1281945519） | 49.50・49.28 | 1877 | 20.26・0.12・0.21・19.67 | ended avg 19.42 ms、1 frame に run 2 |
+| f1（374eb20c3、cksum 609932745） | 49.69・49.08 | 1918 | 20.34・0.13・0.21・19.77 | ended avg 19.49 ms |
+
+- 頂点の program の命令を約半分にしても GPU の時間は動かない（揺れの内）。この scene（1 frame に三角形 約 1.85 億、頂点 約 1.3 億）は shader の命令でなく
+  固定機能（primitive の処理）で決まる見込み。NVK（fence 19.36）とほぼ同じ GPU の時間。
+- shot（copies 1、起動の直後）: 両方とも Linux の参照と max 76、16 以上の差 2 画素（p010a と同じ）。
+- 証拠: worktree p5-ws291 の build/ws291/measure/q1693-base・q1693-f1（summary.txt）。終わりに Debian、RTX は vfio-pci、NVMe の kernel は vmunix-va1
+  （cksum 1463007375、nvrtx.vk.perf の行 0）。lock は 03:40 に返した。
+
+### 残り（03:45 P5）
+
+- frame と GPU の差: mview の fence 19.7 ms と GPU の run 19.4〜19.5 ms の約 0.3 ms（完了の検出から app の起床まで）と、1 frame の 2 つ目の run（present、約 0.1 ms）。
+- nvrtx の big-N・subs-N・scene-1500 は zedBSD で未計測（NVK: big-1000 136.2、subs-1000 75.4、scene-1500 165.6 fps）。差の大きい所を探すには bench の 1 枠が要る。

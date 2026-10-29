@@ -827,9 +827,11 @@ present_admit(
 
 	/* A blob is the surface itself; storage goes into the next of the node's frames. */
 	if (blob) {
+		/* Only a VRAM blob has a surface (a blob only the CPU touches has no backing). */
+		if (resource->kind != NVRTX_RESOURCE_BLOB)
+			return EINVAL;
 		offset = resource->backing->bo.vram + request->offset;
-		if (resource->kind != NVRTX_RESOURCE_BLOB ||
-		    (offset % PRESENT_OFFSET_ALIGN) != 0U ||
+		if ((offset % PRESENT_OFFSET_ALIGN) != 0U ||
 		    (request->stride % PRESENT_PITCH_ALIGN) != 0U)
 			return EINVAL;
 
