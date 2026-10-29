@@ -30,6 +30,14 @@
  */
 #define NVRTX_SM75_GPR_POOL		62U
 
+/* The most source positions of one instruction the folding weighs: an FFMA's three. */
+#define NVRTX_SM75_FOLD_POSITIONS	3U
+
+static void nvrtx_sm75_fuse_products(struct nvrtx_sm75_lowering *lowering, const uint32_t *uses, const uint8_t *defs);
+static void nvrtx_sm75_fold_operands(struct nvrtx_sm75_lowering *lowering, const uint8_t *defs, uint8_t *candidate);
+static uint32_t nvrtx_sm75_fold_positions(const struct nvrtx_sm75_lowering *lowering, const struct drv_gpu_shader_ir_inst *instruction, uint32_t *values, uint8_t *allowed);
+static void nvrtx_sm75_retire_value(struct nvrtx_sm75_lowering *lowering, uint32_t value);
+
 /*
  * Lists the values an instruction reads; reports their number, or -1 for
  * an operation the compiler does not cover.
@@ -485,6 +493,7 @@ nvrtx_sm75_retire(
 	struct nvrtx_sm75_lowering *lowering,
 	const struct drv_gpu_shader_ir_inst *instruction)
 {
+	const struct drv_gpu_shader_ir_inst *product;
 	uint32_t sources[NVRTX_SM75_MAX_SOURCES];
 	uint32_t value;
 	uint32_t source;
@@ -492,23 +501,25 @@ nvrtx_sm75_retire(
 	int defines;
 	int count;
 
-	/* The sources read for the last time. */
+	/* The sources read for the last time, and those of a product fused into the instruction, which it reads in its place. */
 	defines = nvrtx_sm75_defines(instruction);
 	count = nvrtx_sm75_sources(instruction, sources);
 	for (source = 0U; count > 0 && source < (uint32_t)count; source++) {
 		value = sources[source];
 
-		/* A value read later, already given back, or the result itself stays. */
-		if (lowering->last_use[value] != lowering->index + 1U)
-			continue;
-		if (lowering->reg[value] == NVRTX_SM75_NO_REG)
-			continue;
+		/* The result itself stays. */
 		if (defines != 0 && value == instruction->dst)
 			continue;
 
-		/* Its register goes back. */
-		nvrtx_sm75_give(lowering, lowering->reg[value]);
-		lowering->reg[value] = NVRTX_SM75_NO_REG;
+		/* A fused product's two factors, read here for the last time or not. */
+		if (lowering->fold[value] == NVRTX_SM75_FOLD_PRODUCT) {
+			product = &lowering->ir->instructions[lowering->def[value]];
+			nvrtx_sm75_retire_value(lowering, product->src[0]);
+			nvrtx_sm75_retire_value(lowering, product->src[1]);
+		}
+
+		/* The value, read here for the last time or not. */
+		nvrtx_sm75_retire_value(lowering, value);
 	}
 
 	/* A sample's results nothing reads afterwards go back at once. */
@@ -556,4 +567,393 @@ nvrtx_sm75_value(
 
 	/* Succeeded: the operand. */
 	return operand;
+}
+
+/*
+ * Chooses the values that need no register of their own.
+ *
+ * A product (FMUL) read once, by an addition or subtraction close enough
+ * that no loop boundary or loop variable update lies between them, is
+ * fused: the addition becomes an FFMA and the product emits nothing.  SPIR-V
+ * lets a multiplication and an addition contract into one fused operation
+ * (the frontend does not keep NoContraction).  Then a constant, push
+ * constant or uniform buffer word every reader of which can take it as its
+ * one immediate or constant buffer operand is read in place: its definition
+ * emits no move.  A value defined more than once (a loop variable) is
+ * neither.  The registers' last reads include a fused product's factors at
+ * the addition.
+ *
+ * Procedure referenced: Mesa 25.3.6 src/nouveau/compiler/nak/opt_copy_prop.rs
+ * (constant buffer and immediate sources propagated into the instructions
+ * that can take them) and src/compiler/nir/nir_opt_algebraic.py (the
+ * contraction of an fmul read only by an fadd into an ffma).
+ */
+int
+nvrtx_sm75_plan_folds(
+	struct nvrtx_sm75_lowering *lowering)
+{
+	const struct drv_gpu_shader_ir *ir;
+	const struct drv_gpu_shader_ir_inst *instruction;
+	uint32_t sources[NVRTX_SM75_MAX_SOURCES];
+	uint32_t *uses;
+	uint8_t *defs;
+	uint8_t *candidate;
+	uint32_t index;
+	uint32_t source;
+	int defines;
+	int count;
+
+	/* The program. */
+	ir = lowering->ir;
+
+	/* Each value's fold and defining instruction, its readings, its definitions and whether it may be read in place. */
+	lowering->fold = kern_calloc(ir->value_count + 1U, sizeof(*lowering->fold));
+	if (lowering->fold == NULL)
+		return ENOMEM;
+	lowering->def = kern_calloc(ir->value_count + 1U, sizeof(*lowering->def));
+	if (lowering->def == NULL)
+		return ENOMEM;
+	uses = kern_calloc(ir->value_count + 1U, sizeof(*uses));
+	if (uses == NULL)
+		return ENOMEM;
+	defs = kern_calloc(ir->value_count + 1U, sizeof(*defs));
+	if (defs == NULL) {
+		kern_free(uses);
+		return ENOMEM;
+	}
+	candidate = kern_calloc(ir->value_count + 1U, sizeof(*candidate));
+	if (candidate == NULL) {
+		kern_free(defs);
+		kern_free(uses);
+		return ENOMEM;
+	}
+
+	/* Counts each value's readings and definitions (two meaning two or more) and notes its defining instruction. */
+	for (index = 0U; index < ir->instruction_count; index++) {
+		instruction = &ir->instructions[index];
+		count = nvrtx_sm75_sources(instruction, sources);
+		for (source = 0U; count > 0 && source < (uint32_t)count; source++)
+			uses[sources[source]]++;
+
+		/* An instruction without a result defines nothing. */
+		defines = nvrtx_sm75_defines(instruction);
+		if (defines == 0)
+			continue;
+
+		/* The definition, the first or a later one. */
+		if (defs[instruction->dst] == 0U) {
+			defs[instruction->dst] = 1U;
+			lowering->def[instruction->dst] = index;
+		} else {
+			defs[instruction->dst] = 2U;
+		}
+	}
+
+	/* The products first, which change what their additions read. */
+	nvrtx_sm75_fuse_products(lowering, uses, defs);
+
+	/* Then the words read in place. */
+	nvrtx_sm75_fold_operands(lowering, defs, candidate);
+
+	/* The counts are only this pass's. */
+	kern_free(candidate);
+	kern_free(defs);
+	kern_free(uses);
+
+	/* Succeeded: the folds are chosen. */
+	return 0;
+}
+
+/*
+ * Reports a value as a source operand: the immediate or constant buffer
+ * word of a value read in place, else its register (nvrtx_sm75_value()).
+ */
+struct nvrtx_sm75_src
+nvrtx_sm75_operand(
+	const struct nvrtx_sm75_lowering *lowering,
+	uint32_t value)
+{
+	const struct drv_gpu_shader_ir_inst *definition;
+	struct nvrtx_sm75_src operand;
+
+	/* A value with a register of its own. */
+	if (lowering->fold[value] != NVRTX_SM75_FOLD_OPERAND) {
+		operand = nvrtx_sm75_value(lowering, value);
+		return operand;
+	}
+
+	/* The word its definition names, which that definition's lowering checked. */
+	definition = &lowering->ir->instructions[lowering->def[value]];
+	if (definition->op == DRV_GPU_IR_LOAD_PUSH) {
+		/* A push constant word of constant buffer 0. */
+		operand = nvrtx_sm75_cb(NVRTX_SM75_CB_ROOT, NVRTX_SM75_CB_PUSH + definition->immediate);
+	} else if (definition->op == DRV_GPU_IR_LOAD_UBO) {
+		/* A word of the uniform buffer's constant buffer. */
+		operand = nvrtx_sm75_cb(lowering->slot[definition->location], definition->immediate);
+	} else {
+		/* A constant's bits. */
+		operand = nvrtx_sm75_imm(definition->immediate);
+	}
+
+	/* Succeeded: the operand. */
+	return operand;
+}
+
+/*
+ * Fuses each product read once by a nearby addition or subtraction into it,
+ * and keeps its factors live to that addition.
+ */
+static void
+nvrtx_sm75_fuse_products(
+	struct nvrtx_sm75_lowering *lowering,
+	const uint32_t *uses,
+	const uint8_t *defs)
+{
+	const struct drv_gpu_shader_ir *ir;
+	const struct drv_gpu_shader_ir_inst *instruction;
+	const struct drv_gpu_shader_ir_inst *product;
+	uint32_t boundary;
+	uint32_t index;
+	uint32_t side;
+	uint32_t value;
+	uint32_t chosen;
+	uint32_t at;
+	uint32_t best_at;
+	uint32_t factor;
+
+	/* The program, and no loop boundary or loop variable update seen yet. */
+	ir = lowering->ir;
+	boundary = NVRTX_SM75_NOT_DEFINED;
+
+	/* Each addition and subtraction, with the latest boundary before it. */
+	for (index = 0U; index < ir->instruction_count; index++) {
+		instruction = &ir->instructions[index];
+
+		/* A loop's ends and a loop variable's update are boundaries no fusion crosses. */
+		if (instruction->op == DRV_GPU_IR_LOOP_BEGIN ||
+		    instruction->op == DRV_GPU_IR_LOOP_END ||
+		    instruction->op == DRV_GPU_IR_MOVE) {
+			boundary = index;
+			continue;
+		}
+
+		/* Only additions and subtractions take a product. */
+		if (instruction->op != DRV_GPU_IR_FADD && instruction->op != DRV_GPU_IR_FSUB)
+			continue;
+
+		/* An operation on one value twice keeps its product. */
+		if (instruction->src[0] == instruction->src[1])
+			continue;
+
+		/* The later-made of the two sources that are products it may fuse. */
+		chosen = NVRTX_SM75_NOT_DEFINED;
+		best_at = 0U;
+		for (side = 0U; side < 2U; side++) {
+			value = instruction->src[side];
+			if (value >= ir->value_count)
+				continue;
+			if (defs[value] != 1U || uses[value] != 1U)
+				continue;
+
+			/* A product defined after the latest boundary, and not fused already. */
+			at = lowering->def[value];
+			product = &ir->instructions[at];
+			if (product->op != DRV_GPU_IR_FMUL)
+				continue;
+			if (at >= index)
+				continue;
+			if (boundary != NVRTX_SM75_NOT_DEFINED && at <= boundary)
+				continue;
+			if (lowering->fold[value] != NVRTX_SM75_FOLD_NONE)
+				continue;
+			if (chosen == NVRTX_SM75_NOT_DEFINED || at > best_at) {
+				chosen = value;
+				best_at = at;
+			}
+		}
+
+		/* No product to fuse. */
+		if (chosen == NVRTX_SM75_NOT_DEFINED)
+			continue;
+
+		/* The product is fused; its factors live to the addition. */
+		lowering->fold[chosen] = NVRTX_SM75_FOLD_PRODUCT;
+		product = &ir->instructions[best_at];
+		for (side = 0U; side < 2U; side++) {
+			factor = product->src[side];
+			if (lowering->last_use[factor] < index + 1U)
+				lowering->last_use[factor] = index + 1U;
+		}
+	}
+}
+
+/*
+ * Chooses the constants, push constants and uniform buffer words read in
+ * place: every instruction that reads one must take it as its single
+ * immediate or constant buffer operand, in a position without a negation.
+ */
+static void
+nvrtx_sm75_fold_operands(
+	struct nvrtx_sm75_lowering *lowering,
+	const uint8_t *defs,
+	uint8_t *candidate)
+{
+	const struct drv_gpu_shader_ir *ir;
+	const struct drv_gpu_shader_ir_inst *definition;
+	uint32_t values[NVRTX_SM75_FOLD_POSITIONS];
+	uint8_t allowed[NVRTX_SM75_FOLD_POSITIONS];
+	uint32_t sources[NVRTX_SM75_MAX_SOURCES];
+	uint32_t positions;
+	uint32_t index;
+	uint32_t position;
+	uint32_t other;
+	uint32_t kept;
+	uint32_t value;
+	int count;
+
+	/* The program. */
+	ir = lowering->ir;
+
+	/* The values defined once by a constant, a push constant or a uniform buffer word may be read in place. */
+	for (value = 0U; value < ir->value_count; value++) {
+		if (defs[value] != 1U)
+			continue;
+
+		/* The defining instruction's kind. */
+		definition = &ir->instructions[lowering->def[value]];
+		if (definition->op == DRV_GPU_IR_CONST ||
+		    definition->op == DRV_GPU_IR_LOAD_PUSH ||
+		    definition->op == DRV_GPU_IR_LOAD_UBO)
+			candidate[value] = 1U;
+	}
+
+	/* Each reader: what it cannot take in place stays in a register, and of the rest it keeps one. */
+	for (index = 0U; index < ir->instruction_count; index++) {
+		/* A fused product reads nothing itself: its addition reads its factors. */
+		if (ir->instructions[index].op == DRV_GPU_IR_FMUL &&
+		    lowering->fold[ir->instructions[index].dst] == NVRTX_SM75_FOLD_PRODUCT)
+			continue;
+
+		/* The arithmetic that takes an operand in place says where; every other reader takes none. */
+		positions = nvrtx_sm75_fold_positions(lowering, &ir->instructions[index], values, allowed);
+		if (positions == 0U) {
+			count = nvrtx_sm75_sources(&ir->instructions[index], sources);
+			for (position = 0U; count > 0 && position < (uint32_t)count; position++)
+				candidate[sources[position]] = 0U;
+			continue;
+		}
+
+		/* A position that cannot take it, or a value read twice, keeps the value in a register. */
+		for (position = 0U; position < positions; position++) {
+			if (allowed[position] == 0U)
+				candidate[values[position]] = 0U;
+			for (other = position + 1U; other < positions; other++) {
+				if (values[other] == values[position]) {
+					candidate[values[position]] = 0U;
+				}
+			}
+		}
+
+		/* The first value still read in place keeps that; the others go to registers. */
+		kept = NVRTX_SM75_NOT_DEFINED;
+		for (position = 0U; position < positions; position++) {
+			value = values[position];
+			if (candidate[value] == 0U)
+				continue;
+			if (kept == NVRTX_SM75_NOT_DEFINED)
+				kept = value;
+			else
+				candidate[value] = 0U;
+		}
+	}
+
+	/* The values still read in place. */
+	for (value = 0U; value < ir->value_count; value++) {
+		if (candidate[value] != 0U)
+			lowering->fold[value] = NVRTX_SM75_FOLD_OPERAND;
+	}
+}
+
+/*
+ * Lists the source positions of an instruction that may take a value in
+ * place (the arithmetic lower_alu emits with one immediate or constant
+ * buffer operand), each with whether a value there may be read in place
+ * (not in a position that needs a negation).  Reports 0 for any other
+ * instruction.
+ */
+static uint32_t
+nvrtx_sm75_fold_positions(
+	const struct nvrtx_sm75_lowering *lowering,
+	const struct drv_gpu_shader_ir_inst *instruction,
+	uint32_t *values,
+	uint8_t *allowed)
+{
+	const struct drv_gpu_shader_ir_inst *product;
+	uint32_t side;
+
+	/* The operations by their positions. */
+	switch (instruction->op) {
+	case DRV_GPU_IR_FMUL:
+	case DRV_GPU_IR_FMIN:
+	case DRV_GPU_IR_FMAX:
+		/* Two sources that commute: either may be the operand in place. */
+		values[0] = instruction->src[0];
+		values[1] = instruction->src[1];
+		allowed[0] = 1U;
+		allowed[1] = 1U;
+		return 2U;
+	case DRV_GPU_IR_FADD:
+	case DRV_GPU_IR_FSUB:
+		break;
+	default:
+		return 0U;
+	}
+
+	/* An addition or subtraction without a fused product: the subtrahend needs a negation, the rest may be in place. */
+	side = 2U;
+	if (lowering->fold[instruction->src[0]] == NVRTX_SM75_FOLD_PRODUCT)
+		side = 0U;
+	if (lowering->fold[instruction->src[1]] == NVRTX_SM75_FOLD_PRODUCT)
+		side = 1U;
+	if (side == 2U) {
+		values[0] = instruction->src[0];
+		values[1] = instruction->src[1];
+		allowed[0] = 1U;
+		allowed[1] = 1U;
+		if (instruction->op == DRV_GPU_IR_FSUB)
+			allowed[1] = 0U;
+		return 2U;
+	}
+
+	/* An FFMA: the factors may be in place, and the addend unless it is subtracted from the product. */
+	product = &lowering->ir->instructions[lowering->def[instruction->src[side]]];
+	values[0] = product->src[0];
+	values[1] = product->src[1];
+	values[2] = instruction->src[1U - side];
+	allowed[0] = 1U;
+	allowed[1] = 1U;
+	allowed[2] = 1U;
+	if (instruction->op == DRV_GPU_IR_FSUB && side == 0U)
+		allowed[2] = 0U;
+	return 3U;
+}
+
+/*
+ * Gives back a value's register when the instruction being lowered reads it
+ * for the last time.
+ */
+static void
+nvrtx_sm75_retire_value(
+	struct nvrtx_sm75_lowering *lowering,
+	uint32_t value)
+{
+	/* A value read later or already given back stays as it is. */
+	if (lowering->last_use[value] != lowering->index + 1U)
+		return;
+	if (lowering->reg[value] == NVRTX_SM75_NO_REG)
+		return;
+
+	/* Its register goes back. */
+	nvrtx_sm75_give(lowering, lowering->reg[value]);
+	lowering->reg[value] = NVRTX_SM75_NO_REG;
 }

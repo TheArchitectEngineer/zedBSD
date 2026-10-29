@@ -268,9 +268,17 @@ nvrtx_sm75_compile_ir_sm(
 		instruction = &ir->instructions[index];
 		lowering.index = index;
 
+		/* A product fused into the addition that reads it emits nothing here. */
+		defines = nvrtx_sm75_defines(instruction);
+		if (defines != 0 && lowering.fold[instruction->dst] == NVRTX_SM75_FOLD_PRODUCT)
+			continue;
+
+		/* A word read in place is checked but needs no register: it is lowered into RZ, which emits nothing. */
+		if (defines != 0 && lowering.fold[instruction->dst] == NVRTX_SM75_FOLD_OPERAND)
+			defines = 0;
+
 		/* The destination's register, a value redefined by a MOVE keeping its own. */
 		dst = NVRTX_SM75_RZ;
-		defines = nvrtx_sm75_defines(instruction);
 		if (defines != 0) {
 			if (lowering.reg[instruction->dst] == NVRTX_SM75_NO_REG) {
 				error = nvrtx_sm75_take(&lowering, &dst);
@@ -300,6 +308,8 @@ nvrtx_sm75_compile_ir_sm(
 	kern_free(lowering.reg);
 	kern_free(lowering.last_use);
 	kern_free(lowering.slot);
+	kern_free(lowering.fold);
+	kern_free(lowering.def);
 
 	/* A refused program is never handed over. */
 	if (error != 0) {
@@ -559,6 +569,11 @@ nvrtx_sm75_prepare(
 			lowering->last_use[sources[source]] = index + 1U;
 		}
 	}
+
+	/* The values that need no register of their own: words read in place and fused products. */
+	error = nvrtx_sm75_plan_folds(lowering);
+	if (error != 0)
+		return error;
 
 	/* Values read inside a loop that were made before it live to the loop's end. */
 	error = nvrtx_sm75_extend_loops(lowering);

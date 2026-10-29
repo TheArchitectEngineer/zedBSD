@@ -29,6 +29,7 @@
 #define NVRTX_SM75_INV_TWO_PI		0x3e22f983U
 
 static int nvrtx_sm75_lower_alu(struct nvrtx_sm75_lowering *lowering, const struct drv_gpu_shader_ir_inst *instruction, uint32_t dst);
+static int nvrtx_sm75_lower_fma(struct nvrtx_sm75_lowering *lowering, const struct drv_gpu_shader_ir_inst *instruction, uint32_t side, uint32_t dst);
 static int nvrtx_sm75_lower_compare(struct nvrtx_sm75_lowering *lowering, const struct drv_gpu_shader_ir_inst *instruction, uint32_t dst);
 static int nvrtx_sm75_lower_unit(struct nvrtx_sm75_lowering *lowering, const struct drv_gpu_shader_ir_inst *instruction, uint32_t dst);
 static int nvrtx_sm75_lower_system(struct nvrtx_sm75_lowering *lowering, const struct drv_gpu_shader_ir_inst *instruction, uint32_t dst);
@@ -236,12 +237,25 @@ nvrtx_sm75_lower_alu(
 	struct nvrtx_sm75_src b;
 	struct nvrtx_sm75_src zero;
 	struct nvrtx_sm75_src mask;
+	struct nvrtx_sm75_src swap;
 	int error;
+
+	/* An addition or subtraction that reads a fused product is an FFMA. */
+	if (instruction->op == DRV_GPU_IR_FADD || instruction->op == DRV_GPU_IR_FSUB) {
+		if (lowering->fold[instruction->src[0]] == NVRTX_SM75_FOLD_PRODUCT) {
+			error = nvrtx_sm75_lower_fma(lowering, instruction, 0U, dst);
+			return error;
+		}
+		if (lowering->fold[instruction->src[1]] == NVRTX_SM75_FOLD_PRODUCT) {
+			error = nvrtx_sm75_lower_fma(lowering, instruction, 1U, dst);
+			return error;
+		}
+	}
 
 	/* The instruction, its first source, and RZ for a second source it may not have. */
 	nvrtx_sm75_begin(&word);
 	zero = nvrtx_sm75_reg(NVRTX_SM75_RZ);
-	a = nvrtx_sm75_value(lowering, instruction->src[0]);
+	a = nvrtx_sm75_operand(lowering, instruction->src[0]);
 	b = zero;
 
 	/* The second source of the binary operations. */
@@ -250,7 +264,21 @@ nvrtx_sm75_lower_alu(
 	    instruction->op != DRV_GPU_IR_NOT &&
 	    instruction->op != DRV_GPU_IR_INOT &&
 	    instruction->op != DRV_GPU_IR_INEG)
-		b = nvrtx_sm75_value(lowering, instruction->src[1]);
+		b = nvrtx_sm75_operand(lowering, instruction->src[1]);
+
+	/*
+	 * A word read in place (nvrtx_sm75_plan_folds() lets only these
+	 * operations have one, never two) goes to the second position: the
+	 * operations commute, and a subtraction becomes the negated subtrahend
+	 * plus the word.
+	 */
+	if (a.kind != NVRTX_SM75_SRC_REG) {
+		swap = a;
+		a = b;
+		b = swap;
+		if (instruction->op == DRV_GPU_IR_FSUB)
+			a.neg = 1;
+	}
 
 	/* The SM75 instruction of the operation. */
 	switch (instruction->op) {
@@ -258,7 +286,9 @@ nvrtx_sm75_lower_alu(
 		nvrtx_sm75_fadd(&word, dst, &a, &b);
 		break;
 	case DRV_GPU_IR_FSUB:
-		b.neg = 1;
+		/* The subtrahend negated, unless the swap above made the word the second source. */
+		if (a.neg == 0)
+			b.neg = 1;
 		nvrtx_sm75_fadd(&word, dst, &a, &b);
 		break;
 	case DRV_GPU_IR_FMUL:
@@ -324,6 +354,58 @@ nvrtx_sm75_lower_alu(
 	}
 
 	/* One instruction of fixed latency. */
+	error = nvrtx_sm75_emit(lowering, &word, NVRTX_SM75_FIXED);
+	if (error != 0)
+		return error;
+
+	/* Succeeded: the result is in dst. */
+	return 0;
+}
+
+/*
+ * Lowers an addition or subtraction whose source on a side is a fused
+ * product into one FFMA: x + a * b, x - a * b as -a * b + x, and a * b - x
+ * as a * b + -x.  A factor read in place goes to the second position, an
+ * addend read in place to the third (nvrtx_sm75_plan_folds() allows one, and
+ * never a negated one).
+ */
+static int
+nvrtx_sm75_lower_fma(
+	struct nvrtx_sm75_lowering *lowering,
+	const struct drv_gpu_shader_ir_inst *instruction,
+	uint32_t side,
+	uint32_t dst)
+{
+	const struct drv_gpu_shader_ir_inst *product;
+	struct nvrtx_sm75_word word;
+	struct nvrtx_sm75_src a;
+	struct nvrtx_sm75_src b;
+	struct nvrtx_sm75_src c;
+	struct nvrtx_sm75_src swap;
+	int error;
+
+	/* The product's factors and the other source, the addend. */
+	product = &lowering->ir->instructions[lowering->def[instruction->src[side]]];
+	a = nvrtx_sm75_operand(lowering, product->src[0]);
+	b = nvrtx_sm75_operand(lowering, product->src[1]);
+	c = nvrtx_sm75_operand(lowering, instruction->src[1U - side]);
+
+	/* A factor read in place is the second. */
+	if (a.kind != NVRTX_SM75_SRC_REG) {
+		swap = a;
+		a = b;
+		b = swap;
+	}
+
+	/* A subtraction negates the product (through its first factor, a register) or the addend. */
+	if (instruction->op == DRV_GPU_IR_FSUB && side == 1U)
+		a.neg = 1;
+	if (instruction->op == DRV_GPU_IR_FSUB && side == 0U)
+		c.neg = 1;
+
+	/* FFMA dst = a * b + c, one instruction of fixed latency. */
+	nvrtx_sm75_begin(&word);
+	nvrtx_sm75_ffma(&word, dst, &a, &b, &c);
 	error = nvrtx_sm75_emit(lowering, &word, NVRTX_SM75_FIXED);
 	if (error != 0)
 		return error;
