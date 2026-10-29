@@ -70,6 +70,14 @@ zedbsd_ip() {
 	[ "$(T=15 zs "$zip" "uname -s" 2> /dev/null)" = zedBSD ] || return 1
 	echo "$zip"
 }
+# Puts $1 in as the NVMe's kernel, its output in the summary; the exit status is rdna-nvme.sh's (a pipe into tee
+# would give tee's and hide a failed install).
+nvme_kernel() {
+	sh plan/ws291/tests/rdna-nvme.sh kernel "$1" > "$out/nvme-kernel.txt" 2>&1
+	rc=$?
+	tee -a "$summary" < "$out/nvme-kernel.txt"
+	return $rc
+}
 partner() {
 	sudo -n ethtool "$PARTNER" 2> /dev/null | sed -n 's/^[[:space:]]*\(Speed\|Duplex\|Link detected\): */\1: /p' | tr '\n' ' '
 }
@@ -82,7 +90,7 @@ deb "sudo -n mkdir -p /mnt/ws235 && sudo -n mount -o ro $NV_BOOT /mnt/ws235 && c
 	{ say "FAIL: could not save the NVMe kernel"; exit 1; }
 T=120 timeout 120 scp $SSHOPT -q "$DEBIAN:ws235-vmunix.saved" "$out/vmunix.saved" || { say "FAIL: could not fetch the saved kernel"; exit 1; }
 say "saved NVMe kernel $(sha256sum "$out/vmunix.saved" | cut -c1-16)"
-sh plan/ws291/tests/rdna-nvme.sh kernel "$kernel" | tee -a "$summary" || { say "FAIL: kernel install"; exit 1; }
+nvme_kernel "$kernel" || { say "FAIL: kernel install"; exit 1; }
 
 # Starts zedBSD once.
 say "Debian: BootNext $ZEDBSD_BOOT, reboot"
@@ -236,7 +244,7 @@ until linux_up; do
 	sleep 5
 done
 say "Debian is back"
-sh plan/ws291/tests/rdna-nvme.sh kernel "$out/vmunix.saved" | tee -a "$summary" || { say "FAIL: saved kernel not put back"; exit 1; }
+nvme_kernel "$out/vmunix.saved" || { say "FAIL: saved kernel not put back"; exit 1; }
 back=$(deb "sudo -n mount -o ro $NV_BOOT /mnt/ws235 && sha256sum /mnt/ws235/vmunix | cut -c1-64; sudo -n umount /mnt/ws235")
 if [ "$back" = "$(sha256sum "$out/vmunix.saved" | cut -c1-64)" ]; then
 	say "NVMe kernel is the saved one again ($(echo "$back" | cut -c1-16))"

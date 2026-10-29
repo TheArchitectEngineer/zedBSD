@@ -39,6 +39,10 @@ Parent: [Master](../master.md)
   次は p008（規約の全文の見直し）。機械は Debian 6.12.111、NVMe の kernel は P2 の vmunix-va1。
 - 2026-10-29 11:1x P1（q1669-i04）: p008 cleared（[phase008](phase008/phase.md)）。全 Phase cleared。残り: WS の受け入れの確かめ（Q1）、server の config で有効にする事（ユーザー）、
   見直しの後の実機の非退行（未実施）。
+- 2026-10-29 11:4x P1（q1669-i05、worktree p1-ws235e）: WS の受け入れの最後の確かめ（[phase008](phase008/phase.md) の「WS の受け入れの最後の確かめ」）。見直しの後の tree（main 054afe9a9）で
+  試験の config と server の config（`CONFIG_DRIVER_PCI_RTL8125 := y`）の kernel を build（warning 0）、10.0.10.3 で `LANTEST=2` の rtl-link.sh: 両方で rge0 10000Mbps・ping 200/200・ssh・
+  tcp-perf 30 s（試験の config send 5642・recv 3311、server の config send 4743・recv 3364 Mbit/s）・errors 0。機械は Debian 6.12.111、NVMe の kernel は P2 の vmunix-va1。
+  残り: WS を完了の形に書き直す事（Q1）。
 
 ## Phase（2026-10-29 P1 が p001 でユーザーの順に直した。旧の表と見積もり（2026-10-14 Q1）は git の履歴に）
 
