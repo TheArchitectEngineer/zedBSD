@@ -140,17 +140,19 @@ if [ -n "$zip" ]; then
 			run=$n-$dir
 			zs "$rip" "/tmp/sysctl hw.cputimes; dmesg | grep 'rtl8125: $IFACE profile' | tail -1; /tmp/sysctl net.tcpstats" > "$out/before-$run.txt" 2>&1
 			snmp0=$(awk '/^Tcp: [0-9]/ {print $13}' /proc/net/snmp)
+			cp /proc/net/netstat "$out/netstat-$run-before.txt"
 			# net.tcpstats every 2 s over the run, on the machine, read back after.
 			T=$((seconds + 60)) zs "$rip" "(while :; do /tmp/sysctl net.tcpstats; sleep 2; done) > /tmp/tcpstats-$run.txt 2>&1 & s=\$!; /tmp/tcp-perf $dir $PEER_IP $PERF_PORT $seconds $chunk; kill \$s" > "$out/perf-$run.txt" 2>&1
 			say "run $run: exit $? $(grep '^TCP-PERF' "$out/perf-$run.txt")"
 			snmp1=$(awk '/^Tcp: [0-9]/ {print $13}' /proc/net/snmp)
+			cp /proc/net/netstat "$out/netstat-$run-after.txt"
 			sleep 2
 			zs "$rip" "/tmp/sysctl hw.cputimes; dmesg | grep 'rtl8125: $IFACE profile' | tail -1" > "$out/after-$run.txt" 2>&1
 			T=60 zs "$rip" "dmesg" > "$out/dmesg-$run.txt" 2>&1
 			T=60 zs "$rip" "cat /tmp/tcpstats-$run.txt" > "$out/tcpstats-$run.txt" 2>&1
 			python3 -I plan/tools/rtl8127/profile-summary.py "$dir" "$seconds" "$out/before-$run.txt" "$out/after-$run.txt" > "$out/profile-$run.txt" 2>&1
 			say "  $(tr '\n' ' ' < "$out/profile-$run.txt")"
-			say "  this host's RetransSegs over the run: $((snmp1 - snmp0))"
+			say "  this host's RetransSegs over the run: $((snmp1 - snmp0)); TcpExt: $(python3 -I plan/ws221/tests/netstat-delta.py "$out/netstat-$run-before.txt" "$out/netstat-$run-after.txt")"
 			if grep -q 'pcprof: begin' "$out/dmesg-$run.txt"; then
 				python3 -I plan/ws221/tests/pcprof-summary.py "$kernel" "$out/dmesg-$run.txt" > "$out/pcprof-$run.txt" 2>&1
 				say "  pcprof (out/pcprof-$run.txt): $(head -12 "$out/pcprof-$run.txt" | tr '\n' ';')"

@@ -87,15 +87,6 @@ struct socket_ops {
 	ssize_t (*recvfrom)(struct socket *, void *, size_t, int,
 			    struct sockaddr *, socklen_t *);
 	/*
-	 * recvfrom without an address into the caller's user range (address,
-	 * length), copied straight from the protocol's queue: the range is
-	 * pinned once data is there, and only as far as the queued bytes fill
-	 * it, so a long read of a stream that has a little queued pins a few
-	 * pages and no bounce buffer.  NULL where the protocol gives kernel
-	 * buffers only (read(2) then bounces).
-	 */
-	ssize_t (*recv_user)(struct socket *, uintptr_t, size_t, int);
-	/*
 	 * recvfrom that also gives the hop limit the datagram came with (-1
 	 * for none kept), for recvmsg (ws177-p044); NULL where no protocol
 	 * keeps one.
@@ -227,9 +218,6 @@ struct socket *socket_from_file(struct file *file);
  */
 int socket_file_takes_pinned(struct file *file);
 ssize_t socket_file_write_pinned(struct file *file, const struct uaccess_pin *pin, size_t length);
-/* read(2) of a stream socket that reads into the caller's range itself (socket_file_read_user). */
-int socket_file_reads_user(struct file *file);
-ssize_t socket_file_read_user(struct file *file, uintptr_t address, size_t length);
 int socket_file_ref_get(struct filedesc *fd, int descriptor,
 			struct socket_file_ref *reference);
 void socket_file_ref_put(struct socket_file_ref *reference);

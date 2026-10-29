@@ -101,7 +101,7 @@ p001 の設計の要点（第 2 版）: QEMU の usb-net（CDC ECM）は descrip
 
 | Phase | 目的 | 状態 | 依存 |
 | --- | --- | --- | --- |
-| [p010](phase010/phase.md) | 10GbE での TCP の stack の改善（RDNA 機の RTL8127 ↔ centris、限界まで） | in-progress（2026-10-29 P3 q1679-i01: send 5406 → 6254 Mbit/s（7034cea3a）、recv 3250 は read(2) の pin・bounce が律速、read の直の経路と checksum の offload を試験中） | WS235（RTL8127）、p002〜p009 |
+| [p010](phase010/phase.md) | 10GbE での TCP の stack の改善（RDNA 機の RTL8127 ↔ centris、限界まで） | in-progress（2026-10-29 P3 q1679-i01: send 6280 Mbit/s（Linux 6808 の 92 %、PCIe の上限の近く）、recv 3320〜3401（Linux 5458、未達: CPU でなく相手の偽の fast retransmit と窓、SACK と ACK の順の調べが次）。checksum の offload の口と RTL8127 の TX/RX） | WS235（RTL8127）、p002〜p009 |
 - 訂正（原文、2026-10-29）: 「すみません、チップ名を間違いました。RTL8127です。」→ p010 の NIC は RDNA 機の PCIe の RTL8127。
 - ユーザー（原文、2026-10-29）「このマシンはPCIeの帯域の制約があり、7Gbit/sくらいしか出ないです。」→ p010 の目標は 10.0.10.3 で約 7 Gbit/s（PCIe の帯域の上限）を基準にする。
 - Q1 の判断（2026-10-29）: checksum・TSO の offload の stack の口（packet-buf・net-device の flag）は p010 で設計する（WS235 の RTL8127 の driver は offload 無しで先に動かし、口ができたら WS235 p006 で driver の側を足す）。

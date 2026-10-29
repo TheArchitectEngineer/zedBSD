@@ -458,44 +458,6 @@ copyin_pinned(
 	return EFAULT;
 }
 
-/* The model's reader never reads into user pages: no range is pinned (ws221-p010). */
-int
-uaccess_pin(
-	uintptr_t address,
-	size_t size,
-	uint32_t prot,
-	struct uaccess_pin *pin)
-{
-	(void)address;
-	(void)size;
-	(void)prot;
-	(void)pin;
-	return EFAULT;
-}
-
-/* Nothing is pinned to release (ws221-p010). */
-void
-uaccess_unpin(
-	struct uaccess_pin *pin)
-{
-	(void)pin;
-}
-
-/* Nothing is pinned to copy to (ws221-p010). */
-int
-copyout_pinned(
-	const struct uaccess_pin *pin,
-	size_t offset,
-	const void *source,
-	size_t size)
-{
-	(void)pin;
-	(void)offset;
-	(void)source;
-	(void)size;
-	return EFAULT;
-}
-
 /* The model's table never changes (ws221-p008). */
 unsigned long
 route_generation(
