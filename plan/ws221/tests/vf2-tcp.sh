@@ -16,7 +16,11 @@
 # --peer USER@HOST,ADDRESS runs the peer on another Linux machine over SSH (its python3, /tmp/perf-peer.py) at ADDRESS
 # instead of this host (2026-10-29: the 5330's Debian on the board's own switch; the path from the board to this host
 # reorders frames).  --peer-if IF with --mtu sets that peer's adapter IF to the same MTU (sudo ip link, nothing
-# kept); at the end the board's adapter and the peer's go back to 1500.  VF2_HOST (default kei@10.0.30.2) and VF2_PASSWORD (default kei) reach the board; VF2_PLUG its plug.
+# kept); at the end the board's adapter and the peer's go back to 1500.  --ptb AT,MTU[/AT,MTU...] (with --peer, an IPv6
+# ADDRESS): AT seconds into each run the peer sends the board a Packet Too Big for its own address with MTU
+# (plan/ws221/tests/ptb6.py, as root), as a router on the path would; each run's line then gives the segment size the
+# board ended with, the segment sizes it sent with over the run (the samples), and the rate before the first and after
+# the last message.  VF2_HOST (default kei@10.0.30.2) and VF2_PASSWORD (default kei) reach the board; VF2_PLUG its plug.
 # Copyright (C) 2026 Awe Morris; SPDX-License-Identifier: Zlib
 set -u
 cd "$(dirname -- "$0")/../../.."
@@ -26,6 +30,7 @@ seconds=30
 runs=send,recv
 chunk=131072
 mtu=
+ptb=
 peer_remote=
 peer_if=
 while [ $# -gt 1 ]; do
@@ -38,6 +43,7 @@ while [ $# -gt 1 ]; do
 	--mtu) mtu=$2 ;;
 	--peer) peer_remote=$2 ;;
 	--peer-if) peer_if=$2 ;;
+	--ptb) ptb=$2 ;;
 	*) echo "vf2-tcp: unknown option $1"; exit 2 ;;
 	esac
 	shift 2
@@ -52,7 +58,8 @@ peer_host=
 if [ -n "$peer_remote" ]; then
 	peer_host=${peer_remote%,*}
 	server_ip=${peer_remote#*,}
-	timeout 60 scp -q plan/ws221/tests/perf-peer.py "$peer_host:/tmp/perf-peer.py" || { echo "vf2-tcp: FAIL: copy of the peer"; exit 1; }
+	timeout 60 scp -q plan/ws221/tests/perf-peer.py plan/ws221/tests/ptb6.py "$peer_host:/tmp/" ||
+	    { echo "vf2-tcp: FAIL: copy of the peer"; exit 1; }
 fi
 port=5301
 so="-o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR -o ConnectTimeout=8"
@@ -144,7 +151,22 @@ for run in $(echo "$runs" | tr ',' ' '); do
 	sleep 1
 	board "nohup sh -c 'while :; do /tmp/sysctl net.tcpstats; sleep 1; done' > /tmp/ws221-samples-$run.txt 2>&1 < /dev/null & echo \$! > /tmp/ws221-sampler.pid" > /dev/null
 	board '/tmp/sysctl hw.cputimes' > "$out/cpu-before-$run.txt"
+	ptb_job=
+	if [ -n "$ptb" ] && [ -n "$peer_host" ]; then
+		# The board's end of the connection, as the peer sees it, gets the message about the peer's address.
+		( last=0
+		for message in $(echo "$ptb" | tr '/' ' '); do
+			at=${message%,*}
+			sleep $((at - last))
+			last=$at
+			timeout 30 ssh -o BatchMode=yes "$peer_host" \
+			    "c=\$(ss -Htn state established '( sport = :$port )' | awk '{print \$4}' | head -1); a=\${c%]:*};
+			    a=\${a#[}; p=\${c##*:}; sudo python3 -I /tmp/ptb6.py \$a $server_ip ${message#*,} \$p $port"
+		done ) > "$out/ptb-$run.txt" 2>&1 &
+		ptb_job=$!
+	fi
 	T=$((seconds + 40)) board "/tmp/tcp-perf $run $server_ip $port $seconds $chunk; echo exit=\$?" > "$out/client-$run.txt"
+	[ -n "$ptb_job" ] && wait "$ptb_job"
 	board '/tmp/sysctl hw.cputimes' > "$out/cpu-after-$run.txt"
 	wait "$peer"
 	board 'kill $(cat /tmp/ws221-sampler.pid)' > /dev/null
@@ -154,6 +176,20 @@ for run in $(echo "$runs" | tr ',' ' '); do
 	say "$run: board ${client:-no result} | host ${peerline:-no result}"
 	min=$(awk -F'mbps=' '/^t=/ {v = $2 + 0; if (n++ == 0 || v < m) m = v} END {if (n) printf "%.1f", m}' "$out/client-$run.txt")
 	say "$run: slowest second ${min:-?} Mbps"
+	tcp=$(grep ":$port " "$out/samples-$run.txt" | tail -1 | tr ' ' '\n' |
+	    grep -E '^(send_mss|receive_mss|retransmit_segments|fast_retransmits|send_refused)=' | tr '\n' ' ')
+	say "$run: board's connection at the end: ${tcp:-none sampled}"
+	if [ -n "$ptb" ]; then
+		first=$(echo "$ptb" | cut -d/ -f1)
+		first=${first%,*}
+		last=$(echo "$ptb" | tr '/' '\n' | tail -1)
+		last=${last%,*}
+		rates=$(awk -F'[= ]' -v first="$first" -v last="$last" '/^t=/ { if ($2 <= first) { b += $6; nb++ }
+		    else if ($2 > last + 1) { a += $6; na++ } }
+		    END { if (nb) printf "before %.1f ", b / nb; if (na) printf "after %.1f", a / na }' "$out/client-$run.txt")
+		sizes=$(grep ":$port " "$out/samples-$run.txt" | tr ' ' '\n' | sed -n 's/^send_mss=//p' | uniq | tr '\n' ' ')
+		say "$run: packet too big: $(cat "$out/ptb-$run.txt" | tr '\n' ' ')| send_mss over the run: $sizes| mean Mbps $rates"
+	fi
 	cpu=$(awk '/cpu=/ { for (i = 1; i <= NF; i++) { split($i, kv, "="); v[kv[1]] = kv[2] }
 		c = v["cpu"]; t = v["user"] + v["system"] + v["idle"] + v["other"]
 		if (FILENAME ~ /before/) { b[c] = v["user"] + v["system"]; bt[c] = t } else { a[c] = v["user"] + v["system"]; at[c] = t }

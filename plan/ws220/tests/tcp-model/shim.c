@@ -622,6 +622,40 @@ ipv6_route_source(
 	return ENETUNREACH;
 }
 
+/* The model has no IPv6. */
+int
+ipv6_route_next_hop(
+	struct net_device *device,
+	const struct in6_addr *destination,
+	struct net_device **output,
+	struct in6_addr *next_hop)
+{
+	(void)device;
+	(void)destination;
+	(void)output;
+	(void)next_hop;
+	return ENETUNREACH;
+}
+
+/* The model has no IPv6. */
+int
+ipv6_output_routed(
+	struct net_device *device,
+	const struct in6_addr *source,
+	const struct in6_addr *destination,
+	const struct in6_addr *next_hop,
+	uint8_t next_header,
+	struct packet_buf *packet)
+{
+	(void)device;
+	(void)source;
+	(void)destination;
+	(void)next_hop;
+	(void)next_header;
+	packet_buf_free(packet);
+	return ENETUNREACH;
+}
+
 /* The model has no IPv6 addresses of its own. */
 int
 ipv6_address_is_local(
