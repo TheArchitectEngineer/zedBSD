@@ -73,6 +73,29 @@
   `KWL OSK hand recognize strokes=3 ` を待つ形（上限 10 s）にした（`plan/ws309/tests/hand-guest.sh`）。
 - 回転・head の open/close・backlight・列挙を T3 へは、この起動で届かなければ残りに書く。
 
+## 結果（q1662-i09、途中）
+
+- 実装（WIP 08d969010・07cc2f5a8・5f4a72a75）:
+  - render-thread: park は前に渡した task の完了まで答えない（drain）。`kwl_render_park_request` は待たずに頼み、PARKED の message を queue で返す（完了の後に）。
+  - 新しい `display-thread.c`（T3、lane `display`）: 表示の変更の「操作」（`kwl_display_begin`・`_parked`・`_close`・`_open`・`_end`・`_settle`・`_scanout_query`）。
+    close は main で let-go（forget・head の main の部分・layers・scene・backdrop・glass maps・turn・targets）→ T3 で cursor thread の stop と join・device idle・
+    cursor plane の object・head と出力の swapchain と surface の破棄・display の release。open は main で prepare → T3 で acquire・swapchain（fallback 込み）・
+    cursor plane の surface と swapchain と object → main で take（targets・turn・scene・heads の config・cursor plane の adopt・layers）。
+  - cursor-plane.c を make/adopt・detach/stop/detached に分けた。heads.c は head の let-go と `kwl_heads_rest_destroy`（T3）に分けた。
+  - 非同期にした呼び手: window mode の open（display.c、EAGAIN で後の pass）、ゲームモードの入り（scanout.c: 可否の問いを T3 → 事実を見直して close → main で claim）、
+    出力の移動（output-switch.c の `kwl_output_move`: 候補の列を順に、拒まれたら元へ戻して次、hotplug の recover と BUG-266 の fail back）。
+    その場で（inline）走らせる呼び手: lid の外部・内部（`kwl_output_switch`）、Settings の anchor を消した時（heads.c）、handoff、seat の pause、exit。
+  - 計りの log: `KWL DISPLAY change ms=`、`KWL DISPLAY step=let-go|take|fit ms=`。
+- 確かめ:
+  - host `render-task/run.sh` PASS（ASan+UBSan・TSan、E を足した）。build: amd64 bin/wayland・Linux（keiland-linux.mk、-Werror）exit 0・warning 0。
+  - QEMU Venus `resize-guest.sh` PASS（p012b・p012c）: 移動の区間の pass_max_us 0.96 s（前 2.29〜2.30 s）。残りは main の let-go 0.86〜0.96 s で、
+    中身は Venus の object の破棄（layers 355 ms・glass maps と turn 322 ms・scene 90 ms・targets 90 ms、1 個 約 90 ms）。swapchain の作成 260 ms と破棄は T3 へ出た。
+    判定 3（1 s 未満）は満たしたが余裕は小さい。破棄も T3 に出すのは残り。
+  - `grave-guest.sh` PASS。`hand-guest.sh` 1 回目 FAIL（上の揺れ）、直す前の 2 回目 PASS、直した後 PASS。
+  - `scanout-guest.sh`（新）PASS: Venus でもゲームモードに入る（`KWL SCANOUT direct=1 … switch_ms=831`、その後 `direct=0 reason=no-window`、window mode が開き直り、
+    still の mview が写る、`OUTPUT/shot.png` を目で確かめた）。比べに image の元の compositor（基点）でも同じ script が PASS: QEMU では BUG-353 は再現しない（nvrtx に固有の見込み）。
+- 未実施: RTX（枠は 15:35 以降、Q1）、回転・head の open と close の T3 化・backlight・列挙・lid と Settings の anchor の非同期化、let-go の破棄の T3 化、arm64・riscv64 の build。
+
 ## 注意
 
 - 同時に P2（WS242）・P5（WS250）・P6（WS243）が nvrtx を触る。compositor（userland/desktop/wayland）は P1 だけ。libkeiland-backend-zedbsd の scanout-zedbsd.c を変える時は先に Q1 に知らせる。
