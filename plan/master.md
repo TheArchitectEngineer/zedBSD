@@ -21,9 +21,9 @@
 | --- | --- | --- | --- |
 | P1 | q1662-i10 in-progress | [ws309](ws309/ws.md) p013・p014 cleared（main e554645ca）、p016 → p017 → p018。p015 はユーザーの判断待ち（[phase015](ws309/phase015/phase.md)「要る判断」） | — |
 | P2 | q1686-i01 返却 | [ws068](ws068/ws.md) p034・p040〜p044・p046 cleared、残りを p045・p047〜p068 に分けた（main 782237d73）。以後は手の空いた担当が Phase ごとに | — |
-| P3 | q1679-i02 in-progress、q1689-i01 pending | [ws221](ws221/ws.md) p010 の 10GbE の受信（10.0.10.3 を専有）、次に 5330 の USB 2.5G の NCM の driver。終われば返却。VF2 は手放す | 10.0.10.3（専有）、5330 |
+| P3 | q1679-i02 in-progress、q1689-i01 pending | [ws221](ws221/ws.md) p012 SACK の送る側（tcp-model）→ q1689 5330 の USB 2.5G の NCM。10GbE の recv は ATR 有効で Linux の 90〜97%（bbc43c185） | 5330（10.0.10.3 は 00:18 に返却） |
 | P4 | q1665-i10 in-progress | BUG-355・358 は直した（main ed93695ac）。[ws307](ws307/ws.md) p011 の通しを既定の項目で流し直す → 日本語の画面 | QEMU |
-| P5 | q1677-i02 返却（実機待ち） | [ws243](ws243/ws.md) p006 は host まで（agent/p5-ws243 fb8d9af77、未 merge）。10.0.10.3 が P3 から空いたら P5 を起動し直し、`rtx-p004.sh … video hang restore` から | 10.0.10.3（P3 の後） |
+| P5 | q1677-i02 in-progress | [ws243](ws243/ws.md) p006 の実機（Video Player 1080p60）、通れば WS243 completed で返却 | 10.0.10.3 |
 | P6 | q1667-i05 返却 | [ws282](ws282/ws.md)・[ws284](ws284/ws.md) は main に merge 済み、別のツリーのセッションは [ws282 handover](ws282/handover.md)・[ws284 handover](ws284/handover.md) の試験から続ける | — |
 | P7 | q1687-i01 返却 | [ws313](ws313/ws.md) Mali の残りと Mesa との照合の直しを main に（b6649f09f）。実機未実施。C5 で描画がおかしい時の境目は c08176e6c・db080e110 | — |
 
