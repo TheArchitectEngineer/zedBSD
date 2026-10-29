@@ -145,6 +145,8 @@ main(
 		fprintf(stderr, "requests: no font %s (%s)\n", FONT, strerror(status));
 		return 1;
 	}
+
+	/* Gives the widgets the font. */
 	requests.style.text = &requests.text;
 
 	/* The first request is this start's own. */
@@ -355,6 +357,8 @@ requests_input(
 		requests->resized = 1;
 		return;
 	}
+
+	/* The close button ends the program. */
 	if (input->kind == KL_WINDOW_CLOSE) {
 		requests->closed = 1;
 		return;
@@ -451,5 +455,7 @@ requests_launch(
 	} else {
 		snprintf(requests->status, sizeof(requests->status), "Started: %s.", request);
 	}
+
+	/* Draws the new status. */
 	requests->dirty = 1;
 }

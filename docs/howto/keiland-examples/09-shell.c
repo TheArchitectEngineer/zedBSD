@@ -139,6 +139,8 @@ main(void)
 		fprintf(stderr, "shell: no font %s (%s)\n", FONT, strerror(status));
 		return 1;
 	}
+
+	/* Gives the widgets the font. */
 	shell.style.text = &shell.text;
 	kl_ui_set_focus(shell.ui, ID_COMMAND, 0U);
 	shell.line_count = 1;
@@ -397,6 +399,8 @@ shell_input(
 		shell->resized = 1;
 		return;
 	}
+
+	/* The close button ends the program. */
 	if (input->kind == KL_WINDOW_CLOSE) {
 		shell->closed = 1;
 		return;
@@ -506,6 +510,8 @@ shell_news(
 			if ((mode & KL_PROCESS_TERMINAL_LINES) != 0U)
 				shell->secret = 1;
 		}
+
+		/* Draws the screen again. */
 		shell->dirty = 1;
 	}
 
@@ -517,6 +523,8 @@ shell_news(
 		} else if (how == KL_PROCESS_SIGNALED) {
 			snprintf(shell->ended, sizeof(shell->ended), "The shell was ended by the signal %d.", code);
 		}
+
+		/* Closes the process that ended. */
 		kl_process_close(shell->process);
 		shell->process = NULL;
 		shell->secret = 0;
@@ -552,6 +560,8 @@ shell_print(
 				shell->sequence = SEQUENCE_PARAMETERS;
 			continue;
 		}
+
+		/* Inside the parameters, every byte is dropped up to the final one. */
 		if (shell->sequence == SEQUENCE_PARAMETERS) {
 			if (byte >= 0x40 && byte <= 0x7e)
 				shell->sequence = SEQUENCE_NONE;
@@ -563,24 +573,35 @@ shell_print(
 			shell->sequence = SEQUENCE_ESCAPE;
 			continue;
 		}
+
+		/* A new line starts a new row. */
 		if (byte == NEWLINE) {
 			shell_new_line(shell);
 			continue;
 		}
+
+		/* A backspace takes the last character back. */
 		if (byte == BACKSPACE) {
 			if (shell->column > 0) {
 				shell->column--;
 				line[shell->column] = '\0';
 			}
+
 			continue;
 		}
+
+		/* A tab fills up to the next stop. */
 		if (byte == TAB) {
 			while (shell->column % 8U != 7U && shell->column < LINE_BYTES - 2U) {
 				line[shell->column] = ' ';
 				shell->column++;
 			}
+
+			/* A tab then counts as a space. */
 			byte = ' ';
 		}
+
+		/* Any other control character is dropped. */
 		if (byte < 0x20 || byte == 0x7f)
 			continue;
 

@@ -491,7 +491,8 @@ process_find(
 		status = access(candidate, X_OK);
 		if (status == 0) {
 			*path = candidate;
-			return 0;
+			error = 0;
+			break;
 		}
 
 		/* Remembers that a program was found there but may not be run. */
@@ -504,8 +505,12 @@ process_find(
 			break;
 	}
 
-	/* Not found (or found and not to be run). */
-	return error;
+	/* Reports a program that was not found (or found and not to be run). */
+	if (error != 0)
+		return error;
+
+	/* Succeeded: the program's path is allocated. */
+	return 0;
 }
 
 /*

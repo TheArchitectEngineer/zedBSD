@@ -128,6 +128,8 @@ main(void)
 		fprintf(stderr, "services: no font %s (%s)\n", FONT, strerror(status));
 		return 1;
 	}
+
+	/* Gives the widgets the font. */
 	services.style.text = &services.text;
 
 	/* Makes the first frame, and learns whether the window is see-through: then it stands on glass. */
@@ -398,6 +400,8 @@ services_input(
 		services->resized = 1;
 		return;
 	}
+
+	/* The close button ends the program. */
 	if (input->kind == KL_WINDOW_CLOSE) {
 		services->closed = 1;
 		return;
@@ -450,6 +454,8 @@ services_chosen(
 {
 	struct services *services;
 
+
+	/* The chooser and the filter are not needed here. */
 	(void)chooser;
 	(void)filter;
 
