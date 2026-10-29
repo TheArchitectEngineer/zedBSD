@@ -37,3 +37,7 @@ Realtek方式については、NCMでどこまで速度が上がるか観察し�
 
 - 2026-10-30 Q1: 作成。WS221 p014（xHCI）と NCM の観察の後に担当を割り当てる。
 - 2026-10-30 P3（q1694-i01）: p001 cleared（design.md、review の反映 §12）。p002 の実装の初版 5534277a3、5330 の試験（plan/ws315/tests/5330-rtl.sh）へ。
+- 2026-10-30 P3 checkpoint（363ab924b、context の残りが少なく返却）: p002 cleared。p003 は 5330 の k4 で vendor mode send 2372.2・recv 2319.1（Linux 2353.4・2353.6）、
+  未実施の項目（camcap・送受信の同時・port の上げ下げ・抜き差し・jumbo の相手・他の版の RTL8156）が残る。次: p003 の残り（image の試験で camcap と送受信の同時）、
+  p004 RTL8157（Linux の r8156_init の version 16 の枝・r8157_hw_phy_cfg・ADV_CMD の BMU/IP の間接の読み書き・EARLY_SIZE /16・IDLE_SPDWN を飛ばす、design.md §11・§12 m2）、
+  p005 規約の全文の見直し。merge は Q1 の判断（M4: 既定で vendor mode に切り替わる。5330 の k4 で動いた）。
