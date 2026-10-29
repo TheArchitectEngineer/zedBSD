@@ -49,7 +49,6 @@
 /* Every address space's fault bit of the MMU block (the low 16 bits). */
 #define MMU_IRQ_FAULTS		0x0000ffffU
 
-static int wait_raw(struct mali_device *device, uint32_t block, uint32_t mask, unsigned milliseconds);
 static int wait_ready(struct mali_device *device, uint32_t ready, uint32_t transition, uint64_t mask, unsigned milliseconds);
 static void gpu_interrupt(int irq, kern_irq_ack_t acknowledge, void *argument);
 static void mmu_interrupt(int irq, kern_irq_ack_t acknowledge, void *argument);
@@ -204,7 +203,7 @@ mali_gpu_soft_reset(
 	mali_write32(device, MALI_REG_COMMAND, MALI_COMMAND_SOFT_RESET);
 
 	/* Waits for the GPU to report the reset done. */
-	error = wait_raw(device, MALI_GPU_INT_BASE, MALI_GPU_IRQ_RESET_DONE, RESET_WAIT_MS);
+	error = mali_gpu_wait_raw(device, MALI_GPU_INT_BASE, MALI_GPU_IRQ_RESET_DONE, RESET_WAIT_MS);
 	if (error != 0) {
 		kern_logf("mali: soft reset did not complete (status %08x)\n",
 			  (unsigned)mali_read32(device, MALI_REG_STATUS));
@@ -302,7 +301,7 @@ mali_gpu_flush_caches(
 	mali_write32(device, MALI_REG_COMMAND, command);
 
 	/* Waits for the GPU to report the flush done. */
-	error = wait_raw(device, MALI_GPU_INT_BASE, MALI_GPU_IRQ_CACHES_CLEAN, FLUSH_WAIT_MS);
+	error = mali_gpu_wait_raw(device, MALI_GPU_INT_BASE, MALI_GPU_IRQ_CACHES_CLEAN, FLUSH_WAIT_MS);
 	if (error != 0)
 		return error;
 
@@ -398,8 +397,8 @@ mali_gpu_report_events(
  * Polls one interrupt block's raw status until every bit of a mask is
  * set; ETIMEDOUT when the time runs out first.
  */
-static int
-wait_raw(
+int
+mali_gpu_wait_raw(
 	struct mali_device *device,
 	uint32_t block,
 	uint32_t mask,
