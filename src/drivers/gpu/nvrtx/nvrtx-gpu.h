@@ -629,6 +629,17 @@ struct nvrtx_gpu {
 	 * objects (the reboot's unload) stays short.
 	 */
 	int rpc_unanswered;
+	/*
+	 * Serializes the calls to the resource manager and the reading of the
+	 * GSP's messages once more than one thread reaches the GSP (the
+	 * message drain, a session's channel, the recovery): gpu->call and
+	 * gpu->reply are one pair, so a caller that reads a reply holds the
+	 * lock from the call to the read (nvrtx_rpc_lock()); a call alone takes
+	 * it itself.  rpc_wanted counts the threads waiting for it (atomically):
+	 * the drain gives the lock up between its turns while it is not zero.
+	 */
+	struct mutex rpc_lock;
+	uint32_t rpc_wanted;
 
 	/* The first address space and channel. */
 	struct nvrtx_engine_state engine;
@@ -731,6 +742,8 @@ uint32_t nvrtx_frts_result(struct nvrtx_gpu *gpu);
 
 int nvrtx_rpc_send(struct nvrtx_gpu *gpu, uint32_t function, const uint8_t *payload, size_t length, int with_sequence, uint32_t *sequence);
 int nvrtx_rpc_wait(struct nvrtx_gpu *gpu, uint32_t function, uint32_t sequence, uint32_t timeout_us, size_t *length);
+void nvrtx_rpc_lock(struct nvrtx_gpu *gpu);
+void nvrtx_rpc_unlock(struct nvrtx_gpu *gpu);
 
 int nvrtx_rm_allocate(struct nvrtx_gpu *gpu, uint32_t parent, uint32_t handle, uint32_t class_number, const uint8_t *parameters, size_t length);
 int nvrtx_rm_control(struct nvrtx_gpu *gpu, uint32_t client, uint32_t object, uint32_t command, const uint8_t *parameters, size_t length, const uint8_t **reply, size_t *reply_length);
