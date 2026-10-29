@@ -15,6 +15,10 @@
 # CAPTURE=DIRS (a comma list of send and recv): those runs are captured on this host as well, only read (tcpdump -p:
 # no promiscuous mode, nothing about the interface changes), the TCP headers of the run's connection (96 bytes of each
 # frame) into a new directory of the output per run (capture-N-DIR/), and summed up by plan/ws221/tests/ack-order.py.
+# Each run also gives the receive queues of this host's adapter that took more than 1000 frames over it (ethtool -S,
+# read only): an ixgbe's flow director (ATR) moves a flow's receive queue to the CPU its sender last ran on, and the
+# machine's acknowledgements, spread over two queues, then reach this host's TCP out of order.  PEER_CPU=N runs the
+# peer (perf-peer.py) on that CPU only (taskset), so the flow keeps one queue; nothing about the adapter changes.
 # Copyright (C) 2026 Awe Morris; SPDX-License-Identifier: Zlib
 set -u
 cd "$(dirname -- "$0")/../../.."
@@ -48,6 +52,7 @@ IFACE=${IFACE:-rge0}
 CONTROL=${CONTROL:-ue0}
 POWERCYCLE=${POWERCYCLE:-0}
 CAPTURE=${CAPTURE:-}
+PEER_CPU=${PEER_CPU:-}
 PEER_IP=${PEER_IP:-10.0.10.2}
 PERF_PORT=${PERF_PORT:-5321}
 PLUG=${PLUG:-AC276E42B252}
@@ -135,7 +140,11 @@ if [ -n "$zip" ]; then
 		zs "$rip" "ifconfig $IFACE" > "$out/counters-before.txt" 2>&1
 		count=$(echo "$runs" | tr ',' '\n' | grep -c .)
 		: > "$out/peer.log"
-		timeout $((count * (seconds + 60) + 120)) python3 -I plan/ws221/tests/perf-peer.py "$PEER_IP" "$PERF_PORT" "$out/peer.log" "$count" > /dev/null 2>&1 &
+		pin=
+		[ -n "$PEER_CPU" ] && pin="taskset -c $PEER_CPU"
+		say "peer on CPU ${PEER_CPU:-any}"
+		hif=$(ip -o route get "$rip" | sed -n 's/.* dev \([^ ]*\).*/\1/p')
+		timeout $((count * (seconds + 60) + 120)) $pin python3 -I plan/ws221/tests/perf-peer.py "$PEER_IP" "$PERF_PORT" "$out/peer.log" "$count" > /dev/null 2>&1 &
 		peer=$!
 		sleep 2
 		n=0
@@ -144,6 +153,7 @@ if [ -n "$zip" ]; then
 			run=$n-$dir
 			zs "$rip" "/tmp/sysctl hw.cputimes; dmesg | grep 'rtl8125: $IFACE profile' | tail -1; /tmp/sysctl net.tcpstats" > "$out/before-$run.txt" 2>&1
 			snmp0=$(awk '/^Tcp: [0-9]/ {print $13}' /proc/net/snmp)
+			sudo -n /usr/sbin/ethtool -S "$hif" > "$out/queues-$run-before.txt" 2>&1
 			cp /proc/net/netstat "$out/netstat-$run-before.txt"
 			# net.tcpstats every 2 s over the run, on the machine, read back after.
 			capture=
@@ -171,6 +181,11 @@ if [ -n "$zip" ]; then
 				say "  ack order: $(head -20 "$capture/ack-order.txt" | tr '\n' ';')"
 			fi
 			snmp1=$(awk '/^Tcp: [0-9]/ {print $13}' /proc/net/snmp)
+			sudo -n /usr/sbin/ethtool -S "$hif" > "$out/queues-$run-after.txt" 2>&1
+			say "  this host's receive queues over 1000 frames in the run: $(awk '
+			    FNR == NR && $1 ~ /^rx_queue_[0-9]+_packets:$/ { b[$1] = $2; next }
+			    $1 ~ /^rx_queue_[0-9]+_packets:$/ && $2 - b[$1] > 1000 { q = $1; sub(/^rx_queue_/, "", q); sub(/_packets:$/, "", q); printf "%s=%d ", q, $2 - b[$1] }
+			    $1 ~ /^fdir_(match|miss):$/ { printf "%s ", $0 }' "$out/queues-$run-before.txt" "$out/queues-$run-after.txt" | tr -s ' ')"
 			cp /proc/net/netstat "$out/netstat-$run-after.txt"
 			sleep 2
 			zs "$rip" "/tmp/sysctl hw.cputimes; dmesg | grep 'rtl8125: $IFACE profile' | tail -1" > "$out/after-$run.txt" 2>&1

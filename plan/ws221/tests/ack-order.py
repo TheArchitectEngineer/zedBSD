@@ -55,6 +55,7 @@ def frames(path):
                 continue
             ihl = (data[offset] & 0x0f) * 4
             total = struct.unpack('>H', data[offset + 2:offset + 4])[0]
+            ident = struct.unpack('>H', data[offset + 4:offset + 6])[0]
             if data[offset + 9] != 6:
                 continue
             source = socket.inet_ntoa(data[offset + 12:offset + 16])
@@ -84,7 +85,7 @@ def frames(path):
                     if size < 2:
                         break
                     i += size
-            yield when, source, destination, sport, dport, seq, ack, flags, window, payload, wscale
+            yield when, source, destination, sport, dport, seq, ack, flags, window, payload, wscale, ident
 
 
 def main():
@@ -115,6 +116,7 @@ def main():
     old_distance = []
     gaps = []
     windows = []
+    flight = []
     limited = 0
     advances = 0
     acked_per_advance = collections.Counter()
@@ -122,7 +124,13 @@ def main():
     last_time = None
     data_frames = 0
     retransmits = 0
-    for when, source, destination, sport, dport, seq, ack, flags, window, payload, wscale in frames(path):
+    # zedBSD numbers its IPv4 datagrams in the order its IP output takes them: an old acknowledgement whose number is
+    # behind that of the acknowledgement that last advanced was overtaken after that output (the device, the wire or
+    # this host's receive queues); one whose number is after it was built behind (the stack read an old point).
+    advance_ident = None
+    old_overtaken = 0
+    old_built = 0
+    for when, source, destination, sport, dport, seq, ack, flags, window, payload, wscale, ident in frames(path):
         if first is None:
             first = when
         t = when - first
@@ -142,6 +150,10 @@ def main():
             elif ack != una:
                 kind = 'old'
                 old_distance.append((una - ack) & 0xffffffff)
+                if advance_ident is not None and ((ident - advance_ident) & 0xffff) >= 0x8000:
+                    old_overtaken += 1
+                else:
+                    old_built += 1
             elif wnd is not None and win > wnd:
                 kind = 'window-update'
             elif outstanding:
@@ -165,8 +177,11 @@ def main():
                     dup_runs[min(run, 16)] += 1
                 run = 0
                 una = ack
+                advance_ident = ident
                 wnd = win
                 windows.append(win)
+                if nxt is not None:
+                    flight.append((nxt - ack) & 0xffffffff)
                 if nxt is not None and ((nxt - ack) & 0xffffffff) + mss > win:
                     limited += 1
             elif kind == 'window-update':
@@ -203,10 +218,16 @@ def main():
         old_distance.sort()
         print('old acknowledgements behind by bytes: median %d most %d' % (
             old_distance[len(old_distance) // 2], old_distance[-1]))
+        print('old acknowledgements overtaken after the machine\'s IP output (IP ID behind the last advance\'s): %d; '
+              'built behind (IP ID ahead): %d' % (old_overtaken, old_built))
     if windows:
         w = sorted(windows)
         print('window on advances: least %d median %d most %d; in flight within a segment of it: %d of %d' % (
             w[0], w[len(w) // 2], w[-1], limited, len(w)))
+    if flight:
+        f = sorted(flight)
+        print('in flight on advances (bytes): median %d p10 %d p90 %d most %d' % (
+            f[len(f) // 2], f[len(f) // 10], f[len(f) * 9 // 10], f[-1]))
     if acked_per_advance:
         print('segments acknowledged per advance: ' + ' '.join(
             '%d:%d' % kv for kv in sorted(acked_per_advance.items())[:12]))
