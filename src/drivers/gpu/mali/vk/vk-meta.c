@@ -6,8 +6,8 @@
  */
 
 /*
- * The executor's own programs and the blit that runs one.  See
- * vk-meta.h.
+ * The executor's own programs, the blit and the aspect copy that run
+ * them.  See vk-meta.h.
  */
 
 #include <stdbool.h>
@@ -28,9 +28,9 @@
 #define META_TABLES		MALI_DESC_TABLE_ALIGN
 
 
-/* The blit's buffers by binding: the source and the target. */
-#define BLIT_SOURCE_BINDING	0U
-#define BLIT_TARGET_BINDING	1U
+/* The blit's and the aspect copy's buffers by binding: the source and the target. */
+#define SOURCE_BINDING		0U
+#define TARGET_BINDING		1U
 
 /* The blit's push constant words, in the order the program declares them. */
 #define BLIT_X			0U
@@ -47,6 +47,28 @@
 #define BLIT_SOURCE_HEIGHT	11U
 #define BLIT_FLAGS		12U
 
+/* The aspect copy's push constant words, in the order the program declares them. */
+#define ASPECT_WIDTH		0U
+#define ASPECT_HEIGHT		1U
+#define ASPECT_SOURCE_PITCH	2U
+#define ASPECT_TARGET_PITCH	3U
+#define ASPECT_SOURCE_LAYER	4U
+#define ASPECT_TARGET_LAYER	5U
+#define ASPECT_SOURCE_STEP	6U
+#define ASPECT_TARGET_STEP	7U
+#define ASPECT_SOURCE_SHIFT	8U
+#define ASPECT_TARGET_SHIFT	9U
+#define ASPECT_MASK		10U
+#define ASPECT_VALUE		11U
+#define ASPECT_FLAGS		12U
+
+/*
+ * The last byte offset from either side's first texel the aspect copy
+ * takes: the program's offsets are 32-bit, and staying below 2^31 keeps
+ * them clear of a signed reading.
+ */
+#define ASPECT_OFFSET_MAX	0x7fffffffULL
+
 /* The component orders of the formats the blit takes, and none. */
 #define ORDER_RGBA		0
 #define ORDER_BGRA		1
@@ -60,11 +82,17 @@ static const char *const meta_names[] = {
 	"that scales or converts a blit",
 	"that places a clear inside a pass",
 	"that colours a clear inside a pass",
+	"that copies or clears one aspect of a depth and stencil image",
 };
+
+/* The entry of meta_names the aspect copy has. */
+#define ASPECT_NAME		3U
 
 static int compile_program(unsigned which, struct mali_shader_program **program);
 static const struct mali_shader_program *node_program(struct mali_render *render, unsigned which);
 static bool program_fits(const struct mali_shader_program *program, unsigned which, const char **reason);
+static bool compute_fits(const struct mali_shader_program *program, uint32_t push_bytes, uint32_t group, const char **reason);
+static bool aspect_side_fits(uint64_t address, uint32_t width, uint32_t height, uint32_t layers, uint64_t pitch, uint64_t layer, uint32_t step);
 static int session_code(struct mali_session *session, const struct mali_shader_program *program, unsigned which, uint64_t *address);
 static const char *meta_name(unsigned which);
 static int blit_order(const struct mali_vk_format *format);
@@ -311,7 +339,7 @@ mali_vk_meta_blit(
 	/* Each buffer's address at its FAU words, by its binding (the program's shape was checked). */
 	for (index = 0; index < program->buffer_count; index++) {
 		address = source_address;
-		if (program->buffers[index].binding == BLIT_TARGET_BINDING)
+		if (program->buffers[index].binding == TARGET_BINDING)
 			address = target_address;
 		word = program->buffers[index].fau_word;
 		words[word] = (uint32_t)address;
@@ -341,9 +369,109 @@ mali_vk_meta_blit(
 }
 
 /*
+ * Writes one run of the aspect copy: one thread a texel of each layer,
+ * the push constants the run's description, the source and the target
+ * at their buffers' FAU words.  A clear's source is the target (not
+ * read).
+ */
+int
+mali_vk_meta_aspect(
+	struct mali_vk_build *build,
+	const struct mali_vk_meta_aspect *aspect)
+{
+	const struct mali_shader_program *program;
+	uint32_t words[MALI_VK_META_FAU_WORDS];
+	uint32_t counts[3];
+	uint64_t source;
+	uint64_t code;
+	uint64_t fau;
+	uint64_t table;
+	uint64_t shader;
+	uint64_t storage;
+	uint64_t address;
+	uint32_t index;
+	uint32_t word;
+	bool fits;
+	int error;
+
+	/* No texel to write: nothing runs. */
+	if (aspect->width == 0U || aspect->height == 0U || aspect->layers == 0U)
+		return 0;
+
+	/* A clear reads nothing; its source points at the target so that no address is wild. */
+	source = aspect->source;
+	if ((aspect->flags & MALI_META_ASPECT_CONSTANT) != 0U)
+		source = aspect->target;
+
+	/* Both sides word aligned, their texels' offsets inside the program's range. */
+	fits = aspect_side_fits(source, aspect->width, aspect->height, aspect->layers, aspect->source_pitch, aspect->source_layer, aspect->source_step);
+	if (!fits)
+		return ENOTSUP;
+	fits = aspect_side_fits(aspect->target, aspect->width, aspect->height, aspect->layers, aspect->target_pitch, aspect->target_layer, aspect->target_step);
+	if (!fits)
+		return ENOTSUP;
+
+	/* The program and its code. */
+	error = mali_vk_meta_program(build, MALI_VK_META_ASPECT, &program, &code);
+	if (error != 0)
+		return ENOTSUP;
+
+	/* The push constants: the extent, both sides' pitches, layers, steps and shifts, the field, the flags. */
+	kern_memset(words, 0, sizeof(words));
+	words[ASPECT_WIDTH] = aspect->width;
+	words[ASPECT_HEIGHT] = aspect->height;
+	words[ASPECT_SOURCE_PITCH] = (uint32_t)aspect->source_pitch;
+	words[ASPECT_TARGET_PITCH] = (uint32_t)aspect->target_pitch;
+	words[ASPECT_SOURCE_STEP] = aspect->source_step;
+	words[ASPECT_TARGET_STEP] = aspect->target_step;
+	words[ASPECT_SOURCE_SHIFT] = aspect->source_shift;
+	words[ASPECT_TARGET_SHIFT] = aspect->target_shift;
+	words[ASPECT_MASK] = aspect->mask;
+	words[ASPECT_VALUE] = aspect->value;
+	words[ASPECT_FLAGS] = aspect->flags;
+
+	/* The layers' sizes, read only with a second layer (a single layer's may not fit a word). */
+	if (aspect->layers > 1U) {
+		words[ASPECT_SOURCE_LAYER] = (uint32_t)aspect->source_layer;
+		words[ASPECT_TARGET_LAYER] = (uint32_t)aspect->target_layer;
+	}
+
+	/* Each buffer's address at its FAU words, by its binding (the program's shape was checked). */
+	for (index = 0; index < program->buffer_count; index++) {
+		address = source;
+		if (program->buffers[index].binding == TARGET_BINDING)
+			address = aspect->target;
+		word = program->buffers[index].fau_word;
+		words[word] = (uint32_t)address;
+		words[word + 1U] = (uint32_t)(address >> 32);
+	}
+
+	/* The FAU words into the stage. */
+	error = mali_vk_meta_fau(build, words, program->fau_words, &fau);
+	if (error != 0)
+		return error;
+
+	/* The empty tables, the program descriptor and the storage without local memory. */
+	table = mali_vk_meta_tables(build);
+	shader = mali_vk_build_shader(build, MALI_DESC_STAGE_COMPUTE, program->work_registers, program->preload, code);
+	storage = mali_vk_build_thread_storage(build, 0);
+	if (table == 0U || shader == 0U || storage == 0U)
+		return build->error;
+
+	/* One workgroup a block of eight by eight texels of a layer, waited for. */
+	counts[0] = (aspect->width + MALI_META_ASPECT_GROUP - 1U) / MALI_META_ASPECT_GROUP;
+	counts[1] = (aspect->height + MALI_META_ASPECT_GROUP - 1U) / MALI_META_ASPECT_GROUP;
+	counts[2] = aspect->layers;
+	mali_vk_build_compute(build, table, fau, shader, storage, program->local_size, counts);
+
+	/* Succeeded: the run is in the stream. */
+	return 0;
+}
+
+/*
  * Compiles one of the executor's programs from its SPIR-V: the blit, the
- * clear's vertex program, or the clear's fragment program with its
- * colour moved to the program's location.
+ * aspect copy, the clear's vertex program, or the clear's fragment
+ * program with its colour moved to the program's location.
  */
 static int
 compile_program(
@@ -364,6 +492,10 @@ compile_program(
 	if (which == MALI_VK_META_BLIT) {
 		words = mali_meta_blit_spirv;
 		count = mali_meta_blit_words;
+		stage = MALI_SHADER_COMPUTE;
+	} else if (which == MALI_VK_META_ASPECT) {
+		words = mali_meta_aspect_spirv;
+		count = mali_meta_aspect_words;
 		stage = MALI_SHADER_COMPUTE;
 	} else if (which == MALI_VK_META_CLEAR_VERTEX) {
 		words = mali_meta_clear_vertex_spirv;
@@ -481,11 +613,12 @@ node_program(
 /*
  * Says whether a compiled program has the shape its work writes
  * descriptors for: no textures, images or thread local storage; the
- * blit a compute program of eight by eight threads with its two
- * storage buffers at set 0, bindings 0 and 1, whose lengths it does not
- * read; the clear's vertex program only a position from the vertex
- * index and a rectangle; the clear's fragment program one colour at its
- * location, from push constants, without inputs or a discard.
+ * blit and the aspect copy each a compute program of eight by eight
+ * threads with its two storage buffers at set 0, bindings 0 and 1,
+ * whose lengths it does not read; the clear's vertex program only a
+ * position from the vertex index and a rectangle; the clear's fragment
+ * program one colour at its location, from push constants, without
+ * inputs or a discard.
  */
 static bool
 program_fits(
@@ -493,7 +626,7 @@ program_fits(
 	unsigned which,
 	const char **reason)
 {
-	uint32_t index;
+	bool fits;
 
 	/* Nothing the executor's descriptors do not give. */
 	if (program->texture_count != 0U || program->image_count != 0U) {
@@ -513,39 +646,17 @@ program_fits(
 
 	/* The blit: a compute program of its workgroup, its push constants and its two buffers. */
 	if (which == MALI_VK_META_BLIT) {
-		if (program->stage != MALI_SHADER_COMPUTE) {
-			*reason = "is not a compute program";
+		fits = compute_fits(program, MALI_META_BLIT_PUSH_BYTES, MALI_META_BLIT_GROUP, reason);
+		if (!fits)
 			return false;
-		}
+		return true;
+	}
 
-		if (program->local_size[0] != MALI_META_BLIT_GROUP || program->local_size[1] != MALI_META_BLIT_GROUP || program->local_size[2] != 1U) {
-			*reason = "has another workgroup size";
+	/* The aspect copy: the same shape with its own push constants. */
+	if (which == MALI_VK_META_ASPECT) {
+		fits = compute_fits(program, MALI_META_ASPECT_PUSH_BYTES, MALI_META_ASPECT_GROUP, reason);
+		if (!fits)
 			return false;
-		}
-
-		if (program->push_bytes != MALI_META_BLIT_PUSH_BYTES || program->buffer_count != 2U) {
-			*reason = "does not read its push constants and two buffers";
-			return false;
-		}
-
-		/* Each buffer: set 0, the source's or the target's binding, inside the FAU words, its length not read. */
-		for (index = 0; index < program->buffer_count; index++) {
-			if (program->buffers[index].set != 0U || program->buffers[index].binding > BLIT_TARGET_BINDING) {
-				*reason = "binds another buffer";
-				return false;
-			}
-
-			if (program->buffers[index].fau_word + 2U > program->fau_words || program->buffers[index].size_fau_word != MALI_SHADER_NO_FAU_WORD) {
-				*reason = "reads a buffer's address outside its FAU words or its length";
-				return false;
-			}
-		}
-
-		if (program->buffers[0].binding == program->buffers[1].binding) {
-			*reason = "binds one buffer twice";
-			return false;
-		}
-
 		return true;
 	}
 
@@ -592,6 +703,94 @@ program_fits(
 	}
 
 	/* Succeeded: the work's descriptors fit it. */
+	return true;
+}
+
+/*
+ * Says whether a compute program has a workgroup of group by group
+ * threads of one layer, push_bytes of push constants and two storage
+ * buffers at set 0, the source's and the target's bindings (0 and 1),
+ * inside its FAU words, whose lengths it does not read.
+ */
+static bool
+compute_fits(
+	const struct mali_shader_program *program,
+	uint32_t push_bytes,
+	uint32_t group,
+	const char **reason)
+{
+	uint32_t index;
+
+	/* A compute program of its workgroup. */
+	if (program->stage != MALI_SHADER_COMPUTE) {
+		*reason = "is not a compute program";
+		return false;
+	}
+
+	if (program->local_size[0] != group || program->local_size[1] != group || program->local_size[2] != 1U) {
+		*reason = "has another workgroup size";
+		return false;
+	}
+
+	/* Its push constants and two buffers. */
+	if (program->push_bytes != push_bytes || program->buffer_count != 2U) {
+		*reason = "does not read its push constants and two buffers";
+		return false;
+	}
+
+	/* Each buffer: set 0, the source's or the target's binding, inside the FAU words, its length not read. */
+	for (index = 0; index < program->buffer_count; index++) {
+		if (program->buffers[index].set != 0U || program->buffers[index].binding > TARGET_BINDING) {
+			*reason = "binds another buffer";
+			return false;
+		}
+
+		if (program->buffers[index].fau_word + 2U > program->fau_words || program->buffers[index].size_fau_word != MALI_SHADER_NO_FAU_WORD) {
+			*reason = "reads a buffer's address outside its FAU words or its length";
+			return false;
+		}
+	}
+
+	if (program->buffers[0].binding == program->buffers[1].binding) {
+		*reason = "binds one buffer twice";
+		return false;
+	}
+
+	/* Succeeded: the run's descriptors fit it. */
+	return true;
+}
+
+/*
+ * Says whether one side of an aspect copy fits the program: a word
+ * aligned first texel, and the last byte of its last texel at an offset
+ * below ASPECT_OFFSET_MAX.  The extent is not zero.
+ */
+static bool
+aspect_side_fits(
+	uint64_t address,
+	uint32_t width,
+	uint32_t height,
+	uint32_t layers,
+	uint64_t pitch,
+	uint64_t layer,
+	uint32_t step)
+{
+	uint64_t last;
+
+	/* The program reads and writes whole words from the first texel's. */
+	if ((address & 3U) != 0U)
+		return false;
+
+	/* Each stride inside the program's range (a layer's only when there is a second), then the last texel's last byte. */
+	if (pitch > ASPECT_OFFSET_MAX || step > 4U)
+		return false;
+	if (layers > 1U && layer > ASPECT_OFFSET_MAX)
+		return false;
+	last = (uint64_t)(layers - 1U) * layer + (uint64_t)(height - 1U) * pitch + (uint64_t)(width - 1U) * step + 3U;
+	if (last > ASPECT_OFFSET_MAX)
+		return false;
+
+	/* Succeeded: the side fits. */
 	return true;
 }
 
@@ -653,7 +852,9 @@ static const char *
 meta_name(
 	unsigned which)
 {
-	/* The clear's colour programs share one name. */
+	/* The aspect copy's own, after the clear's colour programs that share one name. */
+	if (which == MALI_VK_META_ASPECT)
+		return meta_names[ASPECT_NAME];
 	if (which >= MALI_VK_META_CLEAR_COLOR)
 		return meta_names[MALI_VK_META_CLEAR_COLOR];
 

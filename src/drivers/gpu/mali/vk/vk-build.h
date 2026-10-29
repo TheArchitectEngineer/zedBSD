@@ -69,6 +69,12 @@ struct mali_vk_build {
 	bool load_warned;
 
 	/*
+	 * aspect_warned says a copy or a clear of one aspect of a depth and
+	 * stencil image was left out (said once a submission).
+	 */
+	bool aspect_warned;
+
+	/*
 	 * The state the commands set for a pipeline that takes it from them:
 	 * the depth bias's constant, clamp and slope factors (float bits),
 	 * and each face's (front 0, back 1) stencil masks and reference.
