@@ -12,6 +12,7 @@
 #ifndef KEILAND_APP_H
 #define KEILAND_APP_H
 
+#include <keiland/keiland_tr.h>
 #include <keiland/keiland_window.h>
 
 #ifdef __cplusplus
@@ -57,6 +58,7 @@ struct kl_instance;
 #define KL_APP_POST		4U
 #define KL_APP_PROCESS		5U
 #define KL_APP_INSTANCE	6U
+#define KL_APP_LANGUAGE	7U
 
 /*
  * What an application is opened with.  Either pointer may be NULL:
@@ -82,7 +84,11 @@ struct kl_app_options {
  * tells (KL_PROCESS_READY_*); KL_APP_INSTANCE (KL_VERSION 99) says later
  * starts of the program handed requests to its copy that runs (instance,
  * bound with kl_instance_bind): the program takes them with
- * kl_instance_take until none is left.
+ * kl_instance_take until none is left; KL_APP_LANGUAGE (KL_VERSION 101)
+ * says the desktop's language changed, and language names the language it
+ * changed to ("en", "ja", ...), as kl_tr_open takes it.  Changes that come
+ * one after another come as events in the same order: the last one tells
+ * the language now.
  */
 struct kl_app_event {
 	unsigned kind;
@@ -94,6 +100,7 @@ struct kl_app_event {
 	void *data;
 	struct kl_process *process;
 	struct kl_instance *instance;
+	char language[KL_TR_NAME_MAX + 1U];
 };
 
 /*
@@ -115,6 +122,14 @@ void kl_app_close(struct kl_app *app);
  * connection is broken.
  */
 int kl_app_dispatch(struct kl_app *app, int timeout_ms);
+
+/*
+ * KL_VERSION 101: the desktop's language as the application last heard it
+ * ("en", "ja", ...; "en" when the compositor does not tell): at
+ * kl_app_open, then at each change a dispatch reads (the change's
+ * KL_APP_LANGUAGE event comes after).
+ */
+const char *kl_app_language(const struct kl_app *app);
 
 /*
  * Watches a descriptor for KL_APP_FD_READ and KL_APP_FD_WRITE (0 stops

@@ -52,9 +52,9 @@
 | ws314-p010 | 規約の全文の見直し | planned | p009 |
 | ws314-p011 | 解説の構成の設計（Opus）: 章ごとに完全に動く source の全文を示し、そこから帰納的に分からせ演繹的な説明も引ける構成。keiland-programming.md に「ここにこういう説明を入れる」の comment を入れ、例の全文は compile・実行で確かめる | cleared | p002 |
 | ws314-p012 | 解説の書き直し（Sonnet）: p011 の構成と comment に沿って人間向けの文章に | cleared | p011 |
-| [ws314-p013](phase013/phase.md) | `kl_launch` と Files・Settings・PDF Viewer・Terminal の新しい窓の移行（design.md §5） | in-progress（build・host 済み、QEMU 中） | p005 |
-| [ws314-p014](phase014/phase.md) | Preview の API から fd・pid を外し、`waitpid`・`kill` を Preview の platform の file へ（design.md §4.5） | in-progress（build・host 済み、QEMU 未） | p003 |
-| ws314-p015 | kl_app に system の言語の変更を知らせる event（`KL_APP_LANGUAGE` の類）を足す。event は変わった先の言語の名前（"ja" など）を運ぶ（決定 13）。今の kl_settings の読み（kl_settings_dispatch）との関係、translation（kl_tr）の読み直しの手順、解説への記述（p009 と一緒に） | planned | p004 |
+| [ws314-p013](phase013/phase.md) | `kl_launch` と Files・Settings・PDF Viewer・Terminal の新しい窓の移行（design.md §5） | cleared | p005 |
+| [ws314-p014](phase014/phase.md) | Preview の API から fd・pid を外し、`waitpid`・`kill` を Preview の platform の file へ（design.md §4.5） | cleared | p003 |
+| [ws314-p015](phase015/phase.md) | kl_app に system の言語の変更を知らせる event（`KL_APP_LANGUAGE` の類）を足す。event は変わった先の言語の名前（"ja" など）を運ぶ（決定 13）。今の kl_settings の読み（kl_settings_dispatch）との関係、translation（kl_tr）の読み直しの手順、解説への記述（p009 と一緒に） | cleared（解説は p009） | p004 |
 
 ## Resume point
 
@@ -81,3 +81,12 @@
   試験: `plan/ws314/tests/host-test.sh {post,process,instance} BUILD`（Linux の build、TSan は build dir の名前に tsan）、zedBSD は
   `plan/ws314/tests/guest.sh OUT IMGBUILD`（image は `config-amd64-guest.mk`）、build は `build-zedbsd.sh NAME ARCH "PROGRAMS"`
   （riscv64 の sysroot の header が古いまま残る時は header を touch して再 build）。判断 A〜D はユーザーの返事待ち（B は推しの形で実装済み）。
+- 2026-10-30 P2（q1690-i02）: p013 cleared（d5659a603、`kl_launch`、KL_VERSION 100）、p014 cleared（ea131385d、Preview の API から fd・pid）、
+  p015 cleared（`KL_APP_LANGUAGE`・`kl_app_language`、KL_VERSION 101）。QEMU は `guest.sh build/p2-q/run9` で 3 つまとめて PASS。
+- 再開点（2026-10-30 P2、context の残りが少ないため返却）: 次は p007（libbrowser の network の thread、design §7、BROWSER_API_VERSION 3）。
+  未着手。手がかり: shell の利用は `browser/shell/shell.c:306` の `browser_view_timeout` と `shell/window.c` の watch、libbrowser の API は
+  `include/browser/browser.h:266-268`（`browser_view_poll_fds`・`_timeout`・`_process`）と `libbrowser/view/view.c:637-702`、network は
+  `libbrowser/net/loader.c`（1763 行）・`http.c`・`tls.c`・`cookie.c`・`host.c`、`page/network.c`・`page/media.c`。その後 p008（KL_VERSION は
+  102 から、Q1 に確かめる）、p009（post・process・instance・launch・language の節、`plan/ws314/tests/doc-examples.sh`）、p010。
+  試験の道具: `plan/ws314/tests/guest.sh OUT IMGBUILD`（--glass、image に files・textedit）、host は `host-test.sh {post,process,launch,language,instance}`
+  と `preview-test.sh`。判断 A〜D はユーザーの返事待ち。

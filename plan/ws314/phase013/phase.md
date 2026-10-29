@@ -3,7 +3,7 @@
 # ws314-p013 `kl_launch` と Files・Settings・PDF Viewer・Terminal の新しい窓の移行
 
 - 親: [WS314](../ws.md)。設計: [design.md](../design.md) §5。Queue: q1690 / q1690-i02（担当 P2、2026-10-30）。
-- Status: in-progress（2026-10-30。実装・build・host の試験まで。QEMU は実行中）
+- Status: cleared（2026-10-30。build・host・QEMU（zedBSD）で確かめた）
 - Disposition: normal
 
 ## 目的・受け入れ
@@ -44,5 +44,14 @@
   PASS（22 件）。post・process・instance も PASS。TSan の libkeiland（`build/ws314-p013-tsan`）でも 4 本 PASS・警告 0。
 - `plan/tools/keiland-os-boundary/check.sh`: FAIL の集合は前（`build/ws314-boundary-after.txt`）と同じ（行の番号の移動だけ）。移した 4 file に
   FAIL は無い。
-- QEMU: 実行中（`plan/ws314/tests/guest.sh build/p2-q/run5 build/ws314-img`。image に files・textedit を足した。launch-test、Terminal の
-  Ctrl+Shift+N で `ZTERM START run=t1-new`、Files の double click で `ZFILES LAUNCH name=Text Editor` と textedit の process）。
+- QEMU（2026-10-30、`sh plan/ws314/tests/guest.sh build/p2-q/run9 build/ws314-img`、image は
+  `plan/tools/guest/test-image.sh plan/ws314/tests/config-amd64-guest.mk build/ws314-img`（files・textedit を足した）、compositor は
+  `/bin/wayland --testing --glass` 1280x800、判定は SSH で取った各試験の結果の行と app の log（console は読まない））: `ws314-guest: PASS`。
+  launch-test 22 件 PASS（zedBSD の上）、Terminal t1 の窓を click して Ctrl+Shift+N で `ZTERM START run=t1-new`（新しい窓の log は
+  kl_launch で t1 の出力を受け継ぐ）、Files の double click で `ZFILES LAUNCH name=Text Editor command=/bin/textedit '/tmp/ws314demo/notes.txt'` と
+  textedit の process、compositor の log に Files の activation token（`reason=focus granted=1`）。post・process・instance も PASS。
+- 途中の失敗と直し: launch-test が zedBSD で kl_app_open の ENOTSOCK（試験の誤り: zedBSD の getenv は同じ buffer を返し、WAYLAND_DISPLAY の
+  pointer が後の getenv で上書きされた。strdup で保つ）。Ctrl+Shift+N が届かない（compositor の menu の shortcut は `--glass` の時だけ
+  `seat.c` が見る。試験の compositor に `--glass` を足した。既存の挙動で Bug ではない）。
+- host の Files の試験の追従（Q1 の承認）: `plan/tools/files/host-launch.c`（host の kl_launch の代役）と `host-build.sh`、files-model PASS。
+  `plan/ws128/tests/host-share.*` は参照が無いので削除（ws128 phase005 の link を平文に）。

@@ -36,8 +36,12 @@
 
 #include <errno.h>
 #include <poll.h>
+#include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+
+/* The desktop's setting of the language: a whole number, a language's place (kl_tr_language_code). */
+#define APP_LANGUAGE_KEY	"ui.language"
 
 /* The applications open, newest first. */
 static struct kl_app *app_list;
@@ -50,6 +54,9 @@ static int app_wait(const struct kl_app *app, int timeout_ms, uint64_t now_us);
 static void app_repeat(struct kl_app *app);
 static struct kl_app_event *app_slot(struct kl_app *app);
 static void app_appearance(void *data, unsigned appearance);
+static void app_language_open(struct kl_app *app);
+static void app_language_set(struct kl_app *app, int setting);
+static void app_language_changed(void *data, const char *key, const char *value, unsigned flags);
 static void app_posts_move(struct kl_app *app);
 static int app_post_deliver(struct kl_app *app, struct kl_app_event *event);
 static void app_post_orphan(struct kl_app_event *event);
@@ -156,6 +163,9 @@ kl_app_open(
 	/* The desktop's appearance, watched (a compositor without it leaves the application light). */
 	(void)kl_appearance_open(app->display, app_appearance, app, &app->appearance);
 
+	/* The desktop's language, watched (a compositor without its settings leaves English). */
+	app_language_open(app);
+
 	/* Succeeded. */
 	return app;
 }
@@ -183,8 +193,10 @@ kl_app_close(
 		keiui_instances_unbind(app);
 	}
 
-	/* The appearance, the system and the menu service. */
+	/* The appearance, the settings, the system and the menu service. */
 	kl_appearance_close(app->appearance);
+	if (app->settings != NULL)
+		kl_settings_close(app->settings);
 	if (app->system != NULL)
 		kl_system_close(app->system);
 	if (app->menu_service != NULL)
@@ -264,6 +276,10 @@ kl_app_dispatch(
 		return -1;
 	}
 
+	/* The language's changes read so far (by another reader of the connection, too). */
+	if (app->settings != NULL)
+		(void)kl_settings_dispatch(app->settings);
+
 	/* The processes' and the copies' news so far, then no longer than until a repeat is due, and not at all while events wait. */
 	keiui_processes_queue(app);
 	keiui_instances_queue(app);
@@ -315,6 +331,10 @@ kl_app_dispatch(
 	if (status < 0)
 		return -1;
 
+	/* The settings' events read: a change of the language queues its event. */
+	if (app->settings != NULL)
+		(void)kl_settings_dispatch(app->settings);
+
 	/* The posts that wait, the processes' news, the descriptors that became ready, then the repeats now due. */
 	app_posts_move(app);
 	keiui_processes_queue(app);
@@ -324,6 +344,21 @@ kl_app_dispatch(
 
 	/* Succeeded: the events so far are queued. */
 	return 0;
+}
+
+/*
+ * Reports the desktop's language as the application last heard it.
+ */
+const char *
+kl_app_language(
+	const struct kl_app *app)
+{
+	/* No application: English. */
+	if (app == NULL)
+		return "en";
+
+	/* The language heard last. */
+	return app->language;
 }
 
 /*
@@ -923,6 +958,87 @@ app_appearance(
 	if (event == NULL)
 		return;
 	event->kind = KL_APP_THEME;
+}
+
+/*
+ * Opens the desktop's settings for the language: the language now, and a
+ * watch of its changes.  Without them the application stays in English.
+ */
+static void
+app_language_open(
+	struct kl_app *app)
+{
+	int setting;
+
+	/* English until the desktop says otherwise. */
+	(void)snprintf(app->language, sizeof(app->language), "%s", "en");
+
+	/* The settings (no application's own file); none without memory. */
+	app->settings = kl_settings_open(app->display, NULL);
+	if (app->settings == NULL)
+		return;
+
+	/* The language now. */
+	setting = kl_settings_get_int(app->settings, APP_LANGUAGE_KEY, 0);
+	app_language_set(app, setting);
+
+	/* And each change, as an event (a watch that cannot be made leaves the language as it is now). */
+	(void)kl_settings_watch(app->settings, APP_LANGUAGE_KEY, app_language_changed, app, NULL);
+}
+
+/* Keeps the language a value of the setting names (English for a value no language has). */
+static void
+app_language_set(
+	struct kl_app *app,
+	int setting)
+{
+	const char *code;
+
+	/* The language's name. */
+	code = kl_tr_language_code(setting);
+	if (code == NULL)
+		code = "en";
+	(void)snprintf(app->language, sizeof(app->language), "%s", code);
+}
+
+/*
+ * Takes a change of the desktop's language (from kl_settings_dispatch, on
+ * the application's thread): the value the change carries, not the
+ * settings read again, so that each of several quick changes tells its
+ * own language, in order.  The event waits in the posts' list when the
+ * queue is full; without memory for that it is lost, and kl_app_language
+ * still tells the language.
+ */
+static void
+app_language_changed(
+	void *data,
+	const char *key,
+	const char *value,
+	unsigned flags)
+{
+	struct kl_app_event event;
+	struct kl_app *app;
+	char *end;
+	long setting;
+
+	/* The new value, a whole number; none (the compositor went) is English. */
+	(void)key;
+	(void)flags;
+	app = data;
+	setting = 0;
+	if (value != NULL) {
+		setting = strtol(value, &end, 10);
+		if (end == value || *end != '\0')
+			setting = 0;
+	}
+	app_language_set(app, (int)setting);
+
+	/* The event, with the language's name. */
+	memset(&event, 0, sizeof(event));
+	event.kind = KL_APP_LANGUAGE;
+	event.fd = -1;
+	(void)snprintf(event.language, sizeof(event.language), "%s", app->language);
+	(void)keiui_app_post_event(app, &event);
 }
 
 /*

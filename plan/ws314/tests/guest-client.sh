@@ -6,6 +6,7 @@
 /tmp/post-test > /tmp/post.log 2>&1
 /tmp/process-test > /tmp/process.log 2>&1
 /tmp/launch-test > /tmp/launch.log 2>&1
+/tmp/language-test > /tmp/language.log 2>&1
 # The one copy's socket needs a runtime directory of the user's alone (the compositor gives its programs /tmp); the
 # compositor's socket is reached from there by a link.
 mkdir -p -m 700 /tmp/ws314inst
