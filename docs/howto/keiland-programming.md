@@ -3,37 +3,9 @@ Programming a Keiland application
 
 Status: how-to guide
 
-<!-- WRITE (the new interfaces, read first): This guide gets three chapters after chapter 7 for the interfaces a
-program uses instead of descriptors and system calls: posts from other threads (chapter 8), processes and a terminal
-(chapter 9), one copy of a program and starting other programs (chapter 10).  Chapter 7's translations now follow the
-application's KL_APP_LANGUAGE event (its section is rewritten, see the WRITE there), and a few sentences of the
-introduction and chapter 1 change (see the WRITE at each).
-
-1. Write the new chapters in the pattern of chapters 1 to 7: what the program does and its picture (the image link
-   and the caption the chapter's summary WRITE gives), the program whole (already below, under its marker), "Reading
-   the program" (line links of the form [lines 155-165](keiland-examples/08-worker.c#L155-L165) with the two to six
-   lines quoted under the sentence), "The rules" (each with a link back to the lines), "Pitfalls", and one sentence
-   that leads to the next chapter.  A chapter with two programs has the second as a "###" section with its own
-   reading, rules and pitfalls, as chapter 4 has 04-counter-parts.c.
-2. The line numbers in these WRITE comments were taken from the files; check each against the file before citing it,
-   and quote the code by copying the lines.  Do not edit code inside the blocks under "example:" markers: a test
-   compares each block with its file (a catalog sits in a ```text block).
-3. Every new program has the shape of 04-counter.c (the struct with app, window, ui, text, style and canvas; the
-   resize, draw, frame and input functions; dirty, moving, resized and closed).  Say only what is new against it, "as
-   in chapter 4" for the rest.
-4. Define each term once, in bold, where the chapter's summary WRITE says; later chapters use it.
-5. Never mention file descriptors, kl_app_watch_fd, KL_APP_FD or kl_instance_fd, nor the history of the interface:
-   the guide describes the interface as it is.  Do not present UNIX calls (fork, exec, pipe, poll, waitpid, kill,
-   signals) as something a program does: the point of these interfaces is that the program does not, and the same
-   source builds where they do not exist.  The threads in the programs are standard C11 threads (<threads.h>:
-   thrd_create, thrd_join, mtx_t, cnd_t, and <stdatomic.h>); name them as standard C.
-6. Do not link into plan/.  English, in the plain style of docs/style.md.  Link each component's header where it is
-   first used.  Delete every WRITE comment when the text is written.
--->
-
 This guide shows how to write a desktop application with libkeiland, the library that every Keiland program uses to draw, to read its input and to talk to the desktop. It teaches by programs. Each chapter is built on one complete program that compiles, links and runs. You read the program first, then a walk through it line by line, then the rules that the program showed.
 
-The chapters go in the order a program is built:
+The chapters go in the order a program is built; chapters 8 to 10 are what a program adds as it grows:
 
 1. [The application](#1-the-application): the connection to the desktop and the event queue.
 2. [The window](#2-the-window): a window, the pixels you draw into, and the input.
@@ -42,14 +14,9 @@ The chapters go in the order a program is built:
 5. [The widgets](#5-the-widgets): fields, lists, switches, sliders, and widgets you make yourself.
 6. [Menus](#6-menus): the window's menu and context menus.
 7. [Other services](#7-other-services): glass, appearance, translations, files, the clipboard and notifications.
-<!-- WRITE (introduction, the list of chapters): add three items in the same form:
-8. [Work on other threads](#8-work-on-other-threads): a worker thread that hands its results to the window, and a
-   language whose catalogs are read on a thread.
+8. [Work on other threads](#8-work-on-other-threads): a worker thread that hands its results to the window, and a language whose catalogs are read on a thread.
 9. [Other programs](#9-other-programs): a program the window talks to, and a shell in a terminal of its own.
-10. [Running once and starting programs](#10-running-once-and-starting-programs): one copy of a program per user, and
-   starting a program apart from the application.
-The sentence above the list ("in the order a program is built") stays true if it says that chapters 8 to 10 are what
-a program adds as it grows. -->
+10. [Running once and starting programs](#10-running-once-and-starting-programs): one copy of a program per user, and starting a program apart from the application.
 
 ## The programs
 
@@ -65,21 +32,13 @@ The programs are in [keiland-examples/](keiland-examples/). Each one grows out o
 | [05-widgets.c](keiland-examples/05-widgets.c) | 5 | A field, a list, a switch, a slider and a widget of your own | 04 |
 | [06-menu.c](keiland-examples/06-menu.c) | 6 | The counter with a window menu and a context menu | 04 |
 | [07-services.c](keiland-examples/07-services.c) | 7 | Glass, appearance, translations, a file chooser, the clipboard, a notification | 04 |
+| [08-worker.c](keiland-examples/08-worker.c) | 8 | Primes counted on a worker thread; its progress and its result posted to the window | 04 |
+| [08-language.c](keiland-examples/08-language.c) | 8 | The desktop's language followed, its catalogs read on a thread; the latest change wins | 07 |
+| [09-sort.c](keiland-examples/09-sort.c) | 9 | `sort` as a process: its input written, its output read by the line, its errors and exit code | 04 |
+| [09-shell.c](keiland-examples/09-shell.c) | 9 | `sh` in a terminal of its own: its output as bytes, the terminal's size and modes | 05 (the field) |
+| [10-instance.c](keiland-examples/10-instance.c) | 10 | One copy per user: later starts hand their requests over; Start Another launches it again | 04 |
 
-<!-- WRITE (introduction, the table of programs): add these rows to the table above (the comment sits after the
-table so that it does not break it):
-| 08-worker.c | 8 | Primes counted on a worker thread; its progress and its result posted to the window | 04 |
-| 08-language.c | 8 | The desktop's language followed, its catalogs read on a thread; the latest change wins | 07 |
-| 09-sort.c | 9 | sort as a process: its input written, its output read by the line, its errors and exit code | 04 |
-| 09-shell.c | 9 | sh in a terminal of its own: its output as bytes, the terminal's size and modes | 05 (the field) |
-| 10-instance.c | 10 | One copy per user: later starts hand their requests over; Start Another launches it again | 04 |
-Under the table add one sentence: the Japanese catalogs of
-07-services.c and 08-language.c are in keiland-examples/locale/ja/; installed as
-KEILAND_DATADIR/keiland/locale/ja/NAME.tr (/usr/share/keiland/locale/ja/ on zedBSD), they make those programs speak
-Japanese when the desktop does.  In "Building and running a program": the programs of chapter 8 use C11 threads,
-which zedBSD's C library holds, and glibc from 2.34 (an older glibc needs -lpthread); FreeBSD keeps them in
-libstdthreads (add -lstdthreads).  10-instance.c needs XDG_RUNTIME_DIR to be the user's own directory (mode 0700), as a Keiland session
-sets it. -->
+The Japanese catalogs of `07-services.c` and `08-language.c` are in [keiland-examples/locale/ja/](keiland-examples/locale/ja/). Installed as `KEILAND_DATADIR/keiland/locale/ja/NAME.tr` (`/usr/share/keiland/locale/ja/` on zedBSD), they make those programs speak Japanese when the desktop does.
 
 ## How to read this guide
 
@@ -116,11 +75,11 @@ The programs of chapters 4 to 7 open fonts. They look for them in `FONT_DIR`, wh
 cc -DFONT_DIR='"/opt/keiland/share/fonts"' -o counter 04-counter.c -lkeiland
 ```
 
-Every libkeiland call of an application is made from the one thread that opened it.
+Every libkeiland call of an application is made from the one thread that opened it. Two things are for the program's other threads: the posts, `kl_app_post` and `kl_window_post`, which hand work back to the application's thread (chapter 8), and `kl_tr_read`, which reads a language's catalogs (chapter 8).
 
-<!-- WRITE (introduction, the threads): the sentence above is no longer the whole truth.  Say: every libkeiland call
-of an application is made from the one thread that opened it, but the posts (kl_app_post and kl_window_post), which
-the program's other threads use to hand work back to it (chapter 8), and kl_tr_read (chapter 8). -->
+
+
+The programs of chapter 8 use C11 threads (`<threads.h>`). zedBSD's C library holds them, and so does glibc from 2.34 (an older glibc needs `-lpthread`). FreeBSD keeps them in libstdthreads: add `-lstdthreads`. `10-instance.c` needs `XDG_RUNTIME_DIR` to be the user's own directory (mode 0700), as a Keiland session sets it.
 
 ## 1. The application
 
@@ -280,9 +239,7 @@ if (event.kind == KL_APP_THEME)
 ### The rules
 
 - A program has one `struct kl_app`. Open it first, close it last. `kl_app_close` closes the windows that are still open, so the order of closing is forgiving, but the application must outlive everything made from it ([lines 34-36](keiland-examples/01-app.c#L34-L36), [75-76](keiland-examples/01-app.c#L75-L76)).
-- Every libkeiland call of the application is made from the one thread that opened it.
-  <!-- WRITE (chapter 1, rules): add "but kl_app_post and kl_window_post, which other threads call to hand the
-  application an event of their own (chapter 8)". -->
+- Every libkeiland call of the application is made from the one thread that opened it, but `kl_app_post` and `kl_window_post`, which other threads call to hand the application an event of their own (chapter 8).
 - Everything that happens to the program arrives through one queue, in the order it happened. A window's typed text and a menu's Ctrl+S therefore keep their order ([lines 63-72](keiland-examples/01-app.c#L63-L72)).
 - The program reads the queue in two steps: `kl_app_dispatch` waits and queues, `kl_app_take` hands the events over one at a time. Take every queued event before you dispatch again ([lines 55-72](keiland-examples/01-app.c#L55-L72)).
 - A held key repeats by itself inside `kl_app_dispatch`. The repeats are queued as key inputs with `repeated` set.
@@ -292,22 +249,18 @@ if (event.kind == KL_APP_THEME)
   | --- | --- |
   | `KL_APP_WINDOW` | An input of one of the application's windows: `event.window` and `event.input` (chapter 2). |
   | `KL_APP_THEME` | The desktop's appearance changed (light or dark, the accent): draw every window again ([line 70](keiland-examples/01-app.c#L70)). |
+| `KL_APP_LANGUAGE` | The desktop's language changed; `event.language` names the language it changed to (chapter 7). |
+| `KL_APP_POST` | An event of the program's own: `event.code` and `event.data`, posted from any thread (chapter 8). |
+| `KL_APP_PROCESS` | News of a process the program started: `event.process`, and `event.ready` says what (chapter 9). |
+| `KL_APP_INSTANCE` | Later starts of the program handed it requests: `event.instance` (chapter 10). |
 
-<!-- WRITE (chapter 1, the table of kinds): add four rows to the table above, one line each, linking the chapter:
-| KL_APP_LANGUAGE | The desktop's language changed; event.language names the language it changed to (chapter 7). |
-| KL_APP_POST | An event of the program's own: event.code and event.data, posted from any thread (chapter 8). |
-| KL_APP_PROCESS | News of a process the program started: event.process, and event.ready says what (chapter 9). |
-| KL_APP_INSTANCE | Later starts of the program handed it requests: event.instance (chapter 10). |
-Add one sentence: a program looks at kind first and ignores the kinds it does not use; 01-app.c uses only
-KL_APP_THEME. -->
+A program looks at `kind` first and ignores the kinds it does not use; `01-app.c` uses only `KL_APP_THEME`.
 
 The component's header is [keiland_app.h](../../userland/desktop/include/keiland/keiland_app.h).
 
 ### Pitfalls
 
-- Calling libkeiland from a second thread. The application belongs to the thread that opened it.
-  <!-- WRITE (chapter 1, pitfalls): add "Another thread hands the application its results with kl_app_post or
-  kl_window_post (chapter 8)." -->
+- Calling libkeiland from a second thread. The application belongs to the thread that opened it. Another thread hands the application its results with `kl_app_post` or `kl_window_post` (chapter 8).
 - Dispatching again while the queue is not empty. Dispatch returns at once in that case, so a loop that forgets to take everything runs hot.
 - Ignoring `kl_app_open`'s failure. A program started outside a Keiland session has no compositor to talk to.
 
@@ -4290,38 +4243,55 @@ The panel's rectangle and radius go to the compositor with `kl_window_set_glass`
 
 ### Text in the user's language
 
-<!-- WRITE (chapter 7, text in the user's language): rewrite this section for the program as it is now: it follows
-the desktop's language through the application's KL_APP_LANGUAGE event and no longer opens kl_settings.  The two
-code blocks about kl_settings_open and kl_tr_follow, the paragraph on kl_tr_follow's callback, and the paragraph and
-block on kl_settings_dispatch (with its link to lines 157-158, which no longer exist) go.  Keep the first paragraph
-(catalog, domain, the English text as the key, the files' place) and the paragraph on kl_tr, kl_trn and kl_tr_format
-(its links were renumbered for the new file).  In this order:
-1. Lines 105-108: at the start the program reads the catalogs of kl_app_language(app), the desktop's language as the
-   application heard it when it opened ("en" when the compositor tells none), with kl_tr_open(DOMAIN, language).
-   Quote them.  Define "language name" here: "en", "ja", ..., as kl_tr_open takes it.
-2. Lines 162-164: KL_APP_LANGUAGE says the desktop's language changed; event.language names the language it changed
-   to.  Define KL_APP_LANGUAGE here (chapter 1's table points here).
-3. Lines 468-487 (services_language): kl_tr_open(DOMAIN, language) with the event's language, the window's title set
-   again (the title is a text too) and dirty set, so that the next frame is all in the new language.  Quote 479-486.
-4. The rules of this part, in a short list: use the language the event carries, and do not read the desktop's setting
-   back at the event: changes that come one after another come as events in the same order, and the setting may
-   already hold a later change than the event's; the last event tells the language now.  A text kl_tr gave lives
-   until the language changes: keep none across the event (that is why the title is set again).  kl_tr is used from
-   one thread.
-5. The catalog of this program, keiland-examples/locale/ja/services.tr, is shown whole just below this comment.
-   Explain its lines: "#" begins a comment; the fields are separated by tabs; "msg ENGLISH TEXT" is one text,
-   "plural SINGULAR PLURAL FORM..." one text for counts (Japanese has one form, English two), and "ctx CONTEXT
-   ENGLISH TEXT" one for kl_trc.  It is installed as KEILAND_DATADIR/keiland/locale/ja/services.tr (on zedBSD
-   /usr/share/keiland/locale/ja/services.tr); while developing, kl_tr_open_directory reads catalogs from another
-   directory.  Picture keiland-examples/07-services-ja.png: the same program started after the desktop's language
-   became Japanese (by 08-language.c's Switch Language): its card in Japanese ("外観: ライト", "開いたファイル 0 件",
-   開く... and the other buttons, the title サービス).
-6. One paragraph: kl_tr_follow (keiland_tr.h) does the same for a program that has no kl_app: it watches the setting
-   ui.language through a kl_settings, and needs kl_settings_dispatch after every dispatch of the display.  An
-   application uses KL_APP_LANGUAGE.
-7. One sentence: reading catalogs is file I/O; when it may be slow, read them on a thread (chapter 8's second
-   program).
--->
+The program writes its texts in English and looks each one up in its **catalog**, a file of translations. The English text is the key: `kl_tr("Open")` gives the text in the user's language, or `"Open"` itself when the catalog has none. A catalog belongs to a **domain**, a name of lower-case letters, digits, `-` and `_`. Each program has its own domain, and the desktop's programs share `KL_TR_SHARED_DOMAIN`. The catalog files are `KEILAND_DATADIR/keiland/locale/LANGUAGE/DOMAIN.tr`.
+
+The program speaks the desktop's language. At the start it reads the catalogs of `kl_app_language(app)`, the desktop's language as the application heard it when it opened ("en" when the compositor tells none), with `kl_tr_open(DOMAIN, language)` ([lines 105-108](keiland-examples/07-services.c#L105-L108)):
+
+```c
+/* Speaks the desktop's language: reads the catalogs of the language the application heard when it opened. */
+status = kl_tr_open(DOMAIN, kl_app_language(services.app));
+if (status != 0)
+	fprintf(stderr, "services: the texts stay in English (%s)\n", strerror(status));
+```
+
+A **language name** is what `kl_tr_open` takes: `"en"`, `"ja"`, and so on.
+
+When the user changes the language, the application gets a **`KL_APP_LANGUAGE`** event, and `event.language` names the language it changed to ([lines 162-164](keiland-examples/07-services.c#L162-L164)):
+
+```c
+/* The desktop's language changed: the event names the language it changed to. */
+if (event.kind == KL_APP_LANGUAGE)
+	services_language(&services, event.language);
+```
+
+`services_language` ([lines 468-487](keiland-examples/07-services.c#L468-L487)) reads the catalogs of that language with `kl_tr_open(DOMAIN, language)`, sets the window's title again (the title is a text too), and sets `dirty`, so that the next frame is all in the new language ([lines 479-486](keiland-examples/07-services.c#L479-L486)):
+
+```c
+/* The new language's catalogs (English after a failure). */
+status = kl_tr_open(DOMAIN, language);
+if (status != 0)
+	fprintf(stderr, "services: the texts are in English (%s)\n", strerror(status));
+
+/* The title and every text of the next frame in the new language. */
+kl_window_set_title(services->window, kl_tr("Services"));
+services->dirty = 1;
+```
+
+The rules of this part:
+
+- Use the language the event carries. Do not read the desktop's setting back at the event: changes that come one after another come as events in the same order, and the setting may already hold a later change than the event's. The last event tells the language now.
+- A text `kl_tr` gave lives until the language changes. Keep none across the event; that is why the title is set again.
+- `kl_tr` is used from one thread.
+
+In a frame, `kl_tr` gives a text ([lines 290-302](keiland-examples/07-services.c#L290-L302)). `kl_trn` chooses the singular or a plural for a count. `kl_tr_format` fills `{1}` to `{9}` with the strings that follow, in any order the language needs, and a `NULL` ends them:
+
+```c
+(void)kl_tr_format(line, sizeof(line), kl_trn("{1} file opened", "{1} files opened", services->opened), count, (const char *)NULL);
+```
+
+A language other than the desktop's is read with `kl_tr_open(domain, language)`. The header is [keiland_tr.h](../../userland/desktop/include/keiland/keiland_tr.h).
+
+The catalog of this program, `locale/ja/services.tr`, is a text file:
 
 <!-- example: keiland-examples/locale/ja/services.tr -->
 ```text
@@ -4337,44 +4307,15 @@ msg	Notify	通知
 msg	Open	開く
 ```
 
+A line that begins with `#` is a comment. The fields of a line are separated by tabs. `msg ENGLISH TEXT` is one text. `plural SINGULAR PLURAL FORM...` is one text for counts, with as many forms as the language has: Japanese has one, English two. `ctx CONTEXT ENGLISH TEXT` is one for `kl_trc`, for an English word that is translated in more than one way; this catalog has none. The file is installed as `KEILAND_DATADIR/keiland/locale/ja/services.tr` (`/usr/share/keiland/locale/ja/services.tr` on zedBSD). While you develop, `kl_tr_open_directory` reads catalogs from another directory.
 
-The program writes its texts in English and looks each one up in its **catalog**, a file of translations. The English text is the key: `kl_tr("Open")` gives the text in the user's language, or `"Open"` itself when the catalog has none. A catalog belongs to a **domain**, a name of lower-case letters, digits, `-` and `_`. Each program has its own domain, and the desktop's programs share `KL_TR_SHARED_DOMAIN`. The catalog files are `KEILAND_DATADIR/keiland/locale/LANGUAGE/DOMAIN.tr`.
+![The window of 07-services.c in Japanese](keiland-examples/07-services-ja.png)
 
-The program follows the language the user chose in Settings:
+*The same program started after the desktop's language became Japanese (by Switch Language in chapter 8): the card reads "外観: ライト" and "開いたファイル 0 件", the buttons 開く..., パスをコピー and 通知, and the title サービス.*
 
-```c
-services.settings = kl_settings_open(kl_app_display(services.app), NULL);
-if (services.settings == NULL)
-	return 1;
-status = kl_tr_follow(services.settings, DOMAIN, services_language, &services);
-if (status != 0)
-	fprintf(stderr, "services: the texts stay in English (%s)\n", strerror(status));
-```
+A program that has no `kl_app` has no `KL_APP_LANGUAGE`. `kl_tr_follow` ([keiland_tr.h](../../userland/desktop/include/keiland/keiland_tr.h)) does the same for it: it watches the setting `ui.language` through a `kl_settings` and needs `kl_settings_dispatch` after every dispatch of the display. An application uses `KL_APP_LANGUAGE`.
 
-`kl_tr_follow` reads the catalogs in that language now, and again whenever the language changes. After each change it calls back, so that the program can draw again ([lines 468-487](keiland-examples/07-services.c#L468-L487)):
-
-```c
-services = data;
-if (services->window != NULL)
-	kl_window_set_title(services->window, kl_tr("Services"));
-services->dirty = 1;
-```
-
-The watch that notices the change runs inside `kl_settings_dispatch`. A program must call it after every `kl_app_dispatch`, or the language never changes while the program runs ([lines 157-158](keiland-examples/07-services.c#L157-L158)):
-
-```c
-status = kl_app_dispatch(services.app, timeout);
-/* ... */
-(void)kl_settings_dispatch(services.settings);
-```
-
-In a frame, `kl_tr` gives a text ([lines 290-302](keiland-examples/07-services.c#L290-L302)). `kl_trn` chooses the singular or a plural for a count. `kl_tr_format` fills `{1}` to `{9}` with the strings that follow, in any order the language needs, and a `NULL` ends them:
-
-```c
-(void)kl_tr_format(line, sizeof(line), kl_trn("{1} file opened", "{1} files opened", services->opened), count, (const char *)NULL);
-```
-
-A language other than the desktop's is read with `kl_tr_open(domain, language)`. The header is [keiland_tr.h](../../userland/desktop/include/keiland/keiland_tr.h).
+Reading catalogs is file I/O. When it may be slow, read them on a thread; the second program of chapter 8 does.
 
 ### Opening files
 
@@ -4415,38 +4356,24 @@ The callback keeps the path and adds it to the desktop's **recent list** with `k
 `kl_app_notify(app, title, body)` shows a notification under the program's application ID ([line 333](keiland-examples/07-services.c#L333)). `kl_app_notify_lock` also says what the lock screen shows of it.
 
 ### The desktop's settings and system
-
-<!-- WRITE (chapter 7, the desktop's settings): add one or two sentences to the paragraph below: the desktop's
-language is a setting too (ui.language), but an application learns of its changes from KL_APP_LANGUAGE, not by
-watching the setting.  A program asks for a change with kl_settings_set or kl_settings_set_int; the change comes back
-as a change, to it and to every other program (08-language.c does this, chapter 8). -->
-
-`kl_settings_open(kl_app_display(app), name)` reads, watches and asks to change the desktop's settings (`kl_settings_get`, `kl_settings_watch`, `kl_settings_set`). `kl_app_system(app)` gives the desktop's system, `kl_system_*`: the network, the sound, the power, the removable devices, the displays and the printers. Each of these is asked of the compositor. The program reads no system file and talks to no daemon itself. The headers are [keiland_settings.h](../../userland/desktop/include/keiland/keiland_settings.h) and [keiland_system.h](../../userland/desktop/include/keiland/keiland_system.h).
+`kl_settings_open(kl_app_display(app), name)` reads, watches and asks to change the desktop's settings (`kl_settings_get`, `kl_settings_watch`, `kl_settings_set`). `kl_app_system(app)` gives the desktop's system, `kl_system_*`: the network, the sound, the power, the removable devices, the displays and the printers. Each of these is asked of the compositor. The program reads no system file and talks to no daemon itself. The desktop's language is a setting too (`ui.language`), but an application learns of its changes from `KL_APP_LANGUAGE`, not by watching the setting. A program asks for a change with `kl_settings_set` or `kl_settings_set_int`; the change comes back as a change, to it and to every other program (`08-language.c` does this, in chapter 8). The headers are [keiland_settings.h](../../userland/desktop/include/keiland/keiland_settings.h) and [keiland_system.h](../../userland/desktop/include/keiland/keiland_system.h).
 
 ### Sound
 
 A program plays sound through a stream of the desktop: `kl_audio_stream_open`, `kl_audio_stream_write` and `kl_audio_stream_dispatch`. See [keiland_audio.h](../../userland/desktop/include/keiland/keiland_audio.h).
 
-<!-- WRITE (chapter 7, the lead): one sentence that leads to chapter 8: so far all the work ran on the application's
-thread, between two frames; a long job there would leave the window unanswered until it ended. -->
+So far all the work ran on the application's thread, between two frames. A long job there would leave the window unanswered until it ended. Chapter 8 moves such a job to a thread of its own.
 
 ## 8. Work on other threads
 
-<!-- WRITE (chapter 8, summary): The program counts the prime numbers below 20,000,000 on a thread of its own, a
-worker.  Start starts a count; the bar and the line under it follow the count; Stop ends it early.  The window keeps
-answering all the while: it can be moved and resized, and Stop works, because the application's thread never does the
-counting.  Picture keiland-examples/08-worker.png: taken 2.5 seconds after Start was clicked: the bar part of the way,
-"N primes below M so far.", Start disabled and Stop enabled.
+The eighth program counts the prime numbers below 20,000,000. That takes seconds, so the counting runs on a thread of its own and the window stays alive. Start starts a count. The bar and the line under it follow the count, and Stop ends it early. All the while the window answers: it can be moved and resized, and Stop works, because the application's thread never does the counting.
 
-It grows from 04-counter.c.  New: the two records the threads hand each other (struct count and struct progress),
-the worker (primes_count), one function for every event (primes_event, because the end of the program takes events
-too), primes_post, primes_start and primes_finish.
+![The window of 08-worker.c while it counts](keiland-examples/08-worker.png)
 
-Terms first defined here, in bold: worker (a thread of the program's own that does a long job), post (an event of the
-program's own: a code and a data pointer, handed to the application from any thread), the code of a post (a number
-the program gives meaning to), owning a record (the one thread that may read and write it now; ownership passes with
-a post).  The headers: keiland_app.h (kl_app_post), keiland_window.h (kl_window_post).  Build as the others; see the
-introduction for C11 threads on FreeBSD. -->
+*2.5 seconds after Start was clicked: the bar part of the way, the line "N primes below M so far.", Start disabled and Stop enabled.*
+
+It is chapter 4's counter with a count in place of the number. What is new: the two records the threads hand each other (`struct count` and `struct progress`), the worker (`primes_count`), one function for every event (`primes_event`, because the end of the program takes events too), and `primes_post`, `primes_start` and `primes_finish`. The threads are standard C11 threads (`<threads.h>`, with `<stdatomic.h>` for a flag). What libkeiland adds is the way a thread talks to the application: a **post**, `kl_app_post` in [keiland_app.h](../../userland/desktop/include/keiland/keiland_app.h) and `kl_window_post` in [keiland_window.h](../../userland/desktop/include/keiland/keiland_window.h). Build the program as the others; the introduction says what C11 threads need on FreeBSD.
+
 
 <!-- example: keiland-examples/08-worker.c -->
 ```c
@@ -5040,92 +4967,161 @@ primes_is_prime(
 
 ### Reading the program
 
-<!-- WRITE (chapter 8, reading the program), in this order:
-1. Lines 35-37: the codes of the program's posts.  A post carries a 32-bit code and a pointer, and libkeiland looks
-   at neither: the program decides what they mean.  Define "post" and "code" here.
-2. Lines 47-67: the records.  struct count goes to the worker at the start and comes back at the end; while the
-   worker has it, only stop is shared, and stop is an atomic_int, read and written with atomic_load and
-   atomic_store.  struct progress is one report, made by the worker and freed by the one who takes it.  Define
-   "owning" here: at any moment one thread owns a record, and a post hands it over.
-3. Lines 439-471 (primes_start): the record filled, then thrd_create starts the worker with it (lines 460-466).  From
-   here until POST_FINISHED comes back, the program does not touch the record but for stop.
-4. Lines 510-558 (primes_count), the worker: it looks at every number; every STEP numbers it reads stop and ends when
-   asked, or posts a report to the window with kl_window_post (lines 529-542).  When a post fails it did not take
-   the data, so the worker frees the report itself.  At the end it hands the count back with kl_app_post
-   (lines 551-554).  The worker calls nothing of libkeiland but the two posts, the calls any thread may make.
-   Define "worker" here.
-5. Lines 155-165: the main loop is chapter 4's.  The posts arrive in the same queue as the input, and a post from
-   another thread wakes kl_app_dispatch, even when it waits with -1: no timer and no polling.
-6. Lines 344-369 (primes_event): where the posts arrive.  A post to the window arrives among the window's inputs, in
-   its place among them: a KL_APP_WINDOW event whose input.kind is KL_WINDOW_POST, with input.code and input.data
-   (lines 357-364).  A post to the application arrives as KL_APP_POST with event.code and event.data
-   (lines 366-368); so does a post to a window that closed before it came (window NULL, the same code and data).
-   The program sends both to primes_post, which frees the data either way.
-7. Lines 397-437 (primes_post): a report is shown and freed.  POST_FINISHED gives the record back: the worker's
-   thread is ending (the post was its last act), so thrd_join returns at once; the result is copied, the record
-   freed, and count NULL enables Start again.  Say why no report of a count can come after its POST_FINISHED: the
-   posts of one thread arrive in the order it made them (the comment of line 412).
-8. Lines 304-310: Stop raises the flag.  The worker sees it within STEP numbers and hands the count back as usual,
-   short of the limit, and the line says "Stopped" (lines 429-432).
-9. Lines 191-192 and 473-508 (primes_finish): the window closed while a count runs.  The program raises stop, joins
-   the thread, then takes the posts it left, dispatching without waiting, until the count came back.  Say why: the
-   application must not be closed while a thread may still post, and the posts not taken when it closes are dropped
-   with their data, which nobody would free.
--->
+**The codes of the posts ([lines 35-37](keiland-examples/08-worker.c#L35-L37)).** A **post** is an event of the program's own, handed to the application from any thread. It carries a 32-bit **code** and a pointer, and libkeiland looks at neither: the program decides what they mean. This program has two codes.
+
+```c
+#define POST_PROGRESS	1U
+#define POST_FINISHED	2U
+```
+
+`POST_PROGRESS` is a report of how far a count got, and `POST_FINISHED` is the count's end.
+
+**The records ([lines 47-67](keiland-examples/08-worker.c#L47-L67)).**
+
+```c
+struct count {
+	struct kl_app *app;
+	struct kl_window *window;
+	unsigned long limit;
+	unsigned long done;
+	unsigned long primes;
+	atomic_int stop;
+};
+/* ... */
+struct progress {
+	unsigned long done;
+	unsigned long primes;
+};
+```
+
+At any moment one thread **owns** a record: it alone reads and writes it, and a post hands the ownership over. `struct count` goes to the worker at the start and comes back at the end. While the worker has it, only `stop` is shared, and `stop` is an `atomic_int`, read and written with `atomic_load` and `atomic_store`. `struct progress` is one report: the worker makes it, and whoever takes the post frees it.
+
+**Starting a count ([lines 439-471](keiland-examples/08-worker.c#L439-L471), `primes_start`).** The function fills the record and starts the worker with it ([lines 460-466](keiland-examples/08-worker.c#L460-L466)):
+
+```c
+status = thrd_create(&primes->worker, primes_count, count);
+/* ... */
+primes->count = count;
+```
+
+From here until `POST_FINISHED` comes back, the program does not touch the record but for `stop`.
+
+**The worker ([lines 510-558](keiland-examples/08-worker.c#L510-L558), `primes_count`).** A **worker** is a thread of the program's own that does a long job. This one looks at every number below the limit. Every `STEP` numbers it reads `stop` and ends when it is asked, or posts a report to the window with `kl_window_post` ([lines 529-542](keiland-examples/08-worker.c#L529-L542)):
+
+```c
+if (number % STEP == 0) {
+	stop = atomic_load(&count->stop);
+	if (stop)
+		break;
+/* ... */
+		status = kl_window_post(count->window, POST_PROGRESS, progress);
+		if (status != 0)
+			free(progress);
+```
+
+When a post fails it did not take the data, so the worker frees the report itself. At the end it hands the count back with `kl_app_post` ([lines 551-554](keiland-examples/08-worker.c#L551-L554)):
+
+```c
+status = kl_app_post(count->app, POST_FINISHED, count);
+if (status != 0)
+	fprintf(stderr, "primes: the count was lost (%s)\n", strerror(status));
+```
+
+The worker calls nothing of libkeiland but these two posts, the calls any thread may make.
+
+**The main loop ([lines 155-165](keiland-examples/08-worker.c#L155-L165)).** The loop is chapter 4's. The posts arrive in the same queue as the input, and a post from another thread wakes `kl_app_dispatch`, even when it waits with -1: there is no timer and no polling.
+
+```c
+timeout = -1;
+if (primes.moving)
+	timeout = 16;
+if (primes.dirty || primes.resized)
+	timeout = 0;
+status = kl_app_dispatch(primes.app, timeout);
+```
+
+**Where the posts arrive ([lines 344-369](keiland-examples/08-worker.c#L344-L369), `primes_event`).** A post to the window arrives among the window's inputs, in its place among them: a `KL_APP_WINDOW` event whose `input.kind` is `KL_WINDOW_POST`, with `input.code` and `input.data` ([lines 357-364](keiland-examples/08-worker.c#L357-L364)). A post to the application arrives as `KL_APP_POST` with `event.code` and `event.data` ([lines 366-368](keiland-examples/08-worker.c#L366-L368)). So does a post to a window that closed before the post came: `window` is `NULL`, and the code and the data are the same.
+
+```c
+	if (event->input.kind == KL_WINDOW_POST) {
+		primes_post(primes, event->input.code, event->input.data);
+		return;
+	}
+/* ... */
+if (event->kind == KL_APP_POST)
+	primes_post(primes, event->code, event->data);
+```
+
+The program sends both to `primes_post`, which frees the data either way.
+
+**Taking a post ([lines 397-437](keiland-examples/08-worker.c#L397-L437), `primes_post`).** A report is shown and freed. `POST_FINISHED` gives the record back: the worker's thread is ending (the post was its last act), so `thrd_join` returns at once. The result is copied, the record is freed, and a `NULL` count enables Start again ([lines 426-434](keiland-examples/08-worker.c#L426-L434)):
+
+```c
+(void)thrd_join(primes->worker, NULL);
+primes->done = count->done;
+/* ... */
+free(count);
+primes->count = NULL;
+```
+
+No report of a count can come after its `POST_FINISHED`: the posts of one thread arrive in the order it made them (the comment at [line 412](keiland-examples/08-worker.c#L412)).
+
+**Stop ([lines 304-310](keiland-examples/08-worker.c#L304-L310)).** The button raises the flag.
+
+```c
+if (clicked && primes->count != NULL)
+	atomic_store(&primes->count->stop, 1);
+```
+
+The worker sees it within `STEP` numbers and hands the count back as usual, short of the limit, and the line says "Stopped" ([lines 429-432](keiland-examples/08-worker.c#L429-L432)).
+
+**The end of the program ([191-192](keiland-examples/08-worker.c#L191-L192) and [473-508](keiland-examples/08-worker.c#L473-L508), `primes_finish`).** The window may close while a count runs. The program raises `stop`, joins the thread, then takes the posts it left, dispatching without waiting, until the count came back:
+
+```c
+atomic_store(&primes->count->stop, 1);
+(void)thrd_join(primes->worker, NULL);
+/* ... */
+while (primes->count != NULL) {
+	status = kl_app_dispatch(primes->app, 0);
+	if (status != 0)
+		break;
+	taken = kl_app_take(primes->app, &event);
+```
+
+It does this because the application must not be closed while a thread may still post, and the posts not taken when it closes are dropped with their data, which nobody would free.
 
 ### The rules
 
-<!-- WRITE (chapter 8, rules), each with a link to the lines that show it:
-- kl_app_post(app, code, data) and kl_window_post(window, code, data) may be called from any thread.  Every other call
-  stays on the application's thread: a worker computes and posts; the application's thread draws (lines 529-554).
-- A post wakes kl_app_dispatch (lines 155-165).
-- A post to the window arrives among the window's inputs, as KL_WINDOW_POST with input.code and input.data; a post to
-  the application as KL_APP_POST with event.code and event.data; a post to a window that closed first as KL_APP_POST
-  with window NULL (lines 344-369).  Use the window's post for news that belongs with that window's input, the
-  application's for the rest.
-- The posts of one thread arrive in the order they were made, and none is dropped: what the queue has no room for
-  waits for the next dispatch.  The posts of two threads have no order between them.
-- The data goes to whoever takes the event.  libkeiland neither copies it nor frees it.  A post that fails (ENOMEM;
-  EINVAL for a NULL application or window) did not take the data (lines 536-541).
-- End the threads that post before kl_app_close, and take what they posted: the posts not taken are dropped with
-  their data (lines 473-508).
-- A value two threads use at once is atomic or under a mutex (stop, lines 47-61).
--->
+- `kl_app_post(app, code, data)` and `kl_window_post(window, code, data)` may be called from any thread. Every other call stays on the application's thread: a worker computes and posts, and the application's thread draws ([lines 529-554](keiland-examples/08-worker.c#L529-L554)).
+- A post wakes `kl_app_dispatch` ([lines 155-165](keiland-examples/08-worker.c#L155-L165)).
+- A post to the window arrives among the window's inputs, as `KL_WINDOW_POST` with `input.code` and `input.data`. A post to the application arrives as `KL_APP_POST` with `event.code` and `event.data`, and so does a post to a window that closed first, with `window` `NULL` ([lines 344-369](keiland-examples/08-worker.c#L344-L369)). Use the window's post for news that belongs with that window's input, and the application's for the rest.
+- The posts of one thread arrive in the order they were made, and none is dropped: what the queue has no room for waits for the next dispatch. The posts of two threads have no order between them.
+- The data goes to whoever takes the event. libkeiland neither copies it nor frees it. A post that fails (`ENOMEM`, or `EINVAL` for a `NULL` application or window) did not take the data ([lines 536-541](keiland-examples/08-worker.c#L536-L541)).
+- End the threads that post before `kl_app_close`, and take what they posted: the posts not taken are dropped with their data ([lines 473-508](keiland-examples/08-worker.c#L473-L508)).
+- A value two threads use at once is atomic or under a mutex (`stop`, [lines 47-61](keiland-examples/08-worker.c#L47-L61)).
 
 ### Pitfalls
 
-<!-- WRITE (chapter 8, pitfalls):
-- Calling another libkeiland function from the worker (drawing, kl_window_set_title, kl_tr): post the result instead.
-- Freeing the data after a post that succeeded, or never freeing it on the side that takes it, including a window's
-  post that arrives as KL_APP_POST.
-- Giving a KL_WINDOW_POST input to the widgets (kl_ui_window_input): check input.kind first (lines 359-362).
-- Reading the record while the worker owns it (count->primes before POST_FINISHED): read the reports.
-- Posting at every small step: each post is an event and usually a frame.  Report in steps (STEP).
+- Calling another libkeiland function from the worker (drawing, `kl_window_set_title`, `kl_tr`). Post the result instead.
+- Freeing the data after a post that succeeded, or never freeing it on the side that takes it, including a window's post that arrives as `KL_APP_POST`.
+- Giving a `KL_WINDOW_POST` input to the widgets (`kl_ui_window_input`). Check `input.kind` first ([lines 359-362](keiland-examples/08-worker.c#L359-L362)).
+- Reading the record while the worker owns it (`count->primes` before `POST_FINISHED`). Read the reports.
+- Posting at every small step: each post is an event and usually a frame. Report in steps (`STEP`).
 - Closing the application while a worker may still post.
--->
 
 ### When only the latest answer counts
 
-<!-- WRITE (chapter 8, the second program, summary): 08-language.c speaks the desktop's language as 07-services.c
-does, but reads each language's catalogs on a thread of its own, a reader, as a program does whose catalogs are large
-or on a slow disk.  Switch Language asks the desktop to switch between English and Japanese: it changes the desktop's
-setting ui.language, as Settings does, and the change comes back to this and every other application as
-KL_APP_LANGUAGE.  Three quick clicks make three changes (Japanese, English, Japanese); each starts a reading, a reading
-that comes back after a later change is set aside, and only the reading of the latest change is used.  So the window
-always ends in the language the desktop ends in.
+A worker is one use of a thread. Another is a job whose answers may come out of order, so that only the latest counts. `08-language.c` speaks the desktop's language as `07-services.c` does, but reads each language's catalogs on a thread of its own, a **reader**, as a program does whose catalogs are large or on a slow disk.
 
-Picture keiland-examples/08-language.png: taken after three clicks 200 ms apart: the window in Japanese (こんにちは,
-the line naming "ja", "使ったカタログ: 3。捨てたカタログ: 0。", the button 言語を切り替える, the title 言語); the
-desktop's clock in the panel turned Japanese too.  Say that the two counts depend on timing: here each language was
-read before the next change came, so every reading was used; a slow disk sets readings aside.  The catalog keiland-examples/locale/ja/language.tr is shown under the program; install it as in
-chapter 7 to see Japanese.
+Switch Language asks the desktop to switch between English and Japanese. It changes the desktop's setting `ui.language`, as Settings does, and the change comes back to this and every other application as `KL_APP_LANGUAGE`. Three quick clicks make three changes (Japanese, English, Japanese). Each starts a reading, a reading that comes back after a later change is set aside, and only the reading of the latest change is used. So the window always ends in the language the desktop ends in.
 
-New against 07-services.c's language handling: the reader's shared record (struct reader) and its answer (struct
-reading), the number of each change (generation), language_changed, language_read, language_switch and
-language_reader.  Terms first defined here: reader, generation (the number given to each change; the answer that
-carries the latest number is the one to use).  The headers: keiland_tr.h (kl_tr_read, kl_tr_use, kl_tr_discard),
-keiland_app.h (KL_APP_LANGUAGE, kl_app_language), keiland_settings.h (kl_settings_set_int,
-kl_settings_take_result). -->
+![The window of 08-language.c in Japanese after three clicks](keiland-examples/08-language.png)
+
+*After three clicks 200 ms apart: the window in Japanese (the greeting こんにちは, the line naming "ja", "使ったカタログ: 3。捨てたカタログ: 0。", the button 言語を切り替える, the title 言語). The desktop's clock in the panel turned Japanese too.*
+
+The two counts depend on timing. Here each language was read before the next change came, so every reading was used. A slow disk sets readings aside. The catalog [locale/ja/language.tr](keiland-examples/locale/ja/language.tr) is shown under the program; install it as in chapter 7 to see Japanese.
+
+What is new against the language handling of `07-services.c`: the reader's shared record (`struct reader`) and its answer (`struct reading`), the number of each change (the generation), and `language_changed`, `language_read`, `language_switch` and `language_reader`. The calls are `kl_tr_read`, `kl_tr_use` and `kl_tr_discard` in [keiland_tr.h](../../userland/desktop/include/keiland/keiland_tr.h), `KL_APP_LANGUAGE` and `kl_app_language` in [keiland_app.h](../../userland/desktop/include/keiland/keiland_app.h), and `kl_settings_set_int` and `kl_settings_take_result` in [keiland_settings.h](../../userland/desktop/include/keiland/keiland_settings.h).
 
 <!-- example: keiland-examples/08-language.c -->
 ```c
@@ -5687,73 +5683,131 @@ msg	Switch Language	言語を切り替える
 
 #### Reading the program
 
-<!-- WRITE (chapter 8, the second program, reading), in this order:
-1. Lines 130-136: the first catalogs are read on the application's thread, before any window exists (nothing waits
-   for them yet), with kl_app_language and kl_tr_open as in chapter 7.  asked starts as the language shown.
-2. Lines 138-141: a kl_settings is opened only to ask the desktop for a change.  The program never reads ui.language
-   back from it.
-3. Lines 43-65: struct reader is what the two threads share, under its lock: wanted (the number of the latest change
-   asked for) and its language, taken (the number the reader took last), quit, and the condition variable changed
-   the reader sleeps on.  struct reading is one answer, posted to the application.  Lines 143-153 make the lock, the
-   condition and the reader's thread.
-4. Lines 215-217 and 428-447 (language_changed): at each KL_APP_LANGUAGE the program numbers the change
-   (generation), and under the lock puts the number and the event's language where the reader takes them, and wakes
-   it.  A change the reader has not taken yet is replaced: it reads only the latest.  Define "generation" here.
-5. Lines 501-544 (language_reader): it sleeps until a change it has not taken comes (lines 517-532), reads that
-   language's catalogs with kl_tr_read (line 535: any thread may call it, and the texts in use do not change), and
-   posts the reading (lines 537-542).
-6. Lines 219-221 and 449-481 (language_read): a reading whose number is not the latest is set aside with
-   kl_tr_discard; the latest one's catalogs become the texts with kl_tr_use (English when they could not be read),
-   and the title and the frame follow.  Walk through the case the numbers exist for: the reader takes change 1; the
-   user changes twice more while it reads; change 1's reading comes back after the event of change 3.  Used, it would
-   put back a language the desktop has left.  With the numbers it is set aside, and change 3's reading is used.
-7. Lines 483-499 (language_switch): kl_settings_set_int(settings, "ui.language", 0 or 1) asks for the change.  The
-   program does not change its own texts here: the change comes back as an event, as one made in Settings does.
-8. Lines 195-203: kl_settings_dispatch and kl_settings_take_result take the answers to the program's requests, so that
-   a refusal (EPERM, for instance) is told.  The language itself comes as KL_APP_LANGUAGE.
-9. Lines 244-264: the end: quit under the lock, the reader woken and joined, and the readings it left taken and set
-   aside, as in the first program.
--->
+**The first catalogs ([lines 130-136](keiland-examples/08-language.c#L130-L136)).** They are read on the application's thread, before any window exists, so nothing waits for them yet. The calls are the ones of chapter 7: `kl_app_language` and `kl_tr_open`. `asked` starts as the language shown.
+
+```c
+snprintf(language.shown, sizeof(language.shown), "%s", kl_app_language(language.app));
+status = kl_tr_open(DOMAIN, language.shown);
+/* ... */
+if (strcmp(language.shown, "ja") == 0)
+	language.asked = 1;
+```
+
+**The settings ([lines 138-141](keiland-examples/08-language.c#L138-L141)).** A `kl_settings` is opened only to ask the desktop for a change. The program never reads `ui.language` back from it.
+
+```c
+language.settings = kl_settings_open(kl_app_display(language.app), NULL);
+if (language.settings == NULL)
+	return 1;
+```
+
+**What the threads share ([lines 43-65](keiland-examples/08-language.c#L43-L65)).** `struct reader` is what the two threads share, under its lock: `wanted`, the number of the latest change asked for, and its language; `taken`, the number the reader took last; `quit`; and the condition variable `changed` that the reader sleeps on. `struct reading` is one answer, posted to the application. Lines [143-153](keiland-examples/08-language.c#L143-L153) make the lock, the condition and the reader's thread.
+
+```c
+mtx_t lock;
+cnd_t changed;
+struct kl_app *app;
+unsigned long wanted;
+unsigned long taken;
+char language[KL_TR_NAME_MAX + 1U];
+int quit;
+```
+
+**A change ([215-217](keiland-examples/08-language.c#L215-L217) and [lines 428-447](keiland-examples/08-language.c#L428-L447), `language_changed`).** At each `KL_APP_LANGUAGE` the program numbers the change: this number is its **generation**. Under the lock it puts the number and the event's language where the reader takes them, and wakes the reader. A change the reader has not taken yet is replaced, so the reader reads only the latest.
+
+```c
+language->generation++;
+/* ... */
+mtx_lock(&language->reader.lock);
+language->reader.wanted = language->generation;
+snprintf(language->reader.language, sizeof(language->reader.language), "%s", name);
+cnd_signal(&language->reader.changed);
+mtx_unlock(&language->reader.lock);
+```
+
+**The reader ([lines 501-544](keiland-examples/08-language.c#L501-L544), `language_reader`).** It sleeps until a change it has not taken comes ([lines 517-532](keiland-examples/08-language.c#L517-L532)). It reads that language's catalogs with `kl_tr_read` ([line 535](keiland-examples/08-language.c#L535)): any thread may call it, and the texts in use do not change. Then it posts the reading ([lines 537-542](keiland-examples/08-language.c#L537-L542)).
+
+```c
+while (!reader->quit && reader->wanted == reader->taken)
+	cnd_wait(&reader->changed, &reader->lock);
+/* ... */
+reading->error = kl_tr_read(DOMAIN, reading->language, &reading->catalogs);
+/* ... */
+status = kl_app_post(reader->app, POST_READ, reading);
+```
+
+**A reading comes back ([219-221](keiland-examples/08-language.c#L219-L221) and [lines 449-481](keiland-examples/08-language.c#L449-L481), `language_read`).** A reading whose number is not the latest is set aside with `kl_tr_discard`. The latest one's catalogs become the texts with `kl_tr_use` (English when they could not be read), and the title and the frame follow ([lines 459-462](keiland-examples/08-language.c#L459-L462), [472](keiland-examples/08-language.c#L472), [479-480](keiland-examples/08-language.c#L479-L480)):
+
+```c
+if (reading->generation != language->generation) {
+	kl_tr_discard(reading->catalogs);
+	free(reading);
+	language->discarded++;
+```
+
+```c
+	kl_tr_use(reading->catalogs);
+/* ... */
+kl_window_set_title(language->window, kl_tr("Language"));
+language->dirty = 1;
+```
+
+The numbers exist for this case. The reader takes change 1. While it reads, the user changes the language twice more. The event of change 3 comes, and then change 1's reading comes back. Used, it would put back a language the desktop has left. With the numbers it is set aside, and change 3's reading, which the reader takes next, is used.
+
+**Asking for a change ([lines 483-499](keiland-examples/08-language.c#L483-L499), `language_switch`).** `kl_settings_set_int(settings, "ui.language", 0 or 1)` asks the desktop for the change. The program does not change its own texts here: the change comes back as an event, as one made in Settings does.
+
+```c
+language->asked = !language->asked;
+status = kl_settings_set_int(language->settings, "ui.language", language->asked, NULL);
+```
+
+**The answers ([lines 195-203](keiland-examples/08-language.c#L195-L203)).** `kl_settings_dispatch` and `kl_settings_take_result` take the answers to the program's requests, so that a refusal (`EPERM`, for instance) is told. The language itself comes as `KL_APP_LANGUAGE`.
+
+```c
+(void)kl_settings_dispatch(language.settings);
+for (;;) {
+	taken = kl_settings_take_result(language.settings, &request, &error);
+/* ... */
+	if (error != 0)
+		fprintf(stderr, "language: the desktop refused the change (%s)\n", strerror(error));
+```
+
+**The end ([lines 244-264](keiland-examples/08-language.c#L244-L264)).** `quit` is set under the lock, the reader is woken and joined, and the readings it left are taken and set aside, as in the first program.
+
+```c
+mtx_lock(&language.reader.lock);
+language.reader.quit = 1;
+cnd_signal(&language.reader.changed);
+mtx_unlock(&language.reader.lock);
+(void)thrd_join(language.thread, NULL);
+```
 
 #### The rules of following the language
 
-<!-- WRITE (chapter 8, the second program, rules), each with a link:
-- KL_APP_LANGUAGE carries the language the desktop changed to; changes come as events in the order they were made;
-  the last one tells the language now.  kl_app_language gives the language the application heard last.
-- Use the event's language.  Reading the setting back at the event may give a later change than the event's.
-- The catalogs can be changed on the application's thread (kl_tr_open at the event, 07-services.c) or read on another
-  thread (kl_tr_read there; kl_tr_use or kl_tr_discard on the application's thread).  Read them on a thread when
-  their reading may be slow.
-- Number each change, and use a reading only when it carries the latest number; set the others aside with
-  kl_tr_discard, which frees them.
-- A program that asks for a change learns of it as of any other change.
--->
+- `KL_APP_LANGUAGE` carries the language the desktop changed to. Changes come as events in the order they were made, and the last one tells the language now. `kl_app_language` gives the language the application heard last ([line 131](keiland-examples/08-language.c#L131), [lines 215-217](keiland-examples/08-language.c#L215-L217)).
+- Use the event's language. Reading the setting back at the event may give a later change than the event's.
+- The catalogs can be changed on the application's thread (`kl_tr_open` at the event, `07-services.c`), or read on another thread (`kl_tr_read` there, then `kl_tr_use` or `kl_tr_discard` on the application's thread). Read them on a thread when their reading may be slow ([line 535](keiland-examples/08-language.c#L535), [lines 449-481](keiland-examples/08-language.c#L449-L481)).
+- Number each change, and use a reading only when it carries the latest number. Set the others aside with `kl_tr_discard`, which frees them ([lines 459-465](keiland-examples/08-language.c#L459-L465)).
+- A program that asks for a change learns of it as of any other change ([lines 483-499](keiland-examples/08-language.c#L483-L499)).
 
 #### Pitfalls
 
-<!-- WRITE (chapter 8, the second program, pitfalls):
-- kl_tr_use on the reader: it changes the texts the application's thread is drawing with.
+- Calling `kl_tr_use` on the reader's thread: it changes the texts the application's thread is drawing with.
 - Using each reading in the order it arrives: a late one puts back a language the user left.
-- Keeping a text kl_tr gave across a change (the title is set again, lines 478-480).
-- Changing the texts at the click, before the desktop's answer: the desktop may refuse, and other programs follow the
-  event, not the click.
-Then one sentence that leads to chapter 9: a thread is one way to do a long job; another is to have another program
-do it.
--->
+- Keeping a text `kl_tr` gave across a change. The title is set again ([lines 478-480](keiland-examples/08-language.c#L478-L480)).
+- Changing the texts at the click, before the desktop's answer: the desktop may refuse, and other programs follow the event, not the click.
+
+A thread is one way to do a long job. Another is to have another program do it.
 
 ## 9. Other programs
 
-<!-- WRITE (chapter 9, summary): The window starts the system's sort program as a process, writes eight words to its
-standard input, reads the sorted lines from its standard output, and shows how it ended.  Reverse runs sort -r; Bad
-Option gives sort an option it does not know, to show what it writes to its standard error and the code it ends with.
-Picture keiland-examples/09-sort.png: taken after Sort was clicked: the words, the sorted column (apple, banana,
-cherry, date, elderberry, fig, grape, pear) and "sort ended with the code 0.".
+The ninth program starts the system's `sort` program as a **process**: a program the application starts and talks to. The window writes eight words to its standard input, reads the sorted lines from its standard output, and shows how it ended. Reverse runs `sort -r`. Bad Option gives `sort` an option it does not know, to show what it writes to its standard error and the code it ends with.
 
-It grows from 04-counter.c.  New: the process and the input kept in the struct, sorter_start, sorter_write,
-sorter_news, sorter_read and sorter_end.  Terms first defined here, in bold: process (a program the application
-starts and talks to), stream (the standard input, output and error of a process), news of a process (a
-KL_APP_PROCESS event; event.ready says what it tells), line and cut line, exit code.  The header: keiland_process.h.
--->
+![The window of 09-sort.c after Sort was clicked](keiland-examples/09-sort.png)
+
+*After Sort was clicked: the words, the sorted column (apple, banana, cherry, date, elderberry, fig, grape, pear) and "sort ended with the code 0.".*
+
+It is chapter 4's counter with a process in place of the number. What is new: the process and the input kept in the struct, and `sorter_start`, `sorter_write`, `sorter_news`, `sorter_read` and `sorter_end`. The program starts no thread and waits for nothing: what the process has to tell comes as events in the application's queue. The header is [keiland_process.h](../../userland/desktop/include/keiland/keiland_process.h).
 
 <!-- example: keiland-examples/09-sort.c -->
 ```c
@@ -6302,80 +6356,117 @@ sorter_end(
 
 ### Reading the program
 
-<!-- WRITE (chapter 9, reading the program), in this order:
-1. Lines 44-47 and 138-142: the words, and the input sort reads: one word to a line.
-2. Lines 380-424 (sorter_start): the command is an argument list, argv[0] the program (a path, or a name looked for in
-   PATH, here "sort") and NULL at the end; no command line is parsed.  streams names the streams the program uses:
-   it writes the input and reads the output and the errors (lines 401-404).  kl_process_start returns 0 with the
-   process running, or ENOENT or EACCES (the program cannot be found or run), ENOMEM, EAGAIN or EINVAL; a program the
-   system finds but cannot run ends with the code 127.  data is the program's pointer (kl_process_data).  Then it
-   writes the words.  Define "process" and "stream" here.
-3. Lines 426-449 (sorter_write): kl_process_write copies the bytes and says how many it took; fewer when the input
-   waiting is full (KL_PROCESS_BUFFER, 64 KiB), and then KL_PROCESS_READY_INPUT comes when there is room.  EPIPE when
-   the input is closed or the process ended.  When all is written, kl_process_close_input: sort sorts when it reads
-   the end of its input.
-4. Lines 171-173: the process's news is a KL_APP_PROCESS event in the application's queue; event.process says whose.
-   Define "news" here.
-5. Lines 451-472 (sorter_news): event.ready may hold several things.  Room for the input, then the output and the
-   errors, then the end: the output an event tells comes before the end it tells.
-6. Lines 474-517 (sorter_read): kl_process_read_line returns KL_PROCESS_LINE (a whole line, its end not kept, ending
-   with a NUL), KL_PROCESS_LINE_CUT (the first size - 1 bytes of a longer line, whose rest comes next), or 0 (no whole
-   line waits).  The program keeps a cut line's start and skips the rest (lines 492-503).  The output is told for as
-   long as some of it waits: lines left unread are told again at the next dispatch.  The errors are read the same
-   way (lines 509-516).  Define "line" and "cut line" here.
-7. Lines 519-541 (sorter_end): kl_process_exit says how it ended: KL_PROCESS_EXITED with its exit code, or
-   KL_PROCESS_SIGNALED with a signal's number (on systems that have signals).  kl_process_close: the program is done
-   with it, and no more news comes.  Define "exit code" here.
-8. Lines 196-198: the window closed while sort runs: kl_process_close lets go of it without ending it; the library
-   waits for it and reaps it.  To end a process, kl_process_kill (TERMINATE asks it to end, KILL ends it).
--->
+**The words ([44-47](keiland-examples/09-sort.c#L44-L47) and [138-142](keiland-examples/09-sort.c#L138-L142)).** The input `sort` reads is the words, one to a line.
+
+```c
+for (index = 0; index < WORD_COUNT; index++) {
+	status = snprintf(sorter.input + sorter.input_length, sizeof(sorter.input) - sorter.input_length, "%s\n", word_table[index]);
+	sorter.input_length += (size_t)status;
+}
+```
+
+**Starting the process ([lines 380-424](keiland-examples/09-sort.c#L380-L424), `sorter_start`).** The command is an argument list: `argv[0]` is the program (a path, or a name looked for in `PATH`, here `"sort"`) and a `NULL` ends the list. No command line is parsed. `streams` names the **streams** the program uses, the process's standard input, output and error. Here the program writes the input and reads the output and the errors ([lines 401-404](keiland-examples/09-sort.c#L401-L404)). `data` is the program's own pointer, which `kl_process_data` gives back.
+
+```c
+argv[0] = "sort";
+argv[1] = NULL;
+/* ... */
+options.argv = argv;
+options.streams = KL_PROCESS_INPUT | KL_PROCESS_OUTPUT | KL_PROCESS_ERROR;
+options.data = sorter;
+status = kl_process_start(sorter->app, &options, &sorter->process);
+```
+
+`kl_process_start` returns 0 with the process running, or `ENOENT` or `EACCES` (the program cannot be found or run), `ENOMEM`, `EAGAIN` or `EINVAL`. A program the system finds but cannot run ends with the code 127. After a successful start the function writes the words.
+
+**Writing the input ([lines 426-449](keiland-examples/09-sort.c#L426-L449), `sorter_write`).** `kl_process_write` copies the bytes and says how many it took. It takes fewer when the input waiting is full (`KL_PROCESS_BUFFER`, 64 KiB), and then `KL_PROCESS_READY_INPUT` comes when there is room. It returns `EPIPE` when the input is closed or the process ended. When everything is written, the program closes the input: `sort` sorts when it reads the end of its input.
+
+```c
+status = kl_process_write(sorter->process, sorter->input + sorter->written, sorter->input_length - sorter->written, &written);
+/* ... */
+sorter->written += written;
+/* ... */
+if (sorter->written == sorter->input_length)
+	(void)kl_process_close_input(sorter->process);
+```
+
+**The news ([lines 171-173](keiland-examples/09-sort.c#L171-L173)).** The **news** of a process is a `KL_APP_PROCESS` event in the application's queue; `event.process` says whose it is.
+
+```c
+if (event.kind == KL_APP_PROCESS && event.process == sorter.process)
+	sorter_news(&sorter, event.ready);
+```
+
+**Acting on the news ([lines 451-472](keiland-examples/09-sort.c#L451-L472), `sorter_news`).** `event.ready` may hold several things: room for the input, then the output and the errors, then the end. The output an event tells comes before the end it tells.
+
+```c
+if ((ready & KL_PROCESS_READY_INPUT) != 0U)
+	sorter_write(sorter);
+/* ... */
+if ((ready & (KL_PROCESS_READY_OUTPUT | KL_PROCESS_READY_ERROR)) != 0U)
+	sorter_read(sorter);
+/* ... */
+if ((ready & KL_PROCESS_READY_EXIT) != 0U)
+	sorter_end(sorter);
+```
+
+**Reading lines ([lines 474-517](keiland-examples/09-sort.c#L474-L517), `sorter_read`).** `kl_process_read_line` returns one of three things. `KL_PROCESS_LINE` is a whole **line**: its end is not kept, and it ends with a NUL. `KL_PROCESS_LINE_CUT` is a **cut line**: the first `size - 1` bytes of a longer line, whose rest comes next. 0 means that no whole line waits.
+
+```c
+found = kl_process_read_line(sorter->process, KL_PROCESS_OUTPUT, line, sizeof(line));
+if (found == 0)
+	break;
+/* ... */
+if (found == KL_PROCESS_LINE_CUT)
+	sorter->skipping = 1;
+```
+
+The program keeps a cut line's start and skips the rest ([lines 492-503](keiland-examples/09-sort.c#L492-L503)). The output is told for as long as some of it waits, so lines left unread are told again at the next dispatch. The errors are read the same way ([lines 509-516](keiland-examples/09-sort.c#L509-L516)).
+
+**How it ended ([lines 519-541](keiland-examples/09-sort.c#L519-L541), `sorter_end`).** `kl_process_exit` says how it ended: `KL_PROCESS_EXITED` with its **exit code**, the number a program ends with (0 means that it went well), or `KL_PROCESS_SIGNALED` with a signal's number, on systems that have signals. `kl_process_close` says that the program is done with the process: no more news comes.
+
+```c
+how = kl_process_exit(sorter->process, &code);
+if (how == KL_PROCESS_EXITED) {
+/* ... */
+kl_process_close(sorter->process);
+sorter->process = NULL;
+```
+
+**Closing the window while `sort` runs ([lines 196-198](keiland-examples/09-sort.c#L196-L198)).** `kl_process_close` lets go of the process without ending it: the library waits for it and reaps it. To end a process, call `kl_process_kill`: `KL_PROCESS_TERMINATE` asks it to end, and `KL_PROCESS_KILL` ends it.
+
+```c
+if (sorter.process != NULL)
+	kl_process_close(sorter.process);
+```
 
 ### The rules
 
-<!-- WRITE (chapter 9, rules), each with a link:
-- A process belongs to the application and is used from its thread.  Its news comes as KL_APP_PROCESS events in the
-  one queue, in order with everything else.
-- The streams the program names are the program's.  An input it does not name is empty; an output or error it does
-  not name goes where the application's goes.  environment changes the application's environment for the process
-  ("NAME=value" sets, "NAME" removes; NULL changes nothing), directory is where it starts (NULL: the application's).
-- Output is told while some waits; read as much as you like at each event.  The library keeps up to
-  KL_PROCESS_BUFFER bytes of a stream and stops reading it while it is full.
-- A write is copied; a short write is finished at KL_PROCESS_READY_INPUT; closing the input sends its end.
-- One event may tell several things; read the output before acting on the end.
-- kl_process_exit says how it ended, kl_process_close lets go of it, kl_process_kill asks it to end.  The library
-  waits for its processes: a program that uses kl_process never waits for "any child" itself.
--->
+- A process belongs to the application and is used from its thread. Its news comes as `KL_APP_PROCESS` events in the one queue, in order with everything else ([lines 171-173](keiland-examples/09-sort.c#L171-L173)).
+- The streams the program names are the program's. An input it does not name is empty, and an output or error it does not name goes where the application's goes. `environment` changes the application's environment for the process (`"NAME=value"` sets, `"NAME"` removes, `NULL` changes nothing), and `directory` is where it starts (`NULL`: the application's) ([lines 401-406](keiland-examples/09-sort.c#L401-L406)).
+- Output is told while some waits. Read as much as you like at each event. The library keeps up to `KL_PROCESS_BUFFER` bytes of a stream and stops reading it while it is full ([lines 474-517](keiland-examples/09-sort.c#L474-L517)).
+- A write is copied. A short write is finished at `KL_PROCESS_READY_INPUT`, and closing the input sends its end ([lines 426-449](keiland-examples/09-sort.c#L426-L449)).
+- One event may tell several things. Read the output before acting on the end ([lines 451-472](keiland-examples/09-sort.c#L451-L472)).
+- `kl_process_exit` says how it ended, `kl_process_close` lets go of it, and `kl_process_kill` asks it to end. The library waits for its processes: a program that uses `kl_process` never waits for "any child" itself ([lines 519-541](keiland-examples/09-sort.c#L519-L541)).
 
 ### Pitfalls
 
-<!-- WRITE (chapter 9, pitfalls):
-- Forgetting kl_process_close_input: sort waits for more words for ever.
-- Taking a write as complete: check written.
-- Reading the output but not the errors you asked for: a full error stream stops being read, and a program that writes
-  much to it then waits.  Read every stream you named.
+- Forgetting `kl_process_close_input`: `sort` waits for more words for ever.
+- Taking a write as complete. Check `written`.
+- Reading the output but not the errors you asked for. A full error stream stops being read, and a program that writes much to it then waits. Read every stream you named ([lines 509-516](keiland-examples/09-sort.c#L509-L516)).
 - Taking a cut line for a whole one.
-- Using the process after kl_process_close (the program sets its pointer to NULL, lines 537-540).
-- Passing a command line as argv[0]: no words are split.  A command line goes through the system's command
-  interpreter: argv {"/bin/sh", "-c", line, NULL} for a process, or kl_launch's command (chapter 10).
--->
+- Using the process after `kl_process_close`. The program sets its pointer to `NULL` ([lines 537-540](keiland-examples/09-sort.c#L537-L540)).
+- Passing a command line as `argv[0]`: no words are split. A command line goes through the system's command interpreter: `argv` `{"/bin/sh", "-c", line, NULL}` for a process, or the command of `kl_launch` (chapter 10).
 
 ### A program in a terminal
 
-<!-- WRITE (chapter 9, the second program, summary): 09-shell.c runs sh in a terminal of its own, shows the lines the
-terminal prints, and types the command written in the field into it.  It is not a terminal emulator: it keeps the
-text and drops the terminal's control sequences.  When the shell turns the echo off and reads by the line, as a
-program asking for a password does, the field hides what is typed.
+`sort` reads lines and writes lines. A program that talks to a person is different: it wants a terminal. `09-shell.c` runs `sh` in a **terminal** of its own: what a program takes for its keyboard and screen, here one that the library makes for the process. The window shows the lines the terminal prints, and types the command written in the field into it. It is not a terminal emulator: it keeps the text and drops the terminal's control sequences. When the shell turns the echo off and reads by the line, as a program asking for a password does, the field hides what is typed.
 
-Picture keiland-examples/09-shell.png: taken after "echo hello from sh" and Enter, then
-'stty -echo; printf "Password: "; read word' and Enter, then "secret" typed in the field: the lines
-"$ echo hello from sh", "hello from sh", the second command and "Password:", the note "The shell turned the echo off:
-what you type is hidden." and the field showing six dots.
+![The window of 09-shell.c asking for a password](keiland-examples/09-shell.png)
 
-It grows from 09-sort.c, and its field is chapter 5's.  New: KL_PROCESS_TERMINAL, the terminal's size
-(kl_process_resize), its modes (kl_process_terminal_mode), reading bytes (kl_process_read), and hanging up.  Terms
-first defined here, in bold: terminal (what a program takes for its keyboard and screen: here one the library makes
-for the process), echo, line mode (the terminal hands the program a whole line once Enter is typed), a terminal's size
-in characters, hanging up. -->
+*After "echo hello from sh" and Enter, then `stty -echo; printf "Password: "; read word` and Enter, then "secret" typed in the field: the lines "$ echo hello from sh", "hello from sh", the second command and "Password:", the note "The shell turned the echo off: what you type is hidden." and the field showing six dots.*
+
+It grows from `09-sort.c`, and its field is chapter 5's. What is new: `KL_PROCESS_TERMINAL`, the terminal's size (`kl_process_resize`), its modes (`kl_process_terminal_mode`), reading bytes (`kl_process_read`), and hanging up.
 
 <!-- example: keiland-examples/09-shell.c -->
 ```c
@@ -6997,76 +7088,106 @@ shell_new_line(
 
 #### Reading the program
 
-<!-- WRITE (chapter 9, the second program, reading), in this order:
-1. Lines 411-443 (shell_start): streams is KL_PROCESS_TERMINAL in place of the three: what the program writes is typed
-   into the terminal, and what the terminal shows is read as KL_PROCESS_OUTPUT (there is no separate error stream).
-   columns and rows are its size.  environment sets TERM=dumb, which asks the programs in it for no control
-   sequences, and the prompt PS1.  sh sees a terminal and runs as an interactive shell, with a prompt.  Define
-   "terminal" here.
-2. Lines 146-154: the first frame is made first, so that the size is known when the shell starts.
-3. Lines 259-290 (shell_size): the size in characters from the window's size and an average character's width.
-   kl_process_resize tells the terminal, which tells the programs in it (ls fits its columns to it).  It is called at
-   every new size (lines 251-252).
-4. Lines 473-525 (shell_news): the terminal's output is read as bytes with kl_process_read, all that waits (a prompt
-   has no line's end, so lines would never come).  Then kl_process_terminal_mode: when the echo is off and the input
-   is taken by the line, a program is asking for a password, and the field hides what is typed (lines 502-509).  The
-   mode is looked at after output because a program turns the echo off and then prints its prompt.  The mode is the
-   terminal's as the program reading it now set it: a shell that edits its own command line (zedBSD's sh does)
-   turns the echo and the line mode off while it waits at its prompt, and echoes by itself; while read waits after
-   stty -echo, the terminal has no echo but the line mode, and that is when the field hides what is typed (the
-   picture).  Define "echo" and "line mode" here.  At the end: how it ended, and kl_process_close.
-5. Lines 527-594 (shell_print), briefly: the program keeps the text and drops the control sequences.  A terminal
-   emulator interprets them; that is the program's work, not libkeiland's.
-6. Lines 445-471 (shell_type): Enter in the field types its line and a new line into the terminal; a short write is
-   finished at KL_PROCESS_READY_INPUT (lines 489-491).
-7. Lines 334-351: the note and the field follow the mode.
-8. Lines 203-207: closing the window hangs the terminal up (KL_PROCESS_HANGUP), as closing a terminal's window does:
-   the shell ends as it does when its terminal goes.  Define "hanging up" here.
--->
+**Starting the shell ([lines 411-443](keiland-examples/09-shell.c#L411-L443), `shell_start`).** `streams` is `KL_PROCESS_TERMINAL` in place of the three: what the program writes is typed into the terminal, and what the terminal shows is read as `KL_PROCESS_OUTPUT`. There is no separate error stream. `columns` and `rows` are the terminal's size. `environment` sets `TERM=dumb`, which asks the programs in it for no control sequences, and the prompt `PS1`. `sh` sees a terminal and runs as an interactive shell, with a prompt.
+
+```c
+static const char *const environment[] = { "TERM=dumb", "PS1=$ ", NULL };
+/* ... */
+options.streams = KL_PROCESS_TERMINAL;
+options.columns = shell->columns;
+options.rows = shell->rows;
+status = kl_process_start(shell->app, &options, &shell->process);
+```
+
+**The first frame first ([lines 146-154](keiland-examples/09-shell.c#L146-L154)).** The program makes the first frame before it starts the shell, so that the size is known when the shell starts.
+
+```c
+status = shell_resize(&shell);
+/* ... */
+status = shell_start(&shell);
+```
+
+**The size ([lines 259-290](keiland-examples/09-shell.c#L259-L290), `shell_size`).** A terminal's size is in **characters**. The program works it out from the window's size and an average character's width, and `kl_process_resize` tells the terminal, which tells the programs in it (`ls` fits its columns to it). It is called at every new size ([lines 251-252](keiland-examples/09-shell.c#L251-L252)).
+
+```c
+character = kl_text_width(&shell->text, "0", 1U, theme->text_small, 0);
+/* ... */
+shell->columns = (unsigned)(((int)shell->width - 2 * MARGIN) / character);
+shell->rows = (unsigned)(area / LINE_HEIGHT);
+/* ... */
+	status = kl_process_resize(shell->process, shell->columns, shell->rows);
+```
+
+**The terminal's output ([lines 473-525](keiland-examples/09-shell.c#L473-L525), `shell_news`).** The output is read as bytes with `kl_process_read`, all that waits: a prompt has no line's end, so lines would never come. Then `kl_process_terminal_mode` tells the terminal's modes ([lines 502-509](keiland-examples/09-shell.c#L502-L509)):
+
+```c
+	size = kl_process_read(shell->process, KL_PROCESS_OUTPUT, bytes, sizeof(bytes));
+	if (size == 0)
+		break;
+	shell_print(shell, bytes, size);
+/* ... */
+status = kl_process_terminal_mode(shell->process, &mode);
+if (status == 0 && (mode & KL_PROCESS_TERMINAL_ECHO) == 0U) {
+	if ((mode & KL_PROCESS_TERMINAL_LINES) != 0U)
+		shell->secret = 1;
+}
+```
+
+The program looks at the mode after it has read the output, because a program turns the echo off and then prints its prompt. The mode is the terminal's as the program reading it now set it. The **echo** shows what is typed on the terminal's screen. In **line mode** the terminal edits the input and hands the program a whole line once Enter is typed. A shell that edits its own command line, as zedBSD's `sh` does, turns the echo and the line mode off while it waits at its prompt, and echoes by itself. While `read` waits after `stty -echo`, the terminal has no echo but the line mode. That is a program asking for a password, and then the field hides what is typed (the picture). At the end of the function, the exit code and `kl_process_close` come as in the first program.
+
+**Showing the text ([lines 527-594](keiland-examples/09-shell.c#L527-L594), `shell_print`).** The program keeps the text and drops the control sequences. A terminal emulator interprets them; that is the program's work, not libkeiland's.
+
+**Typing ([lines 445-471](keiland-examples/09-shell.c#L445-L471), `shell_type`).** Enter in the field types its line and a new line into the terminal. A short write is finished at `KL_PROCESS_READY_INPUT` ([lines 489-491](keiland-examples/09-shell.c#L489-L491)):
+
+```c
+if ((ready & KL_PROCESS_READY_INPUT) != 0U)
+	shell_type(shell);
+```
+
+**The note and the field ([lines 334-351](keiland-examples/09-shell.c#L334-L351)).** They follow the mode.
+
+```c
+if (shell->secret)
+	note = "The shell turned the echo off: what you type is hidden.";
+/* ... */
+shell->command.secret = shell->secret;
+```
+
+**Closing the window ([lines 203-207](keiland-examples/09-shell.c#L203-L207)).** The terminal is **hung up**, as closing a terminal's window does: `KL_PROCESS_HANGUP` makes the terminal tell the shell that its user is gone, and the shell ends as it does then.
+
+```c
+if (shell.process != NULL) {
+	(void)kl_process_kill(shell.process, KL_PROCESS_HANGUP);
+	kl_process_close(shell.process);
+```
 
 #### The rules of a terminal
 
-<!-- WRITE (chapter 9, the second program, rules), each with a link:
-- KL_PROCESS_TERMINAL gives the process one terminal for its input, output and errors, read as KL_PROCESS_OUTPUT.
-- Read a terminal's output as bytes.
-- The size is in characters: give it at the start and at every new size.
-- kl_process_terminal_mode tells the echo and the line mode as the program reading the terminal now set them; no echo
-  but line mode means a password is being typed.
-- kl_process_resize and kl_process_terminal_mode answer ENOTSUP for a process without a terminal (and the mode where
-  the system does not tell), and EIO once the terminal hung up.
-- End a terminal's process with KL_PROCESS_HANGUP.
--->
+- `KL_PROCESS_TERMINAL` gives the process one terminal for its input, output and errors, read as `KL_PROCESS_OUTPUT` ([line 432](keiland-examples/09-shell.c#L432)).
+- Read a terminal's output as bytes ([lines 493-500](keiland-examples/09-shell.c#L493-L500)).
+- The size is in characters: give it at the start and at every new size ([lines 433-434](keiland-examples/09-shell.c#L433-L434), [lines 251-252](keiland-examples/09-shell.c#L251-L252)).
+- `kl_process_terminal_mode` tells the echo and the line mode as the program reading the terminal now set them. No echo but line mode means that a password is being typed ([lines 502-509](keiland-examples/09-shell.c#L502-L509)).
+- `kl_process_resize` and `kl_process_terminal_mode` answer `ENOTSUP` for a process without a terminal (and the mode where the system does not tell), and `EIO` once the terminal hung up.
+- End a terminal's process with `KL_PROCESS_HANGUP` ([lines 203-207](keiland-examples/09-shell.c#L203-L207)).
 
 #### Pitfalls
 
-<!-- WRITE (chapter 9, the second program, pitfalls):
-- Waiting for lines from a terminal: a prompt never ends its line.
-- Forgetting the size: programs in it lay out for a size it does not have.
-- Showing the control sequences as text: drop them or interpret them (a terminal emulator).
-- Ending a shell with KILL: a hang-up lets it end as it does when its window closes.
-Then one sentence that leads to chapter 10: these processes belong to the window that started them; some programs are
-started to live on their own.
--->
+- Waiting for lines from a terminal. A prompt never ends its line.
+- Forgetting the size. Programs in the terminal lay out for a size it does not have.
+- Showing the control sequences as text. Drop them, or interpret them as a terminal emulator does.
+- Ending a shell with `KL_PROCESS_KILL`. A hang-up lets it end as it does when its window closes.
+
+These processes belong to the window that started them. Some programs are started to live on their own.
 
 ## 10. Running once and starting programs
 
-<!-- WRITE (chapter 10, summary): 10-instance.c runs once per user, as Settings does: a second start hands its
-request (its first argument) to the copy that runs, and ends.  The copy that runs lists the requests it was handed and
-brings its window to the front for each.  Start Another starts the program again, apart from this one, with the
-request "Request N from Start Another"; that new copy finds this one, hands the request over and ends, so the request
-comes back here.  A file manager starts a program on a file the same way.
+The tenth program runs once per user, as Settings does. A second start hands its **request**, its first argument, to the copy that runs, and ends. The copy that runs lists the requests it was handed and brings its window to the front for each. Start Another starts the program again, apart from this one, with the request "Request N from Start Another". That new copy finds this one, hands the request over and ends, so the request comes back here. A file manager starts a program on a file the same way.
 
-Picture keiland-examples/10-instance.png: taken after Start Another was clicked twice and the program was started
-once more from a shell with the argument From-the-shell: the list "Request 1 from Start Another", "Request 2 from
-Start Another", "From-the-shell", and "Started: Request 2 from Start Another.".
+![The window of 10-instance.c listing three requests](keiland-examples/10-instance.png)
 
-It grows from 04-counter.c.  New: the instance and the program's path in the struct, kl_instance_open before the
-connection, kl_instance_bind, requests_take with kl_activate, requests_launch with kl_launch, kl_instance_close.
-Terms first defined here, in bold: instance (the one copy of a program that runs, which later starts find), request (a
-line of text a start hands over; the program gives it its meaning, such as a page or a file), activation token (the
-compositor's leave for a window to come to the front), launch (a program started apart from the application).  The
-headers: keiland_instance.h, keiland_process.h (kl_launch).  To run it, XDG_RUNTIME_DIR must be the user's own
-directory (mode 0700); a Keiland session sets it so. -->
+*After Start Another was clicked twice and the program was started once more from a shell with the argument From-the-shell: the list "Request 1 from Start Another", "Request 2 from Start Another" and "From-the-shell", and the line "Started: Request 2 from Start Another.".*
+
+It is chapter 4's counter with a list of requests. What is new: the instance and the program's path in the struct, `kl_instance_open` before the connection, `kl_instance_bind`, `requests_take` with `kl_activate`, `requests_launch` with `kl_launch`, and `kl_instance_close`. The headers are [keiland_instance.h](../../userland/desktop/include/keiland/keiland_instance.h) and [keiland_process.h](../../userland/desktop/include/keiland/keiland_process.h) (`kl_launch`). To run it, `XDG_RUNTIME_DIR` must be the user's own directory (mode 0700); a Keiland session sets it so.
 
 <!-- example: keiland-examples/10-instance.c -->
 ```c
@@ -7529,51 +7650,82 @@ requests_launch(
 
 ### Reading the program
 
-<!-- WRITE (chapter 10, reading the program), in this order:
-1. Lines 94-109: kl_instance_open(name, request, &instance) is the first call, before the connection.  It has three
-   outcomes: 0 with an instance (this is the one copy, and it listens for later starts); 0 with NULL (the request was
-   handed to the copy that runs: the program ends, line 108); an error (the program runs on its own, as without the
-   call: EINVAL for a bad name or request, ENOTSUP without a runtime directory that is the user's alone).  The name
-   is lowercase letters, digits and "-".  Define "instance" and "request" here.
-2. Lines 120-125: kl_instance_bind: from now on later starts' requests come as the application's KL_APP_INSTANCE
-   events.  A thread of the library takes them; up to eight wait to be taken.
-3. Lines 181-183 and 389-421 (requests_take): at KL_APP_INSTANCE the program takes requests until none is left (one
-   event may stand for several).  Each comes with an activation token: kl_activate(kl_app_display(app),
-   kl_window_surface(window), token) asks the compositor to bring the window to the front, and the compositor
-   decides whether the token allows it (lines 414-419).  Define "activation token" here.
-4. Lines 423-455 (requests_launch): kl_launch starts the program again, by the path it was started with (argv[0]), with
-   a request of its own.  options.argv, or options.command for a command line the system's command interpreter runs
-   (exactly one of the two); environment and directory as for a process; from, the window the user works in, so
-   that the compositor gives the new program leave to bring its window to the front.  The launched program runs
-   apart: it lives on when the application ends, its input is empty, it writes where the application does, and
-   nothing of it comes back.  It is on its way when kl_launch returns 0; ENOENT or EACCES when it cannot be found or
-   run.  Here the new copy finds this one and hands its request over, so it comes back as KL_APP_INSTANCE.  Define
-   "launch" here.
-5. Lines 206-208: kl_instance_close before the application closes: the copy stops listening, and a later start runs
-   as the first.
--->
+**Becoming the one copy ([lines 94-109](keiland-examples/10-instance.c#L94-L109)).** `kl_instance_open(name, request, &instance)` is the first call, before the connection. An **instance** is the one copy of a program that runs, which later starts find. A **request** is a line of text a start hands over; the program gives it its meaning, such as a page or a file. The name is lower-case letters, digits and `-`. The call has three outcomes:
+
+- 0 with an instance: this is the one copy, and it listens for later starts.
+- 0 with `NULL`: the request was handed to the copy that runs, and this start ends ([line 108](keiland-examples/10-instance.c#L108)).
+- An error: the program runs on its own, as without the call. `EINVAL` is a bad name or request, and `ENOTSUP` means there is no runtime directory that is the user's alone.
+
+```c
+status = kl_instance_open(INSTANCE_NAME, request, &requests.instance);
+if (status != 0) {
+/* ... */
+} else if (requests.instance == NULL) {
+	/* Handed over: the copy that runs carries the request out. */
+	return 0;
+```
+
+**Listening ([lines 120-125](keiland-examples/10-instance.c#L120-L125)).** `kl_instance_bind` makes the requests of later starts come as the application's `KL_APP_INSTANCE` events from now on. A thread of the library takes them from the starts, and up to eight wait to be taken.
+
+```c
+status = kl_instance_bind(requests.instance, requests.app);
+if (status != 0)
+	fprintf(stderr, "requests: later starts are not heard (%s)\n", strerror(status));
+```
+
+**Taking the requests ([181-183](keiland-examples/10-instance.c#L181-L183) and [lines 389-421](keiland-examples/10-instance.c#L389-L421), `requests_take`).** At `KL_APP_INSTANCE` the program takes requests until none is left, because one event may stand for several. Each comes with an **activation token**, the compositor's leave for a window to come to the front. `kl_activate(kl_app_display(app), kl_window_surface(window), token)` asks the compositor to bring the window to the front, and the compositor decides whether the token allows it ([lines 414-419](keiland-examples/10-instance.c#L414-L419)).
+
+```c
+taken = kl_instance_take(requests->instance, request, sizeof(request), token, sizeof(token));
+/* ... */
+if (token[0] != '\0') {
+	status = kl_activate(kl_app_display(requests->app), kl_window_surface(requests->window), token);
+```
+
+**Starting the program again ([lines 423-455](keiland-examples/10-instance.c#L423-L455), `requests_launch`).** To **launch** is to start a program apart from the application. `kl_launch` starts the program again, by the path it was started with (`argv[0]`), with a request of its own. `options.argv` is the argument list, or `options.command` is a command line that the system's command interpreter runs (exactly one of the two). `environment` and `directory` are as for a process. `from` is the window the user works in, so that the compositor gives the new program leave to bring its window to the front.
+
+```c
+argv[0] = requests->program;
+argv[1] = request;
+argv[2] = NULL;
+/* ... */
+options.argv = argv;
+options.from = requests->window;
+status = kl_launch(requests->app, &options);
+```
+
+The launched program runs apart: it lives on when the application ends, its input is empty, it writes where the application does, and nothing of it comes back. It is on its way when `kl_launch` returns 0, or the call returns `ENOENT` or `EACCES` when it cannot be found or run. Here the new copy finds this one and hands its request over, so the request comes back as `KL_APP_INSTANCE`.
+
+**Stopping ([lines 206-208](keiland-examples/10-instance.c#L206-L208)).** `kl_instance_close` is called before the application closes: the copy stops listening, and a later start runs as the first.
+
+```c
+if (requests.instance != NULL)
+	kl_instance_close(requests.instance);
+```
 
 ### The rules
 
-<!-- WRITE (chapter 10, rules), each with a link:
-- Call kl_instance_open first, before the connection and anything the user sees; act on its three outcomes.
-- Bind the instance to the application, and take requests until none is left at each KL_APP_INSTANCE.
-- A request is a line of text, at most KL_INSTANCE_REQUEST_MAX bytes with its NUL; the program gives it its meaning.
-- Bring the window forward with each request's token; without a token the compositor may refuse.
-- kl_launch starts a program apart from the application; kl_process (chapter 9) starts one the application talks to.
-  A table of the two: lives after the application (yes / no: it belongs to it), its streams (the application's,
-  input empty / the program's), news and end (none / KL_APP_PROCESS), activation (from / none).  A program that wants
-  to know when the program it started ends uses kl_process with no streams.
--->
+- Call `kl_instance_open` first, before the connection and anything the user sees, and act on its three outcomes ([lines 94-109](keiland-examples/10-instance.c#L94-L109)).
+- Bind the instance to the application, and take requests until none is left at each `KL_APP_INSTANCE` ([lines 120-125](keiland-examples/10-instance.c#L120-L125), [lines 389-421](keiland-examples/10-instance.c#L389-L421)).
+- A request is a line of text, at most `KL_INSTANCE_REQUEST_MAX` bytes with its NUL. The program gives it its meaning ([line 398](keiland-examples/10-instance.c#L398)).
+- Bring the window forward with each request's token. Without a token the compositor may refuse ([lines 414-419](keiland-examples/10-instance.c#L414-L419)).
+- `kl_launch` starts a program apart from the application. `kl_process_start` (chapter 9) starts one the application talks to ([lines 423-455](keiland-examples/10-instance.c#L423-L455)). The two differ in this:
+
+  | | `kl_launch` | `kl_process_start` |
+  | --- | --- | --- |
+  | After the application | Lives on | Belongs to the application |
+  | Its streams | The application's, the input empty | The program's, as it names them |
+  | News and end | None | `KL_APP_PROCESS` events |
+  | Activation | From a window (`from`) | None |
+
+  A program that wants to know when the program it started ends uses a process with no streams.
 
 ### Pitfalls
 
-<!-- WRITE (chapter 10, pitfalls):
-- Taking an error of kl_instance_open as fatal: the program can run on its own.
-- Taking one request per event: one event may stand for several.
-- A runtime directory shared with others (such as /tmp): ENOTSUP, and every start runs on its own.
-- Expecting to hear when a launched program ends: start it as a process instead.
-- A command line in argv[0]: use options.command.
-Then the guide's last sentence: for everything else, the headers under userland/desktop/include/keiland/ are the
-authority, one per component.
--->
+- Taking an error of `kl_instance_open` as fatal. The program can run on its own ([lines 102-105](keiland-examples/10-instance.c#L102-L105)).
+- Taking one request per event. One event may stand for several ([lines 403-407](keiland-examples/10-instance.c#L403-L407)).
+- A runtime directory shared with others (such as `/tmp`): `ENOTSUP`, and every start runs on its own.
+- Expecting to hear when a launched program ends. Start it as a process instead.
+- A command line in `argv[0]`. Use `options.command`.
+
+For everything else, the headers under [userland/desktop/include/keiland/](../../userland/desktop/include/keiland/) are the authority, one per component.

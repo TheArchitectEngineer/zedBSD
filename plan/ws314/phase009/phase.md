@@ -3,7 +3,7 @@
 # ws314-p009 解説に新しい API（post・process・instance・launch・language）の章を足す
 
 - 親: [WS314](../ws.md)。設計: [design.md](../design.md) §3〜§6・§13。Queue: q1690（前半は担当 P6、2026-10-30）。
-- Status: in-progress（前半の構成と例は済み（2026-10-30、host・QEMU）。後半の文章の書き直しは Sonnet）
+- Status: cleared（前半の構成と例は 2026-10-30 に済み（host・QEMU）、後半の文章は 2026-10-30 に P6 が書いた）
 - Disposition: normal
 - ユーザーの決定（ws.md の原文）: 8「…fdの削除後、作成されたAPIに関する説明を追記します。」、11（完全に動く source の全体を示し、
   帰納と演繹で読ませる。構成は Opus、文章は Sonnet）、12・13（`KL_APP_LANGUAGE` と言語の名前）。
@@ -82,6 +82,20 @@
   10-instance の `kl_activate` で窓が前へ出ること（窓は 1 つで見分けられない）、08-language で読みが捨てられる場合（この run では 0）、
   Linux の compositor での実行。実機は対象外。
 
+## 後半（2026-10-30 P6）
+
+- `docs/howto/keiland-programming.md` の WRITE を全て文章にし、WRITE の comment を消した。第 8 章（worker と post、言語の読み手）・第 9 章
+  （process、terminal の shell）・第 10 章（instance と launch）を、第 1〜7 章と同じ型（説明と画面、program 全体、読み方、規則、落とし穴、
+  次章への橋）で書いた。第 7 章「Text in the user's language」は `KL_APP_LANGUAGE` の形に書き直し（`kl_settings_open`・`kl_tr_follow` の
+  例と `kl_settings_dispatch` の段落を外し、`kl_tr_follow` は fd の無い program 向けの 1 段落に）、catalog の説明と日本語の画面
+  （07-services-ja）を足した。導入（章の一覧・program の表・C11 thread の build・thread の文）、第 1 章（規則・event の表・落とし穴）、
+  第 7 章の settings と末尾の文も直した。切り抜きの PNG は WRITE が名指した 6 枚を入れた。
+- 引用と行の link は file から生成した（手で写していない）。code の block と keiland-examples/ の file は変えていない。
+- 確かめた事: `sh plan/ws314/tests/doc-examples.sh build/p009-linux/lib` が `SUMMARY pass=71 fail=0 not-done=0`、
+  `python3 -I plan/tools/record-audit/links.py` が `TOTAL 0 broken`。WRITE と OLD TEXT の comment は 0。
+- 気付き（例の code は変えていない）: 08-worker.c の `primes_finish` は worker を `thrd_join` した後、残りの `POST_FINISHED` を
+  `primes_post` に渡し、そこでもう一度 `thrd_join` する（同じ thread を 2 回 join する）。本文はこの道に触れていない。
+
 ## 残り
 
-- 後半（Sonnet）: WRITE に沿って文章を書き、WRITE を消す。画面の PNG（`docs/howto/keiland-examples/NN-*.png`）を各章に。
+- なし（p009 は cleared）。
