@@ -467,6 +467,63 @@ mali_stage_reset(
 	session->stage_used = 0U;
 }
 
+/*
+ * Finds the image export whose backing the display node was handed and
+ * holds its object for the display: the page list render_backing() gave
+ * out names the object.  ENOTSUP for a backing of another node, or when
+ * the node was never registered.
+ */
+int
+mali_render_scanout_hold(
+	const struct drv_gpu_scanout_backing *backing,
+	struct mali_bo **bo)
+{
+	struct mali_render *render;
+	struct mali_shared *shared;
+	unsigned long enabled;
+
+	/* A node that was never registered handed out nothing (and its guard may not be made). */
+	render = &board_render;
+	*bo = NULL;
+	if (render->node == NULL)
+		return ENOTSUP;
+
+	/*
+	 * The listed image export whose page list is the backing's.  The
+	 * reference is taken under the guard, so the export's release cannot
+	 * free the object in between.
+	 */
+	enabled = spin_lock_irqsave(&render->guard);
+
+	for (shared = render->exports; shared != NULL; shared = shared->next) {
+		if (!shared->has_image)
+			continue;
+		if (shared->bo->pages == NULL || shared->bo->pages != backing->pages)
+			continue;
+		shared->bo->references++;
+		*bo = shared->bo;
+		break;
+	}
+
+	spin_unlock_irqrestore(&render->guard, enabled);
+
+	/* Not one of this node's exports. */
+	if (*bo == NULL)
+		return ENOTSUP;
+
+	/* Succeeded: the object lives until the display drops it. */
+	return 0;
+}
+
+/* Drops the display node's hold on an exported object; the last holder frees it. */
+void
+mali_render_scanout_drop(
+	struct mali_bo *bo)
+{
+	/* The node's count, under its guard. */
+	mali_bo_put(&board_render, bo);
+}
+
 /* Opens a session: its space, with the ring and the sync page at their places, and its free runs. */
 static int
 render_open(

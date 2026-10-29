@@ -437,10 +437,10 @@ draw_compile(
 	size_t bytes;
 	int error;
 
-	/* Compiled for SM75. */
+	/* Compiled for the generation's shader model. */
 	binary = NULL;
 	kern_memset(&diagnostic, 0, sizeof(diagnostic));
-	error = nvrtx_sm75_compile_ir(&program->ir, &binary, &diagnostic);
+	error = nvrtx_sm75_compile_ir_sm(&program->ir, gpu->identity.chip.profile->sm, &binary, &diagnostic);
 	if (error != 0) {
 		nvrtx_stage_mark("draw-test fail: program %u did not compile (%d: %s)", (unsigned)index, error, (diagnostic.reason != NULL) ? diagnostic.reason : "?");
 		return error;
@@ -565,7 +565,7 @@ draw_system(
 	target.height = DRAW_SIZE;
 	target.pitch = DRAW_PITCH;
 	push = draw_push(gpu, DRAW_SYSTEM_PUSH_PAGE);
-	at = nvrtx_push_draw_init(push, 0U, draw_page_va(DRAW_ZERO_PAGE));
+	at = nvrtx_push_draw_init_class(push, 0U, draw_page_va(DRAW_ZERO_PAGE), gpu->identity.chip.profile->class_threed);
 	at = nvrtx_push_draw_constants(push, at, draw_page_va(DRAW_CONSTANTS_PAGE), DRAW_CONSTANTS_BYTES);
 	at = nvrtx_push_draw_textures(push, at, draw_page_va(DRAW_HEADERS_PAGE), 1U, draw_page_va(DRAW_SAMPLERS_PAGE), 1U);
 	at = nvrtx_push_draw_target(push, at, &target);

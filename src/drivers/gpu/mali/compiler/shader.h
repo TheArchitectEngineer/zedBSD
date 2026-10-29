@@ -34,9 +34,10 @@
  *   - then the words of the sizes the program queries: for a storage
  *     buffer whose length it reads (OpArrayLength), one word with the
  *     bytes of the buffer's range at buffer.size_fau_word; for a texture
- *     whose size it queries, four words at texture.size_fau_word: the
- *     width, the height and the depth (or the layers of an array) of
- *     level 0, and the number of levels.
+ *     or a storage image whose size it queries, four words at
+ *     texture.size_fau_word (image.size_fau_word): the width, the height
+ *     and the depth (or the layers of an array, the cubes of a cube
+ *     array) of level 0, and the number of levels.
  *
  * fau_words counts them all and is even; the driver gives the stage
  * fau_words / 2 entries.  A size word the program does not read is
@@ -56,7 +57,20 @@
  *     integers as the location's type says);
  *   - table MALI_SHADER_TABLE_VERTEX_BUFFERS, entry B: the buffer
  *     descriptor of Vulkan vertex binding B, which the attribute
- *     descriptors name.
+ *     descriptors name;
+ *   - table MALI_SHADER_TABLE_IMAGES, entry k: the texture descriptor of
+ *     the program's storage image k (struct mali_shader_image), written
+ *     for storage (one level, no swizzle) as a 2D image of the view's
+ *     layers (a 3D image's slices), which the program loads texels from
+ *     (LD_TEX_IMM) and finds texel addresses in for its stores and
+ *     atomics (LEA_TEX_IMM): the texel's x, y and layer.
+ *
+ * A texture's descriptor has the dimension of the view the program
+ * samples: 2D (a 2D array's layers its array size), 3D, or cube (its
+ * array size the cubes, six layers each, face f of cube c being layer
+ * 6 c + f in the order +X, -X, +Y, -Y, +Z, -Z).  Its sampler descriptor
+ * carries the compare function of a sampler the program compares with
+ * (a shadow sampler's depth reference is the program's).
  *
  * Vertex programs.  A vertex shader compiles to the two programs of an
  * index-driven vertex shading draw in one code buffer: the position
@@ -83,12 +97,30 @@
  * into render target L with blend descriptor L (the fixed function
  * blend); the last blend ends the program.
  *
+ * A fragment program that writes gl_SampleMask ANDs it into the coverage
+ * the hardware preloads before the test, and gl_SampleMaskIn reads the
+ * samples the rasterizer found covered (bits 15:0 of the preloaded r61).
+ * A fragment program that writes gl_FragDepth emits it (ZS_EMIT, a
+ * 32-bit float) after the coverage test and before its blends:
+ * writes_depth says so, and the draw then takes the depth from the
+ * shader (the depth/stencil descriptor's depth source) and tests and
+ * updates depth late.
+ *
  * Compute programs.  A compute program reads its local invocation id from
  * the preloaded r55 (x in bits 15:0, y in 31:16) and r56 (z in 15:0), and
  * its workgroup id from r57, r58 and r59.  gl_NumWorkGroups is a storage
  * buffer of the buffer table with set DRV_GPU_IR_SYSTEM_SET, binding 0,
  * holding the three group counts.  Workgroup shared memory is addressed
  * from the workgroup local storage pointer the driver sets.
+ *
+ * Thread local storage.  A program whose values do not fit its registers
+ * keeps some of them in memory of its own thread: tls_bytes is the bytes
+ * one thread uses (a power of two, at least 16; zero for none), which
+ * the driver gives the stage through the thread storage descriptor (its
+ * TLS size, the log2 of tls_bytes / 16, and the base of storage enough
+ * for every thread the GPU's cores run at once).  The program reaches it
+ * through the thread local storage pointer the hardware makes from the
+ * descriptor.
  *
  * preload says which of r48..r63 the program reads as the hardware
  * delivers them (bit i for r(48 + i)), and work_registers how many
@@ -102,6 +134,7 @@
 #define KERN_DRIVERS_GPU_MALI_COMPILER_SHADER_H
 
 #include "drivers/gpu/compiler/ir.h"
+#include "drivers/gpu/compiler/spirv.h"
 
 #include <stddef.h>
 #include <stdint.h>
@@ -113,11 +146,20 @@ enum mali_shader_stage {
 	MALI_SHADER_FRAGMENT
 };
 
+/*
+ * What the compiler asks the SPIR-V parse to lower beyond the shared
+ * profile: storage images, a compute shader's images, a fragment
+ * shader's gl_FragDepth, and its gl_SampleMask and gl_SampleMaskIn.
+ */
+#define MALI_SHADER_SPIRV_FEATURES	(DRV_GPU_SPIRV_FEATURE_COMPUTE_IMAGES | DRV_GPU_SPIRV_FEATURE_STORAGE_IMAGE | \
+					 DRV_GPU_SPIRV_FEATURE_FRAG_DEPTH | DRV_GPU_SPIRV_FEATURE_SAMPLE_MASK)
+
 /* The resource tables a program reads (see the shader ABI above). */
 #define MALI_SHADER_TABLE_TEXTURES		0U
 #define MALI_SHADER_TABLE_SAMPLERS		1U
 #define MALI_SHADER_TABLE_ATTRIBUTES		2U
 #define MALI_SHADER_TABLE_VERTEX_BUFFERS	3U
+#define MALI_SHADER_TABLE_IMAGES		4U
 
 /* The hardware's vertex output buffer table of an index-driven draw. */
 #define MALI_SHADER_TABLE_VERTEX_OUTPUT		61U
@@ -131,6 +173,7 @@ enum mali_shader_stage {
 #define MALI_SHADER_TEXTURES			16U
 #define MALI_SHADER_LOCATIONS			16U
 #define MALI_SHADER_COLORS			8U
+#define MALI_SHADER_IMAGES			8U
 
 /* No FAU word: the program does not read that size. */
 #define MALI_SHADER_NO_FAU_WORD			0xFFFFFFFFU
@@ -165,6 +208,20 @@ struct mali_shader_texture {
 	uint32_t set;
 	uint32_t binding;
 	uint32_t index;
+	uint32_t size_fau_word;
+};
+
+/*
+ * One storage image the program loads or stores texels of: its (set,
+ * binding), the entry of the image table its descriptor goes in, the
+ * VkFormat the shader declares it with, and the first FAU word of its
+ * size (or MALI_SHADER_NO_FAU_WORD).
+ */
+struct mali_shader_image {
+	uint32_t set;
+	uint32_t binding;
+	uint32_t index;
+	uint32_t format;
 	uint32_t size_fau_word;
 };
 
@@ -218,6 +275,17 @@ struct mali_shader_program {
 	struct mali_shader_texture textures[MALI_SHADER_TEXTURES];
 	uint32_t texture_count;
 
+	/* The storage images the program reads and writes, by image table entry. */
+	struct mali_shader_image images[MALI_SHADER_IMAGES];
+	uint32_t image_count;
+
+	/*
+	 * The thread local storage bytes of one thread (a power of two, at
+	 * least 16), zero when the program keeps everything in registers.
+	 * A vertex program's two programs share it.
+	 */
+	uint32_t tls_bytes;
+
 	/*
 	 * A vertex program: the input locations it reads (bit L), those of
 	 * them read as integers rather than floats, the generic varying
@@ -256,6 +324,15 @@ struct mali_shader_program {
 	uint32_t local_size[3];
 	uint32_t shared_bytes;
 	uint32_t uses_barrier;
+
+	/*
+	 * A fragment program: whether it writes the depth (gl_FragDepth),
+	 * whether it changes its coverage (gl_SampleMask), and whether it
+	 * reads the samples its primitive covers (gl_SampleMaskIn).
+	 */
+	uint32_t writes_depth;
+	uint32_t writes_sample_mask;
+	uint32_t reads_sample_mask;
 };
 
 /*

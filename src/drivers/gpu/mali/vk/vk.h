@@ -49,7 +49,8 @@
 #define MALI_VK_IMAGE_ALIGN		4096U
 #define MALI_VK_ROW_ALIGN		64U
 
-/* The limits of the layouts and of an image. */
+/* The limits of the layouts and of an image (its layers too). */
+#define MALI_VK_IMAGE_LAYERS		256U
 #define MALI_VK_BINDINGS_MAX		16U
 #define MALI_VK_SETS_MAX		4U
 #define MALI_VK_PUSH_BYTES		128U
@@ -69,7 +70,10 @@
  * the hardware's pixel format word (the format in bits 12..19, sRGB in
  * bit 20, the component order below), the colour buffer's internal
  * format and its writeback format and component swizzle (zero for a
- * format that is not rendered to), and the vertex attribute format.
+ * format that is not rendered to), and the vertex attribute format;
+ * whether a storage image may have the format (storage) and a storage
+ * image's texels change atomically (atomic), and whether it is a depth
+ * format (sampled, compared, never rendered to).
  */
 struct mali_vk_format {
 	uint32_t vk;
@@ -81,6 +85,9 @@ struct mali_vk_format {
 	bool render;
 	bool sample;
 	bool vertex;
+	bool storage;
+	bool atomic;
+	bool depth;
 };
 
 struct mali_vk_object;
@@ -162,12 +169,18 @@ struct mali_vk_image {
 	uint64_t offset;
 };
 
-/* A VkImageView: the image, its format and the texture descriptor and plane it reads as. */
+/*
+ * A VkImageView: the image, its format and the texture descriptor and
+ * plane it reads as; its type (VkImageViewType) and its layers from
+ * base_layer (six a cube).
+ */
 struct mali_vk_image_view {
 	struct mali_vk_object *image;
 	const struct mali_vk_format *format;
 	uint32_t base_layer;
 	uint32_t swizzle;
+	uint32_t view_type;
+	uint32_t layer_count;
 };
 
 /* A VkSampler: the sampler descriptor's eight words. */

@@ -16,11 +16,15 @@
 # partition or 8 MiB, whichever is lower; this image's partition table
 # stays.  A donor with a GPT's protective MBR, or whose area is all zero,
 # is refused.  A card without a bootloader is made only with
-# --no-bootloader, and then needs one written separately.
+# --no-bootloader, and then needs one written separately.  A card with a
+# copied bootloader carries --notice (the bootloader's terms) on its boot
+# partition as BOOTLOADER.txt, followed by the donor's name and the
+# SHA-256 of the area taken from it.
 
 from __future__ import annotations
 
 import argparse
+import hashlib
 import struct
 import subprocess
 from pathlib import Path
@@ -63,6 +67,19 @@ def donor_area_end(donor: bytes) -> int:
     return end
 
 
+def bootloader_notice(args: argparse.Namespace, code: bytes, area: bytes, end: int) -> Path:
+    """Writes the card's copy of the bootloader's notice beside the output."""
+    digest = hashlib.sha256(code + area).hexdigest()
+    text = args.notice.read_text(encoding="utf-8")
+    text += (f"\nCopied from: {args.bootloader_from.name}\n"
+             f"Area: the MBR's first {MBR_CODE_BYTES} bytes and sectors 1-{end - 1}, "
+             f"SHA-256 {digest}\n")
+    path = args.output.with_name(args.output.name + ".bootloader.txt")
+    path.write_text(text, encoding="utf-8")
+    print(f"make-odroid-c5-hdd-image: bootloader notice: {path} (area SHA-256 {digest})")
+    return path
+
+
 def build(args: argparse.Namespace) -> None:
     for path in (args.kernel, args.dtb, args.script, args.data_image,
                  args.swapfile, args.ufs_root):
@@ -102,9 +119,11 @@ def build(args: argparse.Namespace) -> None:
             image.write(area)
             print(f"make-odroid-c5-hdd-image: bootloader: {len(area)} bytes "
                   f"(sectors 1-{end - 1}) from {args.bootloader_from}")
+            notice = bootloader_notice(args, donor[0:MBR_CODE_BYTES], area, end)
         else:
             print("make-odroid-c5-hdd-image: bootloader: none (--no-bootloader); "
                   "the card does not boot until one is written")
+            notice = None
 
         image.seek(0)
         image.write(mbr)
@@ -119,6 +138,8 @@ def build(args: argparse.Namespace) -> None:
     run("mcopy", "-i", spec, str(args.dtb), "::/odroid-c5.dtb")
     run("mcopy", "-i", spec, str(args.data_image), "::/data.img")
     run("mcopy", "-i", spec, str(args.swapfile), "::/swapfile")
+    if notice is not None:
+        run("mcopy", "-i", spec, str(notice), "::/BOOTLOADER.txt")
     checker = Path(__file__).resolve().parents[3] / "tools/build/check-ufs-image.py"
     run("python3", str(checker), str(args.ufs_root))
 
@@ -133,6 +154,8 @@ def main() -> None:
     parser.add_argument("--ufs-root", type=Path, required=True)
     parser.add_argument("--bootloader-from", type=Path)
     parser.add_argument("--no-bootloader", action="store_true")
+    parser.add_argument("--notice", type=Path,
+                        default=Path(__file__).resolve().parents[1] / "odroid-c5-bootloader.notice")
     parser.add_argument("--force", action="store_true")
     parser.add_argument("output", type=Path)
     build(parser.parse_args())

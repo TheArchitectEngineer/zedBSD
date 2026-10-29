@@ -28,6 +28,12 @@
 #define NET_DEVICE_LOOPBACK 0x00000010U
 
 #define NET_DEVICE_CAP_WLAN 0x00000001U
+/*
+ * The device computes the IPv4 header's and the TCP checksum of an IPv4
+ * frame it sends (packet-buf.h, PACKET_BUF_TX_CSUM_TCP), for frames up to
+ * its MTU.
+ */
+#define NET_DEVICE_CAP_TX_CSUM_IPV4_TCP 0x00000002U
 
 /*
  * The smallest MTU an interface may be set to, the IPv6 minimum link MTU

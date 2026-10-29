@@ -41,6 +41,7 @@ static uint16_t next_identification;
 static int ipv4_output_common(struct net_device *device, uint32_t destination, uint8_t protocol, uint32_t source, int source_given, int wait_for_neighbor, struct packet_buf *packet);
 static int ipv4_input(struct packet_buf *packet);
 static int ipv4_accepts_destination(struct net_device *device, uint32_t destination);
+static void ipv4_header_checksum(struct net_device *device, struct packet_buf *packet, struct ipv4_wire *header);
 
 /*
  * Registers the input function for an IP protocol number.
@@ -121,6 +122,40 @@ ipv4_output_sourced(
 }
 
 /*
+ * Puts the checksum in a header just built, or leaves it to the device.
+ *
+ * A TCP segment that left its checksum to the device
+ * (PACKET_BUF_TX_CSUM_TCP) leaves the header's too when the device the
+ * frame goes out of computes both; through any other device (the
+ * loopback, one without the capability) both are computed here.
+ */
+static void
+ipv4_header_checksum(
+	struct net_device *device,
+	struct packet_buf *packet,
+	struct ipv4_wire *header)
+{
+	uint16_t checksum;
+
+	/* The device computes both. */
+	if ((packet->flags & PACKET_BUF_TX_CSUM_TCP) != 0 &&
+	    (device->capabilities & NET_DEVICE_CAP_TX_CSUM_IPV4_TCP) != 0) {
+		packet->flags |= PACKET_BUF_TX_CSUM_IPV4;
+		return;
+	}
+
+	/* A segment's left to a device that does not is computed with the header's. */
+	if ((packet->flags & PACKET_BUF_TX_CSUM_TCP) != 0) {
+		packet_buf_checksum_finish(packet);
+		return;
+	}
+
+	/* The header's alone. */
+	checksum = net_checksum(header, sizeof(*header));
+	wire_put16(header->checksum, checksum);
+}
+
+/*
  * Sends a payload to an IPv4 destination that is not one of this host's
  * own, through a device, from its address and to a next hop the caller
  * found with a route lookup it keeps (TCP keeps them while
@@ -137,7 +172,6 @@ ipv4_output_routed(
 	struct packet_buf *packet)
 {
 	struct ipv4_wire *header;
-	uint16_t checksum;
 	uint8_t hardware[6];
 	int error;
 
@@ -180,9 +214,8 @@ ipv4_output_routed(
 	header->protocol = protocol;
 	wire_put32(header->source, source);
 	wire_put32(header->destination, destination);
-	checksum = net_checksum(header, sizeof(*header));
-	wire_put16(header->checksum, checksum);
 	packet->l3_offset = (uint16_t)(packet->data - packet->storage);
+	ipv4_header_checksum(device, packet, header);
 
 	/* Sends the packet as an Ethernet frame. */
 	error = ethernet_output(device, hardware, ETHERNET_TYPE_IPV4, packet);
@@ -321,7 +354,6 @@ ipv4_output_common(
 	struct net_device *loopback;
 	struct ipv4_wire *header;
 	uint32_t next_hop;
-	uint16_t checksum;
 	uint16_t total;
 	uint8_t hardware[6];
 	int have_route;
@@ -445,9 +477,8 @@ ipv4_output_common(
 	header->protocol = protocol;
 	wire_put32(header->source, source);
 	wire_put32(header->destination, destination);
-	checksum = net_checksum(header, sizeof(*header));
-	wire_put16(header->checksum, checksum);
 	packet->l3_offset = (uint16_t)(packet->data - packet->storage);
+	ipv4_header_checksum(device, packet, header);
 
 	/* Sends the packet as an Ethernet frame. */
 	error = ethernet_output(device, hardware, ETHERNET_TYPE_IPV4, packet);
@@ -499,7 +530,7 @@ ipv4_input(
 	    header_length > packet->length ||
 	    total < header_length ||
 	    total > packet->length ||
-	    net_checksum(header, header_length) != 0 ||
+	    ((packet->flags & PACKET_BUF_RX_CSUM_IPV4) == 0 && net_checksum(header, header_length) != 0) ||
 	    (fragment & 0x3fffU) != 0) {
 		packet_buf_free(packet);
 		return EINVAL;

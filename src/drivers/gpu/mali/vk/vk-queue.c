@@ -31,6 +31,7 @@
 
 #include "drivers/gpu/mali/vk/vk-build.h"
 #include "drivers/gpu/mali/vk/vk-desc.h"
+#include "drivers/gpu/mali/vk/vk-meta.h"
 
 #include "drivers/gpu/i915/vk/vk-codec.inc"
 
@@ -42,21 +43,73 @@
 #define FAU_WORDS_MAX		256U
 #define TABLES_COMPUTE		2U
 #define TABLES_VERTEX		4U
+#define TABLES_IMAGES		(MALI_SHADER_TABLE_IMAGES + 1U)
+
+/*
+ * The threads one shader core runs at once, at most, that thread local
+ * storage is made for, and the most bytes of it a run takes.  The bound
+ * is above any Valhall core's thread count (an inference: Mesa's own
+ * fallbacks for Bifrost and Valhall are 384 to 768), so the storage is
+ * never short; the GPU's own count is not read here.
+ */
+#define TLS_THREADS_PER_CORE	2048U
+#define TLS_TOTAL_MAX		(64ULL << 20)
+#define TLS_ALIGN		4096U
+
+/*
+ * The workgroup memory of a dispatch: the workgroups of one core that
+ * hold an instance at once are at most the threads TLS_THREADS_PER_CORE
+ * says over a workgroup's threads, and no more than the dispatch has; all
+ * the instances of all the cores take at most WLS_TOTAL_MAX, fewer
+ * instances when they would take more.  A core with fewer instances than
+ * the workgroups it could run holds the others back until one is free,
+ * so the bound costs speed and never correctness.  The memory does not
+ * cross a 4 GiB line.
+ *
+ * Procedure referenced:
+ * Mesa 26.2.6 src/panfrost/lib/pan_desc.h (pan_wls_instances: the
+ * product of the workgroup counts each rounded up to a power of two;
+ * pan_calc_wls_instances: no more instances than a core runs at once,
+ * fewer holding workgroups back; pan_calc_total_wls_size: an instance's
+ * bytes times the instances times the cores' number range);
+ * src/panfrost/lib/pan_desc.c (pan_emit_tls: the base 4096-byte
+ * aligned, inside one 4 GiB part); src/panfrost/vulkan/csf/
+ * panvk_vX_cmd_dispatch.c (cmd_dispatch_prepare_tls: the memory taken
+ * for each dispatch).
+ */
+#define WLS_TOTAL_MAX		(32ULL << 20)
+#define WLS_ALIGN		4096U
+
+/* A dispatch's workgroup memory: the instances a core, an instance's bytes, and the base. */
+struct workgroup_memory {
+	uint32_t instances;
+	uint32_t instance_bytes;
+	uint64_t base;
+};
 
 static int submit(struct mali_vk_session *session, struct i915_wire_reader *reader, struct i915_wire_writer *reply);
 static int build_stream(struct mali_vk_session *session, struct mali_vk_command_buffer **commands, uint32_t count, uint64_t *address, uint32_t *bytes);
 static void run_records(struct mali_vk_build *build, const struct mali_vk_command_buffer *command);
 static void run_dispatch(struct mali_vk_build *build, const struct mali_vk_record *entry);
+static uint64_t storage_descriptor(struct mali_vk_build *build, uint32_t tls_bytes, const struct workgroup_memory *wls);
+static uint64_t core_range(const struct mali_vk_build *build);
+static int workgroup_memory(struct mali_vk_build *build, const struct mali_shader_program *program, const uint32_t *counts, struct workgroup_memory *wls);
+static uint32_t power_above(uint32_t value);
 static void run_copy_buffer(struct mali_vk_build *build, const struct mali_vk_record *entry);
 static void run_fill_buffer(struct mali_vk_build *build, const struct mali_vk_record *entry);
 static void run_copy_image(struct mali_vk_build *build, const struct mali_vk_record *entry);
 static void run_buffer_image(struct mali_vk_build *build, const struct mali_vk_record *entry, bool to_image);
 static void run_clear_image(struct mali_vk_build *build, const struct mali_vk_record *entry);
+static bool blit_is_copy(const VkImageBlit *blit, const struct mali_vk_image *source, const struct mali_vk_image *destination);
+static void run_blit(struct mali_vk_build *build, const VkImageBlit *blit, const struct mali_vk_image *source, const struct mali_vk_image *destination, uint32_t filter);
 static void copy_span(struct mali_vk_build *build, uint64_t destination, uint64_t source, uint64_t bytes);
 static uint32_t pack_color(const struct mali_vk_format *format, const uint32_t *words);
 static uint32_t unorm8(uint32_t bits);
 static const struct mali_vk_descriptor *find_slot(const struct mali_vk_descriptor_set *const *sets, uint32_t set, uint32_t binding);
 static int write_texture(struct mali_vk_build *build, const struct mali_vk_descriptor *slot, volatile uint32_t *texture, volatile uint32_t *sampler);
+static int write_view(struct mali_vk_build *build, const struct mali_vk_image_view *view, bool storage, volatile uint32_t *texture);
+static uint32_t view_layers(const struct mali_vk_image_view *view);
+static bool view_is_cube(const struct mali_vk_image_view *view);
 static void store_words(volatile uint32_t *destination, const uint32_t *source, unsigned count);
 static uint32_t range_bytes(const struct mali_vk_descriptor *slot);
 static void texture_size(const struct mali_vk_descriptor *slot, uint32_t *words);
@@ -217,13 +270,20 @@ mali_vk_build_resources(
 		}
 	}
 
-	/* A queried texture's size: its width, height, one layer and one level. */
+	/* A queried texture's or storage image's size: its width, height, layers (or cubes) and levels. */
 	for (index = 0; index < program->texture_count; index++) {
 		if (program->textures[index].size_fau_word == MALI_SHADER_NO_FAU_WORD)
 			continue;
 		if (program->textures[index].size_fau_word + 4U > FAU_WORDS_MAX)
 			return ENOTSUP;
 		texture_size(find_slot(sets, program->textures[index].set, program->textures[index].binding), &words[program->textures[index].size_fau_word]);
+	}
+	for (index = 0; index < program->image_count; index++) {
+		if (program->images[index].size_fau_word == MALI_SHADER_NO_FAU_WORD)
+			continue;
+		if (program->images[index].size_fau_word + 4U > FAU_WORDS_MAX)
+			return ENOTSUP;
+		texture_size(find_slot(sets, program->images[index].set, program->images[index].binding), &words[program->images[index].size_fau_word]);
 	}
 
 	if (viewport_words != NULL && program->viewport_fau_word + 6U <= FAU_WORDS_MAX)
@@ -238,10 +298,12 @@ mali_vk_build_resources(
 		*fau = address | ((uint64_t)(program->fau_words / 2U) << 56);
 	}
 
-	/* The resource table: textures, samplers, and for a vertex program its attributes and buffers. */
+	/* The resource table: textures, samplers, for a vertex program its attributes and buffers, then the storage images. */
 	count = TABLES_COMPUTE;
 	if (graphics != NULL)
 		count = TABLES_VERTEX;
+	if (program->image_count != 0U)
+		count = TABLES_IMAGES;
 	count = (count + MALI_DESC_TABLE_ALIGN - 1U) & ~(MALI_DESC_TABLE_ALIGN - 1U);
 	tables = mali_vk_build_take(build, (uint64_t)count * MALI_DESC_RESOURCE_BYTES, 64U, &tables_address);
 	if (tables == NULL)
@@ -304,9 +366,44 @@ mali_vk_build_resources(
 		store_words((volatile uint32_t *)(volatile void *)(tables + MALI_SHADER_TABLE_VERTEX_BUFFERS * MALI_DESC_RESOURCE_BYTES), entry, 4);
 	}
 
+	/* The storage images, each a texture descriptor written for storage (with its planes after it). */
+	if (program->image_count != 0U) {
+		textures = mali_vk_build_take(build, (uint64_t)program->image_count * MALI_DESC_BYTES, 64U, &textures_address);
+		if (textures == NULL)
+			return build->error;
+		for (index = 0; index < program->image_count; index++) {
+			slot = find_slot(sets, program->images[index].set, program->images[index].binding);
+			if (slot == NULL || slot->view == NULL)
+				continue;
+			error = write_view(build,
+					   slot->view->payload,
+					   true,
+					   (volatile uint32_t *)(volatile void *)(textures + (uint64_t)program->images[index].index * MALI_DESC_BYTES));
+			if (error != 0)
+				return error;
+		}
+		mali_desc_resource(entry, textures_address, (uint64_t)program->image_count * MALI_DESC_BYTES);
+		store_words((volatile uint32_t *)(volatile void *)(tables + MALI_SHADER_TABLE_IMAGES * MALI_DESC_RESOURCE_BYTES), entry, 4);
+	}
+
 	/* Succeeded: the table pointer with its count. */
 	*table = tables_address | count;
 	return 0;
+}
+
+/*
+ * Writes a thread storage descriptor into the stage: a program's thread
+ * local storage (tls_bytes a thread, none for zero) for every thread of
+ * every core the GPU has (by the highest core number), and no workgroup
+ * memory.
+ */
+uint64_t
+mali_vk_build_thread_storage(
+	struct mali_vk_build *build,
+	uint32_t tls_bytes)
+{
+	/* Without workgroup memory. */
+	return storage_descriptor(build, tls_bytes, NULL);
 }
 
 /*
@@ -381,6 +478,45 @@ mali_vk_build_bind(
 	default:
 		break;
 	}
+}
+
+/*
+ * Writes a compute run into the stream: its staging registers (the
+ * tables, the FAU, the program, the storage, the workgroup size and
+ * count, no offsets), the run of one workgroup a task along x, and a
+ * wait for it.
+ *
+ * Procedure referenced:
+ * Mesa 26.2.6 src/panfrost/vulkan/csf/panvk_vX_cmd_dispatch.c
+ * (cmd_dispatch_shader: the staging registers a compute run reads).
+ */
+void
+mali_vk_build_compute(
+	struct mali_vk_build *build,
+	uint64_t table,
+	uint64_t fau,
+	uint64_t shader,
+	uint64_t storage,
+	const uint32_t *local_size,
+	const uint32_t *counts)
+{
+	/* The staging registers. */
+	mali_cs_move64(&build->cs, MALI_CS_COMPUTE_SRT, table);
+	mali_cs_move64(&build->cs, MALI_CS_COMPUTE_FAU, fau);
+	mali_cs_move64(&build->cs, MALI_CS_COMPUTE_SPD, shader);
+	mali_cs_move64(&build->cs, MALI_CS_COMPUTE_TSD, storage);
+	mali_cs_emit(&build->cs, mali_cs_move32(MALI_CS_COMPUTE_GLOBAL_OFFSET, 0));
+	mali_cs_emit(&build->cs, mali_cs_move32(MALI_CS_COMPUTE_WORKGROUP, mali_desc_workgroup(local_size[0], local_size[1], local_size[2])));
+	mali_cs_emit(&build->cs, mali_cs_move32(MALI_CS_COMPUTE_OFFSET_X, 0));
+	mali_cs_emit(&build->cs, mali_cs_move32(MALI_CS_COMPUTE_OFFSET_Y, 0));
+	mali_cs_emit(&build->cs, mali_cs_move32(MALI_CS_COMPUTE_OFFSET_Z, 0));
+	mali_cs_emit(&build->cs, mali_cs_move32(MALI_CS_COMPUTE_SIZE_X, counts[0]));
+	mali_cs_emit(&build->cs, mali_cs_move32(MALI_CS_COMPUTE_SIZE_Y, counts[1]));
+	mali_cs_emit(&build->cs, mali_cs_move32(MALI_CS_COMPUTE_SIZE_Z, counts[2]));
+
+	/* One workgroup a task along x, then the wait for the run. */
+	mali_cs_emit(&build->cs, mali_cs_run_compute(1, MALI_CS_AXIS_X, 0, 0, 0, 0));
+	mali_cs_emit(&build->cs, mali_cs_wait(MALI_VK_WAIT_ALL));
 }
 
 /*
@@ -478,6 +614,9 @@ build_stream(
 			  MALI_VK_REGISTERS_NEEDED + 4U);
 		return ENOTSUP;
 	}
+
+	/* The executor's own programs the stream runs, none yet (a stream that is not run leaves none behind). */
+	session->owner->meta_used = 0;
 
 	/* The build's state. */
 	build = kern_calloc(1, sizeof(*build));
@@ -596,9 +735,9 @@ run_dispatch(
 	const struct mali_vk_record *entry)
 {
 	const struct mali_shader_program *program;
+	struct workgroup_memory wls;
 	volatile uint8_t *view;
 	volatile uint32_t *counts;
-	uint32_t storage_words[8];
 	uint64_t fau;
 	uint64_t table;
 	uint64_t shader;
@@ -607,18 +746,12 @@ run_dispatch(
 	uint32_t index;
 	int error;
 
-	/* A bound compute pipeline without workgroup memory. */
+	/* A bound compute pipeline. */
 	if (build->compute == NULL || build->compute->program == NULL) {
 		build->error = EINVAL;
 		return;
 	}
-
 	program = build->compute->program;
-	if (program->shared_bytes != 0U) {
-		kern_logf("mali: vk: a dispatch with workgroup memory is not run\n");
-		build->error = ENOTSUP;
-		return;
-	}
 
 	/* gl_NumWorkGroups, when the program reads it. */
 	counts_address = 0;
@@ -642,29 +775,197 @@ run_dispatch(
 	}
 
 	shader = mali_vk_build_shader(build, MALI_DESC_STAGE_COMPUTE, program->work_registers, program->preload, build->compute->code_address);
-	view = mali_vk_build_take(build, MALI_DESC_BYTES, 64U, &storage);
-	if (view == NULL || shader == 0U)
+	if (program->shared_bytes == 0U) {
+		storage = mali_vk_build_thread_storage(build, program->tls_bytes);
+	} else {
+		/* With the workgroup memory of the dispatch's workgroups. */
+		error = workgroup_memory(build, program, entry->values, &wls);
+		if (error != 0) {
+			if (build->error == 0)
+				build->error = error;
+			return;
+		}
+		storage = storage_descriptor(build, program->tls_bytes, &wls);
+	}
+
+	if (storage == 0U || shader == 0U)
 		return;
-	mali_desc_local_storage(storage_words);
-	store_words((volatile uint32_t *)(volatile void *)view, storage_words, 8);
 
-	/* The staging registers. */
-	mali_cs_move64(&build->cs, MALI_CS_COMPUTE_SRT, table);
-	mali_cs_move64(&build->cs, MALI_CS_COMPUTE_FAU, fau);
-	mali_cs_move64(&build->cs, MALI_CS_COMPUTE_SPD, shader);
-	mali_cs_move64(&build->cs, MALI_CS_COMPUTE_TSD, storage);
-	mali_cs_emit(&build->cs, mali_cs_move32(MALI_CS_COMPUTE_GLOBAL_OFFSET, 0));
-	mali_cs_emit(&build->cs, mali_cs_move32(MALI_CS_COMPUTE_WORKGROUP, mali_desc_workgroup(program->local_size[0], program->local_size[1], program->local_size[2])));
-	mali_cs_emit(&build->cs, mali_cs_move32(MALI_CS_COMPUTE_OFFSET_X, 0));
-	mali_cs_emit(&build->cs, mali_cs_move32(MALI_CS_COMPUTE_OFFSET_Y, 0));
-	mali_cs_emit(&build->cs, mali_cs_move32(MALI_CS_COMPUTE_OFFSET_Z, 0));
-	mali_cs_emit(&build->cs, mali_cs_move32(MALI_CS_COMPUTE_SIZE_X, entry->values[0]));
-	mali_cs_emit(&build->cs, mali_cs_move32(MALI_CS_COMPUTE_SIZE_Y, entry->values[1]));
-	mali_cs_emit(&build->cs, mali_cs_move32(MALI_CS_COMPUTE_SIZE_Z, entry->values[2]));
+	/* The staging registers of the run, the run, and the wait for it. */
+	mali_vk_build_compute(build, table, fau, shader, storage, program->local_size, entry->values);
+}
 
-	/* One workgroup a task along x, then the wait for the run. */
-	mali_cs_emit(&build->cs, mali_cs_run_compute(1, MALI_CS_AXIS_X, 0, 0, 0, 0));
-	mali_cs_emit(&build->cs, mali_cs_wait(MALI_VK_WAIT_ALL));
+/*
+ * Takes the workgroup memory of a dispatch of a program with shared
+ * memory, for the workgroup counts: as many instances a core as
+ * WLS_TOTAL_MAX and the bounds above allow, from stage memory that
+ * does not cross a 4 GiB line (not cleared: shared memory starts
+ * undefined).  ENOTSUP, said once, for a program whose shared memory is
+ * above the most; the stage's error when it has no room.
+ */
+static int
+workgroup_memory(
+	struct mali_vk_build *build,
+	const struct mali_shader_program *program,
+	const uint32_t *counts,
+	struct workgroup_memory *wls)
+{
+	volatile uint8_t *view;
+	uint64_t threads;
+	uint64_t total;
+	uint64_t cores;
+	uint64_t base;
+	uint32_t instances;
+	uint32_t most;
+	uint32_t attempt;
+	int error;
+
+	/* An instance's bytes. */
+	kern_memset(wls, 0, sizeof(*wls));
+	if (program->shared_bytes > MALI_DESC_WLS_MAX_BYTES) {
+		if (!build->session->owner->wls_warned)
+			kern_logf("mali: vk: a dispatch of %u bytes of workgroup memory is not run\n", (unsigned)program->shared_bytes);
+		build->session->owner->wls_warned = true;
+		return ENOTSUP;
+	}
+	wls->instance_bytes = mali_desc_wls_bytes(program->shared_bytes);
+
+	/* The workgroups a core holds at once: no more than its threads take, nor than the dispatch has. */
+	threads = (uint64_t)program->local_size[0] * program->local_size[1] * program->local_size[2];
+	if (threads == 0U)
+		threads = 1U;
+	most = power_above((uint32_t)((TLS_THREADS_PER_CORE + threads - 1U) / threads));
+	instances = power_above(counts[0]);
+	if (instances < most)
+		instances *= power_above(counts[1]);
+	if (instances < most)
+		instances *= power_above(counts[2]);
+	if (instances > most || instances == 0U)
+		instances = most;
+
+	/* Fewer instances while all the cores' would take more than the most. */
+	cores = core_range(build);
+	total = (uint64_t)wls->instance_bytes * instances * cores;
+	while (total > WLS_TOTAL_MAX && instances > 1U) {
+		instances /= 2U;
+		total = (uint64_t)wls->instance_bytes * instances * cores;
+	}
+	if (total > WLS_TOTAL_MAX) {
+		build->error = ENOTSUP;
+		return ENOTSUP;
+	}
+	wls->instances = instances;
+
+	/* The memory, again past a 4 GiB line the first take crosses. */
+	if (build->error != 0)
+		return build->error;
+	for (attempt = 0; attempt < 2U; attempt++) {
+		error = mali_stage_take(build->session->owner, total, WLS_ALIGN, &view, &base);
+		if (error != 0) {
+			build->error = error;
+			return error;
+		}
+		if ((base >> 32) == ((base + total - 1U) >> 32)) {
+			wls->base = base;
+			return 0;
+		}
+	}
+
+	/* Two takes crossed a line: the stage is not usable for it. */
+	build->error = ENOMEM;
+	return ENOMEM;
+}
+
+/* Gives the least power of two not below a value (one for zero), at most 2^31. */
+static uint32_t
+power_above(
+	uint32_t value)
+{
+	uint32_t power;
+
+	/* Doubling from one. */
+	power = 1U;
+	while (power < value && power < 0x80000000U)
+		power *= 2U;
+
+	/* Succeeded: the power. */
+	return power;
+}
+
+/*
+ * Writes a thread storage descriptor into the stage, with a thread's
+ * local storage (tls_bytes, none for zero) and, when wls is not NULL,
+ * the workgroup memory it names.  The thread local storage is made for
+ * every thread of every core the GPU has (by the highest core number).
+ *
+ * Procedure referenced: Mesa 26.2.6 src/panfrost/lib/pan_scratch.c
+ * (pan_get_total_stack_size: a thread's bytes a power of two of at least
+ * 16, times the threads of a core, times the cores' number range).
+ */
+static uint64_t
+storage_descriptor(
+	struct mali_vk_build *build,
+	uint32_t tls_bytes,
+	const struct workgroup_memory *wls)
+{
+	uint32_t words[8];
+	volatile uint8_t *view;
+	volatile uint8_t *storage_view;
+	uint64_t address;
+	uint64_t storage;
+	uint64_t total;
+	uint64_t cores;
+	uint32_t thread_bytes;
+	int error;
+
+	/* A thread's bytes, a power of two of at least the least. */
+	storage = 0;
+	thread_bytes = 0;
+	if (tls_bytes != 0U) {
+		if (tls_bytes > MALI_DESC_TLS_MAX_BYTES) {
+			build->error = ENOTSUP;
+			return 0;
+		}
+		thread_bytes = MALI_DESC_TLS_MIN_BYTES;
+		while (thread_bytes < tls_bytes)
+			thread_bytes *= 2U;
+
+		/* The cores' number range, and the storage of all their threads (not cleared: a thread writes before it reads). */
+		cores = core_range(build);
+		total = (uint64_t)thread_bytes * TLS_THREADS_PER_CORE * cores;
+		if (total > TLS_TOTAL_MAX) {
+			build->error = ENOTSUP;
+			return 0;
+		}
+		if (build->error != 0)
+			return 0;
+		error = mali_stage_take(build->session->owner, total, TLS_ALIGN, &storage_view, &storage);
+		if (error != 0) {
+			build->error = error;
+			return 0;
+		}
+	}
+
+	/* The descriptor, with the workgroup memory when there is some. */
+	view = mali_vk_build_take(build, MALI_DESC_BYTES, 64U, &address);
+	if (view == NULL)
+		return 0;
+	mali_desc_thread_storage(words, thread_bytes, storage);
+	if (wls != NULL)
+		mali_desc_workgroup_storage(words, wls->instances, wls->instance_bytes, wls->base);
+	store_words((volatile uint32_t *)(volatile void *)view, words, 8);
+
+	/* Succeeded: its address. */
+	return address;
+}
+
+/* Reports the cores' number range: one past the highest core the GPU has. */
+static uint64_t
+core_range(
+	const struct mali_vk_build *build)
+{
+	/* The highest bit of the shader cores present, at least core 0. */
+	return 64U - (uint64_t)__builtin_clzll(build->session->owner->render->device->shader_present | 1U);
 }
 
 /* Runs vkCmdCopyBuffer: each region as a span. */
@@ -743,6 +1044,10 @@ run_copy_image(
 	int32_t dy;
 	uint32_t width;
 	uint32_t height;
+	uint32_t source_layer;
+	uint32_t destination_layer;
+	uint32_t layers;
+	uint32_t layer;
 	uint64_t from;
 	uint64_t to;
 
@@ -764,6 +1069,9 @@ run_copy_image(
 			dy = copies[index].dstOffset.y;
 			width = copies[index].extent.width;
 			height = copies[index].extent.height;
+			source_layer = copies[index].srcSubresource.baseArrayLayer;
+			destination_layer = copies[index].dstSubresource.baseArrayLayer;
+			layers = copies[index].srcSubresource.layerCount;
 		} else {
 			blits = entry->data;
 			sx = blits[index].srcOffsets[0].x;
@@ -772,11 +1080,11 @@ run_copy_image(
 			dy = blits[index].dstOffsets[0].y;
 			width = (uint32_t)(blits[index].srcOffsets[1].x - sx);
 			height = (uint32_t)(blits[index].srcOffsets[1].y - sy);
-			if (blits[index].dstOffsets[1].x - dx != (int32_t)width || blits[index].dstOffsets[1].y - dy != (int32_t)height ||
-			    source->format != destination->format) {
-				if (!build->load_warned)
-					kern_logf("mali: vk: a scaling or converting blit is not run\n");
-				build->load_warned = true;
+			source_layer = blits[index].srcSubresource.baseArrayLayer;
+			destination_layer = blits[index].dstSubresource.baseArrayLayer;
+			layers = blits[index].srcSubresource.layerCount;
+			if (!blit_is_copy(&blits[index], source, destination)) {
+				run_blit(build, &blits[index], source, destination, entry->values[5]);
 				continue;
 			}
 		}
@@ -789,23 +1097,101 @@ run_copy_image(
 		if ((uint32_t)dx + width > destination->width || (uint32_t)dy + height > destination->height)
 			continue;
 
-		/* The rows. */
-		from = mali_vk_image_address(source) + (uint64_t)sy * source->row_pitch + (uint64_t)sx * source->format->bytes;
-		to = mali_vk_image_address(destination) + (uint64_t)dy * destination->row_pitch + (uint64_t)dx * destination->format->bytes;
-		mali_cs_copy_rows(&build->cs,
-				  MALI_VK_DATA_REGISTER,
-				  MALI_VK_SCRATCH_REGISTER,
-				  to,
-				  (int32_t)destination->row_pitch,
-				  from,
-				  (int32_t)source->row_pitch,
-				  width * source->format->bytes,
-				  height,
-				  MALI_VK_SLOT_LOAD_STORE);
+		/* The layers, inside both images. */
+		if (layers == VK_REMAINING_ARRAY_LAYERS && source_layer < source->layers)
+			layers = source->layers - source_layer;
+		if (layers == 0U || source_layer >= source->layers || layers > source->layers - source_layer)
+			continue;
+		if (destination_layer >= destination->layers || layers > destination->layers - destination_layer)
+			continue;
+
+		/* Each layer's rows. */
+		for (layer = 0; layer < layers; layer++) {
+			from = mali_vk_image_address(source) + (uint64_t)(source_layer + layer) * source->layer_bytes;
+			from += (uint64_t)sy * source->row_pitch + (uint64_t)sx * source->format->bytes;
+			to = mali_vk_image_address(destination) + (uint64_t)(destination_layer + layer) * destination->layer_bytes;
+			to += (uint64_t)dy * destination->row_pitch + (uint64_t)dx * destination->format->bytes;
+			mali_cs_copy_rows(&build->cs,
+					  MALI_VK_DATA_REGISTER,
+					  MALI_VK_SCRATCH_REGISTER,
+					  to,
+					  (int32_t)destination->row_pitch,
+					  from,
+					  (int32_t)source->row_pitch,
+					  width * source->format->bytes,
+					  height,
+					  MALI_VK_SLOT_LOAD_STORE);
+		}
 	}
 }
 
-/* Runs vkCmdCopyBufferToImage or vkCmdCopyImageToBuffer: the rows of each region. */
+/*
+ * Says whether a blit region is a copy the stream's own loops take: of
+ * one format, the same size on both sides, neither side running
+ * backwards.
+ */
+static bool
+blit_is_copy(
+	const VkImageBlit *blit,
+	const struct mali_vk_image *source,
+	const struct mali_vk_image *destination)
+{
+	int32_t width;
+	int32_t height;
+
+	/* One format. */
+	if (source->format != destination->format)
+		return false;
+
+	/* The source forwards. */
+	width = blit->srcOffsets[1].x - blit->srcOffsets[0].x;
+	height = blit->srcOffsets[1].y - blit->srcOffsets[0].y;
+	if (width <= 0 || height <= 0)
+		return false;
+
+	/* The target forwards and of the same size. */
+	if (blit->dstOffsets[1].x - blit->dstOffsets[0].x != width)
+		return false;
+	if (blit->dstOffsets[1].y - blit->dstOffsets[0].y != height)
+		return false;
+
+	/* Succeeded: a copy. */
+	return true;
+}
+
+/*
+ * Runs a blit region the loops do not take on the executor's blit
+ * program; one it cannot take is left out, said once a submission.
+ */
+static void
+run_blit(
+	struct mali_vk_build *build,
+	const VkImageBlit *blit,
+	const struct mali_vk_image *source,
+	const struct mali_vk_image *destination,
+	uint32_t filter)
+{
+	int error;
+
+	/* The compute run of the region. */
+	error = mali_vk_meta_blit(build, source, destination, blit, filter);
+	if (error == 0)
+		return;
+
+	/* A region the program does not take, as before. */
+	if (error == ENOTSUP) {
+		if (!build->load_warned)
+			kern_logf("mali: vk: a scaling or converting blit is not run\n");
+		build->load_warned = true;
+		return;
+	}
+
+	/* The stage's failure fails the submission. */
+	if (build->error == 0)
+		build->error = error;
+}
+
+/* Runs vkCmdCopyBufferToImage or vkCmdCopyImageToBuffer: the rows of each region's layers. */
 static void
 run_buffer_image(
 	struct mali_vk_build *build,
@@ -816,12 +1202,16 @@ run_buffer_image(
 	const struct mali_vk_image *image;
 	const VkBufferImageCopy *regions;
 	uint64_t buffer_pitch;
+	uint64_t buffer_layer;
 	uint64_t image_place;
 	uint64_t buffer_place;
 	uint32_t row_texels;
+	uint32_t image_rows;
 	uint32_t index;
 	uint32_t width;
 	uint32_t height;
+	uint32_t layer;
+	uint32_t layers;
 
 	/* The buffer and the image, bound. */
 	if (entry->objects[0] == NULL || entry->objects[1] == NULL)
@@ -852,28 +1242,46 @@ run_buffer_image(
 		if (row_texels == 0U)
 			row_texels = width;
 		buffer_pitch = (uint64_t)row_texels * image->format->bytes;
-		if (regions[index].bufferOffset + buffer_pitch * (height - 1U) + (uint64_t)width * image->format->bytes > buffer->size)
+
+		/* The layers, inside the image; a layer's rows in the buffer are as many as said, or the region's. */
+		layers = regions[index].imageSubresource.layerCount;
+		if (layers == VK_REMAINING_ARRAY_LAYERS && regions[index].imageSubresource.baseArrayLayer < image->layers)
+			layers = image->layers - regions[index].imageSubresource.baseArrayLayer;
+		if (layers == 0U || regions[index].imageSubresource.baseArrayLayer >= image->layers || layers > image->layers - regions[index].imageSubresource.baseArrayLayer)
+			continue;
+		image_rows = regions[index].bufferImageHeight;
+		if (image_rows < height)
+			image_rows = height;
+		buffer_layer = buffer_pitch * image_rows;
+		if (regions[index].bufferOffset + buffer_layer * (layers - 1U) + buffer_pitch * (height - 1U) + (uint64_t)width * image->format->bytes > buffer->size)
 			continue;
 
-		/* The rows one way or the other. */
-		image_place = mali_vk_image_address(image) + (uint64_t)regions[index].imageOffset.y * image->row_pitch + (uint64_t)regions[index].imageOffset.x * image->format->bytes;
-		buffer_place = mali_vk_buffer_address(buffer) + regions[index].bufferOffset;
-		if (to_image) {
-			mali_cs_copy_rows(&build->cs, MALI_VK_DATA_REGISTER, MALI_VK_SCRATCH_REGISTER, image_place, (int32_t)image->row_pitch, buffer_place, (int32_t)buffer_pitch, width * image->format->bytes, height, MALI_VK_SLOT_LOAD_STORE);
-		} else {
-			mali_cs_copy_rows(&build->cs, MALI_VK_DATA_REGISTER, MALI_VK_SCRATCH_REGISTER, buffer_place, (int32_t)buffer_pitch, image_place, (int32_t)image->row_pitch, width * image->format->bytes, height, MALI_VK_SLOT_LOAD_STORE);
+		/* Each layer's rows one way or the other. */
+		for (layer = 0; layer < layers; layer++) {
+			image_place = mali_vk_image_address(image) + (uint64_t)(regions[index].imageSubresource.baseArrayLayer + layer) * image->layer_bytes;
+			image_place += (uint64_t)regions[index].imageOffset.y * image->row_pitch + (uint64_t)regions[index].imageOffset.x * image->format->bytes;
+			buffer_place = mali_vk_buffer_address(buffer) + regions[index].bufferOffset + buffer_layer * layer;
+			if (to_image) {
+				mali_cs_copy_rows(&build->cs, MALI_VK_DATA_REGISTER, MALI_VK_SCRATCH_REGISTER, image_place, (int32_t)image->row_pitch, buffer_place, (int32_t)buffer_pitch, width * image->format->bytes, height, MALI_VK_SLOT_LOAD_STORE);
+			} else {
+				mali_cs_copy_rows(&build->cs, MALI_VK_DATA_REGISTER, MALI_VK_SCRATCH_REGISTER, buffer_place, (int32_t)buffer_pitch, image_place, (int32_t)image->row_pitch, width * image->format->bytes, height, MALI_VK_SLOT_LOAD_STORE);
+			}
 		}
 	}
 }
 
-/* Runs vkCmdClearColorImage: the image's rows filled with the packed colour (one level, one layer). */
+/* Runs vkCmdClearColorImage: the rows of each range's layers filled with the packed colour (one level). */
 static void
 run_clear_image(
 	struct mali_vk_build *build,
 	const struct mali_vk_record *entry)
 {
 	const struct mali_vk_image *image;
+	const VkImageSubresourceRange *ranges;
 	uint32_t pattern;
+	uint32_t index;
+	uint32_t layer;
+	uint32_t layers;
 
 	/* A bound image of a texel size a 32-bit pattern repeats in. */
 	if (entry->objects[0] == NULL)
@@ -882,17 +1290,27 @@ run_clear_image(
 	if (mali_vk_image_address(image) == 0U || image->format->bytes > 4U || image->format->bytes == 3U)
 		return;
 
-	/* The colour, then the rows. */
+	/* The colour, then each range's layers inside the image. */
 	pattern = pack_color(image->format, entry->values);
-	mali_cs_fill_rows(&build->cs,
-			  MALI_VK_DATA_REGISTER,
-			  MALI_VK_SCRATCH_REGISTER,
-			  mali_vk_image_address(image),
-			  (int32_t)image->row_pitch,
-			  pattern,
-			  (uint32_t)(((uint64_t)image->width * image->format->bytes + 3U) & ~3ULL),
-			  image->height,
-			  MALI_VK_SLOT_LOAD_STORE);
+	ranges = entry->data;
+	for (index = 0; index < entry->values[7] && ranges != NULL; index++) {
+		layers = ranges[index].layerCount;
+		if (layers == VK_REMAINING_ARRAY_LAYERS && ranges[index].baseArrayLayer < image->layers)
+			layers = image->layers - ranges[index].baseArrayLayer;
+		if (ranges[index].baseArrayLayer >= image->layers || layers > image->layers - ranges[index].baseArrayLayer)
+			continue;
+		for (layer = 0; layer < layers; layer++) {
+			mali_cs_fill_rows(&build->cs,
+					  MALI_VK_DATA_REGISTER,
+					  MALI_VK_SCRATCH_REGISTER,
+					  mali_vk_image_address(image) + (uint64_t)(ranges[index].baseArrayLayer + layer) * image->layer_bytes,
+					  (int32_t)image->row_pitch,
+					  pattern,
+					  (uint32_t)(((uint64_t)image->width * image->format->bytes + 3U) & ~3ULL),
+					  image->height,
+					  MALI_VK_SLOT_LOAD_STORE);
+		}
+	}
 }
 
 /* Copies one span: its whole words as one row; a span of other bytes is left out once with a line. */
@@ -1007,7 +1425,7 @@ find_slot(
 	return NULL;
 }
 
-/* Writes a combined image sampler's texture (with its plane after it) and sampler descriptors. */
+/* Writes a combined image sampler's texture (with its planes) and sampler descriptors. */
 static int
 write_texture(
 	struct mali_vk_build *build,
@@ -1015,38 +1433,119 @@ write_texture(
 	volatile uint32_t *texture,
 	volatile uint32_t *sampler)
 {
-	const struct mali_vk_image_view *view;
 	const struct mali_vk_sampler *state;
-	const struct mali_vk_image *image;
-	uint32_t words[8];
-	volatile uint8_t *plane;
-	uint64_t plane_address;
-	uint64_t address;
+	int error;
 
 	/* A view of a bound image, and its sampler; a missing one leaves null descriptors. */
 	if (slot == NULL || slot->view == NULL || slot->sampler == NULL)
 		return 0;
-	view = slot->view->payload;
 	state = slot->sampler->payload;
-	image = view->image->payload;
-	address = mali_vk_image_address(image);
-	if (address == 0U)
-		return 0;
 
-	/* The plane. */
-	plane = mali_vk_build_take(build, MALI_DESC_BYTES, MALI_DESC_BYTES, &plane_address);
-	if (plane == NULL)
-		return build->error;
-	mali_desc_plane(words, view->format->bytes, address, (uint32_t)image->row_pitch, image->layer_bytes, image->width, image->height);
-	store_words((volatile uint32_t *)(volatile void *)plane, words, 8);
+	/* The texture, naming its planes. */
+	error = write_view(build, slot->view->payload, false, texture);
+	if (error != 0)
+		return error;
 
-	/* The texture, naming the plane, and the sampler. */
-	mali_desc_texture(words, view->format->pixel, image->width, image->height, view->swizzle, plane_address);
-	store_words(texture, words, 8);
+	/* The sampler. */
 	store_words(sampler, state->words, 8);
 
 	/* Succeeded: both are written. */
 	return 0;
+}
+
+/*
+ * Writes a view's texture descriptor, sampled or for storage, and its
+ * planes (one a layer, layer after layer): a cube view as a cube of its
+ * layers' count over six, another as a 2D image of its layers.  An
+ * unbound image leaves a null descriptor.
+ */
+static int
+write_view(
+	struct mali_vk_build *build,
+	const struct mali_vk_image_view *view,
+	bool storage,
+	volatile uint32_t *texture)
+{
+	const struct mali_vk_image *image;
+	struct mali_desc_view described;
+	uint32_t words[8];
+	volatile uint8_t *planes;
+	uint64_t planes_address;
+	uint64_t address;
+	uint32_t layers;
+	uint32_t layer;
+
+	/* A bound image. */
+	image = view->image->payload;
+	address = mali_vk_image_address(image);
+	if (address == 0U)
+		return 0;
+	layers = view_layers(view);
+
+	/* The planes, one a layer from the view's first. */
+	planes = mali_vk_build_take(build, (uint64_t)layers * MALI_DESC_BYTES, MALI_DESC_BYTES, &planes_address);
+	if (planes == NULL)
+		return build->error;
+	for (layer = 0; layer < layers; layer++) {
+		mali_desc_plane(words,
+				view->format->bytes,
+				address + (uint64_t)(view->base_layer + layer) * image->layer_bytes,
+				(uint32_t)image->row_pitch,
+				image->layer_bytes,
+				image->width,
+				image->height);
+		store_words((volatile uint32_t *)(volatile void *)(planes + (uint64_t)layer * MALI_DESC_BYTES), words, 8);
+	}
+
+	/* The texture: a cube of the layers over six, or a 2D image of the layers. */
+	kern_memset(&described, 0, sizeof(described));
+	described.dimension = MALI_DESC_DIMENSION_2D;
+	described.array_size = layers;
+	if (!storage && view_is_cube(view)) {
+		described.dimension = MALI_DESC_DIMENSION_CUBE;
+		described.array_size = layers / 6U;
+	}
+	described.pixel = view->format->pixel;
+	described.width = image->width;
+	described.height = image->height;
+	described.depth = 1U;
+	described.levels = 1U;
+	described.swizzle = view->swizzle;
+	described.storage = storage;
+	described.planes = planes_address;
+	mali_desc_texture_view(words, &described);
+	store_words(texture, words, 8);
+
+	/* Succeeded: the descriptor and its planes are written. */
+	return 0;
+}
+
+/* Reports a view's layers: at least one. */
+static uint32_t
+view_layers(
+	const struct mali_vk_image_view *view)
+{
+	/* A view made without a count has one layer. */
+	if (view->layer_count == 0U)
+		return 1U;
+
+	/* The view's own count. */
+	return view->layer_count;
+}
+
+/* Reports whether a view is a cube or a cube array of whole cubes. */
+static bool
+view_is_cube(
+	const struct mali_vk_image_view *view)
+{
+	/* Only the cube types, of six layers a cube. */
+	if (view->view_type != VK_IMAGE_VIEW_TYPE_CUBE && view->view_type != VK_IMAGE_VIEW_TYPE_CUBE_ARRAY)
+		return false;
+	if (view_layers(view) % 6U != 0U)
+		return false;
+
+	/* A cube view. */
+	return true;
 }
 
 /* Stores words through an uncached view. */
@@ -1086,7 +1585,7 @@ range_bytes(
 	return (uint32_t)bytes;
 }
 
-/* Writes a texture's four size words: width, height, one layer, one level (zero without an image). */
+/* Writes a view's four size words: width, height, layers (cubes of a cube array), levels (zero without an image). */
 static void
 texture_size(
 	const struct mali_vk_descriptor *slot,
@@ -1108,6 +1607,8 @@ texture_size(
 	image = view->image->payload;
 	words[0] = image->width;
 	words[1] = image->height;
-	words[2] = image->layers;
+	words[2] = view_layers(view);
+	if (view_is_cube(view))
+		words[2] = view_layers(view) / 6U;
 	words[3] = image->levels;
 }

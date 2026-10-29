@@ -137,6 +137,10 @@ int nvrtx_vk_blob(void *owner, uint32_t resource_id, uint8_t **cpu, uint64_t *by
 uint32_t nvrtx_vk_device_id(void *owner);
 uint64_t nvrtx_vk_heap_bytes(void *owner);
 
+/* The owner's GPU generation: the shader model its programs are compiled for (75, 86 or 89), and its 3D class. */
+uint32_t nvrtx_vk_shader_model(void *owner);
+uint32_t nvrtx_vk_threed_class(void *owner);
+
 /*
  * Gives back the storage of a VkDeviceMemory once nothing holds it: the
  * GPU's mapping of the run at va and the reference to the blob's backing

@@ -634,17 +634,27 @@ parse_guid_text(
 	length = strlen(text);
 	if (length != 36)
 		return -1;
-	if (text[8] != '-' || text[13] != '-' || text[18] != '-' || text[23] != '-')
+	if (text[8] != '-')
+		return -1;
+	if (text[13] != '-')
+		return -1;
+	if (text[18] != '-')
+		return -1;
+	if (text[23] != '-')
 		return -1;
 
 	/* Takes each byte from its two digits, in the order GPT keeps them. */
 	for (index = 0; index < 16U; index++) {
 		high = hex_digit_value(text[text_offsets[index]]);
 		low = hex_digit_value(text[text_offsets[index] + 1]);
-		if (high < 0 || low < 0)
+		if (high < 0)
+			return -1;
+		if (low < 0)
 			return -1;
 		guid[index] = (uint8_t)(high * 16 + low);
 	}
+
+	/* Succeeded: the text is a GUID and the bytes are in GPT's order. */
 	return 0;
 }
 
@@ -656,12 +666,19 @@ static int
 hex_digit_value(
 	char character)
 {
+	/* A decimal digit. */
 	if (character >= '0' && character <= '9')
 		return character - '0';
+
+	/* A lower-case letter digit. */
 	if (character >= 'a' && character <= 'f')
 		return character - 'a' + 10;
+
+	/* An upper-case letter digit. */
 	if (character >= 'A' && character <= 'F')
 		return character - 'A' + 10;
+
+	/* Not a digit. */
 	return -1;
 }
 

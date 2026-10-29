@@ -2990,6 +2990,7 @@ file_format_reserve_locked(
 	struct inode *inode;
 	struct mount *mountp;
 	struct backing_claim *claim;
+	int unsupported;
 	int flags;
 	int error;
 
@@ -3017,7 +3018,8 @@ file_format_reserve_locked(
 	 * Requires a disk whose blocks are whole sectors, the unit the
 	 * filesystems' extent walk reports.
 	 */
-	if (disk_sector_supported(mountp->m_disk) != 0)
+	unsupported = disk_sector_supported(mountp->m_disk);
+	if (unsupported != 0)
 		return EOPNOTSUPP;
 
 	/* Refuses read-only media and mounts even for a previously writable FD. */
@@ -3032,8 +3034,11 @@ file_format_reserve_locked(
 		return EBUSY;
 
 	/* Requires complete blocks of the disk at exactly the caller's existing size. */
-	if (size == 0 || size > (uint64_t)OFF_T_MAX ||
-	    size % mountp->m_disk->d_block_size != 0)
+	if (size == 0)
+		return EINVAL;
+	if (size > (uint64_t)OFF_T_MAX)
+		return EINVAL;
+	if (size % mountp->m_disk->d_block_size != 0)
 		return EINVAL;
 
 	/* Refuses changed identity metadata before any formatting write. */

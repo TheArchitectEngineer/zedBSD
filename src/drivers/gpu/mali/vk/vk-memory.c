@@ -25,6 +25,7 @@
 #include <uapi/errno.h>
 #include <uapi/gpu-op.h>
 
+#include "drivers/gpu/mali/vk/vk-desc.h"
 #include "drivers/gpu/mali/vk/vk.h"
 
 #include "drivers/gpu/i915/vk/vk-codec.inc"
@@ -465,7 +466,11 @@ buffer_destroy(
 	return 0;
 }
 
-/* vkCreateImage: a 2D image of one level and layer of a taken format, laid out linearly. */
+/*
+ * vkCreateImage: a 2D image of one level of a taken format, of one layer
+ * or an array of them (six or more of a cube-compatible one), laid out
+ * linearly layer after layer.
+ */
 static int
 create_image(
 	struct mali_vk_session *session,
@@ -497,7 +502,16 @@ create_image(
 		error = ENOTSUP;
 	} else if (info.extent.width > MALI_VK_IMAGE_EDGE || info.extent.height > MALI_VK_IMAGE_EDGE) {
 		error = ENOTSUP;
-	} else if (info.mipLevels != 1U || info.arrayLayers != 1U || info.samples != VK_SAMPLE_COUNT_1_BIT) {
+	} else if (info.mipLevels != 1U || info.arrayLayers == 0U || info.arrayLayers > MALI_VK_IMAGE_LAYERS || info.samples != VK_SAMPLE_COUNT_1_BIT) {
+		error = ENOTSUP;
+	} else if ((info.flags & ~(uint32_t)(VK_IMAGE_CREATE_CUBE_COMPATIBLE_BIT | VK_IMAGE_CREATE_MUTABLE_FORMAT_BIT)) != 0U) {
+		/* Another flag (sparse, aliased, 2D views of 3D) is not taken. */
+		error = ENOTSUP;
+	} else if ((info.flags & VK_IMAGE_CREATE_CUBE_COMPATIBLE_BIT) != 0U && (info.extent.width != info.extent.height || info.arrayLayers < 6U)) {
+		/* A cube's faces are square, six of them at least. */
+		error = EINVAL;
+	} else if (format->depth && (info.usage & ~(uint32_t)(VK_IMAGE_USAGE_SAMPLED_BIT | VK_IMAGE_USAGE_TRANSFER_SRC_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT)) != 0U) {
+		/* A depth image is only sampled and copied (no depth attachment). */
 		error = ENOTSUP;
 	}
 
@@ -508,12 +522,13 @@ create_image(
 			image->format = format;
 			image->width = info.extent.width;
 			image->height = info.extent.height;
-			image->layers = 1U;
+			image->layers = info.arrayLayers;
 			image->levels = 1U;
 			image->usage = info.usage;
 			image->row_pitch = ((uint64_t)info.extent.width * format->bytes + MALI_VK_ROW_ALIGN - 1U) & ~(uint64_t)(MALI_VK_ROW_ALIGN - 1U);
 			image->layer_bytes = image->row_pitch * info.extent.height;
-			image->bytes = (image->layer_bytes + MALI_VK_IMAGE_ALIGN - 1U) & ~(uint64_t)(MALI_VK_IMAGE_ALIGN - 1U);
+			image->bytes = image->layer_bytes * info.arrayLayers;
+			image->bytes = (image->bytes + MALI_VK_IMAGE_ALIGN - 1U) & ~(uint64_t)(MALI_VK_IMAGE_ALIGN - 1U);
 		}
 	}
 
@@ -646,7 +661,7 @@ bind(
 	return 0;
 }
 
-/* vkGetImageSubresourceLayout: the one level's offset 0, its pitch and its bytes. */
+/* vkGetImageSubresourceLayout: a layer's offset (layer after layer), its pitch and its bytes. */
 static int
 subresource_layout(
 	struct mali_vk_session *session,
@@ -675,6 +690,8 @@ subresource_layout(
 	image = mali_vk_payload(session, I915_VK_OBJ_IMAGE, named);
 	if (image != NULL) {
 		layout.offset = 0;
+		if (subresource.arrayLayer < image->layers)
+			layout.offset = (uint64_t)subresource.arrayLayer * image->layer_bytes;
 		layout.size = image->layer_bytes;
 		layout.rowPitch = image->row_pitch;
 		layout.arrayPitch = image->layer_bytes;
@@ -687,7 +704,11 @@ subresource_layout(
 	return 0;
 }
 
-/* vkCreateImageView: a 2D view of the image's colour, its format the image's or a compatible one. */
+/*
+ * vkCreateImageView: a 2D, 2D array, cube or cube array view of layers
+ * of the image's one level, its format the image's or one of the same
+ * texel size.
+ */
 static int
 create_view(
 	struct mali_vk_session *session,
@@ -698,8 +719,10 @@ create_view(
 	struct mali_vk_image_view *view;
 	struct mali_vk_object *image;
 	const struct mali_vk_format *format;
+	const struct mali_vk_image *bound;
 	uint64_t present;
 	uint64_t created;
+	uint32_t layers;
 	int error;
 
 	/* The device, the info and the tail. */
@@ -721,6 +744,28 @@ create_view(
 		error = ENOTSUP;
 	} else if (format->bytes != ((struct mali_vk_image *)image->payload)->format->bytes) {
 		error = ENOTSUP;
+	}
+
+	/* The layers: the rest of the image's for VK_REMAINING_ARRAY_LAYERS, inside it, six a cube. */
+	layers = 0U;
+	if (error == 0) {
+		bound = image->payload;
+		layers = info.subresourceRange.layerCount;
+		if (layers == VK_REMAINING_ARRAY_LAYERS && info.subresourceRange.baseArrayLayer < bound->layers)
+			layers = bound->layers - info.subresourceRange.baseArrayLayer;
+		if (layers == 0U || info.subresourceRange.baseArrayLayer >= bound->layers || layers > bound->layers - info.subresourceRange.baseArrayLayer) {
+			error = EINVAL;
+		} else if (info.viewType == VK_IMAGE_VIEW_TYPE_2D && layers != 1U) {
+			error = EINVAL;
+		} else if (info.viewType == VK_IMAGE_VIEW_TYPE_CUBE && layers != 6U) {
+			error = EINVAL;
+		} else if (info.viewType == VK_IMAGE_VIEW_TYPE_CUBE_ARRAY && layers % 6U != 0U) {
+			error = EINVAL;
+		} else if (info.viewType != VK_IMAGE_VIEW_TYPE_2D && info.viewType != VK_IMAGE_VIEW_TYPE_2D_ARRAY &&
+			   info.viewType != VK_IMAGE_VIEW_TYPE_CUBE && info.viewType != VK_IMAGE_VIEW_TYPE_CUBE_ARRAY) {
+			/* A 1D or 3D view has no image of its kind here. */
+			error = ENOTSUP;
+		}
 	}
 
 	/* The view holds the image. */
@@ -749,6 +794,8 @@ create_view(
 		view->image = image;
 		view->format = format;
 		view->base_layer = info.subresourceRange.baseArrayLayer;
+		view->view_type = info.viewType;
+		view->layer_count = layers;
 		view->swizzle = swizzle_channel(info.components.r, 0U);
 		view->swizzle |= swizzle_channel(info.components.g, 1U) << 3;
 		view->swizzle |= swizzle_channel(info.components.b, 2U) << 6;
@@ -814,8 +861,10 @@ create_sampler(
 			word |= SAMPLER_MAG_NEAREST;
 		sampler->words[0] = word;
 
-		/* No level of detail range (one level), one sample of anisotropy, a transparent black border. */
+		/* No level of detail range (one level), the compare function, one sample of anisotropy, a transparent black border. */
 		sampler->words[1] = 0;
+		if (info.compareEnable != VK_FALSE)
+			sampler->words[1] |= mali_desc_sampler_compare(info.compareOp);
 		sampler->words[2] = 0;
 	}
 

@@ -366,6 +366,51 @@ nvrtx_family_name(
 }
 
 /*
+ * Decides whether the attach boots the GSP on a GPU or leaves it to the firmware.
+ *
+ * nvrtx.gsp=0 leaves every GPU to the firmware, and a chip without a family
+ * record has no GSP path.  Otherwise nvrtx.gsp=1 boots any chip with a
+ * path; without it the GSP is booted on every family, seen working on real
+ * hardware or not, but only where the firmware's picture is on the GPU (a
+ * GPU the firmware showed nothing on has nothing the default boot would
+ * keep).
+ */
+enum nvrtx_boot_choice
+nvrtx_boot_choose(
+	const struct nvrtx_profile *profile,
+	int gop_on_gpu,
+	bool gsp_wanted,
+	bool gsp_forced)
+{
+	/* The boot keeps every GPU away from the GSP path. */
+	if (!gsp_wanted)
+		return NVRTX_BOOT_LEAVE_OFF;
+
+	/* A recognized chip whose generation has no family record. */
+	if (profile == NULL)
+		return NVRTX_BOOT_LEAVE_NO_PATH;
+
+	/* A forced boot starts any family, seen on hardware or not. */
+	if (gsp_forced) {
+		if (profile->verified == 0)
+			return NVRTX_BOOT_START_UNSEEN;
+
+		return NVRTX_BOOT_START;
+	}
+
+	/* By default only a GPU that shows the firmware's picture is booted. */
+	if (gop_on_gpu == 0)
+		return NVRTX_BOOT_LEAVE_NO_PICTURE;
+
+	/* A family not yet seen on hardware is booted too, and says so. */
+	if (profile->verified == 0)
+		return NVRTX_BOOT_START_UNSEEN;
+
+	/* Boots a seen family that shows the firmware's picture. */
+	return NVRTX_BOOT_START;
+}
+
+/*
  * Finds the reset bit of one engine in the device information table.
  *
  * The table is 64 words.  An engine's description is a run of words: a

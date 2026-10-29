@@ -33,6 +33,8 @@
 #include "drivers/gpu/mali/mali-private.h"
 
 struct mali_vk_session;
+struct mali_shader_program;
+struct drv_gpu_scanout_backing;
 
 /*
  * The fixed places of every session's space: the node's ring, its sync
@@ -62,6 +64,14 @@ struct mali_vk_session;
 
 /* How long one submission may run before the node stops it (5 s). */
 #define MALI_RENDER_SUBMIT_MS		5000U
+
+/*
+ * The executor's own programs (vk-meta.c): the blit that scales or
+ * converts, the vertex program of a clear inside a pass, and the
+ * fragment program of such a clear for each of the eight colour
+ * locations.
+ */
+#define MALI_RENDER_META_PROGRAMS	10U
 
 /*
  * One buffer object: a run of memory that one or more resources map.
@@ -153,6 +163,38 @@ struct mali_session {
 	bool lost;
 	bool isolated;
 	bool stopping;
+
+	/*
+	 * The GPU address of the session's copy of the program that reads a
+	 * loaded attachment back into the tiles (vk-preload.c): zero until a
+	 * pass of the session first loads one.  Its resource is among the
+	 * session's and goes with them.  preload_failed says the copy could
+	 * not be made (said once); the session's loads then draw on cleared
+	 * tiles.  load_warned says a load of the session was drawn on a
+	 * cleared tile (said once a session).  preload_used says the stream
+	 * being built runs a pre-frame draw; the submission takes it, so a
+	 * failed one stops the node's loads from using the draw.
+	 */
+	uint64_t preload_code;
+	bool preload_failed;
+	bool load_warned;
+	bool preload_used;
+
+	/*
+	 * The GPU addresses of the session's copies of the executor's own
+	 * programs (vk-meta.c), zero until the session first needs one; their
+	 * resources are among the session's and go with them.  meta_failed
+	 * has bit n set when copy n could not be made (said once); that work
+	 * of the session is then left out as before.  meta_used has bit n set
+	 * when the stream being built runs program n; the submission takes
+	 * it, so a failed one stops the node from using those programs.
+	 * wls_warned says a dispatch's workgroup memory was refused (said once
+	 * a session).
+	 */
+	uint64_t meta_code[MALI_RENDER_META_PROGRAMS];
+	uint32_t meta_failed;
+	uint32_t meta_used;
+	bool wls_warned;
 };
 
 /*
@@ -182,6 +224,27 @@ struct mali_render {
 	bool faulted;
 	unsigned submissions;
 	unsigned failures;
+
+	/*
+	 * The program that reads a loaded attachment back into the tiles,
+	 * compiled the first time a pass loads one (vk-preload.c) and kept
+	 * for the node's life; preload_refused says the compile failed (said
+	 * once) or that a submission running the program failed, and every
+	 * load then draws on cleared tiles.  Both are set under guard.
+	 */
+	struct mali_shader_program *preload;
+	bool preload_refused;
+
+	/*
+	 * The executor's own programs (vk-meta.c), each compiled the first
+	 * time a submission needs it and kept for the node's life;
+	 * meta_refused has bit n set when program n did not compile or did
+	 * not have its shape (said once), or a submission running it failed,
+	 * and that work is then left out as before.  Both are set under
+	 * guard.
+	 */
+	struct mali_shader_program *meta[MALI_RENDER_META_PROGRAMS];
+	uint32_t meta_refused;
 };
 
 /* The buffer objects and resources of render.c. */
@@ -195,6 +258,15 @@ struct mali_resource *mali_session_blob(struct mali_session *session, uint32_t i
 /* The session's stage memory of render.c: bytes for one submission, with their GPU address. */
 int mali_stage_take(struct mali_session *session, uint64_t bytes, uint64_t align, volatile uint8_t **view, uint64_t *gpu_address);
 void mali_stage_reset(struct mali_session *session);
+
+/*
+ * The display node's hold on an image export of this node, found by the
+ * backing render_backing() handed out (render.c): the object, retained
+ * until the hold is dropped.  ENOTSUP for a backing this node did not
+ * hand out.
+ */
+int mali_render_scanout_hold(const struct drv_gpu_scanout_backing *backing, struct mali_bo **bo);
+void mali_render_scanout_drop(struct mali_bo *bo);
 
 /* The submissions and the recovery of sched.c. */
 int mali_sched_start(struct mali_render *render);

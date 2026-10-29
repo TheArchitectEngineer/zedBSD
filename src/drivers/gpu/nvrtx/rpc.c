@@ -13,8 +13,10 @@
  * caller's sequence number; the reply is matched on both.  While
  * the driver waits, the GSP may send events: the CPU sequencer (a list of
  * register operations the driver performs at once) and others, which are
- * reported and dropped in this revision.  Only the worker calls these, one
- * call at a time.
+ * reported and dropped in this revision.  One call is made at a time:
+ * until the device's threads run only the worker calls, and from then on
+ * every call and each turn of the message drain hold the GSP's lock
+ * (rpc_lock).
  */
 
 #include <stdbool.h>
@@ -23,6 +25,7 @@
 
 #include <kern/clock.h>
 #include <kern/kmem.h>
+#include <kern/lock.h>
 #include <uapi/errno.h>
 
 #include "drivers/gpu/nvrtx/nvrtx-gpu.h"
@@ -120,6 +123,11 @@ static void rpc_error_log(const uint8_t *payload, size_t length);
 static void rpc_gr_class_error(struct nvrtx_gpu *gpu);
 static int rpc_core_resume(struct nvrtx_gpu *gpu);
 static int rpc_exchange(struct nvrtx_gpu *gpu, uint32_t function, size_t call_length, size_t *reply_length);
+static int rpc_allocate(struct nvrtx_gpu *gpu, uint32_t client, uint32_t parent, uint32_t handle, uint32_t class_number, const uint8_t *parameters, size_t length);
+static int rpc_control(struct nvrtx_gpu *gpu, uint32_t client, uint32_t object, uint32_t command, const uint8_t *parameters, size_t length, const uint8_t **reply, size_t *reply_length);
+static int rpc_free(struct nvrtx_gpu *gpu, uint32_t client, uint32_t object);
+static bool rpc_hold(struct nvrtx_gpu *gpu);
+static void rpc_release(struct nvrtx_gpu *gpu, bool taken);
 
 /*
  * Puts one call in the command queue and rings the doorbell.
@@ -277,6 +285,10 @@ nvrtx_rpc_wait(
 			    (unsigned)nvrtx_get32(gpu->reply, RPC_ERROR_FAULT_KIND_AT));
 			if (nvrtx_get32(gpu->reply, RPC_ERROR_TYPE_AT) == RPC_GR_CLASS_ERROR)
 				rpc_gr_class_error(gpu);
+
+			/* The renderer loses the channel's session. */
+			if (gpu->channel_error != NULL)
+				gpu->channel_error(gpu->channel_error_argument, nvrtx_get32(gpu->reply, RPC_ERROR_CHANNEL_AT), nvrtx_get32(gpu->reply, RPC_ERROR_TYPE_AT));
 			continue;
 		}
 
@@ -322,14 +334,188 @@ nvrtx_rm_allocate(
 
 /*
  * Allocates one object under a given client and checks the status the firmware
+ * returns; the call takes the GSP's lock unless its caller holds it.
+ */
+int
+nvrtx_rm_allocate_in(
+	struct nvrtx_gpu *gpu,
+	uint32_t client,
+	uint32_t parent,
+	uint32_t handle,
+	uint32_t class_number,
+	const uint8_t *parameters,
+	size_t length)
+{
+	bool taken;
+	int error;
+
+	/* The call and its reply under the GSP's lock. */
+	taken = rpc_hold(gpu);
+	error = rpc_allocate(gpu, client, parent, handle, class_number, parameters, length);
+	rpc_release(gpu, taken);
+	if (error != 0)
+		return error;
+
+	/* Succeeded: the object exists. */
+	return 0;
+}
+
+/*
+ * Sends a control to an object and checks the status the firmware returns;
+ * the call takes the GSP's lock unless its caller holds it.
+ *
+ * The reply's parameters are left at *reply (inside gpu->reply) with their
+ * length: a caller that reads them holds the lock (nvrtx_rpc_lock()) from
+ * before the call until it has read them, once other threads may call.
+ */
+int
+nvrtx_rm_control(
+	struct nvrtx_gpu *gpu,
+	uint32_t client,
+	uint32_t object,
+	uint32_t command,
+	const uint8_t *parameters,
+	size_t length,
+	const uint8_t **reply,
+	size_t *reply_length)
+{
+	bool taken;
+	int error;
+
+	/* The call and its reply under the GSP's lock. */
+	taken = rpc_hold(gpu);
+	error = rpc_control(gpu, client, object, command, parameters, length, reply, reply_length);
+	rpc_release(gpu, taken);
+	if (error != 0)
+		return error;
+
+	/* Succeeded: the reply's parameters are at *reply. */
+	return 0;
+}
+
+/*
+ * Frees one object of the driver's client.
+ */
+int
+nvrtx_rm_free(
+	struct nvrtx_gpu *gpu,
+	uint32_t object)
+{
+	int error;
+
+	/* The driver's own client. */
+	error = nvrtx_rm_free_in(gpu, NVRTX_HANDLE_CLIENT, object);
+	if (error != 0)
+		return error;
+
+	/* Succeeded: the object is gone. */
+	return 0;
+}
+
+/*
+ * Frees one object of a given client (the client itself when object is the
+ * client's handle); the call takes the GSP's lock unless its caller holds it.
+ */
+int
+nvrtx_rm_free_in(
+	struct nvrtx_gpu *gpu,
+	uint32_t client,
+	uint32_t object)
+{
+	bool taken;
+	int error;
+
+	/* The call and its reply under the GSP's lock. */
+	taken = rpc_hold(gpu);
+	error = rpc_free(gpu, client, object);
+	rpc_release(gpu, taken);
+	if (error != 0)
+		return error;
+
+	/* Succeeded: the object is gone. */
+	return 0;
+}
+
+/*
+ * Takes the GSP's lock for a run of calls whose replies the caller reads,
+ * or for one turn of reading the GSP's messages.  The caller is counted as
+ * waiting until it holds the lock, so the message drain gives it up.
+ */
+void
+nvrtx_rpc_lock(
+	struct nvrtx_gpu *gpu)
+{
+	/* One more thread waits: the drain yields after its turn while any does. */
+	(void)__atomic_add_fetch(&gpu->rpc_wanted, 1U, __ATOMIC_ACQ_REL);
+
+	/* Sleeps until the lock's holder gives it up. */
+	mutex_lock(&gpu->rpc_lock);
+
+	/* The thread holds it and no longer waits. */
+	(void)__atomic_sub_fetch(&gpu->rpc_wanted, 1U, __ATOMIC_ACQ_REL);
+}
+
+/* Gives the GSP's lock back. */
+void
+nvrtx_rpc_unlock(
+	struct nvrtx_gpu *gpu)
+{
+	mutex_unlock(&gpu->rpc_lock);
+}
+
+/*
+ * Sends the call built in gpu->call and waits for its numbered reply.
+ *
+ * Once a reply has failed to come in time, the firmware is taken as not
+ * answering: every later call fails at once with ETIMEDOUT, so the teardown
+ * of many objects that follows (channel-stop, the reboot's unload) does not
+ * wait the whole time for each.
+ */
+static int
+rpc_exchange(
+	struct nvrtx_gpu *gpu,
+	uint32_t function,
+	size_t call_length,
+	size_t *reply_length)
+{
+	uint32_t sequence;
+	int error;
+
+	/* A firmware that stopped answering is not asked again. */
+	if (gpu->rpc_unanswered != 0)
+		return ETIMEDOUT;
+
+	/* Sends the call with the next sequence number. */
+	error = nvrtx_rpc_send(gpu, function, gpu->call, call_length, 1, &sequence);
+	if (error != 0)
+		return error;
+
+	/* Waits for the reply with the same number; a reply that never came marks the firmware as not answering. */
+	error = nvrtx_rpc_wait(gpu, function, sequence, NVRTX_CALL_TIMEOUT_US, reply_length);
+	if (error == ETIMEDOUT) {
+		gpu->rpc_unanswered = 1;
+		nvrtx_stage_mark("rpc %u: no reply in time; later calls are not waited for", (unsigned)function);
+		return error;
+	}
+
+	/* Any other failure of the wait. */
+	if (error != 0)
+		return error;
+
+	/* Succeeded: the reply is in gpu->reply. */
+	return 0;
+}
+
+/*
+ * Allocates one object under a given client and checks the status the firmware
  * returns.
  *
  * Procedure referenced: Linux v6.19
  * drivers/gpu/drm/nouveau/nvkm/subdev/gsp/rm/r535/alloc.c
  * (r535_gsp_rpc_rm_alloc_get, r535_gsp_rpc_rm_alloc_push).
  */
-int
-nvrtx_rm_allocate_in(
+static int
+rpc_allocate(
 	struct nvrtx_gpu *gpu,
 	uint32_t client,
 	uint32_t parent,
@@ -381,8 +567,8 @@ nvrtx_rm_allocate_in(
  * drivers/gpu/drm/nouveau/nvkm/subdev/gsp/rm/r535/ctrl.c
  * (r535_gsp_rpc_rm_ctrl_get, r535_gsp_rpc_rm_ctrl_push).
  */
-int
-nvrtx_rm_control(
+static int
+rpc_control(
 	struct nvrtx_gpu *gpu,
 	uint32_t client,
 	uint32_t object,
@@ -423,25 +609,6 @@ nvrtx_rm_control(
 }
 
 /*
- * Frees one object of the driver's client.
- */
-int
-nvrtx_rm_free(
-	struct nvrtx_gpu *gpu,
-	uint32_t object)
-{
-	int error;
-
-	/* The driver's own client. */
-	error = nvrtx_rm_free_in(gpu, NVRTX_HANDLE_CLIENT, object);
-	if (error != 0)
-		return error;
-
-	/* Succeeded: the object is gone. */
-	return 0;
-}
-
-/*
  * Frees one object of a given client (the client itself when object is the
  * client's handle).
  *
@@ -449,8 +616,8 @@ nvrtx_rm_free(
  * drivers/gpu/drm/nouveau/nvkm/subdev/gsp/rm/r535/alloc.c
  * (r535_gsp_rpc_rm_free).
  */
-int
-nvrtx_rm_free_in(
+static int
+rpc_free(
 	struct nvrtx_gpu *gpu,
 	uint32_t client,
 	uint32_t object)
@@ -469,45 +636,39 @@ nvrtx_rm_free_in(
 }
 
 /*
- * Sends the call built in gpu->call and waits for its numbered reply.
- *
- * Once a reply has failed to come in time, the firmware is taken as not
- * answering: every later call fails at once with ETIMEDOUT, so the teardown
- * of many objects that follows (channel-stop, the reboot's unload) does not
- * wait the whole time for each.
+ * Takes the GSP's lock for one call unless the caller holds it already (a
+ * run of calls whose replies it reads).  Returns whether it was taken here.
  */
-static int
-rpc_exchange(
-	struct nvrtx_gpu *gpu,
-	uint32_t function,
-	size_t call_length,
-	size_t *reply_length)
+static bool
+rpc_hold(
+	struct nvrtx_gpu *gpu)
 {
-	uint32_t sequence;
-	int error;
+	int owned;
 
-	/* A firmware that stopped answering is not asked again. */
-	if (gpu->rpc_unanswered != 0)
-		return ETIMEDOUT;
+	/* A caller holding the lock keeps it. */
+	owned = mutex_owned(&gpu->rpc_lock);
+	if (owned != 0)
+		return false;
 
-	/* Sends the call with the next sequence number. */
-	error = nvrtx_rpc_send(gpu, function, gpu->call, call_length, 1, &sequence);
-	if (error != 0)
-		return error;
+	/* Takes it for the call. */
+	nvrtx_rpc_lock(gpu);
 
-	/* Waits for the reply with the same number; a reply that never came marks the firmware as not answering. */
-	error = nvrtx_rpc_wait(gpu, function, sequence, NVRTX_CALL_TIMEOUT_US, reply_length);
-	if (error == ETIMEDOUT) {
-		gpu->rpc_unanswered = 1;
-		nvrtx_stage_mark("rpc %u: no reply in time; later calls are not waited for", (unsigned)function);
-		return error;
-	}
+	/* Succeeded: the call gives it back. */
+	return true;
+}
 
-	if (error != 0)
-		return error;
+/* Gives the GSP's lock back when the call took it. */
+static void
+rpc_release(
+	struct nvrtx_gpu *gpu,
+	bool taken)
+{
+	/* A caller's own hold stays. */
+	if (!taken)
+		return;
 
-	/* Succeeded: the reply is in gpu->reply. */
-	return 0;
+	/* The call's hold ends. */
+	nvrtx_rpc_unlock(gpu);
 }
 
 /*

@@ -49,8 +49,10 @@ swap_device_command(
 {
 	struct kern_block_info info;
 	const char *name;
+	const char *partial;
 	uint64_t bytes;
 	size_t length;
+	size_t valid_length;
 	int started;
 	int synced;
 	int closed;
@@ -64,7 +66,10 @@ swap_device_command(
 		fprintf(stderr, "mkswap: expected /dev/ and a canonical block device name\n");
 		return 2;
 	}
-	if (strspn(name, DEVICE_NAME_CHARACTERS) != length) {
+
+	/* Refuses a name with a character no canonical name holds. */
+	valid_length = strspn(name, DEVICE_NAME_CHARACTERS);
+	if (valid_length != length) {
 		fprintf(stderr, "mkswap: expected /dev/ and a canonical block device name\n");
 		return 2;
 	}
@@ -112,8 +117,10 @@ out:
 
 	/* Reports a failure and whether the partition may have changed. */
 	if (error != 0) {
-		fprintf(stderr, "mkswap: /dev/%s: %s%s\n", name, strerror(error),
-		    started ? "; the header may be partly written" : "; nothing written");
+		partial = "; nothing written";
+		if (started)
+			partial = "; the header may be partly written";
+		fprintf(stderr, "mkswap: /dev/%s: %s%s\n", name, strerror(error), partial);
 		return 1;
 	}
 
@@ -138,9 +145,12 @@ open_partition(
 {
 	struct stat status;
 	char path[64];
+	int is_block;
 	int reserved;
 	int queried;
 	int stated;
+	int different;
+	void *terminator;
 
 	/* Opens the device node without following a link. */
 	snprintf(path, sizeof(path), "/dev/%s", name);
@@ -152,7 +162,8 @@ open_partition(
 	stated = fstat(*fd, &status);
 	if (stated < 0)
 		return errno;
-	if (!S_ISBLK(status.st_mode))
+	is_block = S_ISBLK(status.st_mode);
+	if (!is_block)
 		return EINVAL;
 
 	/* Reads the device's identity and geometry. */
@@ -166,9 +177,11 @@ open_partition(
 	/* Refuses an answer of another version or for another name. */
 	if (info->version != KERN_BLOCK_VERSION || info->struct_size != sizeof(*info))
 		return EINVAL;
-	if (memchr(info->name, '\0', sizeof(info->name)) == NULL)
+	terminator = memchr(info->name, '\0', sizeof(info->name));
+	if (terminator == NULL)
 		return EINVAL;
-	if (strcmp(info->name, name) != 0)
+	different = strcmp(info->name, name);
+	if (different != 0)
 		return EINVAL;
 
 	/* Refuses a whole disk: the kernel swaps only on partitions. */
@@ -203,6 +216,8 @@ confirm(
 	char expected[80];
 	char answer[96];
 	size_t length;
+	char *line;
+	int different;
 	int flushed;
 
 	/* Shows the identity and what the command is about to do. */
@@ -216,7 +231,8 @@ confirm(
 		return EIO;
 
 	/* Reads one complete answer line. */
-	if (fgets(answer, sizeof(answer), stdin) == NULL)
+	line = fgets(answer, sizeof(answer), stdin);
+	if (line == NULL)
 		return ECANCELED;
 	length = strlen(answer);
 	if (length == 0 || answer[length - 1] != '\n')
@@ -229,7 +245,8 @@ confirm(
 		answer[length - 1] = '\0';
 
 	/* Refuses any answer but the phrase itself. */
-	if (strcmp(answer, expected) != 0)
+	different = strcmp(answer, expected);
+	if (different != 0)
 		return ECANCELED;
 
 	/* Succeeded: the operator named this partition. */

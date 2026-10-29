@@ -24,11 +24,20 @@
  *   4. a first submission that binds both classes to their subchannels,
  *      and its fence.
  *
- * Afterwards nvrtx_work_submit() hands a push buffer segment to the channel
- * followed by a fence of the driver's, nvrtx_work_passed() tells whether a
- * fence has passed and nvrtx_work_wait() polls for one, and
- * the map calls write the space's page entries for a run and drop the stale
- * translations.  The stop undoes 3 and 2 before the graphics context's stop.
+ * Afterwards nvrtx_work_channel_submit() hands a push buffer segment to the
+ * channel followed by a fence of the driver's, nvrtx_work_channel_passed()
+ * tells whether a fence has passed and nvrtx_work_channel_wait() polls for
+ * one, and the map calls write the space's page entries for a run and drop the
+ * stale translations.  The stop undoes 3 and 2 before the graphics
+ * context's stop.
+ *
+ * A session of the GPU device gets a channel of its own the same way
+ * (nvrtx_work_channel_open()): an arena of its own for its instance block,
+ * USERD and own context buffers, and 2 MiB of the space (its region) where
+ * those buffers and its ring, semaphore and fences' push buffers are
+ * mapped; the global context buffers, the page tables and the users' runs
+ * stay the space's.  So work that never ends holds up its own channel only,
+ * and the channel can be freed without the others.
  */
 
 #include <stdbool.h>
@@ -49,12 +58,12 @@
 #define WORK_ARENA_ALIGN		0x200000ULL
 
 /*
- * Where the timed runs (nvrtx.vk.perf=1) leave their times in the
- * semaphore's page, so a run's time can be read after later runs have
- * passed too: a record of 32 bytes for each of the last WORK_RUN_RECORDS
- * runs (by the fence's low bits) after the fence's word, the start
- * stamp's 16 bytes (value, then the timer at byte 8), then the end
- * stamp's.
+ * Where the runs leave their stamps in the semaphore's page, so a run's
+ * start (every run) and its time (timed runs, nvrtx.vk.perf=1) can be read
+ * after later runs have passed too: a record of 32 bytes for each of the
+ * last WORK_RUN_RECORDS runs (by the fence's low bits) after the fence's
+ * word, the start stamp's 16 bytes (value, then the timer at byte 8), then
+ * the end stamp's.
  *
  * Value referenced: NVIDIA open-gpu-doc
  * manuals/turing/tu104/dev_pbdma.ref.txt
@@ -62,7 +71,7 @@
  * timestamp).
  */
 #define WORK_RUNS_AT			0x100U
-#define WORK_RUN_RECORDS		64U
+#define WORK_RUN_RECORDS		NVRTX_WORK_RUN_RECORDS
 #define WORK_RUN_RECORD_BYTES		32U
 #define WORK_RUN_END_AT			16U
 #define WORK_STAMP_TIMER_AT		8U
@@ -86,11 +95,38 @@
 /* The address-space limit written into the instance block (47-bit virtual addresses). */
 #define WORK_VA_LIMIT			(1ULL << 47)
 
+/*
+ * The graphics engine's current context: the instance block (its address
+ * shifted right by 12, in the low 28 bits) of the channel the engine holds.
+ *
+ * Value referenced: Linux v6.19 drivers/gpu/drm/nouveau/nvkm/engine/gr/gf100.c
+ * (gf100_gr_intr, gf100_gr_ctxsw_inst: 0x409b00).
+ */
+#define WORK_REG_GR_CURRENT_CONTEXT	0x409b00U
+#define WORK_GR_CONTEXT_INSTANCE_MASK	0x0fffffffU
+
 /* How many times a full space for the users' runs is told in the log. */
 #define WORK_VA_FULL_MARKS		8U
 
 /* The channel number on the graphics runlist (the golden context 1, the scrubber 2, the compute launch 3). */
 #define WORK_CHID			4U
+
+/*
+ * A session's channel: the handles of the channel and its objects (each the
+ * channel's place among the sessions' numbers after the base), its arena
+ * (the instance block, USERD, then its own context buffers) and its region
+ * of the space (its own context buffers from the start, then the ring, the
+ * semaphore and the fences' push buffers from the next 64 KiB boundary).
+ */
+#define WORK_SESSION_HANDLE_CHANNEL	0xf1f00010U
+#define WORK_SESSION_HANDLE_THREED	0x97000010U
+#define WORK_SESSION_HANDLE_COMPUTE	0xc5c00010U
+#define WORK_SESSION_ARENA_ALIGN	0x200000ULL
+#define WORK_SESSION_INSTANCE_AT	0x0000ULL
+#define WORK_SESSION_USERD_AT		0x1000ULL
+#define WORK_SESSION_BUFFERS_AT		0x10000ULL
+#define WORK_REGION_BYTES		0x200000ULL
+#define WORK_REGION_PAGES_SHIFT		16U
 
 /*
  * USERD's get and put of the ring, and the doorbell: runlist in bits 22:16,
@@ -132,19 +168,24 @@
 #define WORK_SPIN_US			2000U
 
 static int work_arena(struct nvrtx_gpu *gpu);
-static int work_buffers(struct nvrtx_gpu *gpu);
+static int work_buffers(struct nvrtx_gpu *gpu, struct nvrtx_work_channel *channel);
+static void work_buffers_free(struct nvrtx_gpu *gpu, struct nvrtx_work_channel *channel);
 static int work_tables(struct nvrtx_gpu *gpu);
 static int work_space(struct nvrtx_gpu *gpu);
-static int work_channel(struct nvrtx_gpu *gpu);
-static int work_objects(struct nvrtx_gpu *gpu);
-static int work_first(struct nvrtx_gpu *gpu);
+static int work_session_arena(struct nvrtx_gpu *gpu, struct nvrtx_work_channel *channel);
+static int work_session_region(struct nvrtx_gpu *gpu, struct nvrtx_work_channel *channel);
+static int work_channel(struct nvrtx_gpu *gpu, struct nvrtx_work_channel *channel);
+static int work_objects(struct nvrtx_gpu *gpu, struct nvrtx_work_channel *channel);
+static int work_first(struct nvrtx_gpu *gpu, struct nvrtx_work_channel *channel, bool wait);
+static int work_channel_free(struct nvrtx_gpu *gpu, struct nvrtx_work_channel *channel);
+static int work_map_entries(struct nvrtx_gpu *gpu, uint64_t va, const uint8_t *entries, uint64_t pages);
 static int work_entries_write(struct nvrtx_gpu *gpu, uint64_t va, const uint8_t *entries, uint64_t pages);
-static int work_ring_wait(struct nvrtx_gpu *gpu, uint32_t entry);
-static int work_ring_put(struct nvrtx_gpu *gpu, uint32_t entry, uint64_t va, size_t length);
-static int work_doorbell(struct nvrtx_gpu *gpu);
-static uint32_t work_semaphore(const struct nvrtx_gpu *gpu);
-static uint32_t work_semaphore_word(const struct nvrtx_gpu *gpu, size_t at);
-static uint64_t work_semaphore_timer(const struct nvrtx_gpu *gpu, size_t at);
+static int work_ring_wait(struct nvrtx_work_channel *channel, uint32_t entry);
+static int work_ring_put(struct nvrtx_gpu *gpu, struct nvrtx_work_channel *channel, uint32_t entry, uint64_t va, size_t length);
+static int work_doorbell(struct nvrtx_gpu *gpu, const struct nvrtx_work_channel *channel);
+static uint32_t work_semaphore(const struct nvrtx_work_channel *channel);
+static uint32_t work_semaphore_word(const struct nvrtx_work_channel *channel, size_t at);
+static uint64_t work_semaphore_timer(const struct nvrtx_work_channel *channel, size_t at);
 static size_t work_run_record(uint32_t fence);
 static uint64_t work_align(uint64_t value, uint32_t shift);
 
@@ -160,16 +201,30 @@ int
 nvrtx_work_start(
 	struct nvrtx_gpu *gpu)
 {
+	struct nvrtx_work_channel *driver;
 	bool timed;
 	int error;
 
 	nvrtx_stage_mark("work-channel begin");
+
+	/* The driver's channel is the one the work space holds. */
+	driver = &gpu->work.driver;
 
 	/* Each run is timed on the GPU when the boot asks for the counts (nvrtx.vk.perf=1). */
 	timed = nvrtx_stage_vk_perf_wanted();
 	gpu->work.timed = 0;
 	if (timed)
 		gpu->work.timed = 1;
+
+	/* The driver's channel: its number, its handles and where its pages lie (the instance block and USERD follow from the arena). */
+	driver->chid = WORK_CHID;
+	driver->handle_channel = NVRTX_HANDLE_WORK_CHANNEL;
+	driver->handle_threed = NVRTX_HANDLE_WORK_THREED;
+	driver->handle_compute = NVRTX_HANDLE_WORK_COMPUTE;
+	driver->ring_va = WORK_RING_VA;
+	driver->semaphore_va = WORK_SEMAPHORE_VA;
+	driver->fences_va = WORK_FENCES_VA;
+	driver->timed = gpu->work.timed;
 
 	/* The channel's context comes from the golden context. */
 	if (gpu->gr.buffer_count == 0U) {
@@ -188,7 +243,7 @@ nvrtx_work_start(
 	if (error != 0)
 		return error;
 
-	error = work_buffers(gpu);
+	error = work_buffers(gpu, driver);
 	if (error != 0)
 		return error;
 
@@ -201,20 +256,24 @@ nvrtx_work_start(
 	if (error != 0)
 		return error;
 
-	error = work_channel(gpu);
+	error = work_channel(gpu, driver);
 	if (error != 0)
 		return error;
 
-	error = work_objects(gpu);
+	error = work_objects(gpu, driver);
 	if (error != 0)
 		return error;
 
 	nvrtx_stage_mark("work-channel ok: work channel %u on runlist %u", (unsigned)WORK_CHID, (unsigned)gpu->engine.pick.graphics_runlist);
 
 	/* The classes on their subchannels, and the first fence. */
-	error = work_first(gpu);
+	error = work_first(gpu, driver, true);
 	if (error != 0)
 		return error;
+
+	/* The space takes mappings and channels, and the driver's channel takes work. */
+	gpu->work.ready = 1;
+	driver->state = NVRTX_WORK_CHANNEL_READY;
 
 	/* Reports the GPU's performance level, and raises it when the boot asks (nvrtx.boost=1). */
 	nvrtx_perf_start(gpu);
@@ -246,42 +305,10 @@ nvrtx_work_stop(
 	int error;
 
 	work = &gpu->work;
-	failures = 0;
 
-	/* Nothing is submitted from now on. */
+	/* Nothing is mapped or submitted from now on: the channel off the scheduler, its objects and the channel freed. */
 	work->ready = 0;
-
-	/* Takes the channel off the scheduler. */
-	if (work->scheduled != 0) {
-		kern_memset(params, 0, sizeof(params));
-		error = nvrtx_rm_control(gpu, NVRTX_HANDLE_CLIENT, NVRTX_HANDLE_WORK_CHANNEL, NVRTX_CTL_SCHEDULE, params, NVRTX_SCHEDULE_PARAMS_BYTES, &reply, &reply_length);
-		if (error != 0)
-			failures++;
-		work->scheduled = 0;
-	}
-
-	/* Frees the 3D object, then the compute object. */
-	if (work->threed_made != 0) {
-		error = nvrtx_rm_free(gpu, NVRTX_HANDLE_WORK_THREED);
-		if (error != 0)
-			failures++;
-		work->threed_made = 0;
-	}
-
-	if (work->compute_made != 0) {
-		error = nvrtx_rm_free(gpu, NVRTX_HANDLE_WORK_COMPUTE);
-		if (error != 0)
-			failures++;
-		work->compute_made = 0;
-	}
-
-	/* Frees the channel. */
-	if (work->channel_made != 0) {
-		error = nvrtx_rm_free(gpu, NVRTX_HANDLE_WORK_CHANNEL);
-		if (error != 0)
-			failures++;
-		work->channel_made = 0;
-	}
+	failures = work_channel_free(gpu, &work->driver);
 
 	/* Takes the root back from the space, then frees it. */
 	if (work->root_set != 0) {
@@ -319,16 +346,282 @@ nvrtx_work_release(
 	work = &gpu->work;
 
 	/* Frees each buffer that was allocated. */
-	nvrtx_buffer_free(gpu, &work->ring);
-	nvrtx_buffer_free(gpu, &work->semaphore);
-	nvrtx_buffer_free(gpu, &work->fences);
-	nvrtx_buffer_free(gpu, &work->methods);
+	work_buffers_free(gpu, &work->driver);
 
 	/* Returns the arena to the VRAM allocator. */
 	if (work->arena_made != 0) {
 		nvrtx_bo_free(gpu, &work->arena);
 		work->arena_made = 0;
 	}
+}
+
+/*
+ * Makes a session's own channel in the work space, numbered chid on the
+ * graphics runlist (NVRTX_WORK_SESSION_CHID_FIRST onward): its arena and
+ * system-memory buffers, its region of the space with its own context
+ * buffers and pages mapped there, the channel with both classes, its
+ * promote and its first fence.  channel is all zero before the call.
+ *
+ * A failure gives back whatever was made (or keeps it, when the resource
+ * manager would not free it) and is returned: EINVAL for a number outside
+ * the sessions' ones, ENODEV before the work channel runs, ENOSPC for a
+ * full space or own buffers too large for a region, or the step's error.
+ */
+int
+nvrtx_work_channel_open(
+	struct nvrtx_gpu *gpu,
+	struct nvrtx_work_channel *channel,
+	uint32_t chid)
+{
+	uint32_t number;
+	int error;
+
+	/* A number of the sessions', once the space runs. */
+	if (chid < NVRTX_WORK_SESSION_CHID_FIRST || chid - NVRTX_WORK_SESSION_CHID_FIRST >= NVRTX_WORK_SESSION_CHANNELS)
+		return EINVAL;
+	if (gpu->work.ready == 0)
+		return ENODEV;
+
+	/* The channel's number, its handles, its lock and whether it times its runs. */
+	number = chid - NVRTX_WORK_SESSION_CHID_FIRST;
+	(void)mutex_init(&channel->lock, LOCK_RANK_DEVICE, "nvrtx session channel");
+	channel->chid = chid;
+	channel->handle_channel = WORK_SESSION_HANDLE_CHANNEL + number;
+	channel->handle_threed = WORK_SESSION_HANDLE_THREED + number;
+	channel->handle_compute = WORK_SESSION_HANDLE_COMPUTE + number;
+	channel->timed = gpu->work.timed;
+
+	/* Its arena, its buffers and its region of the space. */
+	error = work_session_arena(gpu, channel);
+	if (error == 0)
+		error = work_buffers(gpu, channel);
+	if (error == 0)
+		error = work_session_region(gpu, channel);
+
+	/* The channel with its context and both classes, and its first fence. */
+	if (error == 0)
+		error = work_channel(gpu, channel);
+	if (error == 0)
+		error = work_objects(gpu, channel);
+	if (error == 0)
+		error = work_first(gpu, channel, false);
+	if (error != 0) {
+		nvrtx_stage_mark("channel %u: no session channel (%d)", (unsigned)chid, error);
+		(void)nvrtx_work_channel_close(gpu, channel);
+		return error;
+	}
+
+	/* Succeeded: the channel takes the session's work. */
+	nvrtx_stage_mark("channel %u: session channel on runlist %u", (unsigned)chid, (unsigned)gpu->engine.pick.graphics_runlist);
+	return 0;
+}
+
+/*
+ * Closes a session's channel: off the scheduler, its objects and the
+ * channel freed where the resource manager still holds them, then its
+ * region, buffers and arena given back.  The caller has made sure its
+ * work has ended, or that the GPU no longer runs it.
+ *
+ * Returns EBUSY when a free or the region's unmap failed: the GPU may still
+ * reach the channel's memory, so what is left stays the device's for good.
+ */
+int
+nvrtx_work_channel_close(
+	struct nvrtx_gpu *gpu,
+	struct nvrtx_work_channel *channel)
+{
+	int failures;
+	int error;
+
+	/* The resource manager's objects of the channel. */
+	failures = work_channel_free(gpu, channel);
+	if (failures != 0) {
+		nvrtx_stage_mark("channel %u: %d frees failed; its memory stays", (unsigned)channel->chid, failures);
+		return EBUSY;
+	}
+
+	/* Its region of the space: the entries cleared, the addresses given back. */
+	if (channel->region_made != 0) {
+		error = nvrtx_work_unmap(gpu, channel->region, WORK_REGION_BYTES);
+		if (error != 0) {
+			nvrtx_stage_mark("channel %u: its region stayed mapped (%d); its memory stays", (unsigned)channel->chid, error);
+			return EBUSY;
+		}
+
+		/* The region is given back. */
+		channel->region_made = 0;
+	}
+
+	/* Its system-memory buffers and its arena. */
+	work_buffers_free(gpu, channel);
+	if (channel->arena_made != 0) {
+		nvrtx_bo_free(gpu, &channel->arena);
+		channel->arena_made = 0;
+	}
+
+	/* Succeeded: nothing of the channel is left. */
+	return 0;
+}
+
+/*
+ * Looks at a channel for the recovery, without its lock (the GPU writes the
+ * words it reads): whether it has an unfinished run, when its oldest
+ * unfinished run was submitted, and whether that run began and at what time
+ * of the GPU's.  The view's other fields are the caller's.
+ */
+void
+nvrtx_work_channel_look(
+	struct nvrtx_work_channel *channel,
+	struct nvrtx_recover_view *view)
+{
+	uint32_t seen;
+	uint32_t newest;
+	uint32_t oldest;
+	uint32_t started;
+	size_t record;
+	bool passed;
+
+	/* Nothing is known of the channel until it shows an unfinished run. */
+	view->busy = 0;
+	view->oldest_submit_us = 0U;
+	view->started = 0;
+	view->start_ns = 0U;
+
+	/* A channel with no run, or whose newest run has passed, waits for nothing. */
+	newest = __atomic_load_n(&channel->fence, __ATOMIC_ACQUIRE);
+	if (channel->ready == 0 || newest == 0U)
+		return;
+	seen = work_semaphore(channel);
+	passed = nvrtx_work_fence_passed(seen, newest);
+	if (passed)
+		return;
+
+	/* The oldest unfinished run follows the last one the semaphore released (fences skip 0). */
+	oldest = seen + 1U;
+	if (oldest == 0U)
+		oldest = 1U;
+	view->busy = 1;
+	view->oldest_submit_us = __atomic_load_n(&channel->submitted_us[oldest & (NVRTX_WORK_RUN_RECORDS - 1U)], __ATOMIC_RELAXED);
+
+	/* Whether its start stamp came, and the GPU's time then (read after the value it follows). */
+	record = work_run_record(oldest);
+	started = work_semaphore_word(channel, record);
+	if (started != oldest)
+		return;
+	__atomic_thread_fence(__ATOMIC_ACQUIRE);
+	view->started = 1;
+	view->start_ns = work_semaphore_timer(channel, record + WORK_STAMP_TIMER_AT);
+}
+
+/*
+ * Reports whether the graphics engine holds the channel now: its current
+ * context is the channel's instance block.  An engine that names no context
+ * (0, or every bit set when it does not answer) holds none.
+ */
+bool
+nvrtx_work_channel_resident(
+	struct nvrtx_gpu *gpu,
+	const struct nvrtx_work_channel *channel)
+{
+	uint32_t current;
+	uint32_t instance;
+
+	/* The engine's current context. */
+	current = nvrtx_rd32(gpu, WORK_REG_GR_CURRENT_CONTEXT);
+	if (current == 0U || current == 0xffffffffU)
+		return false;
+
+	/* The channel's instance block in the same form. */
+	instance = (uint32_t)(channel->instance >> 12) & WORK_GR_CONTEXT_INSTANCE_MASK;
+	if ((current & WORK_GR_CONTEXT_INSTANCE_MASK) != instance)
+		return false;
+
+	/* Succeeded: the engine holds the channel. */
+	return true;
+}
+
+/*
+ * Stops a channel on the GPU at once: off its runlist, preempted without
+ * waiting for it to idle (the resource manager raises an error report on
+ * it when the preempt does not finish).  Returns 0 when the stop answered,
+ * else the call's error.
+ *
+ * Procedure referenced: NVIDIA open-gpu-kernel-modules 570.144
+ * src/nvidia/src/kernel/gpu/fifo/kernel_channel.c
+ * (kchannelCtrlCmdStopChannel_IMPL, sent on to the GSP).
+ */
+int
+nvrtx_work_channel_stop(
+	struct nvrtx_gpu *gpu,
+	struct nvrtx_work_channel *channel)
+{
+	uint8_t params[4];
+	const uint8_t *reply;
+	size_t reply_length;
+	size_t length;
+	int error;
+
+	/* Nothing is submitted to it from now on. */
+	channel->ready = 0;
+
+	/* The stop, at once. */
+	kern_memset(params, 0, sizeof(params));
+	length = nvrtx_recover_stop_params(params);
+	error = nvrtx_rm_control(gpu, NVRTX_HANDLE_CLIENT, channel->handle_channel, NVRTX_CTL_STOP_CHANNEL, params, length, &reply, &reply_length);
+	if (error != 0)
+		return error;
+
+	/* Succeeded: the GPU no longer runs the channel. */
+	return 0;
+}
+
+/*
+ * Resets a channel and its graphics engine, saying whether an error report
+ * on it came.  Returns 0 when the reset answered, else the call's error.
+ *
+ * Procedure referenced: NVIDIA open-gpu-kernel-modules 570.144
+ * src/nvidia/src/kernel/gpu/fifo/kernel_channel.c
+ * (kchannelCtrlCmdResetChannel_IMPL, sent on to the GSP).
+ */
+int
+nvrtx_work_channel_reset(
+	struct nvrtx_gpu *gpu,
+	struct nvrtx_work_channel *channel,
+	int reported)
+{
+	uint8_t params[16];
+	const uint8_t *reply;
+	size_t reply_length;
+	size_t length;
+	int error;
+
+	/* The reset of the graphics engine, the default reason. */
+	length = nvrtx_recover_reset_params(params, NVRTX_ENGINE_GRAPHICS, reported);
+	error = nvrtx_rm_control(gpu, NVRTX_HANDLE_CLIENT, channel->handle_channel, NVRTX_CTL_RESET_CHANNEL, params, length, &reply, &reply_length);
+	if (error != 0)
+		return error;
+
+	/* Succeeded: the channel and its engine are reset. */
+	return 0;
+}
+
+/*
+ * Frees a stopped channel's objects and the channel itself in the resource
+ * manager (as the close does), leaving its memory for the close.  Returns
+ * how many of the calls failed.
+ */
+int
+nvrtx_work_channel_free(
+	struct nvrtx_gpu *gpu,
+	struct nvrtx_work_channel *channel)
+{
+	int failures;
+
+	/* Off the scheduler, the objects, the channel. */
+	failures = work_channel_free(gpu, channel);
+
+	/* Succeeded: the failures, counted. */
+	return failures;
 }
 
 /*
@@ -517,26 +810,29 @@ nvrtx_work_unmap(
 }
 
 /*
- * Submits a push buffer segment, followed by a fence of the driver's.
+ * Submits a push buffer segment to a channel of the work space, followed by
+ * a fence of the driver's.
  *
- * The segment is length bytes at push_va in the channel's space; the GPU
+ * The segment is length bytes at push_va in the work space; the GPU
  * reads it after the call returns, so it stays intact until the fence
- * returned in *fence has passed.  A timed channel (nvrtx.vk.perf=1) puts a
- * start stamp before the segment and an end stamp after it in the run's
- * record, for nvrtx_work_run_time().  Waits up to 2 s for free ring
+ * returned in *fence has passed.  A start stamp goes before the segment
+ * in the run's record (nvrtx_work_channel_look()), and a timed channel
+ * (nvrtx.vk.perf=1) puts an end stamp after it, for
+ * nvrtx_work_channel_run_time().  Waits up to 2 s for free ring
  * entries.  Returns ENODEV before the channel runs, ETIMEDOUT when the
  * ring stays full, EINVAL for an empty or misaligned segment.
  */
 int
-nvrtx_work_submit(
+nvrtx_work_channel_submit(
 	struct nvrtx_gpu *gpu,
+	struct nvrtx_work_channel *channel,
 	uint64_t push_va,
 	size_t length,
 	uint32_t *fence)
 {
-	struct nvrtx_work_state *work;
 	uint8_t *slot;
 	uint64_t record_va;
+	uint64_t submitted_us;
 	uint32_t entries[4];
 	uint32_t count;
 	uint32_t index;
@@ -544,82 +840,91 @@ nvrtx_work_submit(
 	size_t slot_length;
 	int error;
 
-	work = &gpu->work;
-
 	/* Whole words, within what one ring entry carries. */
 	if (length == 0U || (length & 3U) != 0U || length / 4U > NVRTX_WORK_SEGMENT_WORDS_MAX)
 		return EINVAL;
 
 	/* Puts the segment and the fence on the ring under the lock. */
-	mutex_lock(&work->lock);
+	mutex_lock(&channel->lock);
 
 	/* The channel must be running. */
-	if (work->ready == 0) {
-		mutex_unlock(&work->lock);
+	if (channel->ready == 0) {
+		mutex_unlock(&channel->lock);
 		return ENODEV;
 	}
 
-	/* The entries in order: a timed run's start stamp, the segment, a timed run's end stamp, the fence. */
-	count = 2U;
-	if (work->timed != 0)
+	/* The entries in order: the start stamp, the segment, a timed run's end stamp, the fence. */
+	count = 3U;
+	if (channel->timed != 0)
 		count = 4U;
 	for (index = 0U; index < count; index++)
-		entries[index] = (work->put + index) & (NVRTX_WORK_RING_ENTRIES - 1U);
+		entries[index] = (channel->put + index) & (NVRTX_WORK_RING_ENTRIES - 1U);
 
 	/* Waits until the entries' earlier work is done. */
 	error = 0;
 	for (index = 0U; index < count && error == 0; index++)
-		error = work_ring_wait(gpu, entries[index]);
+		error = work_ring_wait(channel, entries[index]);
 	if (error != 0) {
-		mutex_unlock(&work->lock);
+		mutex_unlock(&channel->lock);
 		return error;
 	}
 
 	/* The fence's value: the next one, never 0 (an entry of fence 0 is one never used). */
-	value = work->fence + 1U;
+	value = channel->fence + 1U;
 	if (value == 0U)
 		value = 1U;
 
-	/* A timed run's stamps, each in its own entry's slot, around the segment. */
-	error = 0;
-	if (work->timed != 0) {
-		record_va = WORK_SEMAPHORE_VA + work_run_record(value);
-		slot = (uint8_t *)work->fences.dma.address + (size_t)entries[0] * NVRTX_WORK_FENCE_BYTES;
-		slot_length = nvrtx_push_stamp(slot, record_va, value);
-		error = work_ring_put(gpu, entries[0], WORK_FENCES_VA + (uint64_t)entries[0] * NVRTX_WORK_FENCE_BYTES, slot_length);
-		if (error == 0)
-			error = work_ring_put(gpu, entries[1], push_va, length);
-		slot = (uint8_t *)work->fences.dma.address + (size_t)entries[2] * NVRTX_WORK_FENCE_BYTES;
+	/* The start stamp in its entry's slot, then the segment; a timed run's end stamp after it. */
+	record_va = channel->semaphore_va + work_run_record(value);
+	slot = (uint8_t *)channel->fences.dma.address + (size_t)entries[0] * NVRTX_WORK_FENCE_BYTES;
+	slot_length = nvrtx_push_stamp(slot, record_va, value);
+	error = work_ring_put(gpu, channel, entries[0], channel->fences_va + (uint64_t)entries[0] * NVRTX_WORK_FENCE_BYTES, slot_length);
+	if (error == 0)
+		error = work_ring_put(gpu, channel, entries[1], push_va, length);
+	if (error == 0 && channel->timed != 0) {
+		slot = (uint8_t *)channel->fences.dma.address + (size_t)entries[2] * NVRTX_WORK_FENCE_BYTES;
 		slot_length = nvrtx_push_fence_timed(slot, record_va + WORK_RUN_END_AT, value);
-		if (error == 0)
-			error = work_ring_put(gpu, entries[2], WORK_FENCES_VA + (uint64_t)entries[2] * NVRTX_WORK_FENCE_BYTES, slot_length);
-	} else {
-		error = work_ring_put(gpu, entries[0], push_va, length);
+		error = work_ring_put(gpu, channel, entries[2], channel->fences_va + (uint64_t)entries[2] * NVRTX_WORK_FENCE_BYTES, slot_length);
 	}
 
 	/* The fence; the doorbell after the put moved past them all. */
-	slot = (uint8_t *)work->fences.dma.address + (size_t)entries[count - 1U] * NVRTX_WORK_FENCE_BYTES;
-	slot_length = nvrtx_push_fence(slot, WORK_SEMAPHORE_VA, value);
+	slot = (uint8_t *)channel->fences.dma.address + (size_t)entries[count - 1U] * NVRTX_WORK_FENCE_BYTES;
+	slot_length = nvrtx_push_fence(slot, channel->semaphore_va, value);
+	if (error == 0) {
+		error = work_ring_put(
+			gpu,
+			channel,
+			entries[count - 1U],
+			channel->fences_va + (uint64_t)entries[count - 1U] * NVRTX_WORK_FENCE_BYTES,
+			slot_length);
+	}
+
+	/* The doorbell, once every entry is on the ring. */
 	if (error == 0)
-		error = work_ring_put(gpu, entries[count - 1U], WORK_FENCES_VA + (uint64_t)entries[count - 1U] * NVRTX_WORK_FENCE_BYTES,
-				      slot_length);
-	if (error == 0)
-		error = work_doorbell(gpu);
+		error = work_doorbell(gpu, channel);
+
+	/* Gives up the submission, with the lock released. */
 	if (error != 0) {
-		mutex_unlock(&work->lock);
+		mutex_unlock(&channel->lock);
 		return error;
 	}
 
 	/*
 	 * Every entry now belongs to this fence: they are written again only
 	 * once it has passed.  fence is the newest value the semaphore will
-	 * reach (read without the lock by nvrtx_work_passed()).
+	 * reach (read without the lock by nvrtx_work_channel_passed()).
 	 */
 	for (index = 0U; index < count; index++)
-		work->entry_fence[entries[index]] = value;
-	__atomic_store_n(&work->fence, value, __ATOMIC_RELEASE);
+		channel->entry_fence[entries[index]] = value;
 
-	mutex_unlock(&work->lock);
+	/* The CPU's time of this submission, which the recovery reads to tell how long the run has waited. */
+	submitted_us = nvrtx_now_us();
+	__atomic_store_n(&channel->submitted_us[value & (NVRTX_WORK_RUN_RECORDS - 1U)], submitted_us, __ATOMIC_RELAXED);
+
+	/* The newest fence is published after its time. */
+	__atomic_store_n(&channel->fence, value, __ATOMIC_RELEASE);
+
+	mutex_unlock(&channel->lock);
 
 	/* Succeeded: the work runs and will release the fence. */
 	*fence = value;
@@ -635,8 +940,8 @@ nvrtx_work_submit(
  * another run's (one WORK_RUN_RECORDS runs later wrote it), else 0.
  */
 int
-nvrtx_work_run_time(
-	struct nvrtx_gpu *gpu,
+nvrtx_work_channel_run_time(
+	struct nvrtx_work_channel *channel,
 	uint32_t fence,
 	uint64_t *gpu_ns)
 {
@@ -647,13 +952,13 @@ nvrtx_work_run_time(
 	uint64_t end;
 
 	/* Only a timed channel leaves stamps. */
-	if (gpu->work.timed == 0)
+	if (channel->timed == 0)
 		return ENOENT;
 
 	/* Both values must be this run's; each was written after its timer. */
 	record = work_run_record(fence);
-	started = work_semaphore_word(gpu, record);
-	ended = work_semaphore_word(gpu, record + WORK_RUN_END_AT);
+	started = work_semaphore_word(channel, record);
+	ended = work_semaphore_word(channel, record + WORK_RUN_END_AT);
 	if (started != fence || ended != fence)
 		return ENOENT;
 
@@ -661,13 +966,13 @@ nvrtx_work_run_time(
 	__atomic_thread_fence(__ATOMIC_ACQUIRE);
 
 	/* The timers at the start and at the end. */
-	start = work_semaphore_timer(gpu, record + WORK_STAMP_TIMER_AT);
-	end = work_semaphore_timer(gpu, record + WORK_RUN_END_AT + WORK_STAMP_TIMER_AT);
+	start = work_semaphore_timer(channel, record + WORK_STAMP_TIMER_AT);
+	end = work_semaphore_timer(channel, record + WORK_RUN_END_AT + WORK_STAMP_TIMER_AT);
 
 	/* A later run may have taken the record meanwhile. */
 	__atomic_thread_fence(__ATOMIC_ACQUIRE);
-	started = work_semaphore_word(gpu, record);
-	ended = work_semaphore_word(gpu, record + WORK_RUN_END_AT);
+	started = work_semaphore_word(channel, record);
+	ended = work_semaphore_word(channel, record + WORK_RUN_END_AT);
 	if (started != fence || ended != fence)
 		return ENOENT;
 
@@ -686,8 +991,8 @@ nvrtx_work_run_time(
  * wrapped (0, or ahead of the newest one submitted).  Any context, no lock.
  */
 bool
-nvrtx_work_passed(
-	struct nvrtx_gpu *gpu,
+nvrtx_work_channel_passed(
+	struct nvrtx_work_channel *channel,
 	uint32_t fence)
 {
 	uint32_t seen;
@@ -697,13 +1002,13 @@ nvrtx_work_passed(
 	/* No fence, or one the semaphore has reached. */
 	if (fence == 0U)
 		return true;
-	seen = work_semaphore(gpu);
+	seen = work_semaphore(channel);
 	passed = nvrtx_work_fence_passed(seen, fence);
 	if (passed)
 		return true;
 
 	/* A fence ahead of the newest submission is from before the values wrapped: its work is long done. */
-	newest = __atomic_load_n(&gpu->work.fence, __ATOMIC_ACQUIRE);
+	newest = __atomic_load_n(&channel->fence, __ATOMIC_ACQUIRE);
 	passed = nvrtx_work_fence_passed(newest, fence);
 	if (!passed)
 		return true;
@@ -721,30 +1026,30 @@ nvrtx_work_passed(
  * Returns 0, or ETIMEDOUT when the semaphore did not reach it in time.
  */
 int
-nvrtx_work_wait(
-	struct nvrtx_gpu *gpu,
+nvrtx_work_channel_wait(
+	struct nvrtx_work_channel *channel,
 	uint32_t fence,
 	uint32_t timeout_us)
 {
 	int error;
 
 	/* Spins from the start. */
-	error = nvrtx_work_wait_late(gpu, fence, timeout_us, 0U);
+	error = nvrtx_work_channel_wait_late(channel, fence, timeout_us, 0U);
 
 	/* Reports the wait's result. */
 	return error;
 }
 
 /*
- * Waits as nvrtx_work_wait() does for work the caller expects to take
+ * Waits as nvrtx_work_channel_wait() does for work the caller expects to take
  * about quiet_us more: until then the semaphore is looked at only between
  * sleeps, then without pause for 2 ms, then between sleeps again.  A
  * sleep lasts a scheduler tick, so work that ends while the wait spins is
  * seen as it ends without the processor spinning all along.
  */
 int
-nvrtx_work_wait_late(
-	struct nvrtx_gpu *gpu,
+nvrtx_work_channel_wait_late(
+	struct nvrtx_work_channel *channel,
 	uint32_t fence,
 	uint32_t timeout_us,
 	uint32_t quiet_us)
@@ -756,7 +1061,7 @@ nvrtx_work_wait_late(
 	/* Looks until the fence has passed or the time, measured, is spent. */
 	start = nvrtx_now_us();
 	for (;;) {
-		passed = nvrtx_work_passed(gpu, fence);
+		passed = nvrtx_work_channel_passed(channel, fence);
 		if (passed)
 			break;
 
@@ -802,18 +1107,21 @@ work_arena(
 	}
 
 	work->arena_made = 1;
+	work->driver.instance = work->arena.vram + WORK_INSTANCE_AT;
+	work->driver.userd = work->arena.vram + WORK_USERD_AT;
 
-	/* Each buffer: the golden context's when global, else one of the channel's own. */
+	/* Each buffer: the golden context's when global, else one of the channel's own, at the golden context's address. */
 	at = WORK_BUFFERS_AT;
 	for (index = 0U; index < gr->buffer_count; index++) {
 		buffer = &gr->buffers[index];
+		work->driver.virtual_address[index] = gr->virtual_address[index];
 		if (buffer->global) {
-			work->physical[index] = gr->golden_physical[index];
+			work->driver.physical[index] = gr->golden_physical[index];
 			continue;
 		}
 
 		at = work_align(at, buffer->page_shift);
-		work->physical[index] = work->arena.vram + at;
+		work->driver.physical[index] = work->arena.vram + at;
 		at += work_align(buffer->size, buffer->page_shift);
 	}
 
@@ -828,27 +1136,25 @@ work_arena(
 	return 0;
 }
 
-/* Allocates the ring, the semaphore, the fences' push buffers and the channel's method buffer. */
+/* Allocates a channel's ring, semaphore, fences' push buffers and method buffer. */
 static int
 work_buffers(
-	struct nvrtx_gpu *gpu)
+	struct nvrtx_gpu *gpu,
+	struct nvrtx_work_channel *channel)
 {
-	struct nvrtx_work_state *work;
 	int error;
 
-	work = &gpu->work;
-
 	/* One page each for the ring and the semaphore. */
-	error = nvrtx_buffer_alloc(gpu, NVRTX_WORK_RING_ENTRIES * 8U, &work->ring);
+	error = nvrtx_buffer_alloc(gpu, NVRTX_WORK_RING_ENTRIES * 8U, &channel->ring);
 	if (error != 0)
 		return error;
 
-	error = nvrtx_buffer_alloc(gpu, NVRTX_GSP_PAGE_SIZE, &work->semaphore);
+	error = nvrtx_buffer_alloc(gpu, NVRTX_GSP_PAGE_SIZE, &channel->semaphore);
 	if (error != 0)
 		return error;
 
 	/* One fence slot per ring entry. */
-	error = nvrtx_buffer_alloc(gpu, WORK_FENCES_BYTES, &work->fences);
+	error = nvrtx_buffer_alloc(gpu, WORK_FENCES_BYTES, &channel->fences);
 	if (error != 0)
 		return error;
 
@@ -856,12 +1162,25 @@ work_buffers(
 	 * The method buffer, as large as the resource manager asked for
 	 * copy-channel's.
 	 */
-	error = nvrtx_buffer_alloc(gpu, gpu->engine.methods_size, &work->methods);
+	error = nvrtx_buffer_alloc(gpu, gpu->engine.methods_size, &channel->methods);
 	if (error != 0)
 		return error;
 
 	/* Succeeded: the buffers are clear. */
 	return 0;
+}
+
+/* Gives a channel's system-memory buffers back (each one that was allocated). */
+static void
+work_buffers_free(
+	struct nvrtx_gpu *gpu,
+	struct nvrtx_work_channel *channel)
+{
+	/* The ring, the semaphore, the fences' push buffers and the method buffer. */
+	nvrtx_buffer_free(gpu, &channel->ring);
+	nvrtx_buffer_free(gpu, &channel->semaphore);
+	nvrtx_buffer_free(gpu, &channel->fences);
+	nvrtx_buffer_free(gpu, &channel->methods);
 }
 
 /*
@@ -899,10 +1218,10 @@ work_tables(
 	}
 
 	/* The driver's pages in order. */
-	pages[0] = work->ring.dma.device_address;
-	pages[1] = work->semaphore.dma.device_address;
+	pages[0] = work->driver.ring.dma.device_address;
+	pages[1] = work->driver.semaphore.dma.device_address;
 	for (page = 0U; page < WORK_FENCES_BYTES / NVRTX_GSP_PAGE_SIZE; page++)
-		pages[2U + page] = work->fences.dma.device_address + (uint64_t)page * NVRTX_GSP_PAGE_SIZE;
+		pages[2U + page] = work->driver.fences.dma.device_address + (uint64_t)page * NVRTX_GSP_PAGE_SIZE;
 
 	/* The directories in memory. */
 	length = nvrtx_mmu_gr_tables_bytes(NVRTX_WORK_VA_BYTES);
@@ -921,7 +1240,7 @@ work_tables(
 		    NVRTX_WORK_VA_BASE,
 		    NVRTX_WORK_VA_BYTES,
 		    gr->virtual_address[index],
-		    work->physical[index],
+		    work->driver.physical[index],
 		    work_align(buffer->size, 12U),
 		    buffer->read_only);
 	}
@@ -991,6 +1310,170 @@ work_space(
 }
 
 /*
+ * Takes a session's channel's arena from the VRAM allocator and lays out
+ * its instance block, USERD and own context buffers in it; the global
+ * buffers are the golden context's, reached where the space maps them.
+ */
+static int
+work_session_arena(
+	struct nvrtx_gpu *gpu,
+	struct nvrtx_work_channel *channel)
+{
+	struct nvrtx_gr_state *gr;
+	struct nvrtx_gr_buffer *buffer;
+	uint64_t offset[NVRTX_GR_BUFFER_MAX];
+	uint64_t at;
+	size_t index;
+	int error;
+
+	gr = &gpu->gr;
+
+	/* Each own buffer's place after the instance block and USERD, on its page size. */
+	at = WORK_SESSION_BUFFERS_AT;
+	for (index = 0U; index < gr->buffer_count; index++) {
+		buffer = &gr->buffers[index];
+		offset[index] = 0U;
+		if (buffer->global)
+			continue;
+
+		at = work_align(at, buffer->page_shift);
+		offset[index] = at;
+		at += work_align(buffer->size, buffer->page_shift);
+	}
+
+	/* The own buffers must fit the region they are mapped in, with the channel's pages after them. */
+	if (at - WORK_SESSION_BUFFERS_AT + (uint64_t)WORK_DRIVER_PAGES * NVRTX_GSP_PAGE_SIZE + (1ULL << WORK_REGION_PAGES_SHIFT) > WORK_REGION_BYTES) {
+		nvrtx_stage_mark("channel %u: the context buffers need %llx of a region", (unsigned)channel->chid, (unsigned long long)at);
+		return ENOSPC;
+	}
+
+	/* Takes the arena. */
+	error = nvrtx_bo_alloc(gpu, at, WORK_SESSION_ARENA_ALIGN, &channel->arena);
+	if (error != 0)
+		return error;
+
+	channel->arena_made = 1;
+	channel->instance = channel->arena.vram + WORK_SESSION_INSTANCE_AT;
+	channel->userd = channel->arena.vram + WORK_SESSION_USERD_AT;
+
+	/* Each buffer: the golden context's when global, else the channel's own in the arena. */
+	for (index = 0U; index < gr->buffer_count; index++) {
+		buffer = &gr->buffers[index];
+		if (buffer->global) {
+			channel->physical[index] = gr->golden_physical[index];
+			channel->virtual_address[index] = gr->virtual_address[index];
+			continue;
+		}
+
+		channel->physical[index] = channel->arena.vram + offset[index];
+	}
+
+	/* The instance block and USERD start clear. */
+	error = nvrtx_vram_zero(gpu, channel->instance, 2U * NVRTX_INSTANCE_BYTES);
+	if (error != 0)
+		return error;
+
+	/* Succeeded: the arena is laid out. */
+	return 0;
+}
+
+/*
+ * Takes a session's channel's region of the space and maps it: its own
+ * context buffers privileged from the region's start (the access map
+ * read-only, the unrestricted one left out, as the space's tables map the
+ * golden context's), then its ring, semaphore and fences' push buffers.
+ */
+static int
+work_session_region(
+	struct nvrtx_gpu *gpu,
+	struct nvrtx_work_channel *channel)
+{
+	struct nvrtx_work_state *work;
+	struct nvrtx_gr_state *gr;
+	struct nvrtx_gr_buffer *buffer;
+	uint64_t pages[WORK_DRIVER_PAGES];
+	uint64_t region;
+	uint64_t offset;
+	uint64_t size;
+	uint64_t end;
+	uint8_t *entries;
+	size_t index;
+	unsigned page;
+	int error;
+
+	work = &gpu->work;
+	gr = &gpu->gr;
+
+	/* Takes 2 MiB of the space on its own boundary. */
+	mutex_lock(&work->lock);
+
+	error = nvrtx_heap_alloc(&work->va, WORK_REGION_BYTES, WORK_REGION_BYTES, &region);
+
+	mutex_unlock(&work->lock);
+
+	/* Reports a full space. */
+	if (error != 0)
+		return error;
+
+	/* The region is the channel's, and its close gives it back. */
+	channel->region = region;
+	channel->region_made = 1;
+
+	/* Each own buffer at the place it has in the arena, counted from the region's start. */
+	end = 0U;
+	for (index = 0U; index < gr->buffer_count; index++) {
+		buffer = &gr->buffers[index];
+		if (buffer->global)
+			continue;
+
+		offset = channel->physical[index] - channel->arena.vram - WORK_SESSION_BUFFERS_AT;
+		size = work_align(buffer->size, 12U);
+		channel->virtual_address[index] = region + offset;
+		if (offset + size > end)
+			end = offset + size;
+		if (buffer->buffer_id == WORK_BUFFER_UNRESTRICTED_MAP)
+			continue;
+
+		/* Its privileged entries. */
+		entries = kern_malloc((size_t)(size / NVRTX_GSP_PAGE_SIZE) * 8U);
+		if (entries == NULL)
+			return ENOMEM;
+
+		/* Writes them into the space's tables. */
+		nvrtx_mmu_gr_entries_privileged(entries, channel->physical[index], size / NVRTX_GSP_PAGE_SIZE, buffer->read_only);
+		error = work_map_entries(gpu, channel->virtual_address[index], entries, size / NVRTX_GSP_PAGE_SIZE);
+		kern_free(entries);
+		if (error != 0)
+			return error;
+	}
+
+	/* The channel's pages after them, in order: the ring, the semaphore, the fences' push buffers. */
+	offset = work_align(end, WORK_REGION_PAGES_SHIFT);
+	channel->ring_va = region + offset;
+	channel->semaphore_va = channel->ring_va + NVRTX_GSP_PAGE_SIZE;
+	channel->fences_va = channel->ring_va + 2U * NVRTX_GSP_PAGE_SIZE;
+	pages[0] = channel->ring.dma.device_address;
+	pages[1] = channel->semaphore.dma.device_address;
+	for (page = 0U; page < WORK_FENCES_BYTES / NVRTX_GSP_PAGE_SIZE; page++)
+		pages[2U + page] = channel->fences.dma.device_address + (uint64_t)page * NVRTX_GSP_PAGE_SIZE;
+
+	/* Their coherent entries. */
+	entries = kern_malloc((size_t)WORK_DRIVER_PAGES * 8U);
+	if (entries == NULL)
+		return ENOMEM;
+
+	/* Writes them into the space's tables. */
+	nvrtx_mmu_gr_entries_system(entries, pages, WORK_DRIVER_PAGES);
+	error = work_map_entries(gpu, channel->ring_va, entries, WORK_DRIVER_PAGES);
+	kern_free(entries);
+	if (error != 0)
+		return error;
+
+	/* Succeeded: the channel reaches its buffers and pages. */
+	return 0;
+}
+
+/*
  * Makes the graphics channel: its instance block naming the tables, the
  * channel on the graphics engine and the promote of its context buffers.
  *
@@ -999,7 +1482,8 @@ work_space(
  */
 static int
 work_channel(
-	struct nvrtx_gpu *gpu)
+	struct nvrtx_gpu *gpu,
+	struct nvrtx_work_channel *channel)
 {
 	struct nvrtx_work_state *work;
 	struct nvrtx_channel_setup setup;
@@ -1009,27 +1493,27 @@ work_channel(
 
 	work = &gpu->work;
 
-	/* The instance block names the tables. */
+	/* The instance block names the space's tables. */
 	instance = kern_calloc(1U, NVRTX_INSTANCE_BYTES);
 	if (instance == NULL)
 		return ENOMEM;
 
 	nvrtx_mmu_instance(instance, work->arena.vram + WORK_TABLES_AT, WORK_VA_LIMIT);
-	error = nvrtx_vram_write(gpu, work->arena.vram + WORK_INSTANCE_AT, instance, NVRTX_INSTANCE_BYTES);
+	error = nvrtx_vram_write(gpu, channel->instance, instance, NVRTX_INSTANCE_BYTES);
 	kern_free(instance);
 	if (error != 0)
 		return error;
 
-	/* The channel on the graphics engine, its ring at the driver's first page. */
-	setup.ring_va = WORK_RING_VA;
+	/* The channel on the graphics engine, its ring at the first of its pages. */
+	setup.ring_va = channel->ring_va;
 	setup.ring_entries = NVRTX_WORK_RING_ENTRIES;
-	setup.chid = WORK_CHID;
+	setup.chid = channel->chid;
 	setup.space = NVRTX_HANDLE_WORK_SPACE;
 	setup.engine = NVRTX_ENGINE_GRAPHICS;
 	setup.privileged = 0U;
-	setup.instance = work->arena.vram + WORK_INSTANCE_AT;
-	setup.userd = work->arena.vram + WORK_USERD_AT;
-	setup.methods = work->methods.dma.device_address;
+	setup.instance = channel->instance;
+	setup.userd = channel->userd;
+	setup.methods = channel->methods.dma.device_address;
 	setup.methods_size = gpu->engine.methods_size;
 
 	params = kern_malloc(NVRTX_CHANNEL_PARAMS_BYTES);
@@ -1037,15 +1521,15 @@ work_channel(
 		return ENOMEM;
 
 	nvrtx_channel_params(params, &setup);
-	error = nvrtx_rm_allocate(gpu, NVRTX_HANDLE_DEVICE, NVRTX_HANDLE_WORK_CHANNEL, gpu->identity.chip.profile->class_channel, params, NVRTX_CHANNEL_PARAMS_BYTES);
+	error = nvrtx_rm_allocate(gpu, NVRTX_HANDLE_DEVICE, channel->handle_channel, gpu->identity.chip.profile->class_channel, params, NVRTX_CHANNEL_PARAMS_BYTES);
 	kern_free(params);
 	if (error != 0)
 		return error;
 
-	work->channel_made = 1;
+	channel->channel_made = 1;
 
-	/* Hands it its context buffers: its own main and patch, the golden context's global ones. */
-	error = nvrtx_gr_promote(gpu, NVRTX_HANDLE_WORK_CHANNEL, work->physical, false);
+	/* Hands it its context buffers where it reaches them: its own main and patch, the golden context's global ones. */
+	error = nvrtx_gr_promote(gpu, channel->handle_channel, channel->physical, channel->virtual_address, false);
 	if (error != 0)
 		return error;
 
@@ -1056,99 +1540,204 @@ work_channel(
 /* Makes the 3D and compute objects on the channel, binds it to the graphics engine and lets the scheduler run it. */
 static int
 work_objects(
-	struct nvrtx_gpu *gpu)
+	struct nvrtx_gpu *gpu,
+	struct nvrtx_work_channel *channel)
 {
-	struct nvrtx_work_state *work;
 	uint8_t params[NVRTX_BIND_PARAMS_BYTES + NVRTX_SCHEDULE_PARAMS_BYTES];
 	const uint8_t *reply;
 	size_t reply_length;
 	int error;
 
-	work = &gpu->work;
-
 	/* The 3D object. */
-	error = nvrtx_rm_allocate(gpu, NVRTX_HANDLE_WORK_CHANNEL, NVRTX_HANDLE_WORK_THREED, gpu->identity.chip.profile->class_threed, NULL, 0U);
+	error = nvrtx_rm_allocate(gpu, channel->handle_channel, channel->handle_threed, gpu->identity.chip.profile->class_threed, NULL, 0U);
 	if (error != 0)
 		return error;
 
-	work->threed_made = 1;
+	channel->threed_made = 1;
 
 	/* The compute object. */
-	error = nvrtx_rm_allocate(gpu, NVRTX_HANDLE_WORK_CHANNEL, NVRTX_HANDLE_WORK_COMPUTE, gpu->identity.chip.profile->class_compute, NULL, 0U);
+	error = nvrtx_rm_allocate(gpu, channel->handle_channel, channel->handle_compute, gpu->identity.chip.profile->class_compute, NULL, 0U);
 	if (error != 0)
 		return error;
 
-	work->compute_made = 1;
+	channel->compute_made = 1;
 
 	/* Binds the channel to the graphics engine. */
 	kern_memset(params, 0, sizeof(params));
 	nvrtx_put32(params, 0U, NVRTX_ENGINE_GRAPHICS);
-	error = nvrtx_rm_control(gpu, NVRTX_HANDLE_CLIENT, NVRTX_HANDLE_WORK_CHANNEL, NVRTX_CTL_BIND, params, NVRTX_BIND_PARAMS_BYTES, &reply, &reply_length);
+	error = nvrtx_rm_control(gpu, NVRTX_HANDLE_CLIENT, channel->handle_channel, NVRTX_CTL_BIND, params, NVRTX_BIND_PARAMS_BYTES, &reply, &reply_length);
 	if (error != 0)
 		return error;
 
 	/* Lets the scheduler run it. */
 	kern_memset(params, 0, sizeof(params));
 	params[0] = 1U;
-	error = nvrtx_rm_control(gpu, NVRTX_HANDLE_CLIENT, NVRTX_HANDLE_WORK_CHANNEL, NVRTX_CTL_SCHEDULE, params, NVRTX_SCHEDULE_PARAMS_BYTES, &reply, &reply_length);
+	error = nvrtx_rm_control(gpu, NVRTX_HANDLE_CLIENT, channel->handle_channel, NVRTX_CTL_SCHEDULE, params, NVRTX_SCHEDULE_PARAMS_BYTES, &reply, &reply_length);
 	if (error != 0)
 		return error;
 
 	/* Succeeded: the stop takes the channel off the scheduler before it frees it. */
-	work->scheduled = 1;
+	channel->scheduled = 1;
 	return 0;
 }
 
 /*
  * Runs the channel's first submission: both classes on their subchannels,
- * then its fence.
+ * then its fence, waited for when wait is set (the driver's channel at the
+ * start; a session's channel is made while other channels may hold the
+ * graphics engine, and its runs follow the submission on the ring).
  */
 static int
 work_first(
-	struct nvrtx_gpu *gpu)
+	struct nvrtx_gpu *gpu,
+	struct nvrtx_work_channel *channel,
+	bool wait)
 {
-	struct nvrtx_work_state *work;
 	uint8_t *push;
 	uint64_t push_va;
 	uint64_t start;
 	uint64_t waited;
 	size_t length;
 	uint32_t fence;
+	uint32_t semaphore;
 	int error;
-
-	work = &gpu->work;
 
 	/*
 	 * The objects' push buffer goes in the last fence slot, which the
 	 * ring reaches only after NVRTX_WORK_RING_ENTRIES - 1 more entries,
 	 * long after this submission's fence.
 	 */
-	push = (uint8_t *)work->fences.dma.address + (size_t)(NVRTX_WORK_RING_ENTRIES - 1U) * NVRTX_WORK_FENCE_BYTES;
-	push_va = WORK_FENCES_VA + (uint64_t)(NVRTX_WORK_RING_ENTRIES - 1U) * NVRTX_WORK_FENCE_BYTES;
+	push = (uint8_t *)channel->fences.dma.address + (size_t)(NVRTX_WORK_RING_ENTRIES - 1U) * NVRTX_WORK_FENCE_BYTES;
+	push_va = channel->fences_va + (uint64_t)(NVRTX_WORK_RING_ENTRIES - 1U) * NVRTX_WORK_FENCE_BYTES;
 	length = nvrtx_work_push_objects(push, gpu->identity.chip.profile->class_threed, gpu->identity.chip.profile->class_compute);
 
 	/* Opens the channel to submissions; the semaphore starts at 0. */
-	kern_memset(work->semaphore.dma.address, 0, NVRTX_GSP_PAGE_SIZE);
-	work->put = 0U;
-	work->fence = 0U;
-	kern_memset(work->entry_fence, 0, sizeof(work->entry_fence));
-	work->ready = 1;
+	kern_memset(channel->semaphore.dma.address, 0, NVRTX_GSP_PAGE_SIZE);
+	channel->put = 0U;
+	channel->fence = 0U;
+	kern_memset(channel->entry_fence, 0, sizeof(channel->entry_fence));
+	channel->ready = 1;
 
-	/* Submits it and waits for its fence. */
+	/* Submits it; the last ring entry, whose fence slot holds it, is written again only after its fence. */
 	start = nvrtx_now_us();
 	fence = 0U;
-	error = nvrtx_work_submit(gpu, push_va, length, &fence);
+	error = nvrtx_work_channel_submit(gpu, channel, push_va, length, &fence);
 	if (error == 0)
-		error = nvrtx_work_wait(gpu, fence, WORK_FIRST_FENCE_US);
+		channel->entry_fence[NVRTX_WORK_RING_ENTRIES - 1U] = fence;
+
+	/* Waits for its fence when asked (a session's channel's later runs follow it on the ring instead). */
+	if (error == 0 && wait)
+		error = nvrtx_work_channel_wait(channel, fence, WORK_FIRST_FENCE_US);
 	if (error != 0) {
-		work->ready = 0;
-		nvrtx_stage_mark("work-channel fail: the first fence %u did not come (%d, semaphore %08x)", (unsigned)fence, error, (unsigned)work_semaphore(gpu));
+		channel->ready = 0;
+
+		/* Says how far the semaphore got. */
+		semaphore = work_semaphore(channel);
+		nvrtx_stage_mark("work-channel fail: channel %u's first fence %u did not come (%d, semaphore %08x)",
+		    (unsigned)channel->chid,
+		    (unsigned)fence,
+		    error,
+		    (unsigned)semaphore);
 		return error;
 	}
 
+	/* A first fence not waited for is not told. */
+	if (!wait)
+		return 0;
+
 	/* Succeeded: the channel ran its first work. */
 	waited = nvrtx_now_us() - start;
-	nvrtx_stage_mark("work-channel ok: fence %u after %u us", (unsigned)fence, (unsigned)waited);
+	nvrtx_stage_mark("work-channel ok: channel %u fence %u after %u us", (unsigned)channel->chid, (unsigned)fence, (unsigned)waited);
+	return 0;
+}
+
+/*
+ * Takes a channel off the scheduler and frees its 3D and compute objects
+ * and the channel itself, each that exists; nothing is submitted to it
+ * afterwards.  Returns how many of the resource manager's calls failed
+ * (an object whose free failed is taken as gone: the unload removes it).
+ *
+ * Procedure referenced: Linux v6.19
+ * drivers/gpu/drm/nouveau/nvkm/subdev/gsp/rm/r535/fifo.c (r535_chan_stop)
+ * and Linux v6.19 drivers/gpu/drm/nouveau/nvkm/engine/fifo/chan.c
+ * (nvkm_chan_del).
+ */
+static int
+work_channel_free(
+	struct nvrtx_gpu *gpu,
+	struct nvrtx_work_channel *channel)
+{
+	uint8_t params[NVRTX_SCHEDULE_PARAMS_BYTES];
+	const uint8_t *reply;
+	size_t reply_length;
+	int failures;
+	int error;
+
+	/* Counts the resource manager's calls that fail. */
+	failures = 0;
+
+	/* Nothing is submitted from now on. */
+	channel->ready = 0;
+
+	/* Takes the channel off the scheduler. */
+	if (channel->scheduled != 0) {
+		kern_memset(params, 0, sizeof(params));
+		error = nvrtx_rm_control(gpu, NVRTX_HANDLE_CLIENT, channel->handle_channel, NVRTX_CTL_SCHEDULE, params, NVRTX_SCHEDULE_PARAMS_BYTES, &reply, &reply_length);
+		if (error != 0)
+			failures++;
+		channel->scheduled = 0;
+	}
+
+	/* Frees the 3D object, then the compute object. */
+	if (channel->threed_made != 0) {
+		error = nvrtx_rm_free(gpu, channel->handle_threed);
+		if (error != 0)
+			failures++;
+		channel->threed_made = 0;
+	}
+
+	/* The compute object. */
+	if (channel->compute_made != 0) {
+		error = nvrtx_rm_free(gpu, channel->handle_compute);
+		if (error != 0)
+			failures++;
+		channel->compute_made = 0;
+	}
+
+	/* Frees the channel. */
+	if (channel->channel_made != 0) {
+		error = nvrtx_rm_free(gpu, channel->handle_channel);
+		if (error != 0)
+			failures++;
+		channel->channel_made = 0;
+	}
+
+	/* Succeeded: the failures, counted. */
+	return failures;
+}
+
+/* Writes a run of page entries into the space's tables under the space's lock and drops the stale translations. */
+static int
+work_map_entries(
+	struct nvrtx_gpu *gpu,
+	uint64_t va,
+	const uint8_t *entries,
+	uint64_t pages)
+{
+	int error;
+
+	/* The entries, under the lock of the space's mappings. */
+	mutex_lock(&gpu->work.lock);
+
+	error = work_entries_write(gpu, va, entries, pages);
+
+	mutex_unlock(&gpu->work.lock);
+
+	/* Reports entries that could not be written. */
+	if (error != 0)
+		return error;
+
+	/* Succeeded: the run maps as written. */
 	return 0;
 }
 
@@ -1188,19 +1777,19 @@ work_entries_write(
 /* Waits until a ring entry's earlier submission is done, so the entry and its fence slot may be written again. */
 static int
 work_ring_wait(
-	struct nvrtx_gpu *gpu,
+	struct nvrtx_work_channel *channel,
 	uint32_t entry)
 {
 	uint32_t fence;
 	int error;
 
 	/* An entry not used yet is free. */
-	fence = gpu->work.entry_fence[entry];
+	fence = channel->entry_fence[entry];
 	if (fence == 0U)
 		return 0;
 
 	/* Waits for the fence that ended its submission. */
-	error = nvrtx_work_wait(gpu, fence, WORK_ENTRY_WAIT_US);
+	error = nvrtx_work_channel_wait(channel, fence, WORK_ENTRY_WAIT_US);
 	if (error != 0)
 		return error;
 
@@ -1212,30 +1801,28 @@ work_ring_wait(
 static int
 work_ring_put(
 	struct nvrtx_gpu *gpu,
+	struct nvrtx_work_channel *channel,
 	uint32_t entry,
 	uint64_t va,
 	size_t length)
 {
-	struct nvrtx_work_state *work;
 	uint8_t put[4];
 	uint32_t next;
 	int error;
 
-	work = &gpu->work;
-
 	/* The entry, written before the put that hands it to the GPU. */
-	nvrtx_ring_entry((uint8_t *)work->ring.dma.address + (size_t)entry * 8U, va, (uint32_t)(length / 4U));
+	nvrtx_ring_entry((uint8_t *)channel->ring.dma.address + (size_t)entry * 8U, va, (uint32_t)(length / 4U));
 	__atomic_thread_fence(__ATOMIC_SEQ_CST);
 
 	/* The ring's put in USERD, wrapping at the ring's end. */
 	next = (entry + 1U) & (NVRTX_WORK_RING_ENTRIES - 1U);
 	nvrtx_put32(put, 0U, next);
-	error = nvrtx_vram_write(gpu, work->arena.vram + WORK_USERD_AT + WORK_USERD_RING_PUT, put, sizeof(put));
+	error = nvrtx_vram_write(gpu, channel->userd + WORK_USERD_RING_PUT, put, sizeof(put));
 	if (error != 0)
 		return error;
 
 	/* The next submission starts after this entry. */
-	work->put = next;
+	channel->put = next;
 
 	/* Succeeded: the entry is the GPU's once the doorbell rings. */
 	return 0;
@@ -1244,10 +1831,11 @@ work_ring_put(
 /* Rings the channel's doorbell: the graphics runlist and the channel. */
 static int
 work_doorbell(
-	struct nvrtx_gpu *gpu)
+	struct nvrtx_gpu *gpu,
+	const struct nvrtx_work_channel *channel)
 {
 	/* The GPU fetches the entries up to the put. */
-	nvrtx_wr32(gpu, WORK_REG_DOORBELL, (gpu->engine.pick.graphics_runlist << 16) | WORK_CHID);
+	nvrtx_wr32(gpu, WORK_REG_DOORBELL, (gpu->engine.pick.graphics_runlist << 16) | channel->chid);
 
 	/* Succeeded: the doorbell was written. */
 	return 0;
@@ -1256,12 +1844,12 @@ work_doorbell(
 /* Reads the value the fences released last. */
 static uint32_t
 work_semaphore(
-	const struct nvrtx_gpu *gpu)
+	const struct nvrtx_work_channel *channel)
 {
 	const volatile uint32_t *semaphore;
 
 	/* The semaphore's first word in the coherent page. */
-	semaphore = (const volatile uint32_t *)gpu->work.semaphore.dma.address;
+	semaphore = (const volatile uint32_t *)channel->semaphore.dma.address;
 
 	/* Succeeded: what the GPU last released. */
 	return *semaphore;
@@ -1270,13 +1858,13 @@ work_semaphore(
 /* Reads a word a release wrote into the semaphore's page at a byte offset. */
 static uint32_t
 work_semaphore_word(
-	const struct nvrtx_gpu *gpu,
+	const struct nvrtx_work_channel *channel,
 	size_t at)
 {
 	const volatile uint32_t *word;
 
 	/* The word in the coherent page. */
-	word = (const volatile uint32_t *)((const uint8_t *)gpu->work.semaphore.dma.address + at);
+	word = (const volatile uint32_t *)((const uint8_t *)channel->semaphore.dma.address + at);
 
 	/* Succeeded: what the GPU last wrote there. */
 	return *word;
@@ -1294,7 +1882,7 @@ work_run_record(
 /* Reads a 64-bit GPU timer a timed release wrote into the semaphore's page at a byte offset. */
 static uint64_t
 work_semaphore_timer(
-	const struct nvrtx_gpu *gpu,
+	const struct nvrtx_work_channel *channel,
 	size_t at)
 {
 	const volatile uint32_t *words;
@@ -1302,7 +1890,7 @@ work_semaphore_timer(
 	uint64_t high;
 
 	/* The timer's two words in the coherent page, low first. */
-	words = (const volatile uint32_t *)((const uint8_t *)gpu->work.semaphore.dma.address + at);
+	words = (const volatile uint32_t *)((const uint8_t *)channel->semaphore.dma.address + at);
 	low = words[0];
 	high = words[1];
 

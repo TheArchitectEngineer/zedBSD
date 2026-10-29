@@ -14,7 +14,7 @@
  * Type", "Shader Register Allocation", "Texture Dimension", "Plane
  * Type", "Clump Ordering", "Clump Format", "Attribute Type", "Blend
  * Mode", "Blend Operand A/B/C", "Block Format", "Func", "Depth Clamp
- * Mode", "Depth Source").
+ * Mode", "Depth Source", "Address Mode").
  */
 
 #include <stdbool.h>
@@ -40,7 +40,18 @@
 #define ATTRIBUTE_1D		1U
 #define BLEND_FIXED		2U
 #define BLOCK_LINEAR		2U
-#define NO_WORKGROUP_MEMORY	0x80000000U
+/*
+ * The Local Storage word 1 of no workgroup memory: the WLS Instances
+ * field (1:0, five bits) holds the log2 of the instances, and the
+ * enumerated "No Workgroup Mem" value 0x80000000 goes in as its log2.
+ *
+ * Values referenced: Mesa 26.2.6 src/panfrost/genxml/v10.xml (struct
+ * "Local Storage", WLS Instances with the log2 modifier and its value
+ * No Workgroup Mem) and genxml/gen_pack.py (a log2 field packs
+ * util_logbase2 of its value).
+ */
+#define NO_WORKGROUP_MEMORY	0x1fU
+#define TLS_PACKED		1U
 
 /* The blend operands. */
 #define OPERAND_A_ZERO		1U
@@ -540,6 +551,190 @@ mali_desc_clump_format(
 	default:
 		return 2U;
 	}
+}
+
+/*
+ * Packs a texture descriptor (struct "Texture") of a view: the
+ * dimension, the format, the extent less one, the swizzle (the identity
+ * for storage), the levels less one, the maximum level of detail (the
+ * last level, 8.8 fixed; zero for storage), the planes, the array size
+ * and the depth less one.
+ *
+ * Procedure referenced: Mesa 26.2.6 src/panfrost/lib/pan_texture.c
+ * (pan_sampled_texture_emit and pan_storage_texture_emit: a cube's array
+ * size in cubes, the storage view's level of detail range and swizzle).
+ */
+void
+mali_desc_texture_view(
+	uint32_t *words,
+	const struct mali_desc_view *view)
+{
+	uint32_t levels;
+	uint32_t array_size;
+	uint32_t depth;
+	uint32_t swizzle;
+
+	/* At least one level, layer and slice. */
+	levels = view->levels;
+	if (levels == 0U || view->storage)
+		levels = 1U;
+	array_size = view->array_size;
+	if (array_size == 0U)
+		array_size = 1U;
+	depth = view->depth;
+	if (depth == 0U)
+		depth = 1U;
+	swizzle = view->swizzle;
+	if (view->storage)
+		swizzle = 0x688U;
+
+	/* Word 0: type, dimension 4..6, format 10..31; word 1: the extent; word 2: swizzle, levels 16..20. */
+	clear(words, 8);
+	words[0] = TYPE_TEXTURE | ((view->dimension & 7U) << 4) | ((view->pixel & 0x3fffffU) << 10);
+	words[1] = ((view->width - 1U) & 0xffffU) | (((view->height - 1U) & 0xffffU) << 16);
+	words[2] = (swizzle & 0xfffU) | (((levels - 1U) & 0x1fU) << 16);
+
+	/* Word 3: the maximum level of detail 16..28 (one sample, no minimum). */
+	words[3] = (((levels - 1U) << 8) & 0x1fffU) << 16;
+
+	/* Words 4..5: the planes; word 6: the array size less one; word 7: the depth less one. */
+	put64(words, 4, view->planes);
+	words[6] = (array_size - 1U) & 0xffffU;
+	words[7] = (depth - 1U) & 0xffffU;
+}
+
+/*
+ * Packs a thread storage descriptor (struct "Local Storage") with a
+ * thread's local storage of tls_bytes (none for zero) at tls_base, and
+ * no workgroup memory.  The base, 4096-byte aligned, goes in shifted
+ * right by 8 with the packed address mode, the size as the log2 of its
+ * 16-byte units.
+ *
+ * Procedure referenced: Mesa 26.2.6 src/panfrost/lib/pan_desc.c
+ * (pan_emit_tls for PAN_ARCH 9 and on) and pan_scratch.c
+ * (pan_get_stack_shift).
+ */
+void
+mali_desc_thread_storage(
+	uint32_t *words,
+	uint32_t tls_bytes,
+	uint64_t tls_base)
+{
+	uint64_t pointer;
+
+	/* No workgroup memory. */
+	clear(words, 8);
+	words[1] = NO_WORKGROUP_MEMORY;
+
+	/* No local storage either. */
+	if (tls_bytes == 0U)
+		return;
+
+	/* Word 0: the size; words 2..3: the base >> 8 (48 bits) and the packed mode at 28..31. */
+	words[0] = mali_desc_tls_size(tls_bytes) & 0x1fU;
+	pointer = (tls_base >> 8) & 0x0000ffffffffffffULL;
+	words[2] = (uint32_t)pointer;
+	words[3] = (uint32_t)(pointer >> 32) | (TLS_PACKED << 28);
+}
+
+/*
+ * Gives the bytes one workgroup's instance of workgroup memory takes: a
+ * workgroup's shared bytes rounded up to a power of two of at least the
+ * least (zero for none).
+ *
+ * Procedure referenced: Mesa 26.2.6 src/panfrost/lib/pan_desc.h
+ * (pan_wls_adjust_size: the next power of two of at least 128).
+ */
+uint32_t
+mali_desc_wls_bytes(
+	uint32_t shared_bytes)
+{
+	uint32_t bytes;
+
+	/* None for none. */
+	if (shared_bytes == 0U)
+		return 0;
+
+	/* The least power of two of at least the least holding them. */
+	bytes = MALI_DESC_WLS_MIN_BYTES;
+	while (bytes < shared_bytes && bytes < MALI_DESC_WLS_MAX_BYTES)
+		bytes *= 2U;
+
+	/* Succeeded: the bytes. */
+	return bytes;
+}
+
+/*
+ * Adds workgroup memory to a thread storage descriptor packed by
+ * mali_desc_thread_storage(): instances of it a core (a power of two),
+ * each of instance_bytes (as mali_desc_wls_bytes() gives them), from
+ * wls_base (4096-byte aligned).  The instance count goes in as its
+ * log2, the size as the log2 of the instance's bytes plus one; the size
+ * base stays zero.
+ *
+ * Values referenced: Mesa 26.2.6 src/panfrost/genxml/v10.xml (struct
+ * "Local Storage": WLS Instances 1:0 of 5 bits, a log2; WLS Size Base
+ * 1:5; WLS Size Scale 1:8 of 5 bits; WLS Base Pointer 4:0 of 64 bits).
+ *
+ * Procedure referenced: Mesa 26.2.6 src/panfrost/lib/pan_desc.c
+ * (pan_emit_tls: the size scale from the adjusted size).
+ */
+void
+mali_desc_workgroup_storage(
+	uint32_t *words,
+	uint32_t instances,
+	uint32_t instance_bytes,
+	uint64_t wls_base)
+{
+	uint32_t instance_shift;
+	uint32_t size_shift;
+
+	/* The log2 of the instances and of an instance's bytes. */
+	instance_shift = 0U;
+	while ((1U << instance_shift) < instances && instance_shift < 31U)
+		instance_shift++;
+	size_shift = 0U;
+	while ((1U << size_shift) < instance_bytes && size_shift < 31U)
+		size_shift++;
+
+	/* Word 1: the instances 0..4, the size scale 8..12; words 4..5: the base. */
+	words[1] = (instance_shift & 0x1fU) | (((size_shift + 1U) & 0x1fU) << 8);
+	put64(words, 4, wls_base);
+}
+
+/* Gives the TLS size field of a thread's bytes: log2 of its 16-byte units, rounded up. */
+uint32_t
+mali_desc_tls_size(
+	uint32_t tls_bytes)
+{
+	uint32_t units;
+	uint32_t shift;
+
+	/* The units, and the least power of two holding them. */
+	units = (tls_bytes + 15U) / 16U;
+	shift = 0U;
+	while ((1U << shift) < units && shift < 31U)
+		shift++;
+
+	/* Succeeded: the shift. */
+	return shift;
+}
+
+/*
+ * Gives a sampler's compare function field (word 1 bits 13..15) of a
+ * VkCompareOp, whose numbers are the hardware's: never, less, equal,
+ * less or equal, greater, not equal, greater or equal, always.
+ *
+ * Values referenced: Mesa 26.2.6 src/panfrost/genxml/v10.xml (enum
+ * "Func"; struct "Sampler": compare function at 1:13); the Vulkan
+ * specification (VkCompareOp).
+ */
+uint32_t
+mali_desc_sampler_compare(
+	uint32_t compare_op)
+{
+	/* Succeeded: the field in place. */
+	return (compare_op & 7U) << 13;
 }
 
 /* Stores a 64-bit value as two words, low first. */

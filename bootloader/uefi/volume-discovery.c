@@ -449,10 +449,18 @@ zbl_uefi_fat_bpb_parse(
 	 * disk block for a volume.
 	 */
 	sector_scale = 0U;
-	if ((bytes_per_sector == 512U || bytes_per_sector == 1024U ||
-	    bytes_per_sector == 2048U || bytes_per_sector == 4096U) &&
-	    bytes_per_sector >= media_block_size)
+	if (bytes_per_sector == 512U)
+		sector_scale = 1U;
+	else if (bytes_per_sector == 1024U)
+		sector_scale = 1U;
+	else if (bytes_per_sector == 2048U)
+		sector_scale = 1U;
+	else if (bytes_per_sector == 4096U)
+		sector_scale = 1U;
+	if (sector_scale != 0U && bytes_per_sector >= media_block_size)
 		sector_scale = bytes_per_sector / media_block_size;
+	else
+		sector_scale = 0U;
 
 	/* Refuses an unsupported sector size and impossible cluster, reserved and FAT counts. */
 	if (sector_scale == 0U ||
@@ -861,7 +869,13 @@ supported_fat_block_size(
 	 * Keep discovery aligned with the kernel FAT driver's disk contract:
 	 * blocks of a power of two from 512 bytes to a page.
 	 */
-	if (size == 512U || size == 1024U || size == 2048U || size == 4096U)
+	if (size == 512U)
+		return 1;
+	if (size == 1024U)
+		return 1;
+	if (size == 2048U)
+		return 1;
+	if (size == 4096U)
 		return 1;
 
 	/* Refuses any other block size. */

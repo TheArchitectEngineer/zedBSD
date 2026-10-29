@@ -987,8 +987,8 @@ static unsigned
 ipv6_fragment_shortage_locked(
 	int jumbo)
 {
-	/* The jumbo packets kept are at their bound. */
-	if (jumbo && ipv6_fragment_held_jumbo >= IPV6_FRAGMENT_HELD_JUMBO)
+	/* The jumbo packets kept are at their bound (a board without jumbo packets has a bound of 0). */
+	if (jumbo && ipv6_fragment_held_jumbo + 1U > IPV6_FRAGMENT_HELD_JUMBO)
 		return IPV6_FRAGMENT_SHORT_JUMBO;
 
 	/* The fragments kept in all are at their bound. */
@@ -1119,7 +1119,8 @@ ipv6_fragment_assemble(
 	packet->l3_offset = (uint16_t)(packet->data - packet->storage);
 	packet->l3_length = (uint16_t)total;
 	packet->protocol = first->protocol;
-	packet->flags = first->flags;
+	/* A device checks no transport checksum of a fragment: the whole one is checked above. */
+	packet->flags = first->flags & ~PACKET_BUF_RX_CSUM_L4;
 	packet->device = first->device;
 
 	/* The reassembled packet holds a reference to the device of its own. */

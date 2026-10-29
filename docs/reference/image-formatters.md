@@ -59,21 +59,36 @@ Implementation: `userland/base/common/format-file.c`, `userland/base/mkfs/`,
 
 ## Block-device modes
 
-The dedicated installer uses these explicit destructive modes on its newly
-created, inactive partitions:
+The [installer](installer.md) uses these explicit destructive modes on its
+newly created, inactive partitions:
 
 ```sh
 mkfs -t fat32 DEVICE
 mkfs -t ufs --profile=native DEVICE
+mkswap /dev/PARTITION
 ```
 
-`DEVICE` names a canonical block device, optionally prefixed by `/dev/`.
-The command obtains block geometry and exclusive administration ownership,
-prints the identity/size, then requires the exact displayed
-`FORMAT NAME:REGISTRATION` phrase. It writes and verifies filesystem metadata.
-Failure after formatting begins may leave a partially formatted volume; this
-is not secure erasure. It does not copy a bootable root tree or install a loader.
-Use the [installer](../howto/boot-and-storage.md) for that complete workflow.
+`DEVICE` names a canonical block device, optionally prefixed by `/dev/`;
+`mkswap` takes a direct partition and requires the `/dev/` prefix. The command
+obtains block geometry and exclusive administration ownership, prints the
+identity/size, then requires the exact displayed `FORMAT NAME:REGISTRATION`
+phrase. It writes and verifies filesystem metadata, or for swap the header
+page, which it reads back through the kernel's header parser. Failure after
+formatting begins may leave a partially formatted volume; this is not secure
+erasure. It does not copy a bootable root tree or install a loader. Use the
+[installer](../howto/boot-and-storage.md#install-zedbsd-with-the-installer)
+for that complete workflow.
+
+Devices with 512-byte and 4096-byte logical sectors are accepted; other sizes
+return `EOPNOTSUPP`. On a 4096-byte device native UFS uses 4 KiB fragments.
+
+The FAT32 volume serial is drawn from the kernel's random source and is never
+zero. The UEFI loader and the kernel find the boot volume by it
+(`boot0=UUID=`), so it must not repeat another volume's serial.
+
+A swap partition must be a multiple of 4,096 bytes and at least two pages;
+its slot count must fit 32 bits. The regular-file INT32_MAX limit does not
+apply. Only the header page is written; the slots are not cleared.
 
 Native UFS uses geometry sized for the volume and is not limited by the
 regular-image profile's 2-GiB ceiling. Its representable size also depends on
@@ -81,9 +96,14 @@ file offsets and filesystem geometry. The following queries do not open or
 modify a device; they check geometry and report usable capacity:
 
 ```sh
-mkfs -t fat32 --check-size BYTES
-mkfs -t ufs --profile=native --check-size BYTES
+mkfs -t fat32 [--sector-size=512|4096] --check-size BYTES
+mkfs -t ufs --profile=native [--sector-size=512|4096] --check-size BYTES
 ```
+
+Each prints one TAB-separated record: `format`, version `1`, profile (`fat32`
+or `ufs-native`), sector size, requested bytes, allocatable bytes, free inodes
+(0 for FAT) and allocation unit in bytes. BYTES must be a whole number of
+sectors; the default sector size is 512.
 
 The regular-file `--verify-pristine` command is not a general checker for an
 installed native filesystem. 

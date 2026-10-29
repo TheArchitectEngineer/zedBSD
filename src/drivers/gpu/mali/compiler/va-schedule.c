@@ -10,22 +10,24 @@
  * and the program's end, then the instruction words.
  *
  * Valhall has no clauses.  A message (a memory access, a varying or
- * attribute load, a texture, ATEST, BLEND) is issued with one of the
- * dependency slots 0 to 2 and its results arrive later; an instruction
- * that reads or writes a register a pending message writes must first
- * wait on that message's slot.  The wait is the flow control of the
- * instruction before it (a NOP when that instruction's flow control is
- * taken), and covers every message issued on the slot so far.  The pass
- * also serializes memory accesses and varying loads, waits on every slot
- * before ATEST and BLEND as the hardware requires, flushes every slot at
- * branches and at their targets, gives the instruction before a branch
- * target its reconvergence, and ends the program.
+ * attribute load, a texture, ATEST, ZS_EMIT, BLEND) is issued with one of
+ * the dependency slots 0 to 2 and its results arrive later; an
+ * instruction that reads or writes a register a pending message writes
+ * must first wait on that message's slot.  The wait is the flow control
+ * of the instruction before it (a NOP when that instruction's flow
+ * control is taken), and covers every message issued on the slot so far.
+ * The pass also serializes memory accesses and varying loads, waits on
+ * every slot before ATEST, ZS_EMIT and BLEND as the hardware requires,
+ * flushes every slot at branches and at their targets, gives the
+ * instruction before a branch target its reconvergence, and ends the
+ * program.
  *
  * Procedure referenced: Mesa 26.2.6
  * src/panfrost/compiler/bifrost/valhall/va_insert_flow.c (the rules of
  * the scoreboard: waits before reading or writing a slot's results,
- * serialized memory, the varying hidden register, wait0126 before ATEST,
- * wait before BLEND and after BARRIER) and va_merge_flow.c (a wait moved
+ * serialized memory, the varying hidden register, wait0126 before ATEST
+ * and ZS_EMIT, wait before BLEND and after BARRIER, and va_assign_slots:
+ * slot 0 for ATEST and ZS_EMIT) and va_merge_flow.c (a wait moved
  * onto the instruction before, reconvergence and end on the last
  * instruction of a block).
  */
@@ -148,7 +150,7 @@ va_schedule_write(
 			schedule_reconverge(&state);
 		}
 
-		/* Waits before ATEST and BLEND cover every general slot. */
+		/* Waits before ATEST (and ZS_EMIT) and BLEND cover every general slot. */
 		if ((inst->flags & VA_INST_ATEST) != 0U) {
 			schedule_special_wait(&state, VA_FLOW_WAIT0126);
 			schedule_clear(&state, schedule_pending_slots(&state));
@@ -392,7 +394,7 @@ schedule_slot(
 	if ((inst->flags & VA_INST_MESSAGE) == 0U)
 		return 0U;
 
-	/* ATEST takes slot 0 and a barrier slot 7. */
+	/* ATEST and ZS_EMIT take slot 0, a barrier slot 7. */
 	if ((inst->flags & VA_INST_ATEST) != 0U)
 		return 0U;
 	if ((inst->flags & VA_INST_BARRIER) != 0U)
