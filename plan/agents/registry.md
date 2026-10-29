@@ -6,10 +6,10 @@
 | 担当 | 定義 | 仕事（Queue） | worktree / branch | 状態 | 最後の merge |
 | --- | --- | --- | --- | --- | --- |
 | P1 | phase-runner | ws309 p016〜p018 (q1662-i10) | `/home/awe/zedBSD-worktrees/p1-ws309i` / `agent/p1-ws309i` | running（p015 はユーザーの判断待ち） | b23a771e6（merge e554645ca） |
-| P2 | phase-runner | ws314 p003〜 (q1690-i01) | `/home/awe/zedBSD-worktrees/p2-ws314` / `agent/p2-ws314` | running | e02e7f60b（merge d05c1582d） |
+| P2 | phase-runner | ws314 (q1690-i02) | `/home/awe/zedBSD-worktrees/p2-ws314` / `agent/p2-ws314` | running | ad455e9d0（merge 06998343d） |
 | P3 | phase-runner | ws221 p014 (q1689-i01) | `/home/awe/zedBSD-worktrees/p3-ws221g` / `agent/p3-ws221g` | running（p014 xHCI） | 6e505d986（merge beb355d65） |
 | P4 | phase-runner | ws307 p011 (q1665-i10) | `/home/awe/zedBSD-worktrees/p4-ws307n` / `agent/p4-ws307n` | running（q1688 cleared。試験待ちの branch: agent/p4-ws283 b7fd8d23e） | 92e3362f8（merge ed93695ac） |
-| P5 | phase-runner | Notes on RTX (q1692-i01) | `/home/awe/zedBSD-worktrees/p5-ws243` / `agent/p5-ws243` | running（10.0.10.3） | a99b9213d（merge 65d8082c1） |
+| P5 | phase-runner | ws291 NVIDIA (q1693-i01) | `/home/awe/zedBSD-worktrees/p5-ws291` / `agent/p5-ws291` | running（10.0.10.3） | 3d37902ca（merge 95807962e） |
 | P6 | phase-runner＋Sonnet | ws314 p011・p012 (q1691-i01 cleared) | `/home/awe/zedBSD-worktrees/p6-ws314doc` / `agent/p6-ws314doc` | returned | 64f09ca82（merge d4ba04b96） |
 | P7 | phase-runner | ws313 (q1687-i01 返却) | `/home/awe/zedBSD-worktrees/p7-ws313e` / `agent/p7-ws313e` | returned（実機の結果待ち） | b35b6240c（merge b6649f09f） |
 

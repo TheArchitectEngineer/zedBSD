@@ -20,10 +20,10 @@
 | 担当 | Queue | WS と次の手 | 実機 |
 | --- | --- | --- | --- |
 | P1 | q1662-i10 in-progress | [ws309](ws309/ws.md) p013・p014 cleared（main e554645ca）、p016 → p017 → p018。p015 はユーザーの判断待ち（[phase015](ws309/phase015/phase.md)「要る判断」） | — |
-| P2 | q1690-i01 in-progress | [ws314](ws314/ws.md) p001・p002 cleared（main d05c1582d）、p003 設計 → p004〜p010 | — |
+| P2 | q1690-i02 in-progress | [ws314](ws314/ws.md) p003〜p006 cleared（main 06998343d）、次は p013・p014・p015・p007〜p010 | — |
 | P3 | q1689-i01 in-progress | [ws221](ws221/ws.md) p010・p012 cleared、p013 NCM 1513/1411 Mbit/s、次は p014 xHCI（design-reviewer → 実装） | 5330 |
 | P4 | q1665-i10 in-progress | BUG-355・358 は直した（main ed93695ac）。[ws307](ws307/ws.md) p011 の通しを既定の項目で流し直す → 日本語の画面 | QEMU |
-| P5 | q1692-i01 in-progress | RTX 2070 で Notes の起動の確かめ（WS243 は completed、main 65d8082c1） | 10.0.10.3 |
+| P5 | q1693-i01 in-progress | [ws291](ws291/ws.md) NVIDIA の段 p011（model 50 fps）、WS243 completed・BUG-361 直した（main 95807962e） | 10.0.10.3 |
 | P6 | q1667-i05 返却 | [ws282](ws282/ws.md)・[ws284](ws284/ws.md) は main に merge 済み、別のツリーのセッションは [ws282 handover](ws282/handover.md)・[ws284 handover](ws284/handover.md) の試験から続ける | — |
 | P7 | q1687-i01 返却 | [ws313](ws313/ws.md) Mali の残りと Mesa との照合の直しを main に（b6649f09f）。実機未実施。C5 で描画がおかしい時の境目は c08176e6c・db080e110 | — |
 
@@ -103,7 +103,7 @@ main に未 merge の branch は [registry](agents/registry.md) の試験待ち�
 ### 次の番号
 
 <!-- master:next:start -->
-BUG-362 · q1693 · WS318 · KL_VERSION 99（97・98 は WS314 の P2 が使用、未 merge）。使う前に衝突を確かめる（`ls plan/bugs`・`ls -d plan/ws*`・`grep q16 plan/queue.md`）。
+BUG-362 · q1694 · WS318 · KL_VERSION 100。使う前に衝突を確かめる（`ls plan/bugs`・`ls -d plan/ws*`・`grep q16 plan/queue.md`）。
 <!-- master:next:end -->
 
 ## 目的
