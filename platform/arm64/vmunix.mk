@@ -10,25 +10,42 @@ ARM64_NM ?= $(ZEDBSD_TARGET_LLVM_BIN)/llvm-nm
 AWK ?= awk
 ARM64_PLATFORM := platform/arm64
 
-# The board the kernel is built for: the Raspberry Pi 4 (BCM2711) or the
-# Raspberry Pi 5 (BCM2712).  The HAL's board support is the board's own
-# directory (src/hal/arm64/bsp-rpi4/, bsp-rpi5/), which is on the include
-# path for its board.h and locore-board.h, and the Raspberry Pi common
-# support (bsp-rpi-common/).  The drivers the boards share tell them apart
-# by HAL_BOARD_RPI4 and HAL_BOARD_RPI5.
+# The board the kernel is built for: the Raspberry Pi 4 (BCM2711), the
+# Raspberry Pi 5 (BCM2712) or the ODROID-C5 (Amlogic S905X5M).  The HAL's
+# board support is the board's own directory (src/hal/arm64/bsp-rpi4/,
+# bsp-rpi5/, bsp-s905x5m/), which is on the include path for its board.h
+# and locore-board.h, and the common support (bsp-rpi-common/, which
+# despite its name holds the GIC, the generic timer, the console and the
+# boot handoff every board shares).  The drivers the boards share tell
+# them apart by HAL_BOARD_RPI4, HAL_BOARD_RPI5 and HAL_BOARD_ODROID_C5.
+ARM64_BSP_DIR_rpi4 := bsp-rpi4
+ARM64_BSP_DIR_rpi5 := bsp-rpi5
+ARM64_BSP_DIR_odroid-c5 := bsp-s905x5m
+ARM64_BOARD_DEFINE_odroid-c5 := -DHAL_BOARD_ODROID_C5 \
+	-DCONFIG_DRIVER_MALI_GPU=$(if $(filter y,$(CONFIG_DRIVER_MALI_GPU)),1,0)
 ARM64_BOARD_DEFINE_rpi4 := -DHAL_BOARD_RPI4
 ARM64_BOARD_DEFINE_rpi5 := -DHAL_BOARD_RPI5 \
 	-DCONFIG_DRIVER_RPI5_BT=$(if $(filter y,$(CONFIG_DRIVER_RPI5_BT)),1,0) \
 	-DCONFIG_DRIVER_RPI5_FAN=$(if $(filter y,$(CONFIG_DRIVER_RPI5_FAN)),1,0) \
 	-DCONFIG_DRIVER_BCM2712_GPU=$(if $(filter y,$(CONFIG_DRIVER_BCM2712_GPU)),1,0)
 
-# The board's own HAL code.
+# The board's own HAL code.  The Raspberry Pi boards take their console's
+# framebuffer from the firmware through the mailbox; the ODROID-C5 takes
+# the one its bootloader left scanning out.
 ARM64_BOARD_BOOT_C_rpi4 := \
 	src/hal/arm64/bsp-rpi4/uart.c src/hal/arm64/bsp-rpi4/fdt.c \
-	src/hal/arm64/bsp-rpi4/activity-led.c src/hal/arm64/bsp-rpi4/board.c
+	src/hal/arm64/bsp-rpi4/activity-led.c src/hal/arm64/bsp-rpi4/board.c \
+	src/hal/arm64/bsp-rpi-common/mailbox.c \
+	src/hal/arm64/bsp-rpi-common/framebuffer-mailbox.c
 ARM64_BOARD_BOOT_C_rpi5 := \
 	src/hal/arm64/bsp-rpi5/uart.c src/hal/arm64/bsp-rpi5/fdt.c \
-	src/hal/arm64/bsp-rpi5/activity-led.c src/hal/arm64/bsp-rpi5/board.c
+	src/hal/arm64/bsp-rpi5/activity-led.c src/hal/arm64/bsp-rpi5/board.c \
+	src/hal/arm64/bsp-rpi-common/mailbox.c \
+	src/hal/arm64/bsp-rpi-common/framebuffer-mailbox.c
+ARM64_BOARD_BOOT_C_odroid-c5 := \
+	src/hal/arm64/bsp-s905x5m/uart.c src/hal/arm64/bsp-s905x5m/fdt.c \
+	src/hal/arm64/bsp-s905x5m/activity-led.c src/hal/arm64/bsp-s905x5m/board.c \
+	src/hal/arm64/bsp-s905x5m/framebuffer-boot.c
 
 # The BCM43455 driver, on the Pi 4's and the Pi 5's SDIO hosts.
 ARM64_BCM43455_SOURCES := src/drivers/wifi/bcm43455/bcm43455.c \
@@ -109,7 +126,7 @@ endif
 # knows the zedBSD target and defines __ZEDBSD__, which selects the zedBSD
 # definitions (include/uapi/hosted.h, include/kern/kcrt.h).
 ARM64_CPPFLAGS := -nostdlibinc -Iinclude -Isrc -I. \
-	-Isrc/hal/arm64 -Isrc/hal/arm64/bsp-$(ZEDBSD_BOARD) \
+	-Isrc/hal/arm64 -Isrc/hal/arm64/$(ARM64_BSP_DIR_$(ZEDBSD_BOARD)) \
 	-DHAL_ARCH_ARM64 $(ARM64_BOARD_DEFINE_$(ZEDBSD_BOARD)) \
 	-DKERN_USER_ABI_AARCH64 -DKERN_USER_ABI_LP64
 ARM64_CPPFLAGS += $(ZEDBSD_CONFIG_CPPFLAGS)
@@ -129,7 +146,7 @@ ARM64_BOOT_C := src/hal/arm64/smp.c src/hal/arm64/percpu.c src/hal/arm64/watch.c
 	src/hal/arm64/task.c \
 	src/hal/arm64/cmain.c src/hal/arm64/debug.c \
 	src/hal/arm64/bsp-rpi-common/cons.c \
-	src/hal/arm64/bsp-rpi-common/mailbox.c src/hal/arm64/bsp-rpi-common/framebuffer.c \
+	src/hal/arm64/bsp-rpi-common/framebuffer.c \
 	src/hal/arm64/bsp-rpi-common/boot.c src/hal/arm64/bsp-rpi-common/gic.c \
 	src/hal/arm64/bsp-rpi-common/clock.c src/hal/arm64/bsp-rpi-common/font.c \
 	src/hal/arm64/bsp-rpi-common/led.c \

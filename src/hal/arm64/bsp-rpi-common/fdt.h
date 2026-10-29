@@ -8,8 +8,9 @@
 /*
  * What the HAL reads from a Raspberry Pi's device tree.
  *
- * Each board has its own parser (bsp-rpi4/fdt.c, bsp-rpi5/fdt.c), since
- * the boards name their peripherals differently, and both fill this record.
+ * Each board has its own parser (bsp-rpi4/fdt.c, bsp-rpi5/fdt.c,
+ * bsp-s905x5m/fdt.c), since the boards name their peripherals
+ * differently, and each fills this record.
  */
 
 #ifndef KERN_HAL_ARM64_BSP_RPI_COMMON_FDT_H
@@ -76,6 +77,20 @@ struct rpi_fdt_info {
 	uint64_t gic_cpu_base;
 	uint64_t sdhci_base;
 	uint32_t sdhci_irq;
+
+	/*
+	 * A framebuffer the bootloader left the display scanning out (a
+	 * simple-framebuffer node): its base and size, its size in pixels, its
+	 * row length in bytes, and 1 when red is in a pixel's low byte.  Zero
+	 * when the tree names none; the Raspberry Pi boards ask the firmware
+	 * instead.
+	 */
+	uint64_t framebuffer_base;
+	uint64_t framebuffer_size;
+	uint32_t framebuffer_width;
+	uint32_t framebuffer_height;
+	uint32_t framebuffer_stride;
+	uint32_t framebuffer_red_low;
 
 	/*
 	 * Where /chosen/bootargs is in the blob (the firmware's command line,
