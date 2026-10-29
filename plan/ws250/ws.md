@@ -7,7 +7,7 @@ Status: incomplete（すぐ取り組む物。2026-10-27 ユーザー「すぐ取
 Primary Milestone: MG006
 Parent: [Master](../master.md)
 Related: [WS037](../ws037/ws.md)（nvrtx）、[WS291 p011](../ws291/phase011/phase.md)（非同期の submit、この WS はその上に作る）、[WS242](../ws242/ws.md)（Ampere/Ada、chid の管理）、`src/drivers/gpu/gpu.c`（共通の GPU の層の監視と drv_gpu_recovery_ops）、`src/drivers/gpu/i915/reset.c`（isolate の手本）
-Resume point: 2026-10-29 P5（q1676-i02、worktree p5-ws250）。実機 10.0.10.3 の RTX 2070 で S0〜S5 と S1 の probe を流し、p002〜p005 は cleared（S4 の被害者の待ちの上限を直した、3ad5d28fc）。U1〜U7 の結果は p003。次は p007（規約の全文と出典の監査）、その後 WS の受け入れの確認。
+Resume point: 2026-10-29 P5（q1676-i02、worktree p5-ws250、先頭は記録の commit）。p002〜p005・p007 は cleared（実機 10.0.10.3 の RTX 2070、S4 の被害者の上限を直した 3ad5d28fc、規約の見直し f6c18a9c5）。WS の完了の前の残り（QEMU の boot の回帰、GPU の fault の app、isolate の道、GR の停滞を縮める RESET 先の案）は [p007](phase007/phase.md) の「WS の受け入れの確認」。Q1 が要否を決める。
 <!-- awesome-plan-current:end -->
 
 ## ユーザーの指示（原文、2026-10-15）
@@ -51,4 +51,4 @@ Resume point: 2026-10-29 P5（q1676-i02、worktree p5-ws250）。実機 10.0.10.
 | [p004](phase004/phase.md) | 実機の scenario の script（rtx-hang-check.sh、S0〜S6） | cleared（2026-10-29 P5、q1676-i02。実機で流した） | p002 |
 | [p005](phase005/phase.md) | session ごとの lane（番号ごとの thread の pool）と executor の待ちの一部の lock の外出し | cleared（2026-10-29 P5、q1676-i02。実機 S0・S2） | p003 |
 | p006 | 選択肢: `reset`（GSP の再起動）。既定は作らない（ユーザーの判断） | planned（選択肢） | — |
-| [p007](phase007/phase.md) | 規約の全文と出典の監査、ws.md を完了の形に | planned | 全部 |
+| [p007](phase007/phase.md) | 規約の全文と出典の監査、ws.md を完了の形に | cleared（2026-10-29 P5、q1676-i02。f6c18a9c5、WS の受け入れの残りは phase.md） | 全部 |
