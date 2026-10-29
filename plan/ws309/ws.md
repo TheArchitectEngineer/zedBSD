@@ -72,7 +72,9 @@
 
 ## Resume point
 
-- 2026-10-29 P1（q1662-i10）: p014 cleared（[phase.md](phase014/phase.md)。compositor は新しい libc を要る）。次は p015（V2）か p016。
+- 2026-10-29 P1（q1662-i10、ラップアップ、branch `agent/p1-ws309i`）: p015 は uncleared（判断待ち、[phase.md](phase015/phase.md) の「要る判断」1〜4）。
+  p016 は調べと手順まで（[phase.md](phase016/phase.md) の「手順」1 から、Linux・FreeBSD の guest の試験が要る）。その後 p017（QEMU の回帰）・p018（規約の全文の見直し）。
+- 2026-10-29 P1（q1662-i10）: p014 cleared（[phase.md](phase014/phase.md)。compositor は新しい libc を要る）。
 - 2026-10-29 P1（q1662-i10、branch `agent/p1-ws309i`）: p013 cleared（T4 の lane `present`、claim と release は T3、[phase.md](phase013/phase.md)）。次は p014（process の起動と clipboard）、その後 p016。
 - 2026-10-29 22:5x P1（q1662-i09、branch `agent/p1-ws309i`、799e52d4c の後の記録）: p012 cleared（RTX の BUG-353 の試験 PASS、[phase.md](phase012/phase.md) の「結果」）。次は p013（present の常駐の thread）。
 - 2026-10-29 15:1x P1（q1662-i09、branch `agent/p1-ws309i`、WIP 5f4a72a75）: p012 は park と drain の非同期・T3 の lane・出力の移動・window mode の open・ゲームモードの入りまで（[phase.md](phase012/phase.md) の「結果」）。RTX の BUG-353 は枠待ち。
@@ -111,8 +113,8 @@
 | [ws309-p012](phase012/phase.md) | display の thread（swapchain・modeset・回転・hotplug の列挙・scanout の可否と claim・release・backlight、seat の pause）。回転の壁紙（`kwl_glass_size_prepare`）を A1・T9 へ（p010 から、2026-10-29 Q1 の判断）。BUG-353 をこの中で直し、受け入れに RTX の再現（`plan/ws291/tests/rtx-mview-order.sh`、実機の枠は Q1、2026-10-29 Q1 の決定） | cleared（q1662-i09: 非同期の park と drain・T3・移動・window mode・ゲームモード・回転・head・列挙・backlight・lid、glass maps と層の絵を保つ。QEMU resize・grave・hand・scanout・rotate PASS、RTX `rtx-bug353-pair.sh` PASS（BUG-353）。backlight・lid の実機は未実施） | p009 |
 | [ws309-p013](phase013/phase.md) | present の常駐の thread（暫定の ioctl、共通の wake） | cleared（QEMU `scanout-guest.sh`・`resize-guest.sh` PASS。実機・arm64・riscv64・FreeBSD の build は未実施） | p012 |
 | [ws309-p014](phase014/phase.md) | process の起動（J5 の形）と clipboard の書き込みを poll で | cleared（libc に addclosefrom_np（Q1 の決定）、QEMU `spawn-guest.sh`・libc の `spawn-closefrom/run.sh`、host `clip-write` PASS。input method の起動と実機は未実施） | p005、J5 |
-| ws309-p015 | game mode の V2: libvulkan の display の swapchain の image の export、compositor の受け渡し | planned | p013 |
-| ws309-p016 | Linux・FreeBSD の seat 経由の入力の open（J4）と seat の callback の detach の ack を wake で受ける形（p004 から） | planned | p003 |
+| [ws309-p015](phase015/phase.md) | game mode の V2: libvulkan の display の swapchain の image の export、compositor の受け渡し | uncleared（2026-10-29: 実装の前に判断が要る（client 側の形・新しい private の protocol・libvulkan の export の口）、phase.md の「要る判断」） | p013 |
+| [ws309-p016](phase016/phase.md) | Linux・FreeBSD の seat 経由の入力の open（J4）と seat の callback の detach の ack を wake で受ける形（p004 から） | planned（調べと手順まで） | p003 |
 | ws309-p017 | QEMU の回帰（Venus: 基準・GPU の境界・`KWL THREADS`・`KWL PERF pass`）と遅さの注入の host 試験 | planned | p003〜p014 |
 | ws309-p018 | 規約の全文の見直し | planned | 全て |
 | [ws309-p019](phase019/phase.md) | 試験の screen capture の画素の送りを thread へ（keiland-shot の後の SURFACE_LOST、Q1 の依頼） | cleared（RDNA の実機は P2 の q1668） | p002 |
