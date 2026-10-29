@@ -157,6 +157,9 @@ struct nvrtx_vk_execute {
 	uint32_t quad_vertex_gprs;
 	uint32_t quad_fragment_gprs;
 	bool programs_ready;
+	void *shadow_token;
+	uint64_t shadow_va;
+	uint64_t shadow_bytes;
 };
 
 /*
@@ -180,6 +183,8 @@ struct execute_state {
 	struct nvrtx_exec_target target;
 	bool target_written;
 	VkRect2D area;
+	struct nvrtx_exec_target resolve;
+	bool shadowed;
 };
 
 /* One quad an internal draw makes: the destination, the source texture (pitch linear or tiled) and its region in pixels. */
@@ -210,7 +215,13 @@ static int execute_flush(struct nvrtx_vk_session *session, struct nvrtx_vk_execu
 static int execute_room(struct nvrtx_vk_session *session, struct nvrtx_vk_execute *execute, struct execute_state *state);
 static int execute_record(struct nvrtx_vk_session *session, struct nvrtx_vk_execute *execute, struct execute_state *state, const struct nvrtx_vk_record *record);
 static void execute_bind(struct execute_state *state, const struct nvrtx_vk_record *record);
-static int execute_begin_pass(struct nvrtx_vk_execute *execute, struct execute_state *state, const struct nvrtx_vk_record *record);
+static int execute_begin_pass(struct nvrtx_vk_session *session, struct nvrtx_vk_execute *execute, struct execute_state *state,
+			      const struct nvrtx_vk_record *record);
+static int execute_shadow(struct nvrtx_vk_session *session, struct nvrtx_vk_execute *execute, struct execute_state *state,
+			  bool load);
+static int execute_end_pass(struct nvrtx_vk_session *session, struct nvrtx_vk_execute *execute, struct execute_state *state);
+static void execute_shadow_copy(const struct nvrtx_exec_target *to, const struct nvrtx_exec_target *from, int32_t x0, int32_t y0,
+				int32_t x1, int32_t y1, struct execute_quad *quad);
 static int execute_draw(struct nvrtx_vk_execute *execute, struct execute_state *state, const struct nvrtx_vk_record *record);
 static int execute_textures(struct nvrtx_vk_execute *execute, const struct execute_state *state, uint8_t *constants);
 static int execute_texture(struct nvrtx_vk_execute *execute, const struct nvrtx_vk_view *view, const struct nvrtx_vk_sampler *sampler, uint32_t *handle);
@@ -304,6 +315,8 @@ nvrtx_vk_execute_close(
 		nvrtx_vk_gpu_free(session->owner, execute->token);
 	if (execute->program_token != NULL)
 		nvrtx_vk_gpu_free(session->owner, execute->program_token);
+	if (execute->shadow_token != NULL)
+		nvrtx_vk_gpu_free(session->owner, execute->shadow_token);
 	kern_free(execute);
 	session->execute = NULL;
 }
@@ -569,11 +582,10 @@ execute_record(
 		execute_bind(state, record);
 		break;
 	case GPU_OP_CMD_BEGIN_RENDER_PASS:
-		error = execute_begin_pass(execute, state, record);
+		error = execute_begin_pass(session, execute, state, record);
 		break;
 	case GPU_OP_CMD_END_RENDER_PASS:
-		state->in_pass = false;
-		execute->at = nvrtx_exec_barrier(execute->cpu + EXECUTE_PUSH_AT, execute->at);
+		error = execute_end_pass(session, execute, state);
 		break;
 	case GPU_OP_CMD_DRAW:
 	case GPU_OP_CMD_DRAW_INDEXED:
@@ -653,6 +665,7 @@ execute_bind(
  */
 static int
 execute_begin_pass(
+	struct nvrtx_vk_session *session,
 	struct nvrtx_vk_execute *execute,
 	struct execute_state *state,
 	const struct nvrtx_vk_record *record)
@@ -673,6 +686,7 @@ execute_begin_pass(
 	state->in_pass = true;
 	state->target_written = false;
 	state->area = record->rect;
+	state->shadowed = false;
 	kern_memset(&state->target, 0, sizeof(state->target));
 	if (pass->colour == 0U || pass->colour_attachment >= framebuffer->view_count)
 		return 0;
@@ -687,6 +701,13 @@ execute_begin_pass(
 	if (pass->depth != 0U && pass->depth_attachment < framebuffer->view_count) {
 		view = framebuffer->views[pass->depth_attachment]->payload;
 		error = execute_depth_target(view->image->payload, &state->target);
+		if (error != 0)
+			return error;
+	}
+
+	/* A pitch-linear colour target with a depth target is drawn in a block-linear shadow. */
+	if (state->target.depth_address != 0U && state->target.block_linear == 0U) {
+		error = execute_shadow(session, execute, state, pass->load_op == VK_ATTACHMENT_LOAD_OP_LOAD);
 		if (error != 0)
 			return error;
 	}
@@ -719,6 +740,163 @@ execute_begin_pass(
 
 	/* Succeeded: the pass draws into its target. */
 	return 0;
+}
+
+/*
+ * Puts a block-linear shadow of the pass's pitch-linear colour target in
+ * its place (the 3D engine draws with a depth target only into a
+ * block-linear colour target 0): the shadow is the executor's, grown after
+ * the work before it ran when too small, and a pass that loads its colour
+ * starts the shadow with the target's pixels.
+ *
+ * Procedure referenced: Mesa 25.0.7 src/nouveau/vulkan/nvk_cmd_draw.c
+ * (nvk_linear_render_copy, rendering a linear image through a tiled shadow
+ * copied at the start and the end of rendering).
+ */
+static int
+execute_shadow(
+	struct nvrtx_vk_session *session,
+	struct nvrtx_vk_execute *execute,
+	struct execute_state *state,
+	bool load)
+{
+	struct execute_quad quad;
+	uint8_t *cpu;
+	uint64_t bytes;
+	uint32_t pitch;
+	uint32_t height;
+	int error;
+
+	/* The shadow's rows in whole GOBs, its height in whole GOBs. */
+	pitch = (state->target.width * NVRTX_VK_PIXEL_BYTES + NVRTX_VK_GOB_WIDTH - 1U) & ~(NVRTX_VK_GOB_WIDTH - 1U);
+	height = (state->target.height + NVRTX_VK_GOB_HEIGHT - 1U) & ~(NVRTX_VK_GOB_HEIGHT - 1U);
+	bytes = (uint64_t)pitch * height;
+
+	/* A shadow too small is replaced once the work that may draw in it has run. */
+	if (execute->shadow_bytes < bytes) {
+		if (execute->shadow_token != NULL) {
+			error = execute_flush(session, execute);
+			if (error != 0)
+				return error;
+			nvrtx_vk_gpu_free(session->owner, execute->shadow_token);
+			execute->shadow_token = NULL;
+			execute->shadow_bytes = 0U;
+		}
+		error = nvrtx_vk_gpu_alloc(session->owner, (bytes + NVRTX_GSP_PAGE_SIZE - 1U) & ~(uint64_t)(NVRTX_GSP_PAGE_SIZE - 1U),
+					   &execute->shadow_token, &cpu, &execute->shadow_va);
+		if (error != 0)
+			return error;
+		execute->shadow_bytes = bytes;
+	}
+
+	/* The pass draws into the shadow; the target gets it at the pass's end. */
+	state->resolve = state->target;
+	state->resolve.depth_address = 0U;
+	state->target.address = execute->shadow_va;
+	state->target.pitch = pitch;
+	state->target.block_linear = 1U;
+	state->shadowed = true;
+	if (!load)
+		return 0;
+
+	/* A loading pass: the target's pixels into the shadow. */
+	execute_shadow_copy(&state->target, &state->resolve, 0, 0, (int32_t)state->target.width, (int32_t)state->target.height,
+			    &quad);
+	quad.target.depth_address = 0U;
+	quad.source_tiled = false;
+	error = execute_quad(session, execute, state, &quad);
+	if (error != 0)
+		return error;
+	execute->at = nvrtx_exec_barrier(execute->cpu + EXECUTE_PUSH_AT, execute->at);
+
+	/* Succeeded: the shadow holds the target's pixels. */
+	return 0;
+}
+
+/*
+ * Ends a pass: its work is ordered before what follows, and a pass drawn in
+ * a shadow copies its render area from the shadow to the target.
+ */
+static int
+execute_end_pass(
+	struct nvrtx_vk_session *session,
+	struct nvrtx_vk_execute *execute,
+	struct execute_state *state)
+{
+	struct execute_quad quad;
+	int32_t x0;
+	int32_t y0;
+	int32_t x1;
+	int32_t y1;
+	int error;
+
+	/* The pass's work before what follows. */
+	state->in_pass = false;
+	execute->at = nvrtx_exec_barrier(execute->cpu + EXECUTE_PUSH_AT, execute->at);
+	if (!state->shadowed)
+		return 0;
+	state->shadowed = false;
+
+	/* The render area, within the target. */
+	x0 = state->area.offset.x;
+	y0 = state->area.offset.y;
+	x1 = x0 + (int32_t)state->area.extent.width;
+	y1 = y0 + (int32_t)state->area.extent.height;
+	if (x0 < 0)
+		x0 = 0;
+	if (y0 < 0)
+		y0 = 0;
+	if (x1 > (int32_t)state->resolve.width)
+		x1 = (int32_t)state->resolve.width;
+	if (y1 > (int32_t)state->resolve.height)
+		y1 = (int32_t)state->resolve.height;
+	if (x1 <= x0 || y1 <= y0)
+		return 0;
+
+	/* The shadow's area onto the target, then ordered before what follows. */
+	execute_shadow_copy(&state->resolve, &state->target, x0, y0, x1, y1, &quad);
+	quad.source_tiled = true;
+	error = execute_quad(session, execute, state, &quad);
+	if (error != 0)
+		return error;
+	state->target_written = false;
+	execute->at = nvrtx_exec_barrier(execute->cpu + EXECUTE_PUSH_AT, execute->at);
+
+	/* Succeeded: the target has the pass's pixels. */
+	return 0;
+}
+
+/* Describes a one-to-one, nearest copy of a region between two colour targets of one size as a quad. */
+static void
+execute_shadow_copy(
+	const struct nvrtx_exec_target *to,
+	const struct nvrtx_exec_target *from,
+	int32_t x0,
+	int32_t y0,
+	int32_t x1,
+	int32_t y1,
+	struct execute_quad *quad)
+{
+	/* The destination and its region. */
+	kern_memset(quad, 0, sizeof(*quad));
+	quad->target = *to;
+	quad->target.depth_address = 0U;
+	quad->x0 = x0;
+	quad->y0 = y0;
+	quad->x1 = x1;
+	quad->y1 = y1;
+
+	/* The source, the same region, nearest. */
+	quad->source = from->address;
+	quad->source_width = from->width;
+	quad->source_height = from->height;
+	quad->source_pitch = from->pitch;
+	quad->source_format = from->format;
+	quad->u0 = x0;
+	quad->v0 = y0;
+	quad->u1 = x1;
+	quad->v1 = y1;
+	quad->filter = VK_FILTER_NEAREST;
 }
 
 /*
@@ -1600,6 +1778,7 @@ execute_quad(
 	struct nvrtx_exec_sampler sampler;
 	struct nvrtx_exec_vertex vertex;
 	struct nvrtx_exec_blend blend;
+	struct nvrtx_exec_depth depth;
 	static const uint32_t identity[4] = {
 		VK_COMPONENT_SWIZZLE_R, VK_COMPONENT_SWIZZLE_G, VK_COMPONENT_SWIZZLE_B, VK_COMPONENT_SWIZZLE_A
 	};
@@ -1677,6 +1856,11 @@ execute_quad(
 	kern_memset(&blend, 0, sizeof(blend));
 	blend.write_mask = 0xfU;
 	execute->at = nvrtx_exec_blend(push, execute->at, &blend);
+
+	/* No culling and no depth test (a pass's draws may have left them on). */
+	execute->at = nvrtx_exec_raster(push, execute->at, VK_CULL_MODE_NONE, VK_FRONT_FACE_COUNTER_CLOCKWISE);
+	kern_memset(&depth, 0, sizeof(depth));
+	execute->at = nvrtx_exec_depth(push, execute->at, &depth);
 
 	/* The corners at location 0, the constants, the programs, two triangles. */
 	kern_memset(&vertex, 0, sizeof(vertex));

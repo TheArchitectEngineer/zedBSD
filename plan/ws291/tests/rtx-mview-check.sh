@@ -41,7 +41,7 @@ for copies in 1 5000; do
 done
 ip=$($M zedbsd 2> /dev/null | tail -1)
 if [ -n "$ip" ]; then
-	timeout 60 ssh -i "$KEY" $SSHOPT "root@$ip" 'dmesg | grep -E "nvrtx: vk|full|fault|MMU" | tail -16' > "$out/kernel.txt" 2>&1
+	timeout 60 ssh -i "$KEY" $SSHOPT "root@$ip" 'dmesg | grep -E "nvrtx: (vk|gr refused)|full|fault|MMU" | tail -16' > "$out/kernel.txt" 2>&1
 	sed 's/^/kernel /' "$out/kernel.txt" | tee -a "$summary"
 fi
 $M linux > "$out/linux.txt" 2>&1 || say "FAIL back to Debian"
