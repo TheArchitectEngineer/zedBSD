@@ -4,7 +4,7 @@
 
 Status: incomplete
 Primary Milestone: MG005
-Resume point: p003（QEMU の試験）。担当は P6（q1672）。
+Resume point: p004（規約の全文の見直し）。担当は P6（q1672）。
 
 ## ユーザーの指示（原文、2026-10-29）
 
@@ -26,5 +26,5 @@ Resume point: p003（QEMU の試験）。担当は P6（q1672）。
 | --- | --- | --- | --- |
 | [p001](phase001/phase.md) | 調べと設計（RFC 8200・5722・6946、今の ipv6.c の extension の walk、資源の上限、時間切れの timer の口） | cleared | — |
 | [p002](phase002/phase.md) | 再組立ての実装と host の単体の試験 | cleared | p001 |
-| p003 | QEMU の試験（大きい UDP・ping6 の fragment、手で作る fragment と walk との結合） | in-progress | p002 |
-| p004 | 規約の全文の見直し | planning | p002・p003 |
+| [p003](phase003/phase.md) | QEMU の試験（大きい UDP・ping6 の fragment、手で作る fragment と walk との結合） | cleared | p002 |
+| p004 | 規約の全文の見直し | in-progress | p002・p003 |
