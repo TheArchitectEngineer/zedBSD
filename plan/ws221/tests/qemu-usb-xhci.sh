@@ -25,7 +25,7 @@ fresh_out build/ws221-qemu/xhci-files
 files=build/ws221-qemu/xhci-files
 guest() { timeout "${T:-120}" python3 plan/tools/guest/guest.py "$@"; }
 trap 'guest stop > /dev/null 2>&1' EXIT
-guest start "$image" --qemu-extra "-name p3-ws221 -device usb-hub,bus=xhci.0,port=5,id=hub1 -device usb-mouse,bus=xhci.0,port=5.1 -device usb-tablet,bus=xhci.0,port=5.2" ||
+guest start "$image" --disk usb --qemu-extra "-name p3-ws221 -device usb-hub,bus=xhci.0,port=5,id=hub1 -device usb-mouse,bus=xhci.0,port=5.1 -device usb-tablet,bus=xhci.0,port=5.2" ||
     { echo "qemu-usb-xhci: FAIL (start)"; exit 1; }
 T=600 guest wait --timeout 540 || { echo "qemu-usb-xhci: FAIL (no SSH)"; exit 1; }
 sleep 10

@@ -1080,15 +1080,19 @@ ncm_completion(
 	/* The transfer's end, read before the lock. */
 	status = drv_usb_urb_status(urb);
 
+	/* Marks the transfer that ended for the poll to take. */
 	irq = spin_lock_irqsave(&adapter->lock);
 
-	/* Marks the transfer that ended for the poll to take. */
 	if (urb == adapter->notification_urb)
 		adapter->notification_ready = 1;
+
+	/* A receive transfer. */
 	for (index = 0; index < adapter->rx_urb_count; index++) {
 		if (urb == adapter->rx_urbs[index])
 			adapter->rx_done |= 1U << index;
 	}
+
+	/* A transmit transfer, and whether it failed. */
 	for (index = 0; index < adapter->tx_urb_count; index++) {
 		if (urb != adapter->tx_urbs[index])
 			continue;
@@ -1273,6 +1277,8 @@ ncm_stop(
 		if (error == 0)
 			error = candidate;
 	}
+
+	/* The transmit ones. */
 	for (index = 0; index < adapter->tx_urb_count; index++) {
 		candidate = ncm_cancel_and_drain(adapter->tx_urbs[index]);
 		if (error == 0)
@@ -1396,6 +1402,7 @@ ncm_open(
 
 		spin_unlock_irqrestore(&adapter->lock, irq);
 
+		/* Runs the poll for a rearm asked for while open held the right. */
 		if (error == 0 && rearm)
 			net_device_schedule_poll(device);
 	}
@@ -1550,6 +1557,7 @@ ncm_tx_pump(
 
 		spin_unlock_irqrestore(&adapter->lock, irq);
 
+		/* Counts the frames lost with it. */
 		if (adapter->net_device != NULL)
 			adapter->net_device->tx_dropped++;
 	}
@@ -1901,6 +1909,7 @@ ncm_rearm(
 		error = ncm_rx_start_idle(adapter);
 	}
 
+	/* Settles the rearm under the lock: its retry count, pending request and right. */
 	irq = spin_lock_irqsave(&adapter->lock);
 	retry = notification ? &adapter->notification_retries
 				       : &adapter->rx_retries;
@@ -2329,6 +2338,7 @@ ncm_poll_rx_completion(
 
 	spin_unlock_irqrestore(&adapter->lock, irq);
 
+	/* Still on the bus. */
 	if (!done)
 		return 0;
 
@@ -2556,10 +2566,14 @@ ncm_urbs_free(
 		drv_usb_urb_free(adapter->tx_urbs[index]);
 		adapter->tx_urbs[index] = NULL;
 	}
+
+	/* The receive ones. */
 	for (index = 0; index < NCM_RX_URBS; index++) {
 		drv_usb_urb_free(adapter->rx_urbs[index]);
 		adapter->rx_urbs[index] = NULL;
 	}
+
+	/* The notification one. */
 	drv_usb_urb_free(adapter->notification_urb);
 	adapter->notification_urb = NULL;
 }
@@ -2623,13 +2637,19 @@ ncm_buffers_free(
 		kern_free(adapter->tx_buffers[index]);
 		adapter->tx_buffers[index] = NULL;
 	}
+
+	/* The receive buffers. */
 	for (index = 0; index < NCM_RX_URBS + 1U; index++) {
 		kern_free(adapter->rx_buffers[index]);
 		adapter->rx_buffers[index] = NULL;
 	}
+
+	/* No transfer refers to them any more. */
 	for (index = 0; index < NCM_RX_URBS; index++)
 		adapter->rx_urb_buffers[index] = NULL;
 	adapter->rx_spare = NULL;
+
+	/* The notification buffer. */
 	kern_free(adapter->notification_buffer);
 	adapter->notification_buffer = NULL;
 }

@@ -128,12 +128,14 @@ drv_xhci_queue_find(
 	const struct drv_xhci_queue *queue,
 	const void *entry)
 {
+	const void *queued;
 	unsigned position;
 
 	/* Looks at each request from the head. */
 	for (position = 0; position < queue->count; position++) {
 		/* The request is at this position. */
-		if (drv_xhci_queue_at(queue, position) == entry)
+		queued = drv_xhci_queue_at(queue, position);
+		if (queued == entry)
 			return (int)position;
 	}
 

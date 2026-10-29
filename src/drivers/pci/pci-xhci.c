@@ -1140,7 +1140,9 @@ ring_push(
 	uint32_t cycle;
 
 	/* The producer's cycle bit, or, for a held first TRB, the one that reads as empty. */
-	cycle = r->cycle ? XHCI_TRB_CYCLE : 0;
+	cycle = 0;
+	if (r->cycle)
+		cycle = XHCI_TRB_CYCLE;
 	if (r->hold_first) {
 		cycle ^= XHCI_TRB_CYCLE;
 		r->hold_first = 0;
@@ -1863,6 +1865,7 @@ xhci_event_request_locked(
 	struct xhci_endpoint *endpoint;
 	struct xhci_request *request;
 	struct xhci_request *head;
+	struct xhci_ring *ring;
 	uint64_t pointer = (uint64_t)event->parameter_low |
 			   ((uint64_t)event->parameter_high << 32);
 	unsigned slot = event->control >> 24;
@@ -1884,8 +1887,10 @@ xhci_event_request_locked(
 	/* An endpoint with nothing queued, or a head not on its own ring, has no request for the event. */
 	head = endpoint->active;
 	if (head == NULL || head->device != device ||
-	    head->endpoint != endpoint || head->ring == NULL ||
-	    head->ring != xhci_stream_ring(endpoint, head->stream_id))
+	    head->endpoint != endpoint || head->ring == NULL)
+		return NULL;
+	ring = xhci_stream_ring(endpoint, head->stream_id);
+	if (head->ring != ring)
 		return NULL;
 
 	/* Lists where the queued TDs lie, from the head; they share the head's ring. */
@@ -3071,6 +3076,7 @@ xhci_queue_abort_locked(
 {
 	struct xhci_request *request;
 	struct xhci_device *device;
+	unsigned busy;
 	int unlinked;
 
 	/* Takes the head again and again until the queue is empty. */
@@ -3081,8 +3087,10 @@ xhci_queue_abort_locked(
 		device = request->device;
 
 		/* Each one counts as a completion in flight, like one from an event. */
-		if (device->completions_busy == UINT_MAX ||
-		    atomic_raw_fetch_add_relaxed(&c->completion_busy, 1U) == UINT_MAX)
+		if (device->completions_busy == UINT_MAX)
+			__builtin_trap();
+		busy = atomic_raw_fetch_add_relaxed(&c->completion_busy, 1U);
+		if (busy == UINT_MAX)
 			__builtin_trap();
 		unlinked = xhci_request_unlink_locked(c, request);
 		if (!unlinked)
@@ -3131,12 +3139,14 @@ xhci_queue_depth(
 	const struct xhci_endpoint *endpoint,
 	struct drv_usb_urb *urb)
 {
+	const struct drv_usb_control_request *control;
 	struct drv_usb_endpoint *usb_endpoint;
 	enum drv_usb_transfer_type type;
 	unsigned depth;
 
 	/* A control transfer and an endpoint with streams keep one request. */
-	if (drv_usb_urb_control_request(urb) != NULL)
+	control = drv_usb_urb_control_request(urb);
+	if (control != NULL)
 		return 1;
 	if (endpoint->maximum_stream_id != 0)
 		return 1;
@@ -5252,6 +5262,7 @@ xhci_device_quiesce(
 				continue;
 			}
 
+			/* Cancels the endpoint's whole queue: every request is marked. */
 			xhci_queue_mark_cancelling_locked(&d->endpoints[dci], 1U);
 			attempted |= 1U << dci;
 			r = candidate;
