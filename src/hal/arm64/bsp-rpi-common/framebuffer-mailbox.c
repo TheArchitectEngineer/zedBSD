@@ -164,7 +164,8 @@ rpi_framebuffer_init(
 				      request[ANSWER_WIDTH],
 				      request[ANSWER_HEIGHT],
 				      request[ANSWER_PITCH],
-				      request[ANSWER_ORDER]);
+				      request[ANSWER_ORDER],
+				      0);
 	if (error != 0)
 		return -1;
 

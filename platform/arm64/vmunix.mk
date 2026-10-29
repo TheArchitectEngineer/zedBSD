@@ -901,7 +901,9 @@ $(BUILD)/config.txt: rpi4-config-file $(ARM64_PLATFORM)/config.txt platform/arm6
 endif
 
 # The SD card: a FAT boot partition with the firmware and the kernel, and
-# the UFS root that the kernel's legacy autoroot finds beside it.
+# the UFS root that the kernel's legacy autoroot finds beside it.  The
+# ODROID-C5's card is laid out by platform/arm64/odroid-c5.mk.
+ifneq ($(ZEDBSD_BOARD),odroid-c5)
 $(BUILD)/hdd-image.img: $(BUILD)/vmunix $(BUILD)/ufs-root.img \
 	$(DATA_IMAGE) $(SWAP_IMAGE) $(BUILD)/config.txt $(BUILD)/cmdline.txt \
 	$(ARM64_BOOT_FIRMWARE_CACHE_FILES) \
@@ -913,6 +915,7 @@ $(BUILD)/hdd-image.img: $(BUILD)/vmunix $(BUILD)/ufs-root.img \
  --data-image $(DATA_IMAGE) --swapfile $(SWAP_IMAGE) \
  --config $(BUILD)/config.txt --cmdline $(BUILD)/cmdline.txt \
  --board $(ZEDBSD_BOARD) --firmware-dir $(ARM64_BOOT_FIRMWARE_DIR) $@
+endif
 
 $(BUILD)/kernel.elf: $(ARM64_VMUNIX_OBJS) $(ARM64_PLATFORM)/vmunix.ld \
 	platform/arm64/tools/check-arm64-vmunix.py

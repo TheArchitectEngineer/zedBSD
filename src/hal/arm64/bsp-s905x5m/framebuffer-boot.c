@@ -28,6 +28,7 @@ rpi_framebuffer_init(
 	uintptr_t mailbox_phys)
 {
 	const struct rpi_fdt_info *info;
+	uint32_t opaque_bits;
 	int error;
 
 	/* The board has no mailbox. */
@@ -38,13 +39,19 @@ rpi_framebuffer_init(
 	if (info->framebuffer_size == 0)
 		return -1;
 
+	/* A plane that blends by the top byte shows only pixels whose alpha is full. */
+	opaque_bits = 0;
+	if (info->framebuffer_alpha)
+		opaque_bits = 0xff000000U;
+
 	/* Takes the buffer, which checks that the console fits in it. */
 	error = rpi_framebuffer_adopt(info->framebuffer_base,
 				      info->framebuffer_size,
 				      info->framebuffer_width,
 				      info->framebuffer_height,
 				      info->framebuffer_stride,
-				      info->framebuffer_red_low);
+				      info->framebuffer_red_low,
+				      opaque_bits);
 	if (error != 0)
 		return -1;
 

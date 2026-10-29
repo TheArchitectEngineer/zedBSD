@@ -81,9 +81,9 @@ struct rpi_fdt_info {
 	/*
 	 * A framebuffer the bootloader left the display scanning out (a
 	 * simple-framebuffer node): its base and size, its size in pixels, its
-	 * row length in bytes, and 1 when red is in a pixel's low byte.  Zero
-	 * when the tree names none; the Raspberry Pi boards ask the firmware
-	 * instead.
+	 * row length in bytes, 1 when red is in a pixel's low byte, and 1
+	 * when the top byte is an alpha the display blends by.  Zero when the
+	 * tree names none; the Raspberry Pi boards ask the firmware instead.
 	 */
 	uint64_t framebuffer_base;
 	uint64_t framebuffer_size;
@@ -91,6 +91,7 @@ struct rpi_fdt_info {
 	uint32_t framebuffer_height;
 	uint32_t framebuffer_stride;
 	uint32_t framebuffer_red_low;
+	uint32_t framebuffer_alpha;
 
 	/*
 	 * Where /chosen/bootargs is in the blob (the firmware's command line,

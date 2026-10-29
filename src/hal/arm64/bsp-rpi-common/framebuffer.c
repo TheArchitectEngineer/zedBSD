@@ -43,6 +43,13 @@ static uint32_t pitch;
 /* The firmware's pixel order: 1 when red is in the low byte, 0 when blue is. */
 static uint32_t order;
 
+/*
+ * The bits every pixel carries set: the alpha byte of a format whose
+ * plane blends by it, so that the console's pixels are opaque; 0 when the
+ * top byte is not looked at.
+ */
+static uint32_t opaque;
+
 /* The top-left pixel of the text grid, which is centred on the screen. */
 static uint32_t x_origin;
 static uint32_t y_origin;
@@ -154,7 +161,8 @@ rpi_framebuffer_cursor(
  *
  * The buffer must hold at least the console's 640x400 pixels in rows of
  * four bytes a pixel; order is 1 when red is in a pixel's low byte and 0
- * when blue is.  Returns 0 when the framebuffer is ready.
+ * when blue is, and opaque_bits are set in every pixel (the alpha byte of
+ * a plane that blends by it).  Returns 0 when the framebuffer is ready.
  */
 int
 rpi_framebuffer_adopt(
@@ -163,7 +171,8 @@ rpi_framebuffer_adopt(
 	uint32_t pixel_width,
 	uint32_t pixel_height,
 	uint32_t row_pitch,
-	uint32_t pixel_order)
+	uint32_t pixel_order,
+	uint32_t opaque_bits)
 {
 	/* Refuses a framebuffer too small for the console. */
 	if (pixel_width < MIN_WIDTH || pixel_height < MIN_HEIGHT)
@@ -188,6 +197,7 @@ rpi_framebuffer_adopt(
 	height = pixel_height;
 	pitch = row_pitch;
 	order = pixel_order;
+	opaque = opaque_bits;
 
 	/* Reaches the framebuffer through the direct map, with the text grid centred. */
 	pixels = (volatile uint8_t *)(ARM64_DIRECT_BASE + pixels_phys);
@@ -198,7 +208,7 @@ rpi_framebuffer_adopt(
 	rpi_boot_set_framebuffer(pixels_phys, pixels_size, width, height, pitch, order);
 
 	/* Clears the screen to black. */
-	fill_screen(0);
+	fill_screen(colour(0));
 	flush_screen();
 
 	/* Succeeded: the framebuffer is ready for the console. */
@@ -253,7 +263,7 @@ rpi_framebuffer_test_pattern(
 	rpi_delay_ms(3000U);
 
 	/* Black again for the console. */
-	fill_screen(0);
+	fill_screen(colour(0));
 	flush_screen();
 }
 
@@ -287,11 +297,11 @@ colour(
 
 	/* Red in the low byte is the palette's own order. */
 	if (order)
-		return rgb;
+		return rgb | opaque;
 
 	/* Succeeded: blue in the low byte, red and blue exchanged. */
 	swapped = ((rgb & 0xffU) << 16) | (rgb & 0xff00U) | ((rgb >> 16) & 0xffU);
-	return swapped;
+	return swapped | opaque;
 }
 
 /* Writes one pixel. */

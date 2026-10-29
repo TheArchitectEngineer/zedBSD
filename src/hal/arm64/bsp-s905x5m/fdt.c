@@ -63,6 +63,9 @@ enum {
 #define FDT_FB_FORMAT_BLUE_LOW 1U
 #define FDT_FB_FORMAT_RED_LOW 2U
 
+/* Set beside the format when its top byte is an alpha ("a8..."), not padding ("x8..."). */
+#define FDT_FB_FORMAT_ALPHA 4U
+
 /*
  * One open node of the tree: the cell counts it inherits and sets, what
  * kind of node its properties have shown it to be, and the cells of the
@@ -758,7 +761,7 @@ commit_framebuffer(
 	/* Only the first one, and only one the console can paint. */
 	if (info->framebuffer_size != 0)
 		return FDT_OK;
-	if (node->fb_format == FDT_FB_FORMAT_NONE)
+	if ((node->fb_format & ~FDT_FB_FORMAT_ALPHA) == FDT_FB_FORMAT_NONE)
 		return FDT_OK;
 	if (node->fb_width == 0 || node->fb_height == 0 || node->fb_stride == 0)
 		return FDT_OK;
@@ -790,8 +793,11 @@ commit_framebuffer(
 	info->framebuffer_height = node->fb_height;
 	info->framebuffer_stride = node->fb_stride;
 	info->framebuffer_red_low = 0;
-	if (node->fb_format == FDT_FB_FORMAT_RED_LOW)
+	if ((node->fb_format & FDT_FB_FORMAT_RED_LOW) != 0)
 		info->framebuffer_red_low = 1;
+	info->framebuffer_alpha = 0;
+	if ((node->fb_format & FDT_FB_FORMAT_ALPHA) != 0)
+		info->framebuffer_alpha = 1;
 
 	/* Succeeded: the framebuffer is recorded. */
 	return FDT_OK;
@@ -1047,6 +1053,8 @@ record_property(
 	int is_ok;
 	int blue_low;
 	int red_low;
+	int alpha_blue_low;
+	int alpha_red_low;
 
 	/* The node's own number of address cells, for its children. */
 	matches = string_equal(name, name_length, "#address-cells");
@@ -1124,12 +1132,16 @@ record_property(
 	 */
 	matches = string_equal(name, name_length, "format");
 	if (matches) {
-		blue_low = compatible_has(value, length, "a8r8g8b8");
-		blue_low |= compatible_has(value, length, "x8r8g8b8");
-		red_low = compatible_has(value, length, "a8b8g8r8");
-		red_low |= compatible_has(value, length, "x8b8g8r8");
-		if (blue_low) {
+		alpha_blue_low = compatible_has(value, length, "a8r8g8b8");
+		blue_low = compatible_has(value, length, "x8r8g8b8");
+		alpha_red_low = compatible_has(value, length, "a8b8g8r8");
+		red_low = compatible_has(value, length, "x8b8g8r8");
+		if (alpha_blue_low) {
+			node->fb_format = FDT_FB_FORMAT_BLUE_LOW | FDT_FB_FORMAT_ALPHA;
+		} else if (blue_low) {
 			node->fb_format = FDT_FB_FORMAT_BLUE_LOW;
+		} else if (alpha_red_low) {
+			node->fb_format = FDT_FB_FORMAT_RED_LOW | FDT_FB_FORMAT_ALPHA;
 		} else if (red_low) {
 			node->fb_format = FDT_FB_FORMAT_RED_LOW;
 		}

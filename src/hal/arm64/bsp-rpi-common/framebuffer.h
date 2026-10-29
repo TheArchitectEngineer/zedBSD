@@ -18,7 +18,7 @@
 #include <hal/types.h>
 
 int rpi_framebuffer_init(uintptr_t mailbox_phys);
-int rpi_framebuffer_adopt(uint64_t phys, uint64_t size, uint32_t pixel_width, uint32_t pixel_height, uint32_t row_pitch, uint32_t pixel_order);
+int rpi_framebuffer_adopt(uint64_t phys, uint64_t size, uint32_t pixel_width, uint32_t pixel_height, uint32_t row_pitch, uint32_t pixel_order, uint32_t opaque_bits);
 int rpi_framebuffer_ready(void);
 void rpi_framebuffer_test_pattern(void);
 void rpi_framebuffer_describe(void);
