@@ -65,6 +65,16 @@ mali firmware tests/mali-firmware-host-test.c src/drivers/gpu/mali/mali-firmware
 mali interface tests/mali-interface-host-test.c src/drivers/gpu/mali/mali-interface.c src/drivers/gpu/mali/display/osd.c
 mali cs tests/mali-cs-host-test.c src/drivers/gpu/mali/cs/cs-build.c
 mali vk-desc tests/mali-vk-desc-host-test.c src/drivers/gpu/mali/vk/vk-desc.c
+mali vk-frame tests/mali-vk-frame-host-test.c src/drivers/gpu/mali/vk/vk-frame.c src/drivers/gpu/mali/vk/vk-desc.c
+mali scanout tests/mali-scanout-host-test.c src/drivers/gpu/mali/display/scanout.c
+if timeout 300 cc -std=gnu11 -DKERN_USER_ABI_LP64 -Iinclude -Isrc -I. -idirafter libc/include -Wall -Wextra -Werror \
+	tests/mali-preload-host-test.c src/drivers/gpu/mali/compiler/va-compile.c src/drivers/gpu/mali/compiler/va-encode.c \
+	src/drivers/gpu/mali/compiler/va-schedule.c src/drivers/gpu/compiler/spirv.c src/drivers/gpu/compiler/optimize.c -lm \
+	-o "$host/preload" > "$host/preload.log" 2>&1 && timeout 120 "$host/preload" "$host/preload.spv" >> "$host/preload.log" 2>&1; then
+	pass "mali preload: $(tail -n 1 "$host/preload.log")"
+else
+	fail "mali preload ($host/preload.log)"
+fi
 
 if timeout 1800 sh plan/ws313/tests/mali-compiler-host-test.sh 50 > "$host/compiler.log" 2>&1; then
 	pass "mali compiler: $(grep -c '^PASS' "$host/compiler.log") PASS lines"
