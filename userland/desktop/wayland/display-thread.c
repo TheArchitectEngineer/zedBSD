@@ -34,7 +34,8 @@
  *
  * The game mode's question whether the display could show a window
  * straight (kl_backend_scanout_possible, which opens the GPU device) and
- * the heads' swapchains (kwl_display_heads) are the display thread's too.
+ * the heads' swapchains (kwl_display_heads) and the reading of the
+ * displays connected (kwl_display_enumerate) are the display thread's too.
  */
 
 #include "compose.h"
@@ -64,7 +65,9 @@ enum display_kind {
 	/* Whether the display could show a window straight (the game mode). */
 	DISPLAY_SCANOUT_QUERY,
 	/* Heads' swapchains destroyed (their displays given back) and made. */
-	DISPLAY_HEADS
+	DISPLAY_HEADS,
+	/* The displays connected read. */
+	DISPLAY_ENUMERATE
 };
 
 /*
@@ -80,8 +83,9 @@ enum display_kind {
  * readback and scene_supported what the swapchain's images allow; width
  * and height the game mode's size (DISPLAY_SCANOUT_QUERY); rests and opens
  * (rest_count and open_count of them, the caller's until its then) the
- * heads' swapchains to destroy and to make (DISPLAY_HEADS); error the
- * result.  spare says the job is display_spare (no memory for one).
+ * heads' swapchains to destroy and to make (DISPLAY_HEADS); list the
+ * displays read (DISPLAY_ENUMERATE, the caller's until its then); error
+ * the result.  spare says the job is display_spare (no memory for one).
  */
 struct display_job {
 	struct kwl_lane_job lane;
@@ -106,6 +110,7 @@ struct display_job {
 	unsigned rest_count;
 	struct kwl_head_opening *opens;
 	unsigned open_count;
+	struct kwl_display_list *list;
 	int error;
 	unsigned spare;
 };
@@ -500,6 +505,59 @@ kwl_display_heads(
 }
 
 /*
+ * Reads the displays connected now (up to the ones followed) into list,
+ * their names copied.  It touches no field of the compositor's, so the
+ * display thread may call it.
+ */
+void
+kwl_display_list_read(
+	struct kwl_server *server,
+	struct kwl_display_list *list)
+{
+	VkDisplayPropertiesKHR properties[KWL_COMPOSE_DISPLAYS];
+	uint32_t count;
+	unsigned index;
+
+	/* The displays. */
+	memset(list, 0, sizeof(*list));
+	count = KWL_COMPOSE_DISPLAYS;
+	list->result = vkGetPhysicalDeviceDisplayPropertiesKHR(server->compose->physical, &count, properties);
+	if (list->result != VK_SUCCESS && list->result != VK_INCOMPLETE)
+		return;
+
+	/* Each one's handle, name and size. */
+	list->result = VK_SUCCESS;
+	list->count = count;
+	for (index = 0U; index < count; index++) {
+		list->displays[index] = properties[index].display;
+		if (properties[index].displayName != NULL)
+			(void)snprintf(list->names[index], sizeof(list->names[index]), "%s", properties[index].displayName);
+		list->widths[index] = properties[index].physicalResolution.width;
+		list->heights[index] = properties[index].physicalResolution.height;
+	}
+}
+
+/*
+ * Reads the displays connected now on the display thread (the backend may
+ * probe the connectors), into list; then(server, 0, context) is called
+ * after, on the event loop's thread.
+ */
+void
+kwl_display_enumerate(
+	struct kwl_server *server,
+	struct kwl_display_list *list,
+	kwl_display_fn *then,
+	void *context)
+{
+	struct display_job *job;
+
+	/* The job. */
+	job = display_job_new(server, DISPLAY_ENUMERATE, then, context);
+	job->list = list;
+	display_submit(server, job);
+}
+
+/*
  * Asks the display thread whether the display could show a window of a
  * size straight (the game mode, without claiming it); then(server, error,
  * context) is called with the backend's answer.  Returns 0.
@@ -735,6 +793,10 @@ display_run(
 		}
 		for (index = 0U; index < job->open_count; index++)
 			kwl_heads_make(job->server, &job->opens[index]);
+		job->error = 0;
+		break;
+	case DISPLAY_ENUMERATE:
+		kwl_display_list_read(job->server, job->list);
 		job->error = 0;
 		break;
 	default:

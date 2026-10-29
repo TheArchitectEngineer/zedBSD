@@ -409,6 +409,20 @@ struct kwl_head_rest {
 };
 
 /*
+ * The displays connected, as the display thread read them
+ * (kwl_display_list_read): the read's result, how many, and each one's
+ * handle, name and physical size.
+ */
+struct kwl_display_list {
+	VkResult result;
+	uint32_t count;
+	VkDisplayKHR displays[KWL_COMPOSE_DISPLAYS];
+	char names[KWL_COMPOSE_DISPLAYS][KWL_COMPOSE_NAME];
+	uint32_t widths[KWL_COMPOSE_DISPLAYS];
+	uint32_t heights[KWL_COMPOSE_DISPLAYS];
+};
+
+/*
  * A head to be made on a display (heads.c): the head chosen for it
  * (slot), the display's place in the last enumeration (index), the
  * display and its name; and what the display thread made: the display's
@@ -765,6 +779,8 @@ struct kwl_compose {
 	VkDisplayKHR boot_display;
 	VkDisplayKHR displays[KWL_COMPOSE_DISPLAYS];
 	char display_names[KWL_COMPOSE_DISPLAYS][KWL_COMPOSE_NAME];
+	/* The displays are being read by the display thread for a look of the hotplug's tick (output-switch.c). */
+	unsigned listing;
 	unsigned display_count;
 	uint32_t limited;
 	/*
@@ -1028,6 +1044,8 @@ void kwl_display_end(struct kwl_server *server);
 void kwl_display_close(struct kwl_server *server, kwl_display_fn *then, void *context);
 void kwl_display_open(struct kwl_server *server, kwl_display_fn *then, void *context);
 void kwl_display_heads(struct kwl_server *server, struct kwl_head_rest *rests, unsigned rest_count, struct kwl_head_opening *opens, unsigned open_count, kwl_display_fn *then, void *context);
+void kwl_display_list_read(struct kwl_server *server, struct kwl_display_list *list);
+void kwl_display_enumerate(struct kwl_server *server, struct kwl_display_list *list, kwl_display_fn *then, void *context);
 int kwl_display_scanout_query(struct kwl_server *server, uint32_t width, uint32_t height, kwl_display_fn *then, void *context);
 int kwl_display_output_open(struct kwl_server *server, kwl_display_fn *then, void *context);
 void kwl_compose_unpark(struct kwl_server *server);

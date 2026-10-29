@@ -45,6 +45,18 @@
 /* How often the hotplug fence is looked at (ms): each look is a request to the display node. */
 #define OUTPUT_HOTPLUG_MS	250U
 
+/* The looks at the displays the hotplug's tick makes (output_listed). */
+#define OUTPUT_LOOK_FIRST	1U
+#define OUTPUT_LOOK_SIGNAL	2U
+#define OUTPUT_LOOK_HEADS	3U
+#define OUTPUT_LOOK_RECOVER	4U
+
+/* A look at the displays: the list the display thread reads, and what the look goes on with. */
+struct output_list {
+	struct kwl_display_list list;
+	unsigned look;
+};
+
 /* The most displays one move tries: the one shown, the machine's own, and every one connected. */
 #define OUTPUT_MOVE_MAX		(KWL_COMPOSE_DISPLAYS + 2U)
 
@@ -91,7 +103,10 @@ struct output_turn {
 	int32_t *seen;
 };
 
-static VkResult output_enumerate(struct kwl_server *server);
+static VkResult output_list_apply(struct kwl_server *server, const struct kwl_display_list *list);
+static void output_list_later(struct kwl_server *server, unsigned look);
+static void output_listed(struct kwl_server *server, int error, void *context);
+static void output_recover_listed(struct kwl_server *server, VkResult listed);
 static int output_internal(const struct kwl_compose *compose, unsigned index);
 static int output_index(const struct kwl_compose *compose, VkDisplayKHR display);
 static void output_hotplug_register(struct kwl_server *server);
@@ -115,7 +130,8 @@ static void output_pointer_turn(const void *context, const struct kwl_plane_rect
 /*
  * Follows the displays once each pass of the event loop (at most every
  * OUTPUT_HOTPLUG_MS): the hotplug fence's signal, and a display gone from
- * under the output.
+ * under the output.  The displays are read by the display thread (the
+ * backend may probe the connectors); output_listed goes on with the list.
  */
 void
 kwl_output_tick(
@@ -124,21 +140,18 @@ kwl_output_tick(
 	struct kwl_compose *compose;
 	VkFence previous;
 	VkResult status;
-	VkResult listed;
 	uint64_t now;
-	unsigned signalled;
-	int index;
 	int lost;
 
 	/* A displays result held back too long is answered (displays-shell.c, BUG-266). */
 	now = kwl_milliseconds();
 	kwl_displays_pending_tick(server, now);
 
-	/* Only a device that follows the hotplug, while window mode runs and the display does not change. */
+	/* Only a device that follows the hotplug, while window mode runs, the display does not change and no list is being read. */
 	compose = server->compose;
 	if (compose == NULL || compose->register_device_event == NULL || !server->windowed)
 		return;
-	if (kwl_display_busy(server))
+	if (kwl_display_busy(server) || compose->listing)
 		return;
 
 	/* Not too often. */
@@ -146,20 +159,16 @@ kwl_output_tick(
 		return;
 	compose->hotplug_checked_ms = now;
 
-	/* The first look: a fence, the displays as they are, and their heads. */
+	/* The first look: a fence, then the displays as they are, and their heads. */
 	if (compose->hotplug == VK_NULL_HANDLE) {
 		output_hotplug_register(server);
-		output_enumerate(server);
-		output_heads_sync(server);
-		kwl_displays_anchor_follow(server);
+		output_list_later(server, OUTPUT_LOOK_FIRST);
 		return;
 	}
 
 	/* A signal: a new fence first, so that a change during the enumeration is not missed. */
-	signalled = 0U;
 	status = vkGetFenceStatus(compose->device, compose->hotplug);
 	if (status == VK_SUCCESS) {
-		signalled = 1U;
 		previous = compose->hotplug;
 		compose->hotplug = VK_NULL_HANDLE;
 		output_hotplug_register(server);
@@ -168,8 +177,81 @@ kwl_output_tick(
 		/* The displays now; a display refused before, or whose move failed, is tried again. */
 		compose->limited = 0U;
 		compose->move_failed = 0U;
-		listed = output_enumerate(server);
+		output_list_later(server, OUTPUT_LOOK_SIGNAL);
+		return;
+	}
 
+	/* The display under the output is gone: the output moves, while the passes go on. */
+	if (compose->output_lost == 1U) {
+		output_recover(server);
+		return;
+	}
+
+	/*
+	 * The heads brought in line after the output opened again (the list is
+	 * read again first), and when a head lost its display.
+	 */
+	lost = kwl_heads_lost(server);
+	if (!compose->heads_stale && !lost)
+		return;
+	output_list_later(server, OUTPUT_LOOK_HEADS);
+}
+
+/*
+ * Reads the displays on the display thread for a look (OUTPUT_LOOK_*);
+ * output_listed goes on.  Without memory the look is tried again later.
+ */
+static void
+output_list_later(
+	struct kwl_server *server,
+	unsigned look)
+{
+	struct output_list *list;
+
+	/* The record, then the reading. */
+	list = calloc(1, sizeof(*list));
+	if (list == NULL)
+		return;
+	list->look = look;
+	server->compose->listing = 1U;
+	kwl_display_enumerate(server, &list->list, output_listed, list);
+}
+
+/*
+ * Goes on with a look once the displays are read: the list taken in, then
+ * by the look -- the first one's heads; after a signal, the output lost
+ * when its display is gone (and moved), else the heads; the heads after
+ * the output opened again; a lost output's move.
+ */
+static void
+output_listed(
+	struct kwl_server *server,
+	int error,
+	void *context)
+{
+	struct kwl_compose *compose;
+	struct output_list *list;
+	VkResult listed;
+	unsigned look;
+	int index;
+
+	/* The list taken in. */
+	(void)error;
+	list = context;
+	compose = server->compose;
+	compose->listing = 0U;
+	listed = output_list_apply(server, &list->list);
+	look = list->look;
+	free(list);
+
+	/* A lost output's move, from the list read now. */
+	if (look == OUTPUT_LOOK_RECOVER) {
+		output_recover_listed(server, listed);
+		return;
+	}
+
+	/* After a signal. */
+	if (look == OUTPUT_LOOK_SIGNAL) {
 		/* An output waiting for a display tries the ones there are now. */
 		if (compose->output_lost == 2U)
 			compose->output_lost = 1U;
@@ -188,33 +270,16 @@ kwl_output_tick(
 			printf("KWL OUTPUT lost operation=hotplug name=%s\n", compose->display_name);
 			compose->output_lost = 1U;
 		}
+
+		/* The display under the output is gone: the output moves (the heads follow its opening, heads_stale). */
+		if (compose->output_lost == 1U) {
+			output_recover_listed(server, listed);
+			return;
+		}
 	}
 
-	/*
-	 * The display under the output is gone: the output moves, while the
-	 * passes go on; the heads are brought in line by a later look, after
-	 * the output opened again (heads_stale).
-	 */
-	if (compose->output_lost == 1U)
-		output_recover(server);
-	if (kwl_display_busy(server))
-		return;
-
-	/*
-	 * The heads brought in line: after the hotplug's enumeration, after the
-	 * output opened again (the list is read again first), and when a head
-	 * lost its display.
-	 */
-	lost = kwl_heads_lost(server);
-	if (!signalled &&
-	    !compose->heads_stale &&
-	    !lost)
-		return;
-	if (!signalled)
-		(void)output_enumerate(server);
+	/* The heads brought in line, and an anchor turned off by the user gives the desktop to a display on (ws113-p014). */
 	output_heads_sync(server);
-
-	/* An anchor turned off by the user gives the desktop to a display on (ws113-p014). */
 	kwl_displays_anchor_follow(server);
 }
 
@@ -940,54 +1005,45 @@ kwl_output_use_internal(
 }
 
 /*
- * Reads the displays connected now, with their names, and logs them;
- * an unreadable list keeps the one read before.
+ * Takes in the displays read (kwl_display_list_read) and logs them; an
+ * unreadable list keeps the one read before.  Returns the read's result.
  */
 static VkResult
-output_enumerate(
-	struct kwl_server *server)
+output_list_apply(
+	struct kwl_server *server,
+	const struct kwl_display_list *list)
 {
 	struct kwl_compose *compose;
-	VkDisplayPropertiesKHR properties[KWL_COMPOSE_DISPLAYS];
-	VkResult result;
-	uint32_t count;
 	unsigned index;
 	int internal;
 	int shown;
 
-	/* The displays, up to the ones followed. */
+	/* Unreadable. */
 	compose = server->compose;
-	count = KWL_COMPOSE_DISPLAYS;
-	result = vkGetPhysicalDeviceDisplayPropertiesKHR(compose->physical, &count, properties);
-	if (result != VK_SUCCESS && result != VK_INCOMPLETE) {
-		printf("KWL OUTPUT displays unreadable result=%d\n", (int)result);
-		return result;
+	if (list->result != VK_SUCCESS) {
+		printf("KWL OUTPUT displays unreadable result=%d\n", (int)list->result);
+		return list->result;
 	}
 
 	/* Each one's handle and name. */
-	compose->display_count = count;
-	for (index = 0U; index < count; index++) {
-		compose->displays[index] = properties[index].display;
-		compose->display_names[index][0] = '\0';
-		if (properties[index].displayName != NULL) {
-			(void)snprintf(compose->display_names[index], sizeof(compose->display_names[index]), "%s",
-			    properties[index].displayName);
-		}
+	compose->display_count = list->count;
+	for (index = 0U; index < list->count; index++) {
+		compose->displays[index] = list->displays[index];
+		(void)snprintf(compose->display_names[index], sizeof(compose->display_names[index]), "%s", list->names[index]);
 	}
 
 	/* Each one in the log, whether it is the machine's own and whether it is shown (the tests read it). */
-	for (index = 0U; index < count; index++) {
+	for (index = 0U; index < list->count; index++) {
 		internal = output_internal(compose, index);
 		shown = 0;
 		if (compose->displays[index] == compose->display)
 			shown = 1;
 		printf("KWL OUTPUT display index=%u name=%s internal=%d shown=%d width=%u height=%u\n",
-		       index, compose->display_names[index], internal, shown,
-		       properties[index].physicalResolution.width, properties[index].physicalResolution.height);
+		       index, compose->display_names[index], internal, shown, list->widths[index], list->heights[index]);
 	}
 
 	/* The count, which the tests read. */
-	printf("KWL OUTPUT displays count=%u\n", count);
+	printf("KWL OUTPUT displays count=%u\n", list->count);
 
 	/* Succeeded: the list is the displays connected now. */
 	return VK_SUCCESS;
@@ -1072,17 +1128,25 @@ static void
 output_recover(
 	struct kwl_server *server)
 {
+	/* The displays as they are now, read by the display thread. */
+	output_list_later(server, OUTPUT_LOOK_RECOVER);
+}
+
+/*
+ * Goes on moving a lost output with the displays read now.  An unreadable
+ * list waits for the next hotplug: the topology moved under the
+ * enumeration after the fence's registration, so the fence signals again.
+ */
+static void
+output_recover_listed(
+	struct kwl_server *server,
+	VkResult listed)
+{
 	struct kwl_compose *compose;
-	VkResult listed;
 	int started;
 
-	/*
-	 * The displays as they are now.  An unreadable list waits for the next
-	 * hotplug: the topology moved under the enumeration after the fence's
-	 * registration, so the fence signals again.
-	 */
+	/* Unreadable. */
 	compose = server->compose;
-	listed = output_enumerate(server);
 	if (listed != VK_SUCCESS) {
 		compose->output_lost = 2U;
 		return;
