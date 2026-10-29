@@ -60,6 +60,7 @@
 #include "cursor-box.h"
 #include "lane.h"
 #include "input-thread.h"
+#include "seat-answer.h"
 #include <stdint.h>
 #include <stddef.h>
 #include <sys/types.h>
@@ -108,6 +109,11 @@
 #define KWL_INPUT_MAX		32U
 #define KWL_INPUT_FRAME_MAX	64U
 #define KWL_INPUT_PATH_MAX	KL_BACKEND_INPUT_PATH_MAX
+
+/* The seat's pause's close of the output (kwl_server's seat_pause_output): to begin, running, done. */
+#define KWL_SEAT_OUTPUT_ASK	0U
+#define KWL_SEAT_OUTPUT_CLOSING	1U
+#define KWL_SEAT_OUTPUT_CLOSED	2U
 
 /* Rescan period for evdev nodes that appear after start-up, in milliseconds. */
 #define KWL_INPUT_SCAN_MS	2000U
@@ -414,6 +420,14 @@ struct kwl_packet {
  */
 struct kwl_input_device {
 	int fd;
+	/*
+	 * The descriptor the seat last gave for the device (-1 without a
+	 * seat's): kept while it is paused (fd is -1 then), so that the answer
+	 * to the seat's next callback names it (kl_backend_seat_device_let_go).
+	 * detach_sequence is the last detach asked of the input thread for it.
+	 */
+	int seat_fd;
+	uint64_t detach_sequence;
 	unsigned live;
 	/*
 	 * The input thread reads the descriptor (ws213-p004): set by the
@@ -1499,6 +1513,19 @@ struct kwl_server {
 	unsigned output_lid_moved;
 	/* OS device authority can pause composition; zedBSD always leaves this zero. */
 	unsigned os_paused;
+	/*
+	 * The seat's pause in progress (libkeiland-backend's session_paused):
+	 * seat_pause is set until kl_backend_seat_paused_done is called, once
+	 * the input thread has acknowledged seat_pause_sequence (the last
+	 * detach the pause asked) and the output is closed (seat_pause_output:
+	 * KWL_SEAT_OUTPUT_ASK until its close is begun, _CLOSING while it runs,
+	 * _CLOSED after).  seat_answers are the answers owed the seat's input
+	 * callbacks (seat-answer.h).
+	 */
+	unsigned seat_pause;
+	uint64_t seat_pause_sequence;
+	unsigned seat_pause_output;
+	struct kwl_seat_answers seat_answers;
 	unsigned windowed;
 	unsigned dirty;
 	/*
@@ -2161,9 +2188,10 @@ void kwl_handoff_stop(void *data, unsigned reason);
 void kwl_handoff_answer(void *data, unsigned request, int error);
 void kwl_backend_session_paused(void *data);
 void kwl_backend_session_resumed(void *data);
-void kwl_backend_input_paused(void *data, const char *path);
-void kwl_backend_input_resumed(void *data, const char *path, int descriptor);
-void kwl_backend_input_gone(void *data, const char *path);
+int kwl_backend_input_paused(void *data, const char *path);
+int kwl_backend_input_resumed(void *data, const char *path, int descriptor);
+int kwl_backend_input_gone(void *data, const char *path);
+void kwl_backend_seat_tick(struct kwl_server *server);
 int kwl_backend_input_known(void *data, const char *path);
 int kwl_backend_input_found(void *data, int descriptor, const char *path, const struct kl_backend_input_caps *caps);
 void kwl_backend_input_changed(void *data);
@@ -2800,11 +2828,13 @@ void kwl_input_sync(struct kwl_server *server);
 void kwl_input_geometry(struct kwl_server *server);
 void kwl_input_rotated(struct kwl_server *server);
 void kwl_input_touchpads_changed(struct kwl_server *server);
-void kwl_input_pause(struct kwl_server *server, struct kwl_input_device *device);
-void kwl_input_resume(struct kwl_server *server, struct kwl_input_device *device, int descriptor);
-void kwl_input_detach_all(struct kwl_server *server);
+int kwl_input_pause(struct kwl_server *server, struct kwl_input_device *device);
+int kwl_input_resume(struct kwl_server *server, struct kwl_input_device *device, int descriptor);
+uint64_t kwl_input_detach_all(struct kwl_server *server);
 void kwl_input_attach_all(struct kwl_server *server);
-void kwl_input_forget(struct kwl_server *server, struct kwl_input_device *device);
+int kwl_input_forget(struct kwl_server *server, struct kwl_input_device *device);
+void kwl_input_answer(struct kwl_server *server);
+int kwl_input_detached_through(struct kwl_server *server, uint64_t sequence);
 void kwl_pointer_warp(struct kwl_server *server, const struct kwl_plane_rect *outputs, kwl_cursor_box_move_fn *move, const void *context);
 void kwl_pointer_warp_to(struct kwl_server *server, int32_t x, int32_t y);
 void kwl_input_cleanup(struct kwl_server *server);

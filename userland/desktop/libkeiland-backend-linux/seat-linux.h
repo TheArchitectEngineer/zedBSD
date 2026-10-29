@@ -37,5 +37,7 @@ int linux_logind_seat_paused(void);
 int linux_logind_poll_fd(void);
 int linux_logind_dispatch(struct kl_backend *backend);
 int linux_logind_device_revoked(int descriptor);
+void linux_logind_device_let_go(int descriptor);
+void linux_logind_paused_done(void);
 
 #endif

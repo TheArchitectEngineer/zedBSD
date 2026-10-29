@@ -1043,6 +1043,7 @@ int kwl_display_scanout_query(struct kwl_server *server, uint32_t width, uint32_
 void kwl_display_scanout_open(struct kwl_server *server, uint32_t width, uint32_t height, struct kl_backend_scanout **scanout, kwl_display_fn *then, void *context);
 void kwl_display_scanout_close(struct kwl_server *server, struct kl_backend_scanout *scanout, kwl_display_fn *then, void *context);
 int kwl_display_output_open(struct kwl_server *server, kwl_display_fn *then, void *context);
+int kwl_display_output_close(struct kwl_server *server, kwl_display_fn *then, void *context);
 void kwl_compose_unpark(struct kwl_server *server);
 void kwl_compose_forget(struct kwl_server *server, unsigned output, unsigned heads_mask);
 uint64_t kwl_compose_generation(struct kwl_compose *compose);

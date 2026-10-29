@@ -10,9 +10,10 @@
  * seat-freebsd.c against a pretend libseat (below) that records every call
  * and delivers the activations and the withdrawals the test queues.  It
  * checks the order the seat keeps when seatd disables the session: the
- * compositor stops drawing, forgets each input, every lease closes, and
- * only then is seatd told; and that an activation reopens the primary node
- * before the compositor hears it.  FreeBSD itself is not built here (the
+ * compositor stops drawing and forgets each input; an input it still reads
+ * closes only at its kl_backend_seat_device_let_go, the rest close at its
+ * kl_backend_seat_paused_done, and only then is seatd told; and that an
+ * activation reopens the primary node before the compositor hears it.  FreeBSD itself is not built here (the
  * FreeBSD build is deferred, 2026-10-03 user); this is the seat's logic on
  * the host.  Prints "host-seat-freebsd: N/M passed".
  *
@@ -35,7 +36,7 @@ static void check(int passed, const char *what);
 static void record(const char *event);
 static void heard_paused(void *data);
 static void heard_resumed(void *data);
-static void heard_gone(void *data, const char *path);
+static int heard_gone(void *data, const char *path);
 static void heard_stop(void *data, unsigned reason);
 
 static unsigned checks_run;
@@ -91,15 +92,31 @@ main(
 	input = kl_backend_seat_device_open(backend, "/dev/zero");
 	check(input >= 0 && fake_open_devices == 2, "an input opens through seatd");
 
-	/* seatd disables: paused, the input gone, both leases closed, then disable_seat. */
+	/* seatd disables: paused and the input gone; the compositor still reads the input, so nothing closes yet. */
 	journal[0] = '\0';
 	fake_pending = 2;
 	check(kl_backend_poll_count(backend) == 1U, "seatd's descriptor is polled");
 	kl_backend_poll_fill(backend, &descriptor);
 	descriptor.revents = POLLIN;
 	kl_backend_poll_done(backend, &descriptor);
-	check(strcmp(journal, "paused gone:/dev/zero close close disable ") == 0, "disable: paused, gone, closes, then seatd hears");
+	check(strcmp(journal, "paused gone:/dev/zero ") == 0, "disable: paused, gone, nothing closed while the input may be read");
+	check(fake_open_devices == 2, "both leases open until the compositor lets go");
+
+	/* A descriptor the seat does not wait for is left alone; the input's let-go closes its lease. */
+	journal[0] = '\0';
+	kl_backend_seat_device_let_go(backend, kl_backend_seat_primary_fd(backend));
+	check(journal[0] == '\0' && fake_open_devices == 2, "a let-go of a descriptor not waited for closes nothing");
+	kl_backend_seat_device_let_go(backend, input);
+	check(strcmp(journal, "close ") == 0 && fake_open_devices == 1, "the input's let-go closes its lease");
+
+	/* The compositor is done: the primary node closes, then disable_seat. */
+	journal[0] = '\0';
+	kl_backend_seat_paused_done(backend);
+	check(strcmp(journal, "close disable ") == 0, "paused_done: the primary node closes, then seatd hears");
 	check(kl_backend_seat_paused(backend) == 1 && kl_backend_seat_primary_fd(backend) < 0 && fake_open_devices == 0, "disabled: nothing open");
+	journal[0] = '\0';
+	kl_backend_seat_paused_done(backend);
+	check(journal[0] == '\0', "a second paused_done does nothing");
 	error = kl_backend_seat_device_open(backend, "/dev/zero");
 	check(error < 0 && errno == EAGAIN, "no input while disabled (EAGAIN)");
 
@@ -168,16 +185,18 @@ heard_resumed(
 	record("resumed");
 }
 
-static void
+static int
 heard_gone(
 	void *data,
 	const char *path)
 {
 	char word[64];
 
+	/* The compositor's input thread still reads it: the seat waits for the let-go. */
 	(void)data;
 	(void)snprintf(word, sizeof(word), "gone:%s", path);
 	record(word);
+	return 1;
 }
 
 static void

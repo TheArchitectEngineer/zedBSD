@@ -120,6 +120,30 @@ kl_backend_seat_device_revoked(
 }
 
 /*
+ * Waits for no descriptor.
+ */
+void
+kl_backend_seat_device_let_go(
+	struct kl_backend *backend,
+	int descriptor)
+{
+	/* No callback asked for an answer. */
+	(void)backend;
+	(void)descriptor;
+}
+
+/*
+ * Has no pause to finish.
+ */
+void
+kl_backend_seat_paused_done(
+	struct kl_backend *backend)
+{
+	/* No seat pauses here. */
+	(void)backend;
+}
+
+/*
  * Polls nothing.
  */
 size_t

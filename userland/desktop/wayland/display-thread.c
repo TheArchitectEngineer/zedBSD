@@ -697,6 +697,39 @@ kwl_display_output_open(
 }
 
 /*
+ * Closes window mode's output as a change of its own, without waiting:
+ * begun, closed, ended (the display given back).  then(server, error,
+ * context) is called after.  Returns 0 (also when nothing is open, then
+ * called at once), ENOMEM, or EBUSY while another change runs.
+ */
+int
+kwl_display_output_close(
+	struct kwl_server *server,
+	kwl_display_fn *then,
+	void *context)
+{
+	struct display_change *change;
+	struct kwl_compose *compose;
+	int error;
+
+	/* Nothing to destroy. */
+	compose = server->compose;
+	if (compose == NULL || (!compose->output_open && !compose->output_prepared)) {
+		then(server, 0, context);
+		return 0;
+	}
+
+	/* The change. */
+	change = display_change_new(then, context);
+	if (change == NULL)
+		return ENOMEM;
+	error = kwl_display_begin(server, display_close_parked, change);
+	if (error != 0)
+		free(change);
+	return error;
+}
+
+/*
  * Creates the swapchain of window mode's display surface (preparing the
  * surface first when that was not done), which claims the display, and
  * waits for it: where the caller needs the output open on return.

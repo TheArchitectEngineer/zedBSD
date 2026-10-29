@@ -295,6 +295,7 @@ int kwl_input_thread_step(struct kwl_input_thread *input, int timeout_ms);
 int kwl_input_thread_attach(struct kwl_input_thread *input, const struct kwl_input_attach *device);
 int kwl_input_thread_detach(struct kwl_input_thread *input, unsigned slot, uint64_t *sequence);
 int kwl_input_thread_detach_wait(struct kwl_input_thread *input, uint64_t sequence, unsigned wait_ms);
+uint64_t kwl_input_thread_acked(struct kwl_input_thread *input);
 void kwl_input_thread_settings(struct kwl_input_thread *input, const struct kwl_input_settings *settings);
 struct kwl_input_event *kwl_input_thread_take(struct kwl_input_thread *input);
 int kwl_input_thread_failure(struct kwl_input_thread *input, unsigned *dropped);

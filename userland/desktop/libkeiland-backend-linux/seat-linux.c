@@ -229,6 +229,37 @@ kl_backend_seat_device_revoked(
 }
 
 /*
+ * Lets logind's seat close or answer for a descriptor the compositor no
+ * longer reads (the direct seat calls back about nothing).
+ */
+void
+kl_backend_seat_device_let_go(
+	struct kl_backend *backend,
+	int descriptor)
+{
+	/* Only logind waits for an answer. */
+	(void)backend;
+	if (seat_logind == 0)
+		return;
+	linux_logind_device_let_go(descriptor);
+}
+
+/*
+ * Lets logind hear that the compositor has let go of the paused display
+ * (the direct seat never pauses).
+ */
+void
+kl_backend_seat_paused_done(
+	struct kl_backend *backend)
+{
+	/* Only logind pauses. */
+	(void)backend;
+	if (seat_logind == 0)
+		return;
+	linux_logind_paused_done();
+}
+
+/*
  * Counts logind's bus descriptor.
  */
 size_t

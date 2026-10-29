@@ -14,12 +14,16 @@
  *
  * The backend calls these from kl_backend_poll_done, and the input
  * devices' two from kl_backend_input_scan; they change the compositor's
- * state only and never call back into the backend (the seat tells its
- * service after they return, and the scan closes a device not kept).  Inputs are known by their device
- * path, which stays the same while their descriptors change.
+ * state only, wait for nothing and never call back into the backend (the
+ * scan closes a device not kept).  What the seat waits for -- the input
+ * thread letting go of a descriptor, the output closed -- is answered from
+ * the event loop (kwl_backend_seat_tick), and the seat tells its service
+ * then.  Inputs are known by their device path, which stays the same
+ * while their descriptors change.
  */
 
 #include "userland/desktop/wayland/kwl.h"
+#include "userland/desktop/wayland/compose.h"
 
 #include <errno.h>
 #include <stdio.h>
@@ -27,33 +31,39 @@
 #include <string.h>
 
 static struct kwl_input_device *backend_input(struct kwl_server *server, const char *path);
+static void seat_pause_close(struct kwl_server *server);
+static void seat_pause_closed(struct kwl_server *server, int error, void *context);
 static const char *power_source_text(unsigned source);
 static void lid_external_moved(struct kwl_server *server, int error, void *context);
 static void lid_internal_moved(struct kwl_server *server, int error, void *context);
 static void lid_follow_rest(struct kwl_server *server, unsigned open);
 
 /*
- * The seat is paused: drawing stops and the output closes now (Vulkan's
- * duplicate of the primary node goes before the seat returns it).
+ * The seat is paused: drawing stops, and the output's close and every
+ * input's detach are asked without waiting; kwl_backend_seat_tick tells
+ * the seat once both are done (Vulkan's duplicate of the primary node goes
+ * before the seat returns it).
  */
 void
 kwl_backend_session_paused(
 	void *data)
 {
 	struct kwl_server *server;
+	uint64_t sequence;
 
 	/* No frame and no new input device from now on. */
 	server = data;
 	server->os_paused = 1;
 
-	/* The input thread lets go of every device before the seat takes them (ws213-p004). */
-	kwl_input_detach_all(server);
+	/* The input thread lets go of every device before the seat takes them (ws213-p004); a pause still running waits for these too. */
+	sequence = kwl_input_detach_all(server);
+	if (sequence > server->seat_pause_sequence)
+		server->seat_pause_sequence = sequence;
+	server->seat_pause = 1U;
 
-	/* The frame in flight finishes and the output closes. */
-	if (server->compose != NULL) {
-		kwl_compose_quiesce(server);
-		kwl_compose_output_close(server);
-	}
+	/* The output closes from the next tick, unless its close runs already. */
+	if (server->seat_pause_output != KWL_SEAT_OUTPUT_CLOSING)
+		server->seat_pause_output = KWL_SEAT_OUTPUT_ASK;
 
 	/* The next activation makes a new output rather than reusing this one. */
 	server->windowed = 0;
@@ -77,6 +87,10 @@ kwl_backend_session_resumed(
 	server->windowed = 0;
 	server->dirty = 1;
 
+	/* A pause whose close has not begun closes nothing now: the output is the scheduler's again. */
+	if (server->seat_pause && server->seat_pause_output == KWL_SEAT_OUTPUT_ASK)
+		server->seat_pause_output = KWL_SEAT_OUTPUT_CLOSED;
+
 	/* The devices the pause let go of whose descriptors the seat left open are read again (ws213-p004). */
 	kwl_input_attach_all(server);
 	printf("KWL SEAT resumed\n");
@@ -84,61 +98,102 @@ kwl_backend_session_resumed(
 
 /*
  * One input is paused: it is not read until it resumes (its descriptor
- * stays the seat's).
+ * stays the seat's).  Returns 1 when the seat waits for the input thread
+ * to let go (kwl_input_answer answers).
  */
-void
+int
 kwl_backend_input_paused(
 	void *data,
 	const char *path)
 {
 	struct kwl_input_device *input;
+	int later;
 
 	/* A node the compositor did not keep has nothing to stop. */
 	input = backend_input(data, path);
 	if (input == NULL)
-		return;
+		return 0;
 
-	/* The input thread lets go of it first (ws213-p004). */
-	kwl_input_pause(data, input);
+	/* The input thread lets go of it (ws213-p004). */
+	later = kwl_input_pause(data, input);
+	return later;
 }
 
 /*
  * One input resumes on a new descriptor; a partial report of the old one
- * does not enter it.
+ * does not enter it.  Returns 1 when the seat waits for the input thread
+ * to let go of the old one.
  */
-void
+int
 kwl_backend_input_resumed(
 	void *data,
 	const char *path,
 	int descriptor)
 {
 	struct kwl_input_device *input;
+	int later;
 
 	/* A node the compositor did not keep has nothing to resume. */
 	input = backend_input(data, path);
 	if (input == NULL)
-		return;
+		return 0;
 
 	/* The input thread reads the new descriptor from a fresh report (ws213-p004). */
-	kwl_input_resume(data, input, descriptor);
+	later = kwl_input_resume(data, input, descriptor);
+	return later;
 }
 
 /*
- * One input is gone: it is forgotten (its descriptor was the seat's and is
- * closed).
+ * One input is gone: it is forgotten (its descriptor is the seat's to
+ * close).  Returns 1 when the seat waits for the input thread to let go.
  */
-void
+int
 kwl_backend_input_gone(
 	void *data,
 	const char *path)
 {
 	struct kwl_input_device *input;
+	int later;
 
 	/* A node the compositor did not keep has nothing to forget. */
 	input = backend_input(data, path);
 	if (input == NULL)
+		return 0;
+
+	/* The input thread lets go, then the record goes. */
+	later = kwl_input_forget(data, input);
+	return later;
+}
+
+/*
+ * Answers the seat once a pass, after the input thread's events: the
+ * descriptors the input thread has let go of, then the seat's pause once
+ * the output is closed (its close begun when no other change of the
+ * display runs) and every input let go.
+ */
+void
+kwl_backend_seat_tick(
+	struct kwl_server *server)
+{
+	int detached;
+
+	/* The descriptors first, so the seat has them all before the pause's end. */
+	kwl_input_answer(server);
+	if (!server->seat_pause)
 		return;
-	kwl_input_forget(data, input);
+
+	/* The output's close, begun once no change of the display runs. */
+	if (server->seat_pause_output == KWL_SEAT_OUTPUT_ASK)
+		seat_pause_close(server);
+
+	/* Both done: the seat goes on. */
+	detached = kwl_input_detached_through(server, server->seat_pause_sequence);
+	if (!detached || server->seat_pause_output != KWL_SEAT_OUTPUT_CLOSED)
+		return;
+	server->seat_pause = 0U;
+	server->seat_pause_sequence = 0U;
+	kl_backend_seat_paused_done(server->backend);
+	printf("KWL SEAT paused_done\n");
 }
 
 /*
@@ -729,4 +784,42 @@ backend_input(
 
 	/* No input of that path. */
 	return NULL;
+}
+
+/* Begins the seat's pause's close of the output once no other change of the display runs. */
+static void
+seat_pause_close(
+	struct kwl_server *server)
+{
+	int busy;
+	int error;
+
+	/* A change running ends first; the next tick looks again. */
+	busy = kwl_display_busy(server);
+	if (busy)
+		return;
+
+	/* The close as a change of its own (at once when nothing is open). */
+	server->seat_pause_output = KWL_SEAT_OUTPUT_CLOSING;
+	error = kwl_display_output_close(server, seat_pause_closed, NULL);
+	if (error == 0)
+		return;
+
+	/* Without memory for the change, the close runs here, waiting. */
+	kwl_compose_output_close(server);
+	server->seat_pause_output = KWL_SEAT_OUTPUT_CLOSED;
+}
+
+/* The seat's pause's close of the output has ended (a failure leaves nothing of the output either). */
+static void
+seat_pause_closed(
+	struct kwl_server *server,
+	int error,
+	void *context)
+{
+	/* The pause may end at the next tick. */
+	(void)context;
+	if (error != 0)
+		printf("KWL SEAT paused close errno=%d\n", error);
+	server->seat_pause_output = KWL_SEAT_OUTPUT_CLOSED;
 }

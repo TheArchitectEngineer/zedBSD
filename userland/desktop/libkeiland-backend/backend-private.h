@@ -165,6 +165,14 @@ void kl_backend_notify_poll_fill(struct kl_backend *backend, struct pollfd *desc
 void kl_backend_notify_poll_done(struct kl_backend *backend, const struct pollfd *descriptors);
 
 /*
+ * Offers an input device the seat opened after its scan (logind answers
+ * TakeDevice later, evdev/input-evdev.c): the compositor's clock and the
+ * capability bitmaps, then input_found; a node the compositor does not
+ * keep is given back to the seat.
+ */
+void kl_backend_input_offer(struct kl_backend *backend, int descriptor, const char *path);
+
+/*
  * The shared POSIX parts of the computer's reading (ws188-p002,
  * machine/machine.c and machine/users.c): the PRETTY_NAME of an
  * os-release file (0 with the name, -1 when the file has none), and the

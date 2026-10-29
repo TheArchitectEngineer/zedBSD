@@ -1160,6 +1160,9 @@ event_loop(
 		kwl_input_drain(server);
 		server->perf.input_cycles += kwl_cycles() - part;
 
+		/* The seat hears what the input thread has let go of, and the end of its pause. */
+		kwl_backend_seat_tick(server);
+
 		/* Process only the clients captured by this poll snapshot. */
 		part = kwl_cycles();
 		for (index = 1; index < wake_slot; index++) {
