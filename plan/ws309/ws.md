@@ -4,7 +4,7 @@
 
 - Master: [plan/master.md](../master.md)（2026-10-29 作成）。Primary Milestone: MG006。前身の調べ: [WS291](../ws291/ws.md) の
   [keiland-blocking.md](../ws291/keiland-blocking.md)（P2 q1661 の点検、branch `agent/p2-ws291i` にあり main に未 merge）。
-- Status: incomplete（2026-10-29 q1662 P1: 設計 [design.md](design.md) 確定、p001〜p009・p019 cleared、p010〜p018 planned）
+- Status: incomplete（2026-10-29 q1662 P1: 設計 [design.md](design.md) 確定、p001〜p009・p019 cleared、p010 in-progress、p011〜p018 planned）
 - 目標: Keiland の compositor の main loop が frame を止める同期の待ちを持たないよう、thread を下の構成に整理する。ゲームモードの
   direct scanout は Vulkan display（`VK_KHR_display`）の仕様の中で実装する。
 
@@ -98,7 +98,7 @@
 | [ws309-p007](phase007/phase.md) | font の thread: 予備の font・emoji の先読み、rasterize、color emoji の decode | cleared（実機は未実施） | p002 |
 | [ws309-p008](phase008/phase.md) | render を GPU の queue の唯一の持ち主に (1): fence 付きの task と queue の lock | cleared（FreeBSD の build と実機は未実施） | p002 |
 | [ws309-p009](phase009/phase.md) | 同 (2)(3): 遅らせた破棄（serial・descriptor set・二重の image）、quiesce と main の `vkDeviceWaitIdle` を消す | cleared（実機・FreeBSD の build は未実施。park の手順の wait は p012） | p008 |
-| ws309-p010 | blur の thread とその都度の decode（壁紙・出力の大きさ・回転） | planned | p009 |
+| [ws309-p010](phase010/phase.md) | blur の thread とその都度の decode（壁紙・出力の大きさ・回転） | in-progress（調べと実装の形まで） | p009 |
 | ws309-p011 | 手書きの照合の pool（N = min(max(CPU−1,1),4)） | planned | p002 |
 | ws309-p012 | display の thread（swapchain・modeset・回転・hotplug の列挙・scanout の可否と claim・release・backlight、seat の pause）。BUG-353 をこの中で直し、受け入れに RTX の再現（`plan/ws291/tests/rtx-mview-order.sh`、実機の枠は Q1、2026-10-29 Q1 の決定） | planned | p009 |
 | ws309-p013 | present の常駐の thread（暫定の ioctl、共通の wake） | planned | p012 |
