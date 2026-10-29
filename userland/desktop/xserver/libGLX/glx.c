@@ -850,7 +850,8 @@ glXCreateNewContext(
  * for those versions, an OpenGL 3.1 context (with GL_ARB_compatibility) for 3.1,
  * an OpenGL 3.0 one for any version up to 3.0 (3.0 is compatible with the
  * earlier versions; profiles are chosen from 3.2 on); NULL for a later
- * version or an attribute not understood.  Sharing is not there yet.
+ * version, 3.3 on a device without dual-source blending, or an attribute
+ * not understood.  Sharing is not there yet.
  */
 GLXContext
 glXCreateContextAttribsARB(
@@ -1101,6 +1102,7 @@ glx_context(
 	GLXContext ctx;
 	EGLBoolean done;
 	EGLint count;
+	unsigned limit;
 	int status;
 
 	/* GLX on the server, libGL's view of the contexts and its fixed-function layer, and the EGL display. */
@@ -1116,6 +1118,11 @@ glx_context(
 			return NULL;
 		}
 	}
+
+	/* A version the display's device can give (OpenGL 3.3 needs dual-source blending). */
+	limit = zgl_glx_version_limit(glx_egl);
+	if (version > limit)
+		return NULL;
 
 	/* The context's record. */
 	ctx = calloc(1U, sizeof(*ctx));

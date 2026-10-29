@@ -406,6 +406,7 @@
 		glViewport;
 		glWaitSync;
 		zgl_glx_attach;
+		zgl_glx_version_limit;
 	local:
 		*;
 };

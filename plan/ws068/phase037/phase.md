@@ -62,7 +62,7 @@ build・host の試験まで。branch は試験の後に Q1 が merge する。
   `dualSrcBlend` を持つ時だけ受ける（他は `GL_INVALID_ENUM`）。`GL_MAX_DUAL_SOURCE_DRAW_BUFFERS` は 1（無い device は 0）。
   dual-source の blend で draw buffer 1 以降に書く draw は `GL_INVALID_OPERATION`。
 - libGL `gl33.c`（新）: `glVertexAttribP{1,2,3,4}ui{,v}`（2_10_10_10 を展開、符号付きの正規化は GL 4.2 の式）。exports.map と `GL/gl.h` に 3.3 の宣言と定数。
-- 版: libGLX `glx.c` が 3.3 の context を受ける（profile は 3.2 以上）。libGL `fixed.c` が「3.3 …」・GLSL「3.30」・GLSL の上限 330、
+- 版: libGLX `glx.c` が 3.3 の context を受ける（profile は 3.2 以上。device が dualSrcBlend を持たなければ拒む、下の「判断」）。libGL `fixed.c` が「3.3 …」・GLSL「3.30」・GLSL の上限 330、
   extension に 3.3 の ARB 6 つ（blend_func_extended・explicit_attrib_location・shader_bit_encoding・texture_rgb10_a2ui・timer_query・
   vertex_type_2_10_10_10_rev）。
 - 試験の program: glxtest `--gl33`（`userland/x11/glxtest/gl33.c`: 版と extension、TIME_ELAPSED、QueryCounter と GL_TIMESTAMP の順、
@@ -70,16 +70,33 @@ build・host の試験まで。branch は試験の後に Q1 が merge する。
   glxtest の「later-refused」の検査は 3.3 が受かるようになったので 4.7（無い版）の拒否に替えた（glx-p013・p031・p033 の期待の行は不変）。
 - glsl-host: `pass/dual330.{vert,frag}`、`fail/index-{vertex,range,no-location,es}`、反射の index の検査（3d）、i915 の受け入れに dual330。
 
-## 判断が要る点（推しで進めた。Q1 へ報告済み）
+## 判断（Q1 の指示で直した、2026-10-29）
 
-1. `dualSrcBlend` の無い device でも 3.3 を名乗る（`GL_MAX_DUAL_SOURCE_DRAW_BUFFERS` 0、SRC1 は `GL_INVALID_ENUM`）。GL 3.3 は 1 以上を要るが、
-   版を下げるより実装した版を名乗る方針（design.md §6）に合わせた。extension の表も静的で `GL_ARB_blend_func_extended` を常に名乗る。
+1. Q1「GL 3.3 の仕様（Table 23.x の implementation dependent values）では MAX_DUAL_SOURCE_DRAW_BUFFERS の最小は 1 なので、dualSrcBlend の無い
+   device で 3.3 を名乗ると仕様に合わない。dualSrcBlend が無い device では 3.2 を上限にし（context の作成で 3.3 を求められたら拒む）、ある device
+   だけ 3.3 にして。」→ libGL に `zgl_glx_version_limit(EGLDisplay)`（`zgl-glx.h` の private な口、exports.map）: 初期化した display の device が
+   `dualSrcBlend` を持てば 33、無ければ 32。libGLX の `glx_context` が EGL の display を作った後に版がそれを超える context を拒む（NULL）。
+   （最初の案は「無い device でも 3.3、MAX_DUAL_SOURCE 0」だった。）
+   device の `dualSrcBlend`（2026-10-29 の source の読み。実機・QEMU では未確かめ）:
+
+   | GPU（driver） | dualSrcBlend | GL の上限 | 根拠 |
+   | --- | --- | --- | --- |
+   | Venus（QEMU、host の GPU を転送） | host の driver による（host の Mesa の radv・anv・lavapipe は出す見込み、未確かめ） | 3.3（出せば） | `src/drivers/gpu/venus/` は host の features をそのまま返す |
+   | i915 | 出さない | 3.2 | `src/drivers/gpu/i915/vk/vk-instance.c` の features は vertexPipelineStoresAndAtomics・logicOp・shaderInt16・geometryShader だけ |
+   | nvrtx | 出さない | 3.2 | `src/drivers/gpu/nvrtx/vk/vk-device.c` の `device_features` は全て off |
+   | amdrdna | 出さない | 3.2 | `src/drivers/gpu/amdrdna/vk/vk-device.c` の `device_features` は全て off |
+   | powervr（VF2） | 出さない | 3.2 | `src/drivers/gpu/powervr/vk/vk-device.c` は全て off |
+   | bcm2711（Pi 4） | 出さない | 3.2 | `src/drivers/gpu/bcm2711/vk/vulkan-query.c` は 0 から、optional の feature を出さない |
+   | mali | 出さない | 3.2 | `src/drivers/gpu/mali/vk/vk-device.c` は全て off |
+   | ghci（KC705） | caps の `GHCI_HAS_DUAL_SOURCE` の時 | 3.3（caps による） | `src/drivers/gpu/ghci/vk/vk-caps.c` |
+
+   extension の表は静的で、3.3 の context だけが `GL_ARB_blend_func_extended` を名乗る（3.3 の context は dualSrcBlend のある device だけ）。
 2. timestamp を書かない queue（valid bits 0）では timer の結果は 0、`GL_QUERY_COUNTER_BITS` は 0。
 3. desktop の fragment output の `Index 0` は出さない（他の backend の compiler の差を増やさない）。index 1 の bind は decoration を挿して実現。
 
 ## 検証
 
-- build（2026-10-29）: amd64（config-amd64）・arm64（config-rpi4）・riscv64（config-visionfive2）で `dynamic/libGL.so`・`libGLESv2.so`・
+- build（2026-10-29、版の上限の直しの後にもう一度）: amd64（config-amd64）・arm64（config-rpi4）・riscv64（config-visionfive2）で `dynamic/libGL.so`・`libGLESv2.so`・
   `libEGL.so`・`libGLX.so`・`bin/glxtest` → exit 0、`warning:` 0（各 arch の sysroot は worktree の中で作り直し、`GL/gl.h` の変更を含む）。
   `git diff --check` 問題なし。
 - host: `sh plan/ws068/tests/glsl-host/run.sh build/glsl-host-p037` → `glsl-host: PASS`（compile・expect・link と spirv-val・反射の
