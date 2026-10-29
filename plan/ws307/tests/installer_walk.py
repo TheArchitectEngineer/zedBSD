@@ -11,6 +11,7 @@ when screendump has no surface (a GL scanout).
 import json
 import os
 import re
+import shlex
 import shutil
 import socket
 import struct
@@ -288,7 +289,8 @@ class Run:
 
 	def root(self, command: str, timeout: float = 300):
 		"""Runs a shell command as root on the live system over SSH; gives its output."""
-		got = self.guest("run", "sh", "-c", command, timeout=timeout)
+		# guest.py joins its words for ssh, so the command goes as one quoted word.
+		got = self.guest("run", "sh", "-c", shlex.quote(command), timeout=timeout)
 		return got.returncode, got.stdout
 
 	def shot(self, name: str):
