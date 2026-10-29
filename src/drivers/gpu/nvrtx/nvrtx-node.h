@@ -47,8 +47,9 @@ struct nvrtx_vk_session;
 /*
  * How long a run of a session's may take on the GPU from its submission
  * (or from the end of the last stop, when later) before the recovery looks
- * for what holds the GPU up, and how long it may wait at most before its
- * session is lost even when no stop came.
+ * for what holds the GPU up, and how long it may wait at most from the same
+ * start (outside the recovery's stops) before its session is lost even when
+ * no stop came.
  */
 #define NVRTX_NODE_RUN_US		2000000U
 #define NVRTX_NODE_RUN_LIMIT_US		8000000U

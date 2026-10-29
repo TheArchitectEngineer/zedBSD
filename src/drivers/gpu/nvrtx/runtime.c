@@ -1393,6 +1393,9 @@ runtime_kill(
 	if (error == 0)
 		stopped = 1;
 
+	/* Says how long the stop took (the resource manager waits for the preempt). */
+	nvrtx_stage_mark("channel %u: stop answered %d after %u ms", (unsigned)channel->chid, error, (unsigned)((nvrtx_now_us() - start) / 1000U));
+
 	/* A stop that failed: the GSP reports the channel's error once it has taken it off (the drain reads the report). */
 	reported = 0;
 	for (;;) {
@@ -1412,6 +1415,9 @@ runtime_kill(
 		error = nvrtx_work_channel_reset(node->gpu, channel, 0);
 		if (error == 0)
 			reset = 1;
+
+		/* Says how long it took with the stop. */
+		nvrtx_stage_mark("channel %u: reset answered %d after %u ms", (unsigned)channel->chid, error, (unsigned)((nvrtx_now_us() - start) / 1000U));
 	}
 
 	/* The resource manager frees a channel the GPU no longer runs. */

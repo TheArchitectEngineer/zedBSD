@@ -650,8 +650,10 @@ nvrtx_vk_gpu_idle(
  * recovery's last stop when that came later (the run waited behind the
  * stopped work).  Once it is spent the reaper is woken and the wait goes on
  * while the session's channel is not lost, up to NVRTX_NODE_RUN_LIMIT_US
- * from the submission; past that, or once the reaper lost the channel, the
- * session's runs are lost.  Returns 0, or EIO.
+ * from the same start, longer while the reaper is stopping a channel (each
+ * stop moves the start on, so a run behind several stopped ones is not
+ * lost); past that, or once the reaper lost the channel, the session's runs
+ * are lost.  Returns 0, or EIO.
  */
 static int
 vk_node_wait(
@@ -671,6 +673,7 @@ vk_node_wait(
 	uint32_t left;
 	uint32_t quiet;
 	bool lost;
+	int stopping;
 	int error;
 
 	node = session->node;
@@ -703,10 +706,11 @@ vk_node_wait(
 		if (now < since)
 			left = NVRTX_NODE_RUN_US;
 
-		/* The run's time is spent: the reaper looks for what holds the GPU up, up to the limit. */
+		/* The run's time is spent: the reaper looks for what holds the GPU up, up to the limit (not while it stops one). */
 		if (left == 0U) {
 			nvrtx_runtime_reaper_wake(node);
-			if (now - submitted_us >= NVRTX_NODE_RUN_LIMIT_US)
+			stopping = __atomic_load_n(&node->reaper_busy, __ATOMIC_ACQUIRE);
+			if (stopping == 0 && now >= since && now - since >= NVRTX_NODE_RUN_LIMIT_US)
 				break;
 			left = VK_NODE_LATE_SLICE_US;
 		}
