@@ -345,7 +345,8 @@ kwl_input_thread_attach(
 
 /*
  * Asks the input thread to stop reading a device, and gives the sequence
- * number its acknowledgement will carry (kwl_input_thread_detach_wait).
+ * number its acknowledgement will carry (kwl_input_thread_acked,
+ * kwl_input_thread_detach_wait).
  */
 int
 kwl_input_thread_detach(

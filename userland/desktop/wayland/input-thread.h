@@ -20,10 +20,12 @@
  *
  * The main thread owns the devices' opening and closing.  It hands a
  * device's descriptor to the input thread with an attach command and takes
- * it back with a detach, which waits until the input thread has stopped
- * using the descriptor; only then is the descriptor closed or given back
- * to the seat, so a descriptor number reused by another file is never read
- * as a device (design 6.1 N-1).
+ * it back with a detach, whose acknowledgement comes once the input thread
+ * has stopped using the descriptor (the main thread looks for it each
+ * pass, kwl_input_thread_acked, or waits for it, kwl_input_thread_detach_wait);
+ * only then is the descriptor closed or given back to the seat, so a
+ * descriptor number reused by another file is never read as a device
+ * (design 6.1 N-1).
  */
 
 #ifndef KWL_INPUT_THREAD_H

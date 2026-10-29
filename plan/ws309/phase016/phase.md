@@ -3,7 +3,7 @@
 # ws309-p016 Linux・FreeBSD の seat 経由の入力の open（J4）と、seat の callback の detach の ack を wake で受ける形
 
 - 親: [WS309](../ws.md)、設計 [design.md](../design.md) §4.5（T6、レビュー 4 の close と fd の番号）・§9 の J4。Queue: q1662-i10（P1）。
-- 状態: planned（2026-10-29 q1662-i10 P1: 調べと手順まで、source の変更なし。この起動の残りの文脈では Linux・FreeBSD の guest の試験まで届かないため、次の起動へ）。
+- 状態: in-progress（2026-10-30 q1662-i10 P1: 実装と build・host 試験まで（WIP e3acf2530）。Linux・FreeBSD の guest の試験は**ユーザーの判断待ち**（下の「止めている確認」）。）
 - 依存: p003（cleared）。
 
 ## 今の待ちの点（main 868318312）
@@ -31,3 +31,41 @@
    lane で使えるかを先に調べる（libseat の内部の状態を main と共有するので、使えなければ同期のまま残して理由を書く）。
 3. 試験: Linux の QEMU+KVM の guest（WS105 の道、[plan/tools.md](../../tools.md)）で logind の session の VT 切り替え（pause と resume）と入力の hotplug、`KWL INPUT` の行と
    `KWL PERF pass` の pass_max_us。FreeBSD の guest（WS108・WS109）で seatd。host 試験: input の detach の順（ack の前に let_go が呼ばれない）。
+
+## 実装（2026-10-30 q1662-i10 P1、branch `agent/p1-ws309i`、WIP e3acf2530、基点 main 10c6b2664）
+
+- 契約（`keiland-backend.h` の seat の節）: `input_paused`・`input_resumed`・`input_gone` は int を返す（1: compositor の別の thread がその前の descriptor を
+  まだ読み得る。compositor は読まなくなった後に event loop から `kl_backend_seat_device_let_go(backend, descriptor)` を callback ごとに順に呼び、
+  seat はその時に閉じる・service に答える。0: すぐ進めてよい）。`session_paused` の後、compositor は output を閉じ全ての input を読まなくなってから
+  `kl_backend_seat_paused_done` を呼ぶ（callback の中では呼ばない）。`kl_backend_seat_device_open` は後で答える seat（logind）では -1・EINPROGRESS を返し、
+  答えが来た時に `kl_backend_poll_done` から `input_found` で渡す（private の `kl_backend_input_offer`、evdev/input-evdev.c）。
+- compositor: `input_detach` は待たない（`device->detach_sequence` と ledger の `kwl_seat_answers_asked`）。seat への答えは新しい `wayland/seat-answer.c`
+  （答えの FIFO・ack の見た値・待ちの始まり）に積み、`kwl_backend_seat_tick`（main の pass ごと、`kwl_input_drain` の後）が
+  `kwl_input_answer`（`kwl_input_thread_acked` を読み、ack の済んだ答えを順に `let_go`、100 ms を超えた ack の待ちは今と同じく compositor を終える）を呼ぶ。
+  `session_paused` は detach と、display の変更が無い時に始める非同期の output の close（新しい `kwl_display_output_close`）を頼むだけで戻り、
+  両方が済んだ tick で `paused_done`。resume が close の始まる前に来たら close を取り消す。ledger が満ちた時だけ ack をその場で待つ（上限 100 ms）。
+  閉じる device の record は最後の detach の ack の event で消す（前の pause の detach の event で消さない）。
+- logind（seat-logind-linux.c）: 入力の `TakeDevice` は `dbus_send_call` で送り、答えは `dbus_dispatch_messages` で signal と同じ順に受ける（同じ path の 2 度目の
+  open は EINPROGRESS）。`ReleaseDevice`・`PauseDeviceComplete` は `NO_REPLY_EXPECTED` で送り、待たない（同期の `dbus_call` は他の答えを捨てるので、
+  open の後は使わない。primary の TakeDevice と終わりの ReleaseControl は同期のまま）。resume の古い fd・gone の fd・input の協調の pause の完了は
+  let-go まで保留（resume が先に来たら完了を送らない）、primary の協調の pause の完了は `paused_done` まで保留（resume で取り消す）。
+- seatd（seat-freebsd.c）: disable は `session_paused` と各 input の `input_gone` を伝え、1 を返した lease は let-go で、残りと primary は `paused_done` で閉じてから
+  `libseat_disable_seat`。open の最中の disable はその場で全部。libseat の `libseat_open_device` は同期のまま（device の open は seatd の socket の往復で、
+  libseat の内部の状態を main と共有するため thread に出さない。Linux の J4 だけを非同期にした）。
+- 直した試験: `plan/ws131/tests/host-seat-freebsd.c`・`.sh`（API の変更に追従。`.sh` は main でも notify-unsupported.c が無く link できなかったので足した）。
+
+## 確かめた事（2026-10-30）
+
+- build: zedBSD `make ZEDBSD_CONFIG=plan/ws309/tests/config-amd64-p1.mk build/amd64/sysroot/usr/lib/libc.o build/amd64/dynamic/libc.so build/amd64/bin/wayland`
+  exit 0・`warning:` 0。Linux `make keiland-linux KEILAND_LINUX_BUILD=build/ws309/keiland-linux`（-Werror）exit 0・`warning:` 0。
+- host: `plan/ws309/tests/seat-answer/run.sh`（ASan+UBSan）17/17（ack の前に let-go が出ない、callback の順、pending、遅れ、満杯）。
+  `plan/ws131/tests/host-seat-freebsd.sh`（ASan+UBSan）18/18（disable で何も閉じない → let-go で input → paused_done で primary と disable_seat）。
+- `git diff --check` PASS。`makefile-sync.sh`・`keiland-os-boundary/check.sh` の FAIL は preview・installer・powervr・libbrowser の既存の物だけ（この差分の file は無い）。
+
+## 止めている確認（ユーザーの判断待ち、2026-10-30 Q1）
+
+- Linux の gdm の guest（`plan/ws309/tests/seat-linux/seat-guest.sh`: logind の session、uinput の keyboard の出入り（`uinput-key.c`）、SwitchTo と chvt の pause・resume、
+  `KWL SEAT paused_done`、compositor の pid が同じ）と FreeBSD の guest（`backend-test.sh`: native の build の warning 0 と host-seat-freebsd）。
+  道具（`plan/tools/keiland-linux/build-guest.sh`・`guest.py`、`plan/tools/keiland-freebsd/build-guest.sh`）が自分の build/ の一時 file を host で消すため、
+  AGENTS §4 の削除の規則の例外にするかを Q1 がユーザーに聞いている。答えが来るまで guest の道具を使わない。guest の image の build は始めた分だけ走らせたまま
+  （`build/ws309/linux/guest-gdm`、`build/ws309/freebsd/guest`）。
