@@ -389,6 +389,24 @@ struct nvrtx_falcon_bl {
 	uint32_t start_tag;
 };
 
+/*
+ * A point where the GSP boot is left with a program that may still run:
+ * FWSEC-FRTS did not halt, booter_load did not halt, the firmware never
+ * said it was up, the firmware did not unload, or a program of the
+ * region's teardown did not halt.
+ */
+enum nvrtx_gsp_hold {
+	NVRTX_GSP_HOLD_FWSEC = 0,
+	NVRTX_GSP_HOLD_BOOTER,
+	NVRTX_GSP_HOLD_INIT,
+	NVRTX_GSP_HOLD_UNLOAD,
+	NVRTX_GSP_HOLD_TEAR_DOWN
+};
+
+/* The falcons nvrtx_gsp_hold_falcons() names: the GSP's and the secure processor's. */
+#define NVRTX_GSP_HOLD_GSP_FALCON	0x1U
+#define NVRTX_GSP_HOLD_SEC2_FALCON	0x2U
+
 /* One section of an ELF file, by offset into the file. */
 struct nvrtx_section {
 	size_t at;
@@ -891,10 +909,13 @@ uint64_t nvrtx_vram_size(uint32_t value);
 uint64_t nvrtx_vram_size_mib(uint32_t value);
 uint64_t nvrtx_vga_workspace(uint64_t vram_size, uint32_t value);
 int nvrtx_wpr_layout(uint64_t vram_size, uint64_t vga, uint64_t boot_size, uint64_t image_size, uint64_t heap_os, uint64_t heap_min, struct nvrtx_wpr_layout *layout);
+int nvrtx_wpr_scrubbed(const struct nvrtx_wpr_layout *layout);
 void nvrtx_wpr_record(uint8_t *record, const struct nvrtx_wpr_layout *layout, const struct nvrtx_wpr_sources *sources);
 void nvrtx_libos_region(uint8_t *page, unsigned index, const char *name, uint64_t address, uint64_t size);
 void nvrtx_log_buffer(uint8_t *buffer, uint64_t bus, size_t size);
 void nvrtx_rmargs(uint8_t *args, uint64_t queue_pages, uint32_t pte_count);
+
+uint32_t nvrtx_gsp_hold_falcons(enum nvrtx_gsp_hold point);
 
 size_t nvrtx_radix3_pages(size_t image_pages);
 int nvrtx_radix3_fill(const struct nvrtx_pages *image, const struct nvrtx_pages *table);

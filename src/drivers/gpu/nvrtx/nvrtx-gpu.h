@@ -181,7 +181,7 @@ enum nvrtx_gsp_state {
 	NVRTX_GSP_REGION_SET,
 	NVRTX_GSP_RUNNING,
 	NVRTX_GSP_FAILED,
-	/* A falcon did not halt or the region could not be torn down: memory is kept until power-off. */
+	/* A program did not end: the GPU is cut off the system memory, its falcons reset, its memory kept until power-off. */
 	NVRTX_GSP_FAILED_HOLD
 };
 

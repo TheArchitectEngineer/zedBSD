@@ -33,6 +33,12 @@
  *   nvrtx.disp=0          the driver stops after the display's readout
  *                         (display-client) instead of taking the firmware's
  *                         head over
+ *   nvrtx.fail=<point>    a test of the way back to the firmware's picture:
+ *                         the GSP boot gives up at that point as if a
+ *                         program there had not answered (frts: after
+ *                         FWSEC-FRTS, booter: after booter_load, gsp-init:
+ *                         200 ms into the firmware's init); the GPU is then
+ *                         held until a power cycle
  *   nvrtx.resident=0      after the takeover the GSP is stopped instead of
  *                         staying up as a GPU device (gpu-device)
  *   nvrtx.disp.own=1      the takeover shows the driver's own surface (the
@@ -126,7 +132,7 @@
  */
 #define STAGE_RESIDENT_OFF_TOKEN	"nvrtx.resident=0"
 
-/* The longest stop token: "nvrtx.stop=" and a stage name. */
+/* The longest stop or fail token: "nvrtx.stop=" or "nvrtx.fail=" and a name. */
 #define STAGE_TOKEN_CAPACITY		32U
 
 static const char *stage_command_line(void);
@@ -430,6 +436,32 @@ nvrtx_stage_allowed(
 
 	/* Succeeded: nothing stops the stage. */
 	return true;
+}
+
+/*
+ * Reports whether the boot asks the GSP boot to give up at a point on purpose
+ * (nvrtx.fail=<point>).
+ */
+bool
+nvrtx_stage_fail_wanted(
+	const char *point)
+{
+	char token[STAGE_TOKEN_CAPACITY];
+	int length;
+	bool present;
+
+	/* Spells the token of this point; a name too long to spell never matches. */
+	length = kern_snprintf(token, sizeof(token), "nvrtx.fail=%s", point);
+	if (length < 0 || (size_t)length >= sizeof(token))
+		return false;
+
+	/* Looks for the token among the boot parameters. */
+	present = stage_token_present(token);
+	if (present)
+		return true;
+
+	/* The boot gives up only where a program does not answer. */
+	return false;
 }
 
 /*

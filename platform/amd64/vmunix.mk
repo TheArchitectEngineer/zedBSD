@@ -176,7 +176,7 @@ AMD64_NVRTX_SOURCES += src/drivers/gpu/nvrtx/products.c
 # The GSP boot path's parts that touch no hardware (ws037-p004 4a).
 AMD64_NVRTX_SOURCES += src/drivers/gpu/nvrtx/wire.c src/drivers/gpu/nvrtx/image.c \
 	src/drivers/gpu/nvrtx/layout.c src/drivers/gpu/nvrtx/radix3.c src/drivers/gpu/nvrtx/queue.c \
-	src/drivers/gpu/nvrtx/vbios.c
+	src/drivers/gpu/nvrtx/vbios.c src/drivers/gpu/nvrtx/hold.c
 # P0 of the GSP boot: firmware files, DMA memory, VBIOS (ws037-p004 4b).
 AMD64_NVRTX_SOURCES += src/drivers/gpu/nvrtx/file.c src/drivers/gpu/nvrtx/memory.c \
 	src/drivers/gpu/nvrtx/rom.c src/drivers/gpu/nvrtx/gsp.c
