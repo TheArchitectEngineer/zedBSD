@@ -25,6 +25,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <unistd.h>
 
 /* The fonts. */
 #define MAIN_FONT		KEILAND_DATADIR "/fonts/keiland.ttf"
@@ -40,6 +41,10 @@
 
 /* How many times a stale swapchain is remade for one frame. */
 #define MAIN_STALE_LIMIT	8U
+
+/* How many times, and how far apart, the presenter is asked for again when the device refuses it. */
+#define MAIN_RESIZE_TRIES	20U
+#define MAIN_RESIZE_WAIT_US	250000U
 
 static int main_parse(int argc, char **argv, const char **display, unsigned *width, unsigned *height);
 static int main_number(const char *text, unsigned *value);
@@ -475,10 +480,19 @@ static int
 main_resize(
 	struct inst_app *app)
 {
+	unsigned attempt;
 	int status;
 
-	/* The presenter at the window's size. */
+	/*
+	 * The presenter at the window's size; a device that refuses it for a
+	 * moment (EIO while the GPU is busy) is asked again a few times.
+	 */
 	status = kl_window_present_resize(app->window, &app->width, &app->height);
+	for (attempt = 1U; status != 0 && attempt < MAIN_RESIZE_TRIES; attempt++) {
+		inst_log("PRESENT resize error=%d attempt=%u", status, attempt);
+		(void)usleep(MAIN_RESIZE_WAIT_US);
+		status = kl_window_present_resize(app->window, &app->width, &app->height);
+	}
 	if (status != 0) {
 		fprintf(stderr, "INSTALLER FAILED operation=present error=%d\n", status);
 		return -1;

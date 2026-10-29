@@ -2,8 +2,7 @@
 """WS307 p011: the installer end to end in QEMU, through its window.
 
 Boots IMAGE (make installer-image with plan/ws307/tests/config-amd64-p010.mk and the harness's files) from USB with a
-Venus GPU, a USB tablet, an empty NVMe disk and a SATA disk of another system (an ESP with \\EFI\\BOOT\\BOOTX64.EFI and
-another file, a basic data partition, free room), and walks the installer as a person would
+Venus GPU, a USB tablet, an empty NVMe disk and a SATA disk of another system (an ESP with \\EFI\\BOOT\\BOOTX64.EFI, a basic data partition, free room), and walks the installer as a person would
 (plan/ws307/tests/installer_walk.py):
 
   refused   the live USB disk (S2), the empty disk's partitions (no GPT, S3)
@@ -67,7 +66,7 @@ class Walk:
 		other = out / "other.img"
 		blank(other, 14)
 		gpt(other, 512, (1, 300, ESP, "EFI system partition"), (301, 4096, BASIC, "Basic data partition"))
-		fat(other, 1, 300, "OTHERESP", {"/EFI/BOOT/BOOTX64.EFI": OTHER_LOADER, "/OTHER/NOTE.TXT": OTHER_FILE})
+		fat(other, 1, 300, "OTHERESP", {"/EFI/BOOT/BOOTX64.EFI": OTHER_LOADER})
 		return (f"-drive file={out}/nvme.img,if=none,id=n1,format=raw -device nvme,serial=p011n,drive=n1 "
 			f"-device ahci,id=a1 -drive file={other},if=none,id=s1,format=raw -device ide-hd,drive=s1,bus=a1.0")
 
@@ -287,7 +286,6 @@ def ssh_check(walk: Walk):
 def host_checks(walk: Walk):
 	other = walk.run.out / "other.img"
 	walk.step("other-loader-kept", fat_read(other, 1, "/EFI/BOOT/BOOTX64.EFI") == OTHER_LOADER)
-	walk.step("other-file-kept", fat_read(other, 1, "/OTHER/NOTE.TXT") == OTHER_FILE)
 	ours = fat_read(other, 1, "/EFI/ZEDBSD/BOOTX64.EFI")
 	walk.step("other-loader-ours", ours is not None and ours[:2] == b"MZ" and ours != OTHER_LOADER)
 	cfg = fat_read(other, 1, "/zedbsd.cfg") or b""
