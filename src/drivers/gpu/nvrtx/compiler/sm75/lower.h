@@ -82,14 +82,26 @@
 #define NVRTX_SM75_NO_SLOT		0xffffffffU
 
 /*
+ * What a value needs instead of a register of its own: nothing (it has one),
+ * its defining word read in place as an operand (a constant, a push constant
+ * or a uniform buffer word, the one immediate or constant buffer operand of
+ * the arithmetic that reads it), or nothing at all because it is a product
+ * FFMA computes in the one addition that reads it.
+ */
+#define NVRTX_SM75_FOLD_NONE		0U
+#define NVRTX_SM75_FOLD_OPERAND		1U
+#define NVRTX_SM75_FOLD_PRODUCT		2U
+
+/*
  * The state of one compilation.
  *
  * Lives on the stack of nvrtx_sm75_compile_ir(); its arrays are allocated
  * there and freed before it returns.
  */
 struct nvrtx_sm75_lowering {
-	/* The shader model, the program, the result being built, and where a refusal is described. */
+	/* The shader model, whether products may fuse into additions (no NoContraction), the program, the result being built, and where a refusal is described. */
 	uint32_t sm;
+	uint32_t contract;
 	const struct drv_gpu_shader_ir *ir;
 	struct nvrtx_sm75_binary *binary;
 	struct nvrtx_sm75_diagnostic *diagnostic;
@@ -109,6 +121,10 @@ struct nvrtx_sm75_lowering {
 
 	/* Each uniform's storage slot or constant buffer, NVRTX_SM75_NO_SLOT for neither. */
 	uint32_t *slot;
+
+	/* Each value's fold (NVRTX_SM75_FOLD_*), and the IR instruction that defines a folded one. */
+	uint8_t *fold;
+	uint32_t *def;
 
 	/* The code: room in instructions and instructions emitted. */
 	uint32_t capacity;
@@ -168,6 +184,12 @@ void nvrtx_sm75_retire(struct nvrtx_sm75_lowering *lowering, const struct drv_gp
 
 /* Reports a value's register as a source operand. */
 struct nvrtx_sm75_src nvrtx_sm75_value(const struct nvrtx_sm75_lowering *lowering, uint32_t value);
+
+/* Chooses the values read in place as operands and the products fused into the addition that reads them. */
+int nvrtx_sm75_plan_folds(struct nvrtx_sm75_lowering *lowering);
+
+/* Reports a value as a source operand: its immediate or constant buffer word when it is read in place, else its register. */
+struct nvrtx_sm75_src nvrtx_sm75_operand(const struct nvrtx_sm75_lowering *lowering, uint32_t value);
 
 /*
  * ==== The arithmetic, the comparisons, the built-in values and the loops (lower.c) ====

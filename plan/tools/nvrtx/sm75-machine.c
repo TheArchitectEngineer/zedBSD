@@ -376,6 +376,9 @@ sm75_machine_invoke(
 		} else if (form == NVRTX_SM75_FORM_IMM_SRC2) {
 			s1 = s2;
 			s2 = (uint32_t)nvrtx_sm75_get(&word, NVRTX_SM75_IMM_LOW, 32U);
+		} else if (form == NVRTX_SM75_FORM_CB_SRC2) {
+			s1 = s2;
+			s2 = sm75_machine_cb_word(run, (uint32_t)nvrtx_sm75_get(&word, NVRTX_SM75_CB_INDEX_LOW, 5U), (uint32_t)nvrtx_sm75_get(&word, NVRTX_SM75_CB_OFFSET_LOW, 16U));
 		} else {
 			printf("  instruction %u: form %u\n", t->pc, form);
 			run->failed = 1;
@@ -462,12 +465,26 @@ sm75_machine_invoke(
 				s1 ^= 0x80000000U;
 			if (alu == NVRTX_SM75_OP_FMUL) {
 				f = sm75_machine_float(s0) * sm75_machine_float(s1);
-			} else if (form == NVRTX_SM75_FORM_IMM_SRC2) {
+			} else if (form == NVRTX_SM75_FORM_IMM_SRC2 || form == NVRTX_SM75_FORM_CB_SRC2) {
 				f = sm75_machine_float(s0) + sm75_machine_float(s2);
 			} else {
 				f = sm75_machine_float(s0) + sm75_machine_float(s1);
 			}
 			sm75_machine_write(run, t, dst, sm75_machine_bits(f));
+			break;
+		case NVRTX_SM75_OP_FFMA:
+			/* The third slot's negation belongs to the second source in the forms that moved it there. */
+			if (nvrtx_sm75_get(&word, NVRTX_SM75_SRC0_NEG, 1U) != 0U)
+				s0 ^= 0x80000000U;
+			if (form == NVRTX_SM75_FORM_REG && nvrtx_sm75_get(&word, NVRTX_SM75_SRC1_NEG, 1U) != 0U)
+				s1 ^= 0x80000000U;
+			if (form == NVRTX_SM75_FORM_IMM_SRC2 || form == NVRTX_SM75_FORM_CB_SRC2) {
+				if (nvrtx_sm75_get(&word, NVRTX_SM75_SRC2_NEG, 1U) != 0U)
+					s1 ^= 0x80000000U;
+			} else if (nvrtx_sm75_get(&word, NVRTX_SM75_SRC2_NEG, 1U) != 0U) {
+				s2 ^= 0x80000000U;
+			}
+			sm75_machine_write(run, t, dst, sm75_machine_bits(fmaf(sm75_machine_float(s0), sm75_machine_float(s1), sm75_machine_float(s2))));
 			break;
 		case NVRTX_SM75_OP_IMAD:
 			sm75_machine_write(run, t, dst, s0 * s1 + s2);

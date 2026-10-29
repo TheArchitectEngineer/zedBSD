@@ -36,7 +36,8 @@
  *      memory order field; a global access's memory order field is checked
  *      for each model, and a model the compiler does not target is refused.
  *
- *   nvrtx-sm75-host-test DIR    DIR holds the .spv of const, add, ids, float, integer, loop, division, shared and atomic
+ *   nvrtx-sm75-host-test DIR    DIR holds the .spv of const, add, ids, float, integer, loop, division, shared, atomic,
+ *                               contract and precise
  *
  * Nothing here is evidence about the GPU.
  */
@@ -80,6 +81,8 @@ static void check_division(const char *directory);
 static void check_shared(const char *directory);
 static void check_atomic(const char *directory);
 static void check_quad(const char *directory);
+static void check_contraction(const char *directory);
+static uint32_t count_alu(const struct nvrtx_sm75_binary *binary, uint32_t opcode);
 static struct nvrtx_sm75_binary *compile_graphics(const char *directory, const char *name, enum drv_gpu_shader_stage stage);
 static void check_qmd(void);
 static void check_launch_push(void);
@@ -158,6 +161,7 @@ main(
 		check_shared(argv[1]);
 		check_atomic(argv[1]);
 		check_quad(argv[1]);
+		check_contraction(argv[1]);
 		check_first_program();
 		check_draw_programs();
 	}
@@ -924,6 +928,62 @@ check_shared(
 	check(!run.failed && same, "shared: words across barriers and a shared atomic sum");
 
 	nvrtx_sm75_binary_free((struct nvrtx_sm75_binary *)run.binary);
+}
+
+/*
+ * The contraction of a product and a sum: contract.comp's x * y + z is one
+ * FFMA and no FMUL; precise.comp's same arithmetic, decorated NoContraction,
+ * never becomes an FFMA.  The shared frontend refuses the NoContraction
+ * decoration today, so precise.comp is refused; when it compiles, it must
+ * keep its FMUL and FADD (the compiler reads the module for the decoration).
+ */
+static void
+check_contraction(
+	const char *directory)
+{
+	struct nvrtx_sm75_binary *binary;
+
+	binary = compile_file(directory, "contract");
+	check(binary != NULL, "contract.comp compiles");
+	if (binary != NULL) {
+		check(count_alu(binary, NVRTX_SM75_OP_FFMA) == 1U, "contract.comp: the product and the sum are one FFMA");
+		check(count_alu(binary, NVRTX_SM75_OP_FMUL) == 0U, "contract.comp: no FMUL is left");
+		nvrtx_sm75_binary_free(binary);
+	}
+
+	binary = compile_file(directory, "precise");
+	if (binary == NULL) {
+		check(1, "precise.comp: refused (NoContraction not interpreted by the frontend), so never contracted");
+	} else {
+		check(count_alu(binary, NVRTX_SM75_OP_FFMA) == 0U, "precise.comp: NoContraction keeps the product out of an FFMA");
+		check(count_alu(binary, NVRTX_SM75_OP_FMUL) == 1U, "precise.comp: the product is an FMUL");
+		check(count_alu(binary, NVRTX_SM75_OP_FADD) == 1U, "precise.comp: the sum is an FADD");
+		nvrtx_sm75_binary_free(binary);
+	}
+}
+
+/* Counts the instructions of a program with an ALU opcode (its 9 bits, any form). */
+static uint32_t
+count_alu(
+	const struct nvrtx_sm75_binary *binary,
+	uint32_t opcode)
+{
+	uint32_t index;
+	uint32_t count;
+	uint32_t form;
+
+	/* Each instruction of an ALU form (1 to 5) with the opcode. */
+	count = 0U;
+	for (index = 0U; index < binary->code_words / 4U; index++) {
+		form = (binary->code[index * 4U] >> 9) & 7U;
+		if (form < 1U || form > 5U)
+			continue;
+		if ((binary->code[index * 4U] & 0x1ffU) == opcode)
+			count++;
+	}
+
+	/* Succeeded: the count. */
+	return count;
 }
 
 /* Storage buffer atomics (ws101's atomic.comp). */
