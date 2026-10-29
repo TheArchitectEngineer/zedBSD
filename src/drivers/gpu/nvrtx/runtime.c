@@ -76,15 +76,22 @@
 #define RUNTIME_VENDOR_FLAGS		7U
 
 /*
- * The native record after the vendor suffix, sent when the device decodes
- * video and the reply holds it: the capset's bytes with it, its tag and
- * its flags (bit 0: an H.264 decode family), as libvulkan reads them.
+ * The native record after the vendor suffix, sent when the reply holds it:
+ * the capset's bytes with it, its tag and its flags (bit 0: an H.264
+ * decode family, when the device decodes video), as libvulkan reads them.
  */
 #define RUNTIME_NATIVE_CAPSET_BYTES	176U
 #define RUNTIME_NATIVE_MAGIC_AT		168U
 #define RUNTIME_NATIVE_FLAGS_AT		172U
 #define RUNTIME_NATIVE_MAGIC		0x5a4e4154U
 #define RUNTIME_NATIVE_VIDEO_H264	0x1U
+
+/*
+ * The native flag of a command run at once on the caller's thread
+ * (GPU_COMMAND, runtime_command), its replies written when the call
+ * returns, as libvulkan reads it (VULKAN_NATIVE_CAPSET_SYNC_COMMAND).
+ */
+#define RUNTIME_NATIVE_SYNC_COMMAND	0x2U
 
 /* The timelines a queue may name (1 to 63; 0 is the context's own). */
 #define RUNTIME_TIMELINES		64U
@@ -406,6 +413,7 @@ runtime_capset(
 	struct gpu_capset *capset)
 {
 	struct nvrtx_node *node;
+	uint32_t flags;
 	bool video;
 
 	UNUSED_PARAMETER(session);
@@ -428,11 +436,17 @@ runtime_capset(
 	nvrtx_put32(capset->data, RUNTIME_CAPSET_FLAGS_AT, RUNTIME_VENDOR_FLAGS);
 	capset->bytes = RUNTIME_CAPSET_BYTES;
 
-	/* The native record promises the video decode family, when there is one and the reply holds it. */
-	video = nvrtx_node_video_available(node);
-	if (video && capset->capacity >= RUNTIME_NATIVE_CAPSET_BYTES) {
+	/*
+	 * The native record, when the reply holds it: commands run at once on
+	 * the caller's thread, and the video decode family when there is one.
+	 */
+	if (capset->capacity >= RUNTIME_NATIVE_CAPSET_BYTES) {
+		flags = RUNTIME_NATIVE_SYNC_COMMAND;
+		video = nvrtx_node_video_available(node);
+		if (video)
+			flags |= RUNTIME_NATIVE_VIDEO_H264;
 		nvrtx_put32(capset->data, RUNTIME_NATIVE_MAGIC_AT, RUNTIME_NATIVE_MAGIC);
-		nvrtx_put32(capset->data, RUNTIME_NATIVE_FLAGS_AT, RUNTIME_NATIVE_VIDEO_H264);
+		nvrtx_put32(capset->data, RUNTIME_NATIVE_FLAGS_AT, flags);
 		capset->bytes = RUNTIME_NATIVE_CAPSET_BYTES;
 	}
 
@@ -441,9 +455,10 @@ runtime_capset(
 }
 
 /*
- * Runs one frame at once; EAGAIN while frames or markers of the session
- * are queued (a frame may not overtake them; a parked marker does not
- * hold it back).
+ * Runs one frame at once on the caller's thread; EAGAIN while frames or
+ * markers of the session are queued (a frame may not overtake them; a
+ * parked marker does not hold it back).  The frame counts as the
+ * session's pending work while it runs, so a stop or a drain waits for it.
  */
 static int
 runtime_command(
@@ -466,13 +481,15 @@ runtime_command(
 	if (bytes == 0U || bytes > GPU_COMMAND_MAX || (bytes & 3U) != 0U)
 		return EINVAL;
 
-	/* Looks at the session's queued work and the fault. */
+	/* Looks at the session's queued work and the fault; a frame that runs counts as pending. */
 	enabled = spin_lock_irqsave(&node->queue_lock);
 
 	queued = owner->queued;
 	faulted = node->faulted;
 	if (owner->stopping != 0)
 		faulted = 1;
+	if (faulted == 0 && queued == 0U)
+		owner->pending++;
 
 	spin_unlock_irqrestore(&node->queue_lock, enabled);
 
@@ -484,6 +501,14 @@ runtime_command(
 
 	/* Runs the frame through the executor. */
 	error = runtime_execute(node, owner, wire, bytes);
+
+	/* The frame has ended: the drains look again. */
+	enabled = spin_lock_irqsave(&node->queue_lock);
+
+	owner->pending--;
+	waitq_wake_all(&node->retired);
+
+	spin_unlock_irqrestore(&node->queue_lock, enabled);
 
 	/* Reports a frame that failed. */
 	if (error != 0)
