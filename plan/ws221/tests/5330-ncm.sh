@@ -11,6 +11,7 @@
 # 5330-run.sh then takes its survey, reboots to Debian and compares.  Output: build/ws221-5330/NAME (fresh-out.sh):
 # summary.txt (the lines above), extra.txt (the whole EXTRA output), run.txt (5330-run.sh), peer.log.
 #   plan/ws221/tests/5330-ncm.sh IMAGE NAME [SECONDS]
+# NO_VF2=1 leaves the VisionFive 2 alone (2026-10-29: the board is lent out) and pings this host instead.
 # MODE=--nvme-kernel makes IMAGE a kernel, put alone on the NVMe's zedBSD (the userland stays the one an image run
 # wrote): an A/B of two kernels on the same userland.  VF2_HOST (default kei@10.0.30.2), VF2_PASSWORD (default kei).  The 5330's Debian network settings are not touched.
 # Copyright (C) 2026 Awe Morris; SPDX-License-Identifier: Zlib
@@ -32,10 +33,16 @@ say() { echo "5330-ncm: $*" | tee -a "$out/summary.txt"; }
 vf2_root() { printf '%s\n' "$SSHPASS" | timeout 60 sshpass -e ssh $so "$vf2" "sudo -S sh -c '$1'" 2>&1 | tr -d '\r'; }
 vf2_mtu() { timeout 30 sshpass -e ssh $so "$vf2" 'ifconfig en0' 2>&1 | sed -n 's/.*mtu \([0-9]*\).*/\1/p' | head -1; }
 
-timeout 60 sshpass -e scp $so build/vf2/bin/ifconfig "$vf2:/tmp/ifconfig" || { say "FAIL: copy of ifconfig to the VisionFive 2"; exit 1; }
-trap 'vf2_root "/tmp/ifconfig en0 mtu 1500" > /dev/null; say "restored: VisionFive 2 mtu $(vf2_mtu)"' EXIT
-vf2_root "/tmp/ifconfig en0 mtu 9000" > /dev/null
-say "VisionFive 2 mtu $(vf2_mtu)"
+# NO_VF2=1: the VisionFive 2 is not touched; the echoes go to this host at the adapter's MTU less 28 and at 1472.
+if [ "${NO_VF2:-0}" = 1 ]; then
+	vf2_ip=$server_ip
+	say "no VisionFive 2: echoes to $server_ip"
+else
+	timeout 60 sshpass -e scp $so build/vf2/bin/ifconfig "$vf2:/tmp/ifconfig" || { say "FAIL: copy of ifconfig to the VisionFive 2"; exit 1; }
+	trap 'vf2_root "/tmp/ifconfig en0 mtu 1500" > /dev/null; say "restored: VisionFive 2 mtu $(vf2_mtu)"' EXIT
+	vf2_root "/tmp/ifconfig en0 mtu 9000" > /dev/null
+	say "VisionFive 2 mtu $(vf2_mtu)"
+fi
 
 : > "$out/peer.log"
 timeout 1500 python3 -I plan/ws221/tests/perf-peer.py "$server_ip" "$port" "$out/peer.log" 2 > /dev/null 2>&1 &

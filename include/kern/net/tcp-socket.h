@@ -157,6 +157,13 @@ struct tcp_socket {
 	uint8_t wscale_on;
 	uint8_t receive_wscale;
 	/*
+	 * Selective acknowledgements (RFC 2018): sack_offered says this end's
+	 * SYN carries SACK-Permitted (an active open always, a passive one when
+	 * the peer's SYN did), and sack_on that both ends offered it.
+	 */
+	uint8_t sack_offered;
+	uint8_t sack_on;
+	/*
 	 * The sequence and acknowledgement numbers of the segment peer_window
 	 * was last taken from (RFC 9293's SND.WL1 and SND.WL2).  A segment
 	 * older than that one, by these two numbers, does not set the window
@@ -475,6 +482,18 @@ struct tcp_socket {
 	uint32_t reorder_sequence[TCP_REORDER_MAX];
 	uint32_t reorder_length[TCP_REORDER_MAX];
 	unsigned reorder_count;
+	/*
+	 * With sack_on: the start of the segment last kept ahead of a gap,
+	 * whose block an acknowledgement reports first (RFC 2018 section 4),
+	 * while sack_recent_set; and a duplicate segment's range that the next
+	 * acknowledgement reports once, in its first block (D-SACK, RFC 2883),
+	 * while dsack_pending.  Guarded by the socket lock.
+	 */
+	uint32_t sack_recent;
+	unsigned sack_recent_set;
+	uint32_t dsack_start;
+	uint32_t dsack_end;
+	unsigned dsack_pending;
 	struct tcp_counters counters;
 };
 
