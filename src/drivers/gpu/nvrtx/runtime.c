@@ -13,12 +13,17 @@
  * queued with a completion), and takes supervised jobs whose completion
  * markers follow the frames queued before them.  One worker thread runs
  * the queue in order: a frame through the executor under the node's lock,
- * a marker by completing it.  A fault stops new work: frames and markers
- * still queued complete with EIO.
+ * a marker by completing it.  The executor's submissions do not wait for
+ * the GPU, so a marker whose session's newest run has not ended yet is
+ * parked, and the completer thread completes the parked markers in order
+ * as their runs end, waiting without the node's lock (a run that does not
+ * end in time completes its marker with EIO and loses the session's runs).
+ * A fault stops new work: frames and markers still queued or parked
+ * complete with EIO.
  *
- * queue_lock (a spinlock) guards the queue, the markers, every session's
- * pending count and the fault flag; the node's lock (a mutex) is taken
- * only outside it, around the executor.
+ * queue_lock (a spinlock) guards the queue, the parked markers, the
+ * markers, every session's pending and queued counts and the fault flag;
+ * the node's lock (a mutex) is taken only outside it, around the executor.
  */
 
 #include <stdbool.h>
@@ -72,6 +77,10 @@ static int runtime_stop_begin(void *private_data, void *session, int error);
 static int runtime_stop_poll(void *private_data, void *session);
 static void runtime_fault(void *private_data, int error);
 static void runtime_worker(void *argument);
+static void runtime_completer(void *argument);
+static bool runtime_park(struct nvrtx_node *node, struct nvrtx_node_entry *entry);
+static void runtime_dequeued(struct nvrtx_node *node, struct nvrtx_session *owner);
+static void runtime_retire(struct nvrtx_node *node, struct nvrtx_node_entry *entry);
 static int runtime_execute(struct nvrtx_node *node, struct nvrtx_session *session, const void *wire, uint32_t bytes);
 static void runtime_enqueue(struct nvrtx_node *node, struct nvrtx_node_entry *entry);
 static struct nvrtx_node_entry *runtime_marker(struct nvrtx_node *node, struct nvrtx_session *session, void *token, struct drv_gpu_completion *completion);
@@ -109,10 +118,13 @@ void
 nvrtx_runtime_bind(
 	struct nvrtx_node *node)
 {
-	/* The queue, its lock and its two wait queues. */
+	/* The queue, the parked markers, their lock and the wait queues. */
 	spin_init(&node->queue_lock, LOCK_RANK_DEVICE, "nvrtx queue");
 	waitq_init(&node->available, "nvrtx queue available");
 	waitq_init(&node->retired, "nvrtx queue retired");
+	waitq_init(&node->parked_more, "nvrtx queue parked");
+	node->parked_head = NULL;
+	node->parked_tail = NULL;
 
 	/* The operations and the capabilities they make good. */
 	node->ops.get_capset = runtime_capset;
@@ -125,34 +137,40 @@ nvrtx_runtime_bind(
 }
 
 /*
- * Starts the worker once the node is registered; it runs for the node's
- * life.  Without it nothing queued would complete, so a failure faults the
- * renderer (every queued operation then answers EIO).
+ * Starts the worker and the completer once the node is registered; they
+ * run for the node's life.  Without them nothing queued would complete, so
+ * a failure faults the renderer (every queued operation then answers EIO).
  */
 void
 nvrtx_runtime_start(
 	struct nvrtx_node *node)
 {
 	struct thread *worker;
+	struct thread *completer;
 	unsigned long enabled;
 	int error;
 
-	/* The worker. */
-	error = kthread_create(runtime_worker, node, SCHED_PRIORITY_DEFAULT, &worker);
+	/* The completer of the parked markers, then the worker. */
+	error = kthread_create(runtime_completer, node, SCHED_PRIORITY_DEFAULT, &completer);
+	if (error == 0) {
+		completer->detached = 1;
+		thread_start(completer);
+		error = kthread_create(runtime_worker, node, SCHED_PRIORITY_DEFAULT, &worker);
+	}
 	if (error == 0) {
 		worker->detached = 1;
 		thread_start(worker);
 		return;
 	}
 
-	/* No worker: the renderer takes nothing. */
+	/* No worker or no completer: the renderer takes nothing. */
 	enabled = spin_lock_irqsave(&node->queue_lock);
 
 	node->faulted = 1;
 
 	spin_unlock_irqrestore(&node->queue_lock, enabled);
 
-	nvrtx_stage_mark("renderer: no renderer worker (%d)", error);
+	nvrtx_stage_mark("renderer: no renderer worker or completer (%d)", error);
 }
 
 /*
@@ -211,8 +229,9 @@ runtime_capset(
 }
 
 /*
- * Runs one frame at once; EAGAIN while queued work of the session has not
- * finished (a frame may not overtake it).
+ * Runs one frame at once; EAGAIN while frames or markers of the session
+ * are queued (a frame may not overtake them; a parked marker does not
+ * hold it back).
  */
 static int
 runtime_command(
@@ -224,7 +243,7 @@ runtime_command(
 	struct nvrtx_node *node;
 	struct nvrtx_session *owner;
 	unsigned long enabled;
-	uint32_t pending;
+	uint32_t queued;
 	int faulted;
 	int error;
 
@@ -238,7 +257,7 @@ runtime_command(
 	/* Looks at the session's queued work and the fault. */
 	enabled = spin_lock_irqsave(&node->queue_lock);
 
-	pending = owner->pending;
+	queued = owner->queued;
 	faulted = node->faulted;
 	if (owner->stopping != 0)
 		faulted = 1;
@@ -248,7 +267,7 @@ runtime_command(
 	/* A faulted device, or a session being stopped, takes nothing; queued work goes first. */
 	if (faulted != 0)
 		return EIO;
-	if (pending != 0U)
+	if (queued != 0U)
 		return EAGAIN;
 
 	/* Runs the frame through the executor. */
@@ -668,8 +687,9 @@ runtime_fault(
 
 /*
  * Runs the queue in order for the node's life: a frame through the
- * executor, then its completion; a marker's completion; then the entry is
- * retired and the session's pending count falls.
+ * executor, then its completion; a marker's completion, or its parking
+ * when its session's newest run has not ended; then the entry is retired
+ * and the session's pending count falls.
  */
 static void
 runtime_worker(
@@ -677,9 +697,10 @@ runtime_worker(
 {
 	struct nvrtx_node *node;
 	struct nvrtx_node_entry *entry;
-	struct drv_gpu_completion *completion;
+	struct nvrtx_session *owner;
 	unsigned long enabled;
 	uint64_t observed;
+	bool parked;
 	int faulted;
 	int error;
 
@@ -700,6 +721,7 @@ runtime_worker(
 			node->tail = NULL;
 		entry->next = NULL;
 		entry->state = NVRTX_ENTRY_RUNNING;
+		owner = entry->session;
 		faulted = node->faulted;
 
 		spin_unlock_irqrestore(&node->queue_lock, enabled);
@@ -717,29 +739,187 @@ runtime_worker(
 			error = EIO;
 		}
 
-		/* Delivers the completion. */
-		completion = entry->completion;
-		drv_gpu_complete(completion, error);
+		/*
+		 * A marker whose session's newest run has not ended goes to the
+		 * completer.  The entry leaves the worker's queue before its
+		 * completion (it still counts as pending), a marker once it has
+		 * taken its run (runtime_park): the command its waiter sends
+		 * next may run at once, and its runs are not the ones the marker
+		 * waits for.
+		 */
+		if (entry->kind == RUNTIME_ENTRY_MARKER && error == 0) {
+			parked = runtime_park(node, entry);
+			if (parked)
+				continue;
 
-		/* Retires the entry: a frame is freed, a marker is free again. */
+			/* The run ended: whether the session's runs are lost. */
+			error = nvrtx_vk_node_run_wait(owner, entry->run_fence, entry->run_us);
+		} else {
+			runtime_dequeued(node, owner);
+		}
+
+		/* Delivers the completion, then retires the entry. */
+		drv_gpu_complete(entry->completion, error);
+		runtime_retire(node, entry);
+	}
+}
+
+/* Takes an entry the worker ran (a frame, or a marker carrying an error) off its session's count of queued entries. */
+static void
+runtime_dequeued(
+	struct nvrtx_node *node,
+	struct nvrtx_session *owner)
+{
+	unsigned long enabled;
+
+	enabled = spin_lock_irqsave(&node->queue_lock);
+
+	owner->queued--;
+
+	spin_unlock_irqrestore(&node->queue_lock, enabled);
+}
+
+/*
+ * Completes the parked markers in the order they were parked, for the
+ * node's life: each once its session's run has ended, with EIO when it did
+ * not end in time or the device faulted.  The waits take no lock.
+ */
+static void
+runtime_completer(
+	void *argument)
+{
+	struct nvrtx_node *node;
+	struct nvrtx_node_entry *entry;
+	unsigned long enabled;
+	uint64_t observed;
+	int faulted;
+	int error;
+
+	node = argument;
+
+	/* Takes the oldest parked marker, sleeping while none is parked. */
+	for (;;) {
 		enabled = spin_lock_irqsave(&node->queue_lock);
 
-		entry->session->pending--;
-		if (entry->kind == RUNTIME_ENTRY_MARKER) {
-			entry->state = NVRTX_ENTRY_FREE;
-			entry->session = NULL;
-			entry->completion = NULL;
+		while (node->parked_head == NULL) {
+			observed = waitq_sequence(&node->parked_more);
+			(void)waitq_sleep(&node->parked_more, &node->queue_lock, observed, 0U, 0U);
 		}
-		waitq_wake_all(&node->retired);
+
+		/* The head stays parked (counted pending) until it is completed. */
+		entry = node->parked_head;
+		faulted = node->faulted;
 
 		spin_unlock_irqrestore(&node->queue_lock, enabled);
 
-		/* A frame's copy goes; a marker's freeing is capacity. */
-		if (entry->kind == RUNTIME_ENTRY_FRAME) {
-			kern_free(entry);
-		} else {
-			drv_gpu_capacity_changed(node->device);
-		}
+		/* Waits for its run, unless the device faulted. */
+		error = EIO;
+		if (faulted == 0)
+			error = nvrtx_vk_node_run_wait(entry->session, entry->run_fence, entry->run_us);
+
+		/* Delivers the completion. */
+		drv_gpu_complete(entry->completion, error);
+
+		/* Takes it off the parked list, then retires it. */
+		enabled = spin_lock_irqsave(&node->queue_lock);
+
+		node->parked_head = entry->next;
+		if (node->parked_head == NULL)
+			node->parked_tail = NULL;
+		entry->next = NULL;
+
+		spin_unlock_irqrestore(&node->queue_lock, enabled);
+
+		runtime_retire(node, entry);
+	}
+}
+
+/*
+ * Parks a marker the worker took when its session's newest run has not
+ * ended, or when markers are parked already (markers complete in order).
+ * Returns true when parked: the completer completes it.
+ */
+static bool
+runtime_park(
+	struct nvrtx_node *node,
+	struct nvrtx_node_entry *entry)
+{
+	unsigned long enabled;
+	bool passed;
+
+	/* The session's newest run, as its frames before the marker left it. */
+	mutex_lock(&node->lock);
+
+	entry->run_fence = entry->session->run_fence;
+	entry->run_us = entry->session->run_us;
+
+	mutex_unlock(&node->lock);
+
+	/* Whether it still runs. */
+	passed = nvrtx_work_passed(node->gpu, entry->run_fence);
+
+	/*
+	 * It leaves the worker's queue, with its run taken (before the
+	 * completer may retire it); then it parks behind the parked ones when
+	 * it must wait, or when others wait already.
+	 */
+	enabled = spin_lock_irqsave(&node->queue_lock);
+
+	entry->session->queued--;
+	if (passed && node->parked_head == NULL) {
+		spin_unlock_irqrestore(&node->queue_lock, enabled);
+		return false;
+	}
+	entry->state = NVRTX_ENTRY_PARKED;
+	entry->next = NULL;
+	if (node->parked_tail == NULL) {
+		node->parked_head = entry;
+	} else {
+		node->parked_tail->next = entry;
+	}
+	node->parked_tail = entry;
+	waitq_wake_one(&node->parked_more);
+
+	spin_unlock_irqrestore(&node->queue_lock, enabled);
+
+	/* Succeeded: the completer has it (counted for nvrtx.vk.perf=1). */
+	nvrtx_node_count(node, &node->counts.parked, 1U);
+	return true;
+}
+
+/*
+ * Retires an entry whose completion was delivered: the session's pending
+ * count falls, a frame is freed and a marker is free again (capacity).
+ */
+static void
+runtime_retire(
+	struct nvrtx_node *node,
+	struct nvrtx_node_entry *entry)
+{
+	unsigned long enabled;
+	uint32_t kind;
+
+	/* The session's count, and a marker free again. */
+	kind = entry->kind;
+	enabled = spin_lock_irqsave(&node->queue_lock);
+
+	entry->session->pending--;
+	if (kind == RUNTIME_ENTRY_MARKER) {
+		entry->state = NVRTX_ENTRY_FREE;
+		entry->session = NULL;
+		entry->completion = NULL;
+	}
+
+	/* The drains look again. */
+	waitq_wake_all(&node->retired);
+
+	spin_unlock_irqrestore(&node->queue_lock, enabled);
+
+	/* A frame's copy goes; a marker's freeing is capacity. */
+	if (kind == RUNTIME_ENTRY_FRAME) {
+		kern_free(entry);
+	} else {
+		drv_gpu_capacity_changed(node->device);
 	}
 }
 
@@ -796,8 +976,9 @@ runtime_enqueue(
 	struct nvrtx_node *node,
 	struct nvrtx_node_entry *entry)
 {
-	/* At the tail. */
+	/* At the tail, counted in its session's queue. */
 	entry->state = NVRTX_ENTRY_QUEUED;
+	entry->session->queued++;
 	entry->next = NULL;
 	if (node->tail == NULL) {
 		node->head = entry;

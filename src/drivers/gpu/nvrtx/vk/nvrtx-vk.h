@@ -140,8 +140,8 @@ uint64_t nvrtx_vk_heap_bytes(void *owner);
 /*
  * Gives back the storage of a VkDeviceMemory once nothing holds it: the
  * GPU's mapping of the run at va and the reference to the blob's backing
- * the memory took when the blob was attached.  Provided by the node; the
- * caller holds the node's lock.
+ * the memory took when the blob was attached, once the session's runs have
+ * ended.  Provided by the node; the caller holds the node's lock.
  */
 void nvrtx_vk_memory_detach(void *owner, void *backing, uint64_t va, uint64_t bytes);
 
@@ -163,18 +163,38 @@ int nvrtx_vk_memory_cpu(void *owner, void *backing, uint8_t **cpu);
 /*
  * The executor's own GPU memory (programs, push buffers, texture and
  * sampler tables), provided by the node: a run of bytes the CPU writes at
- * *cpu and the GPU reads at *va, and its release.  The token names the
- * run to the node.
+ * *cpu and the GPU reads at *va, and its release once the session's runs
+ * have ended.  The token names the run to the node.
  */
 int nvrtx_vk_gpu_alloc(void *owner, uint64_t bytes, void **token, uint8_t **cpu, uint64_t *va);
 void nvrtx_vk_gpu_free(void *owner, void *token);
 
 /*
- * Runs a push buffer of bytes at va on the GPU's work channel and waits
- * until the GPU has done it (provided by the node).  Returns 0, or EIO
- * when the work did not finish.
+ * A run the executor put on the GPU: the work channel's fence after it (0:
+ * no run) and when it was submitted, in microseconds.
  */
-int nvrtx_vk_gpu_run(void *owner, uint64_t va, uint32_t bytes);
+struct nvrtx_vk_ticket {
+	uint32_t fence;
+	uint64_t submitted_us;
+};
+
+/*
+ * The executor's runs, provided by the node (the caller holds the node's
+ * lock).  nvrtx_vk_gpu_submit() puts a push buffer of bytes at va on the
+ * GPU's work channel without waiting for it and names the run in *ticket;
+ * the session's newest run is the one nvrtx_vk_gpu_last() gives and
+ * nvrtx_vk_gpu_idle() waits for.  nvrtx_vk_gpu_wait() waits for a run, up
+ * to its time from the submission; nvrtx_vk_gpu_passed() tells whether it
+ * ended; nvrtx_vk_gpu_retire() counts an ended run's GPU time once and
+ * forgets it.  The submission and the waits return EIO once a run of the
+ * session did not end in time (its runs are lost).
+ */
+int nvrtx_vk_gpu_submit(void *owner, uint64_t va, uint32_t bytes, struct nvrtx_vk_ticket *ticket);
+int nvrtx_vk_gpu_wait(void *owner, const struct nvrtx_vk_ticket *ticket);
+bool nvrtx_vk_gpu_passed(void *owner, const struct nvrtx_vk_ticket *ticket);
+void nvrtx_vk_gpu_retire(void *owner, struct nvrtx_vk_ticket *ticket);
+void nvrtx_vk_gpu_last(void *owner, struct nvrtx_vk_ticket *ticket);
+int nvrtx_vk_gpu_idle(void *owner);
 
 /*
  * Counts a transfer the CPU did through the window instead of the GPU, for

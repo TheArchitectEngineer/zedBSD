@@ -12,8 +12,15 @@
  *
  * The executor runs under the node's lock, and so do these, except
  * nvrtx_vk_node_blob_attach(), which the node calls from a blob's
- * creation and which takes the lock itself.  Every run is mapped once for
- * the work channel: the VA it gets lives as long as the run.
+ * creation and which takes the lock itself, and nvrtx_vk_node_run_wait(),
+ * which the renderer's completer calls without it.  Every run is mapped
+ * once for the work channel: the VA it gets lives as long as the run.
+ *
+ * A push buffer is put on the work channel without waiting for it: the
+ * session keeps its newest run's fence, and whatever needs the GPU done
+ * with the session's work first (a run of memory given back, a copy by the
+ * CPU, vkQueueWaitIdle) waits for it.  A run may take VK_NODE_RUN_US from
+ * its submission; one that takes longer loses the session's runs.
  */
 
 #include <stdbool.h>
@@ -64,6 +71,7 @@ struct vk_node_run {
 
 static uint8_t *vk_node_backing_view(struct nvrtx_node *node, const struct nvrtx_backing *backing);
 static void vk_node_backing_drop(struct nvrtx_node *node, struct nvrtx_backing *backing);
+static int vk_node_wait(struct nvrtx_session *session, uint32_t fence, uint64_t submitted_us, uint64_t *waited_us);
 static void vk_node_gr_check(struct nvrtx_node *node);
 
 /*
@@ -133,7 +141,14 @@ nvrtx_vk_memory_detach(
 	session = owner;
 	held = backing;
 
-	/* The work channel no longer reads the run (every submission waited for its work). */
+	/* Runs that may read it keep the mapping and the reference for good when they do not end. */
+	error = nvrtx_vk_gpu_idle(owner);
+	if (error != 0) {
+		nvrtx_stage_mark("executor: a memory's run at %llx stays, its work did not end", (unsigned long long)va);
+		return;
+	}
+
+	/* The work channel no longer reads the run (the session's runs have ended). */
 	error = nvrtx_work_unmap(session->node->gpu, va, held->bo.size);
 	if (error != 0)
 		nvrtx_stage_mark("executor: a memory's run at %llx stayed mapped (%d)", (unsigned long long)va, error);
@@ -242,8 +257,8 @@ nvrtx_vk_gpu_alloc(
 }
 
 /*
- * Frees a run of the executor's own GPU memory; no submitted work reads it
- * (every submission waited for its work).
+ * Frees a run of the executor's own GPU memory once the session's runs,
+ * which may read it, have ended; when they do not end, it is kept for good.
  */
 void
 nvrtx_vk_gpu_free(
@@ -261,6 +276,13 @@ nvrtx_vk_gpu_free(
 	if (run == NULL)
 		return;
 
+	/* Runs that may read it keep it when they do not end. */
+	error = nvrtx_vk_gpu_idle(owner);
+	if (error != 0) {
+		nvrtx_stage_mark("executor: an executor run at %llx stays, its work did not end", (unsigned long long)run->va);
+		return;
+	}
+
 	/* Unmaps it; a run that stays mapped keeps its VRAM, so nothing else is mapped over it. */
 	error = nvrtx_work_unmap(session->node->gpu, run->va, run->bo.size);
 	if (error != 0) {
@@ -275,60 +297,256 @@ nvrtx_vk_gpu_free(
 }
 
 /*
- * Runs a push buffer on the work channel and waits until the GPU has done
- * it.  Returns 0, the submission's error, or EIO when the work did not
- * finish in time.
+ * Puts a push buffer on the work channel with the driver's fence after it,
+ * without waiting for it; the session's newest run is this one from now
+ * on.  Returns 0, EIO once the session's runs are lost, or the
+ * submission's error.
  */
 int
-nvrtx_vk_gpu_run(
+nvrtx_vk_gpu_submit(
 	void *owner,
 	uint64_t va,
-	uint32_t bytes)
+	uint32_t bytes,
+	struct nvrtx_vk_ticket *ticket)
 {
 	struct nvrtx_session *session;
 	struct nvrtx_node *node;
-	uint64_t start;
-	uint64_t spent;
-	uint64_t gpu_ns;
+	uint64_t submitted;
 	uint32_t fence;
-	int timed;
+	int error;
+
+	session = owner;
+	node = session->node;
+	ticket->fence = 0U;
+	ticket->submitted_us = 0U;
+
+	/* A session whose run did not end puts nothing more on the GPU. */
+	if (__atomic_load_n(&session->run_lost, __ATOMIC_ACQUIRE) != 0)
+		return EIO;
+
+	/* Puts the push buffer on the ring with the driver's fence after it. */
+	submitted = nvrtx_now_us();
+	error = nvrtx_work_submit(node->gpu, va, bytes, &fence);
+	if (error != 0) {
+		nvrtx_stage_mark("executor fail: a push buffer was not submitted (%d)", error);
+		return error;
+	}
+
+	/* Counts the run and its push buffer's bytes. */
+	nvrtx_node_count(node, &node->counts.runs, 1U);
+	nvrtx_node_count(node, &node->counts.push_bytes, bytes);
+
+	/* Succeeded: the run is the session's newest. */
+	session->run_fence = fence;
+	session->run_us = submitted;
+	ticket->fence = fence;
+	ticket->submitted_us = submitted;
+	return 0;
+}
+
+/*
+ * Waits for a run of the session's to end, up to its time from the
+ * submission; the wait under the node's lock is counted.  Returns 0, or
+ * EIO when it did not end in time or the session's runs are lost.
+ */
+int
+nvrtx_vk_gpu_wait(
+	void *owner,
+	const struct nvrtx_vk_ticket *ticket)
+{
+	struct nvrtx_session *session;
+	struct nvrtx_node *node;
+	uint64_t waited;
 	int error;
 
 	session = owner;
 	node = session->node;
 
-	/* Puts the push buffer on the ring with the driver's fence after it. */
-	start = nvrtx_now_us();
-	error = nvrtx_work_submit(node->gpu, va, bytes, &fence);
+	/* A run that ended is no wait. */
+	if (nvrtx_work_passed(node->gpu, ticket->fence))
+		return 0;
+
+	/* Waits, and counts the wait. */
+	error = vk_node_wait(session, ticket->fence, ticket->submitted_us, &waited);
+	nvrtx_node_count(node, &node->counts.blocked, 1U);
+	nvrtx_node_count(node, &node->counts.blocked_us, waited);
 	if (error != 0)
 		return error;
 
-	/* Waits for the fence. */
-	error = nvrtx_work_wait(node->gpu, fence, VK_NODE_RUN_US);
-	if (error != 0) {
-		nvrtx_stage_mark("executor fail: the work of fence %u did not finish (%d)", (unsigned)fence, error);
-		return EIO;
-	}
+	/* Succeeded: the GPU has done the run. */
+	return 0;
+}
 
-	/* Counts the run, its time from the submission to the fence, and its push buffer's bytes. */
-	spent = nvrtx_now_us() - start;
-	nvrtx_node_count(node, &node->counts.runs, 1U);
-	nvrtx_node_count(node, &node->counts.run_us, spent);
-	nvrtx_node_count_max(node, &node->counts.run_max_us, spent);
-	nvrtx_node_count(node, &node->counts.push_bytes, bytes);
+/*
+ * Waits without the node's lock (the renderer's completer) for a run of
+ * the session's to end, up to its time from the submission.  Returns 0, or
+ * EIO when it did not end in time or the session's runs are lost.
+ */
+int
+nvrtx_vk_node_run_wait(
+	struct nvrtx_session *session,
+	uint32_t fence,
+	uint64_t submitted_us)
+{
+	uint64_t waited;
+	int error;
 
-	/* Counts the GPU's own time for the run when the channel times its runs. */
-	timed = nvrtx_work_run_time(node->gpu, fence, &gpu_ns);
-	if (timed == 0) {
-		nvrtx_node_count(node, &node->counts.timed, 1U);
-		nvrtx_node_count(node, &node->counts.gpu_us, gpu_ns / 1000U);
-		nvrtx_node_count_max(node, &node->counts.gpu_max_us, gpu_ns / 1000U);
+	/* A run that ended is no wait. */
+	if (nvrtx_work_passed(session->node->gpu, fence))
+		return 0;
+
+	/* Waits. */
+	error = vk_node_wait(session, fence, submitted_us, &waited);
+	if (error != 0)
+		return error;
+
+	/* Succeeded: the GPU has done the run. */
+	return 0;
+}
+
+/* Reports whether a run of the session's has ended. */
+bool
+nvrtx_vk_gpu_passed(
+	void *owner,
+	const struct nvrtx_vk_ticket *ticket)
+{
+	struct nvrtx_session *session;
+	bool passed;
+
+	session = owner;
+
+	/* The work channel's semaphore at or past the run's fence. */
+	passed = nvrtx_work_passed(session->node->gpu, ticket->fence);
+
+	/* Succeeded: whether it ended. */
+	return passed;
+}
+
+/*
+ * Counts an ended run's own time on the GPU when the channel times its runs
+ * and tells a trap the 3D engine holds, then forgets the run.
+ */
+void
+nvrtx_vk_gpu_retire(
+	void *owner,
+	struct nvrtx_vk_ticket *ticket)
+{
+	struct nvrtx_session *session;
+	struct nvrtx_node *node;
+	uint64_t gpu_ns;
+	int timed;
+
+	session = owner;
+	node = session->node;
+
+	/* No run, or one that has not ended. */
+	if (ticket->fence == 0U || !nvrtx_work_passed(node->gpu, ticket->fence))
+		return;
+
+	/* The GPU's own time for the run. */
+	if (node->perf != 0) {
+		timed = nvrtx_work_run_time(node->gpu, ticket->fence, &gpu_ns);
+		if (timed == 0) {
+			nvrtx_node_count(node, &node->counts.timed, 1U);
+			nvrtx_node_count(node, &node->counts.gpu_us, gpu_ns / 1000U);
+			nvrtx_node_count_max(node, &node->counts.gpu_max_us, gpu_ns / 1000U);
+		}
 	}
 
 	/* A run the engine trapped in is told, the first few times. */
 	vk_node_gr_check(node);
 
-	/* Succeeded: the GPU has done the work. */
+	/* Succeeded: the run is forgotten. */
+	ticket->fence = 0U;
+	ticket->submitted_us = 0U;
+}
+
+/* Gives the session's newest run (no run before its first submission). */
+void
+nvrtx_vk_gpu_last(
+	void *owner,
+	struct nvrtx_vk_ticket *ticket)
+{
+	struct nvrtx_session *session;
+
+	session = owner;
+
+	/* The fence and the time the last submission left. */
+	ticket->fence = session->run_fence;
+	ticket->submitted_us = session->run_us;
+}
+
+/*
+ * Waits until the session's runs have ended (its newest one).  Returns 0,
+ * or EIO when it did not end in time or the session's runs are lost.
+ */
+int
+nvrtx_vk_gpu_idle(
+	void *owner)
+{
+	struct nvrtx_vk_ticket last;
+	int error;
+
+	/* The newest run. */
+	nvrtx_vk_gpu_last(owner, &last);
+	error = nvrtx_vk_gpu_wait(owner, &last);
+	if (error != 0)
+		return error;
+
+	/* Succeeded: the GPU has done the session's work. */
+	return 0;
+}
+
+/*
+ * Waits for a run's fence until VK_NODE_RUN_US after its submission and
+ * counts the run's time from its submission to its end; a run that did not
+ * end loses the session's runs.  *waited_us is the wait's own time.
+ * Returns 0, or EIO.
+ */
+static int
+vk_node_wait(
+	struct nvrtx_session *session,
+	uint32_t fence,
+	uint64_t submitted_us,
+	uint64_t *waited_us)
+{
+	struct nvrtx_node *node;
+	uint64_t start;
+	uint64_t age;
+	uint64_t spent;
+	uint32_t left;
+	int error;
+
+	node = session->node;
+	start = nvrtx_now_us();
+	*waited_us = 0U;
+
+	/* The session's runs are lost already: nothing is waited for again. */
+	if (__atomic_load_n(&session->run_lost, __ATOMIC_ACQUIRE) != 0)
+		return EIO;
+
+	/* What is left of the run's time. */
+	left = 0U;
+	age = start - submitted_us;
+	if (age < VK_NODE_RUN_US)
+		left = (uint32_t)(VK_NODE_RUN_US - age);
+
+	/* Waits for the fence. */
+	error = nvrtx_work_wait(node->gpu, fence, left);
+	spent = nvrtx_now_us();
+	*waited_us = spent - start;
+	if (error != 0) {
+		__atomic_store_n(&session->run_lost, 1, __ATOMIC_RELEASE);
+		nvrtx_stage_mark("executor fail: the work of fence %u did not finish (%d); the session's runs are lost", (unsigned)fence, error);
+		return EIO;
+	}
+
+	/* Counts the run's time from its submission to the end the wait saw. */
+	nvrtx_node_count(node, &node->counts.ended, 1U);
+	nvrtx_node_count(node, &node->counts.run_us, spent - submitted_us);
+	nvrtx_node_count_max(node, &node->counts.run_max_us, spent - submitted_us);
+
+	/* Succeeded: the run ended. */
 	return 0;
 }
 

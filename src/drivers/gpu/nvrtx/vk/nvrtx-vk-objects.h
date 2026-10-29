@@ -323,9 +323,14 @@ struct nvrtx_vk_pipeline {
 #define NVRTX_VK_COMMAND_EXECUTABLE	2U
 #define NVRTX_VK_COMMAND_INVALID	3U
 
-/* A VkFence: whether it is signaled (a submission that names it signals it once its work is done). */
+/*
+ * A VkFence: whether it is signaled, and whether a submission named it and
+ * the session's newest run then, which signals it once it has ended.
+ */
 struct nvrtx_vk_fence {
 	bool signaled;
+	bool submitted;
+	struct nvrtx_vk_ticket run;
 };
 
 /* A VkCommandPool: only compared, to free and reset its command buffers with it. */

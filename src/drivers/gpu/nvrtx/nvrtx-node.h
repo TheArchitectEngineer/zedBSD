@@ -49,6 +49,7 @@ struct nvrtx_vk_session;
 #define NVRTX_ENTRY_RESERVED		1U
 #define NVRTX_ENTRY_QUEUED		2U
 #define NVRTX_ENTRY_RUNNING		3U
+#define NVRTX_ENTRY_PARKED		4U
 
 /* The two kinds of resource: ordinary storage in RAM, a blob in the VRAM. */
 #define NVRTX_RESOURCE_STORAGE		1U
@@ -97,23 +98,37 @@ struct nvrtx_resource {
  *
  * blobs lists its blobs by protocol number (the executor reads streams and
  * writes replies there), vk is its executor session, and pending counts
- * its queued frames and its reserved or queued markers (under the node's
- * queue_lock): a drain waits until it is zero.  stopping (under queue_lock)
- * is set by the core's stop of the session: it takes no new work.
+ * its queued frames and its reserved, queued or parked markers (under the
+ * node's queue_lock): a drain waits until it is zero.  queued counts only
+ * the entries in the worker's queue (a command waits for them, not for the
+ * parked markers).  stopping (under queue_lock) is set by the core's stop
+ * of the session: it takes no new work.
+ *
+ * The executor's runs (vk-node.c): run_fence is the work channel's fence
+ * of the session's newest run and run_us when it was submitted (both
+ * under the node's lock); run_lost is set (atomically, by whoever waited)
+ * once a run of the session did not end in time: the session puts nothing
+ * more on the GPU and its waits fail at once.
  */
 struct nvrtx_session {
 	struct nvrtx_node *node;
 	struct nvrtx_resource *blobs;
 	struct nvrtx_vk_session *vk;
 	uint32_t pending;
+	uint32_t queued;
 	int stopping;
+	uint32_t run_fence;
+	uint64_t run_us;
+	int run_lost;
 };
 
 /*
  * One entry of the renderer's queue (runtime.c): a frame (a copy of its
  * wire, allocated with the entry and freed once run) or a marker of a
  * supervised job (one of the node's markers, reused).  error is the result
- * a marker completes with (EIO for one cancelled by a fault).
+ * a marker completes with (EIO for one cancelled by a fault).  A parked
+ * marker waits for its session's newest run when the worker took it: that
+ * run's fence and when it was submitted.
  */
 struct nvrtx_node_entry {
 	struct nvrtx_node_entry *next;
@@ -124,12 +139,17 @@ struct nvrtx_node_entry {
 	int error;
 	uint32_t bytes;
 	uint8_t *wire;
+	uint32_t run_fence;
+	uint64_t run_us;
 };
 
 /*
- * The counts nvrtx.vk.perf=1 writes into the kernel log every 5 s: runs and
- * run_us are the push buffers the work channel ran and the time from their
- * submission to their fence; copies and copy_bytes the transfers the CPU did
+ * The counts nvrtx.vk.perf=1 writes into the kernel log every 5 s: runs are
+ * the push buffers put on the work channel; ended the runs a wait saw end
+ * (the executor's or a parked marker's) and run_us the time from their
+ * submission to then; blocked the executor's waits for its runs under the
+ * node's lock and blocked_us their time, parked the markers that waited
+ * for their runs outside it; copies and copy_bytes the transfers the CPU did
  * through the window; frames the renderer's frames, wait_us the time they
  * waited for the node's lock and held_us the time they held it; flips the
  * presentations and flip_us the time their flips waited for the head.  Whoever
@@ -145,8 +165,12 @@ struct nvrtx_node_entry {
  */
 struct nvrtx_node_perf {
 	uint64_t runs;
+	uint64_t ended;
 	uint64_t run_us;
 	uint64_t run_max_us;
+	uint64_t blocked;
+	uint64_t blocked_us;
+	uint64_t parked;
 	uint64_t timed;
 	uint64_t gpu_us;
 	uint64_t gpu_max_us;
@@ -195,10 +219,12 @@ struct nvrtx_node_perf {
  * core shows it, cursor_point the position word last sent.
  *
  * The renderer (runtime.c, nvrtx.vk=1; renderer is set when it is bound):
- * queue_lock (IRQ-safe) guards the queue from head to tail, the markers,
- * every session's pending count and faulted; available wakes the worker,
- * retired the drains.  faulted is set by the GPU core's fault: nothing new
- * is taken and what is queued completes with EIO.
+ * queue_lock (IRQ-safe) guards the queue from head to tail, the parked
+ * markers from parked_head to parked_tail, the markers, every session's
+ * pending and queued counts and faulted; available wakes the worker,
+ * parked_more the completer, retired the drains.  faulted is set by the GPU
+ * core's fault: nothing new is taken and what is queued or parked completes
+ * with EIO.
  *
  * The message drain (node.c): drain_running is set while its thread runs,
  * drain_stop asks it to end at its next turn (the reboot's stop, which
@@ -245,6 +271,9 @@ struct nvrtx_node {
 	struct wait_queue retired;
 	struct nvrtx_node_entry *head;
 	struct nvrtx_node_entry *tail;
+	struct wait_queue parked_more;
+	struct nvrtx_node_entry *parked_head;
+	struct nvrtx_node_entry *parked_tail;
 	struct nvrtx_node_entry markers[NVRTX_NODE_MARKERS];
 	int faulted;
 	volatile int drain_running;
@@ -318,6 +347,7 @@ void nvrtx_runtime_bind(struct nvrtx_node *node);
 void nvrtx_runtime_start(struct nvrtx_node *node);
 void nvrtx_runtime_stop(struct nvrtx_node *node);
 
+int nvrtx_vk_node_run_wait(struct nvrtx_session *session, uint32_t fence, uint64_t submitted_us);
 int nvrtx_vk_node_blob_attach(struct nvrtx_node *node, struct nvrtx_session *session, uint64_t blob_id, struct nvrtx_backing *backing, uint64_t bytes);
 
 void nvrtx_node_backing_put(struct nvrtx_node *node, struct nvrtx_backing *backing);

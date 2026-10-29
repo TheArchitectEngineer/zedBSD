@@ -347,14 +347,14 @@ struct nvrtx_bo {
  * say which resource-manager objects exist, so the stop frees only those.
  *
  * lock serializes the submissions and the mappings: put is the next ring
- * entry, fence the last value a submission asked the semaphore to reach,
- * entry_fence the fence each ring entry's submission ended with (so an
+ * entry, fence the last value a submission asked the semaphore to reach
+ * (also read without the lock, by nvrtx_work_passed()), entry_fence the fence each ring entry's submission ended with (so an
  * entry and its fence slot are reused only after that work is done).  va
  * hands out the addresses of the runs mapped for users.  ready is set once
  * the channel ran its first fence; nothing is submitted before.  timed,
  * set at the start when the boot asks for the counts (nvrtx.vk.perf=1),
- * puts a start stamp before every segment and the GPU's timer in every
- * fence, so the GPU's own time for a run can be read.
+ * puts a start and an end stamp with the GPU's timer around every
+ * segment, so the GPU's own time for a run can be read after later runs.
  */
 struct nvrtx_work_state {
 	struct nvrtx_bo arena;
@@ -777,6 +777,7 @@ int nvrtx_work_map_system(struct nvrtx_gpu *gpu, const uint64_t *pages, size_t c
 int nvrtx_work_unmap(struct nvrtx_gpu *gpu, uint64_t va, uint64_t size);
 int nvrtx_work_submit(struct nvrtx_gpu *gpu, uint64_t push_va, size_t length, uint32_t *fence);
 int nvrtx_work_wait(struct nvrtx_gpu *gpu, uint32_t fence, uint32_t timeout_us);
+bool nvrtx_work_passed(struct nvrtx_gpu *gpu, uint32_t fence);
 int nvrtx_work_run_time(struct nvrtx_gpu *gpu, uint32_t fence, uint64_t *gpu_ns);
 
 void nvrtx_perf_start(struct nvrtx_gpu *gpu);

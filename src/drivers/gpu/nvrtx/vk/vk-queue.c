@@ -8,12 +8,13 @@
 /*
  * The executor's submissions, fences and semaphores.
  *
- * vkQueueSubmit runs its command buffers on the GPU in order and waits
- * for them before it answers (vk-execute.c), so a submission's work is
- * done when its reply is written: its fence is signaled then, and the
+ * vkQueueSubmit puts its command buffers' runs on the GPU in order and
+ * answers without waiting for them (vk-execute.c): its fence keeps the
+ * session's newest run then and is signaled once it has ended, and the
  * marker libvulkan reserved for it, queued after this frame, completes
- * after the work.  A semaphore orders nothing more than the one queue's
- * order already does: waits and signals are read and kept as nothing.
+ * once the GPU has done it (runtime.c).  A semaphore orders nothing more
+ * than the one queue's order already does (the runs on the work channel
+ * run in order): waits and signals are read and kept as nothing.
  */
 
 #include <stdbool.h>
@@ -96,8 +97,8 @@ nvrtx_vk_queue_route(
 
 /*
  * vkQueueSubmit: [queue][count][count]{submit}[fence] -> [result].  Every
- * submit is read first; then each command buffer runs in order, and the
- * fence is signaled once all of them did.
+ * submit is read first; then each command buffer's runs are put on the GPU
+ * in order, and the fence waits for the newest run then.
  */
 static int
 queue_submit(
@@ -137,7 +138,7 @@ queue_submit(
 	if (reader->error != 0)
 		return EINVAL;
 
-	/* Runs each command buffer; the first that fails ends the submission. */
+	/* Puts each command buffer's runs on the GPU; the first that fails ends the submission. */
 	error = 0;
 	for (index = 0U; index < command_count; index++) {
 		command = nvrtx_vk_payload(session, I915_VK_OBJ_COMMAND_BUFFER, commands[index]);
@@ -153,10 +154,13 @@ queue_submit(
 		}
 	}
 
-	/* The work is done: the fence is signaled. */
+	/* The fence is signaled once the newest run now has ended. */
 	fence = nvrtx_vk_payload(session, I915_VK_OBJ_FENCE, fence_id);
-	if (error == 0 && fence != NULL)
-		fence->signaled = true;
+	if (error == 0 && fence != NULL) {
+		fence->signaled = false;
+		fence->submitted = true;
+		nvrtx_vk_gpu_last(session->owner, &fence->run);
+	}
 
 	/* The submission's result. */
 	result = queue_result(error);
@@ -320,8 +324,10 @@ queue_reset_fences(
 	for (index = 0U; index < count; index++) {
 		identity = drv_i915_wire_read_u64(reader);
 		fence = nvrtx_vk_payload(session, I915_VK_OBJ_FENCE, identity);
-		if (fence != NULL)
+		if (fence != NULL) {
 			fence->signaled = false;
+			fence->submitted = false;
+		}
 	}
 	if (reader->error != 0)
 		return EINVAL;
@@ -340,7 +346,7 @@ queue_fence_status(
 	struct i915_wire_reader *reader,
 	struct i915_wire_writer *reply)
 {
-	const struct nvrtx_vk_fence *fence;
+	struct nvrtx_vk_fence *fence;
 	uint64_t identity;
 	uint32_t result;
 
@@ -350,9 +356,11 @@ queue_fence_status(
 	if (reader->error != 0)
 		return EINVAL;
 
-	/* Signaled, or not yet. */
+	/* Signaled, or submitted and its run has ended since (it stays signaled then), or not yet. */
 	result = (uint32_t)VK_NOT_READY;
 	fence = nvrtx_vk_payload(session, I915_VK_OBJ_FENCE, identity);
+	if (fence != NULL && !fence->signaled && fence->submitted)
+		fence->signaled = nvrtx_vk_gpu_passed(session->owner, &fence->run);
 	if (fence != NULL && fence->signaled)
 		result = (uint32_t)VK_SUCCESS;
 	drv_i915_wire_reply_u32(reply, result);

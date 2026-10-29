@@ -157,12 +157,52 @@ nvrtx_vk_gpu_free(void *owner, void *token)
 }
 
 int
-nvrtx_vk_gpu_run(void *owner, uint64_t va, uint32_t bytes)
+nvrtx_vk_gpu_submit(void *owner, uint64_t va, uint32_t bytes, struct nvrtx_vk_ticket *ticket)
 {
 	(void)owner;
 	(void)va;
 	(void)bytes;
+	ticket->fence = 0U;
+	ticket->submitted_us = 0U;
 	return EIO;
+}
+
+int
+nvrtx_vk_gpu_wait(void *owner, const struct nvrtx_vk_ticket *ticket)
+{
+	(void)owner;
+	(void)ticket;
+	return 0;
+}
+
+bool
+nvrtx_vk_gpu_passed(void *owner, const struct nvrtx_vk_ticket *ticket)
+{
+	(void)owner;
+	(void)ticket;
+	return true;
+}
+
+void
+nvrtx_vk_gpu_retire(void *owner, struct nvrtx_vk_ticket *ticket)
+{
+	(void)owner;
+	ticket->fence = 0U;
+}
+
+void
+nvrtx_vk_gpu_last(void *owner, struct nvrtx_vk_ticket *ticket)
+{
+	(void)owner;
+	ticket->fence = 0U;
+	ticket->submitted_us = 0U;
+}
+
+int
+nvrtx_vk_gpu_idle(void *owner)
+{
+	(void)owner;
+	return 0;
 }
 
 void
