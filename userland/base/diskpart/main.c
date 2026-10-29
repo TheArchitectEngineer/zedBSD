@@ -194,15 +194,20 @@ static int list(void)
 
 static void show(const struct dp_table *t)
 {
+	const char *kind;
+
 	printf("%s %s table%s%s; %u active partitions (kernel mapping may differ)\n",
 	    t->changed ? "Proposed" : "On-disk", t->format == DP_GPT ? "GPT" : "MBR",
 	    t->restrictions & DP_DEGRADED ? " [degraded; editing refused]" : "",
 	    t->restrictions & DP_UNSUPPORTED ? " [unsupported for editing]" : "", t->count);
 	for (unsigned i = 0; i < t->count; i++) {
 		const struct dp_part *p = &t->parts[i];
+
+		/* Names the partition's type for the listing. */
+		kind = type_name_of(p->type);
 		printf("%u start=%llu count=%llu type=%s kind=%s uuid=%s name=%s\n", p->slot,
 		    (unsigned long long)p->start, (unsigned long long)p->count, p->type,
-		    type_name_of(p->type), p->uuid, p->name);
+		    kind, p->uuid, p->name);
 	}
 }
 
@@ -409,6 +414,7 @@ int main(int argc, char **argv)
 	struct dp_table table;
 	struct dp_io io;
 	const char *verb;
+	int is_batch, status;
 	int error = 0, fd = -1, editing, started = 0;
 	uint64_t slot = 0, start = 0, count = 0;
 	machine_output = 0;
@@ -430,8 +436,15 @@ int main(int argc, char **argv)
 	}
 	if (!strcmp(verb, "init"))
 		return initialize_disk(argc, argv);
-	if (!strcmp(verb, "batch"))
-		return batch_disk(argc, argv);
+
+	/* Hands a batch of edits to the batch command. */
+	is_batch = !strcmp(verb, "batch");
+	if (is_batch) {
+		status = batch_disk(argc, argv);
+
+		/* Reports the batch command's exit status. */
+		return status;
+	}
 	editing = !strcmp(verb, "add") || !strcmp(verb, "delete");
 	if ((!strcmp(verb, "show") || !strcmp(verb, "reload")) ? argc != 3 :
 	    !strcmp(verb, "delete") ? argc != 4 :
@@ -568,9 +581,13 @@ batch_parse(
 	unsigned *operation_count)
 {
 	struct batch_operation *operation;
+	const char *word;
 	uint8_t guid[16];
 	int index;
 	int error;
+	int is_add;
+	int is_delete;
+	int is_set;
 
 	/* Reads the operations that follow the disk's name, one at a time. */
 	*operation_count = 0;
@@ -583,7 +600,12 @@ batch_parse(
 		memset(operation, 0, sizeof(*operation));
 
 		/* Takes the operation's word, its slot and the arguments its kind needs. */
-		if (strcmp(argv[index], "add") == 0) {
+		word = argv[index];
+		is_add = strcmp(word, "add");
+		is_delete = strcmp(word, "delete");
+		is_set = strcmp(word, "set");
+		if (is_add == 0) {
+			/* Reads add SLOT START COUNT TYPE PARTUUID NAME. */
 			if (argc - index < 7)
 				return EINVAL;
 			operation->kind = BATCH_ADD;
@@ -600,7 +622,8 @@ batch_parse(
 			operation->uuid = argv[index + 5];
 			operation->name = argv[index + 6];
 			index += 7;
-		} else if (strcmp(argv[index], "delete") == 0) {
+		} else if (is_delete == 0) {
+			/* Reads delete SLOT. */
 			if (argc - index < 2)
 				return EINVAL;
 			operation->kind = BATCH_DELETE;
@@ -608,7 +631,8 @@ batch_parse(
 			if (error != 0)
 				return EINVAL;
 			index += 2;
-		} else if (strcmp(argv[index], "set") == 0) {
+		} else if (is_set == 0) {
+			/* Reads set SLOT TYPE PARTUUID NAME ATTRIBUTES. */
 			if (argc - index < 6)
 				return EINVAL;
 			operation->kind = BATCH_SET;
@@ -623,6 +647,7 @@ batch_parse(
 				return EINVAL;
 			index += 6;
 		} else {
+			/* Refuses a word that names no operation. */
 			return EINVAL;
 		}
 
@@ -719,6 +744,9 @@ batch_confirm(
 	char expected[80];
 	char answer[96];
 	char *ending;
+	char *line;
+	size_t ending_at;
+	int different;
 	int flushed;
 
 	/* Shows the phrase that names this disk's registration. */
@@ -729,15 +757,18 @@ batch_confirm(
 		return EIO;
 
 	/* Reads one complete answer line. */
-	if (fgets(answer, sizeof(answer), stdin) == NULL)
+	line = fgets(answer, sizeof(answer), stdin);
+	if (line == NULL)
 		return ECANCELED;
 	ending = strchr(answer, '\n');
 	if (ending == NULL)
 		return ECANCELED;
-	answer[strcspn(answer, "\r\n")] = '\0';
+	ending_at = strcspn(answer, "\r\n");
+	answer[ending_at] = '\0';
 
 	/* Refuses any answer but the phrase itself. */
-	if (strcmp(answer, expected) != 0)
+	different = strcmp(answer, expected);
+	if (different != 0)
 		return ECANCELED;
 
 	/* Succeeded: the operator named this disk. */
@@ -765,19 +796,27 @@ batch_disk(
 	struct dp_table loaded_view;
 	struct dp_part *loaded_parts;
 	struct dp_io io;
+	const char *failure;
+	const char *advice;
 	unsigned operation_count;
 	int reloaded;
 	int loaded;
 	int started;
+	int closed;
+	int flushed;
 	int error;
 	int fd;
 
-	/* Refuses a malformed batch before any device is opened. */
+	/* Starts with no copy of the table's extents. */
 	loaded_parts = NULL;
+
+	/* Refuses a malformed batch before any device is opened. */
 	if (argc < 4) {
 		help();
 		return 2;
 	}
+
+	/* Reads and checks the operations before the device is opened. */
 	error = batch_parse(argc, argv, operations, &operation_count);
 	if (error != 0) {
 		help();
@@ -800,7 +839,12 @@ batch_disk(
 	}
 
 	/* Reads the table and refuses one the kernel maps differently. */
-	io = (struct dp_io){ &fd, info.sector_count, info.sector_size, fd_read, fd_write, fd_flush };
+	io.context = &fd;
+	io.sectors = info.sector_count;
+	io.sector_size = info.sector_size;
+	io.read = fd_read;
+	io.write = fd_write;
+	io.flush = fd_flush;
 	error = dp_load(&table, &io);
 	if (error != 0)
 		goto out;
@@ -819,6 +863,8 @@ batch_disk(
 		error = ENOMEM;
 		goto out;
 	}
+
+	/* Copies the extents and makes a view of the table as it was read. */
 	memcpy(loaded_parts, table.parts, table.count * sizeof(*loaded_parts));
 	memset(&loaded_view, 0, sizeof(loaded_view));
 	loaded_view.count = table.count;
@@ -847,6 +893,8 @@ batch_disk(
 		error = errno;
 		goto out;
 	}
+
+	/* Requires the kernel to still map the extents that were read. */
 	error = live_extents_match(&info, &loaded_view);
 	if (error != 0)
 		goto out;
@@ -854,9 +902,10 @@ batch_disk(
 	/* Writes both GPT copies and verifies them. */
 	error = dp_write(&table, &started);
 	if (error != 0) {
-		fprintf(stderr, "diskpart: %s\n", started ?
-		    "Write/flush/verification failed; table may be partially changed. No reload attempted." :
-		    "Write preflight failed; no table bytes written.");
+		failure = "Write preflight failed; no table bytes written.";
+		if (started)
+			failure = "Write/flush/verification failed; table may be partially changed. No reload attempted.";
+		fprintf(stderr, "diskpart: %s\n", failure);
 		goto out;
 	}
 
@@ -864,13 +913,18 @@ batch_disk(
 	reloaded = ioctl(fd, BLKREREADPART, 0);
 	if (reloaded < 0) {
 		error = errno;
+		advice = " No rollback attempted";
+		if (error == EBUSY)
+			advice = " Reboot required; live devices unchanged";
 		fprintf(stderr, "diskpart: Table written and verified, but reload failed: %s.%s\n",
-		    strerror(error), error == EBUSY ? " Reboot required; live devices unchanged" : " No rollback attempted");
+		    strerror(error), advice);
 		dp_free(&table);
 		free(loaded_parts);
 		close(fd);
 		return 3;
 	}
+
+	/* Tells the operator the table is in use. */
 	puts("Table written, flushed, verified; kernel partition devices reloaded.");
 
 out:
@@ -878,9 +932,15 @@ out:
 	if (loaded)
 		dp_free(&table);
 	free(loaded_parts);
-	if (fd >= 0 && close(fd) < 0 && error == 0)
-		error = errno;
-	if (fflush(stdout) != 0 && error == 0)
+	if (fd >= 0) {
+		closed = close(fd);
+		if (closed < 0 && error == 0)
+			error = errno;
+	}
+
+	/* Flushes the output, keeping the first error. */
+	flushed = fflush(stdout);
+	if (flushed != 0 && error == 0)
 		error = EIO;
 
 	/* Reports a failure, and whether the disk may have changed. */

@@ -350,6 +350,8 @@ get16(
 	/* Puts the low byte first. */
 	value = (uint16_t)bytes[0];
 	value |= (uint16_t)((uint16_t)bytes[1] << 8);
+
+	/* Reports the decoded field. */
 	return value;
 }
 
@@ -365,6 +367,8 @@ get32(
 	value |= (uint32_t)bytes[1] << 8;
 	value |= (uint32_t)bytes[2] << 16;
 	value |= (uint32_t)bytes[3] << 24;
+
+	/* Reports the decoded field. */
 	return value;
 }
 
@@ -378,6 +382,8 @@ get64(
 	/* Puts the low word first. */
 	value = (uint64_t)get32(bytes);
 	value |= (uint64_t)get32(bytes + 4) << 32;
+
+	/* Reports the decoded field. */
 	return value;
 }
 
@@ -393,6 +399,8 @@ power_of_two(
 	/* A power of two has one bit set. */
 	if ((value & (value - 1U)) != 0)
 		return 0;
+
+	/* Reports that exactly one bit is set. */
 	return 1;
 }
 
@@ -472,6 +480,7 @@ check_superblock(
 	uint64_t inode_fragments;
 	uint32_t magic;
 	uint32_t fragment_shift;
+	uint32_t shifted_fragments;
 	int sized;
 
 	/* Tells a volume of the other byte order from something that is not UFS. */
@@ -505,7 +514,10 @@ check_superblock(
 		return ZBL_UFS_BAD_SUPERBLOCK;
 	if (volume->block_size / volume->fragment_size != volume->fragments_per_block)
 		return ZBL_UFS_BAD_SUPERBLOCK;
-	if (fragment_shift >= 32U || (UINT32_C(1) << fragment_shift) != volume->fragments_per_block)
+	if (fragment_shift >= 32U)
+		return ZBL_UFS_BAD_SUPERBLOCK;
+	shifted_fragments = UINT32_C(1) << fragment_shift;
+	if (shifted_fragments != volume->fragments_per_block)
 		return ZBL_UFS_BAD_SUPERBLOCK;
 
 	/* Refuses a fragment the medium's blocks cannot address alone. */
@@ -669,6 +681,8 @@ block_address(
 		logical -= span;
 		span *= pointers;
 	}
+
+	/* Refuses a block beyond what the deepest level names. */
 	if (level == UFS_INDIRECT_LEVELS)
 		return ZBL_UFS_BAD_INODE;
 

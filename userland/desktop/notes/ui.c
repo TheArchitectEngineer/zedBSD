@@ -573,7 +573,7 @@ ui_layout(
 	float cx;
 	float cy;
 
-	/* The tools, the chosen one in the desktop's blue: the drawing tool (ws216-p006), the eraser, Select and Text. */
+	/* The tools, the chosen one in the desktop's blue: the drawing tool, the eraser, Select and Text. */
 	x = left;
 	x = ui_draw_button(ui, x, state);
 	x = ui_eraser_button(ui, x, state);

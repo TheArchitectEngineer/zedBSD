@@ -73,6 +73,8 @@ inst_catalog_read(
 		catalog->error = ENOMEM;
 		return ENOMEM;
 	}
+
+	/* Copies the text for the second pass. */
 	memcpy(second, text, length + 1U);
 
 	/* The units' names first, then every record (an item or a dependency may name a unit after it). */
@@ -277,6 +279,7 @@ catalog_file(
 	ssize_t count;
 	int error;
 	int fd;
+	int regular;
 
 	/* The file, a regular one not larger than the limit. */
 	fd = open(path, O_RDONLY | O_CLOEXEC);
@@ -288,7 +291,10 @@ catalog_file(
 		(void)close(fd);
 		return error;
 	}
-	if (!S_ISREG(status.st_mode) || status.st_size < 0 || (uint64_t)status.st_size > limit) {
+
+	/* Refuses a file that is not regular or is larger than the limit. */
+	regular = S_ISREG(status.st_mode);
+	if (!regular || status.st_size < 0 || (uint64_t)status.st_size > limit) {
 		(void)close(fd);
 		return EFBIG;
 	}
@@ -299,6 +305,8 @@ catalog_file(
 		(void)close(fd);
 		return ENOMEM;
 	}
+
+	/* Reads until the whole file is in or the file ends early. */
 	done = 0;
 	while (done < (size_t)status.st_size) {
 		count = read(fd, buffer + done, (size_t)status.st_size - done);
@@ -308,8 +316,11 @@ catalog_file(
 			break;
 		done += (size_t)count;
 	}
+
+	/* Ends the text after what was read. */
 	(void)close(fd);
 	buffer[done] = '\0';
+
 
 	/* Succeeded: the text. */
 	*text = buffer;
@@ -407,6 +418,8 @@ catalog_records(
 			*end = '\0';
 			end++;
 		}
+
+		/* Splits the line into its fields. */
 		count = catalog_split(line, field, CATALOG_FIELDS_MAX);
 
 		/* A unit. */
@@ -467,6 +480,7 @@ catalog_unit_record(
 	char *name;
 	char *next;
 	int found;
+	int same;
 
 	/* The record whole. */
 	if (count < 10U || slot >= catalog->unit_count)
@@ -485,8 +499,15 @@ catalog_unit_record(
 			*next = '\0';
 			next++;
 		}
-		if (strcmp(name, "-") == 0 || *name == '\0')
+
+		/* A dash or an empty word names no unit. */
+		same = strcmp(name, "-");
+		if (same == 0)
 			continue;
+		if (*name == '\0')
+			continue;
+
+		/* Finds the unit by its name. */
 		found = inst_catalog_unit_find(catalog, name);
 		if (found < 0 || unit->dependency_count >= INST_DEPENDENCIES_MAX)
 			return EINVAL;
@@ -529,10 +550,16 @@ catalog_item_record(
 
 	/* Its default, which it starts at. */
 	item->fallback = 0;
-	if (strcmp(field[3], "on") == 0)
+	same = strcmp(field[3], "on");
+	if (same == 0) {
 		item->fallback = 1;
-	else if (strcmp(field[3], "required") == 0)
-		item->fallback = 2;
+	} else {
+		same = strcmp(field[3], "required");
+		if (same == 0)
+			item->fallback = 2;
+	}
+
+	/* An item with a default starts chosen. */
 	item->chosen = 0;
 	if (item->fallback != 0)
 		item->chosen = 1;
@@ -545,8 +572,15 @@ catalog_item_record(
 			*next = '\0';
 			next++;
 		}
-		if (strcmp(name, "-") == 0 || *name == '\0')
+
+		/* A dash or an empty word names no unit. */
+		same = strcmp(name, "-");
+		if (same == 0)
 			continue;
+		if (*name == '\0')
+			continue;
+
+		/* Finds the unit by its name. */
 		found = inst_catalog_unit_find(catalog, name);
 		if (found < 0 || item->unit_count >= INST_ITEM_UNITS_MAX)
 			return EINVAL;

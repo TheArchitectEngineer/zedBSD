@@ -32,6 +32,8 @@ main(
 	uint64_t size;
 	int error;
 	int pristine;
+	int device_prefix;
+	int status;
 	const char *path;
 
 	/* Accepts one filename, optionally preceded by read-only verification. */
@@ -47,8 +49,13 @@ main(
 	}
 
 	/* Hands a partition, named under /dev/, to the device mode. */
-	if (!pristine && strncmp(argv[1], "/dev/", 5) == 0)
-		return swap_device_command(argv[1]);
+	device_prefix = strncmp(argv[1], "/dev/", 5);
+	if (!pristine && device_prefix == 0) {
+		status = swap_device_command(argv[1]);
+
+		/* Reports the device mode's exit status. */
+		return status;
+	}
 
 	/* Keeps read-only verification separate from reserved initialization. */
 	path = argv[argc - 1];

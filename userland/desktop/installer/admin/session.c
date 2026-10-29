@@ -210,7 +210,7 @@ static int session_install_release_esp(struct session_installation *installation
 static void session_install_cleanup(struct session_installation *installation);
 
 /*
- * Carries out one change of a partition table (spec 7.1): a delete, a
+ * Carries out one change of a partition table: a delete, a
  * create, or a create with an ESP before it.  Reports DONE with the new
  * table's digest and the partitions made, or FAIL.  Returns 0 or the
  * errno value of the failure.
@@ -229,6 +229,8 @@ session_edit(
 		session_fail(session, "edit", error, "the change does not hold together");
 		return error;
 	}
+
+	/* Binds the session to the request's disk, refusing another one. */
 	error = session_bind(session, &request->disk);
 	if (error != 0) {
 		session_fail(session, "edit", error, "another disk than the session's");
@@ -258,10 +260,14 @@ session_edit(
 		/* Changed, as it was to be: the new digest is the one to quote. */
 		error = 0;
 	}
+
+	/* Reports a table that cannot be read after the change. */
 	if (error != 0) {
 		session_fail(session, "edit", error, "the table cannot be read again");
 		return error;
 	}
+
+	/* Reports the digest of the new table, which the installer quotes next. */
 	session_say(
 		session,
 		"STATE table %02x%02x%02x%02x%02x%02x%02x%02x%02x%02x%02x%02x%02x%02x%02x%02x"
@@ -282,7 +288,7 @@ session_edit(
 }
 
 /*
- * Carries out an installation (spec 7.2) in its steps, each reported as
+ * Carries out an installation in its steps, each reported as
  * it begins; a failure or a cancellation stops it at that step with FAIL
  * and leaves what was written (nothing is rolled back).  Returns 0 or the
  * errno value of the failure.
@@ -302,6 +308,8 @@ session_install(
 		session_fail(session, "check", ENOMEM, "out of memory");
 		return ENOMEM;
 	}
+
+	/* Hands the installation its session, its request and no root descriptor yet. */
 	installation->session = session;
 	installation->request = request;
 	installation->root_fd = -1;
@@ -315,41 +323,57 @@ session_install(
 		session_step(session, 2, step);
 		error = session_install_claim(installation);
 	}
+
+	/* Runs the claim step once the check has passed. */
 	if (error == 0) {
 		step = "table";
 		session_step(session, 3, step);
 		error = session_install_table(installation);
 	}
+
+	/* Runs the table step once the claim has been made. */
 	if (error == 0) {
 		step = "format";
 		session_step(session, 4, step);
 		error = session_install_format(installation);
 	}
+
+	/* Runs the format step once the table is written. */
 	if (error == 0) {
 		step = "mount";
 		session_step(session, 5, step);
 		error = session_install_mount(installation);
 	}
+
+	/* Runs the mount step once the filesystems are made. */
 	if (error == 0) {
 		step = "unpack";
 		session_step(session, 6, step);
 		error = session_install_unpack(installation);
 	}
+
+	/* Runs the unpack step once the new root is mounted. */
 	if (error == 0) {
 		step = "settings";
 		session_step(session, 7, step);
 		error = session_install_settings(installation);
 	}
+
+	/* Runs the settings step once the units are unpacked. */
 	if (error == 0) {
 		step = "sync";
 		session_step(session, 8, step);
 		error = session_install_release_root(installation);
 	}
+
+	/* Runs the sync step once the settings are written. */
 	if (error == 0) {
 		step = "esp";
 		session_step(session, 9, step);
 		error = session_install_esp(installation);
 	}
+
+	/* Runs the ESP step once the root has been released. */
 	if (error == 0) {
 		step = "finish";
 		session_step(session, 10, step);
@@ -430,6 +454,7 @@ session_look_for_cancel(
 {
 	struct pollfd ready;
 	char text[256];
+	const char *cancel;
 	ssize_t count;
 	int found;
 
@@ -453,8 +478,11 @@ session_look_for_cancel(
 		session->canceled = 1;
 		return 1;
 	}
+
+	/* Treats a line holding "cancel" as the installer's cancellation. */
 	text[count] = '\0';
-	if (strstr(text, "cancel") != NULL)
+	cancel = strstr(text, "cancel");
+	if (cancel != NULL)
 		session->canceled = 1;
 
 	/* Whether the installer cancelled. */
@@ -514,8 +542,12 @@ session_run(
 			close(output[0]);
 			close(output[1]);
 		}
+
+		/* Reports why the child could not be started. */
 		return error;
 	}
+
+	/* Becomes the program in the child, with the pipes as its input and output. */
 	if (child == 0) {
 		(void)dup2(input[0], 0);
 		if (output[1] >= 0)
@@ -532,6 +564,8 @@ session_run(
 		length = strlen(answer);
 		(void)write(input[1], answer, length);
 	}
+
+	/* Ends the program's input, so it sees the end of the answer. */
 	close(input[1]);
 
 	/* The output, to its end. */
@@ -548,6 +582,8 @@ session_run(
 			if (taken == capacity - 1U)
 				break;
 		}
+
+		/* Ends the captured text and closes the output pipe. */
 		capture[taken] = '\0';
 		close(output[0]);
 	}
@@ -576,6 +612,7 @@ session_wait(
 	unsigned waited;
 	int options;
 	int raw;
+	int exited;
 	pid_t ended;
 
 	/* Each tenth of a second until it ends or the time is up. */
@@ -601,13 +638,16 @@ session_wait(
 			} while (ended < 0 && errno == EINTR);
 			return ETIMEDOUT;
 		}
+
+		/* Waits a tenth of a second before asking about the child again. */
 		(void)nanosleep(&pause, NULL);
 		waited++;
 	}
 
 	/* How it ended. */
 	*status = -1;
-	if (WIFEXITED(raw))
+	exited = WIFEXITED(raw);
+	if (exited)
 		*status = WEXITSTATUS(raw);
 
 	/* Succeeded: the child ended. */
@@ -701,11 +741,15 @@ session_disk_load(
 		session_disk_free(found);
 		return EINVAL;
 	}
+
+	/* Finds the disk by the registration the screen showed. */
 	found->device = probe_find_device(found->scan, (uint32_t)disk->registration);
 	if (found->device == NULL) {
 		session_disk_free(found);
 		return ENODEV;
 	}
+
+	/* Refuses a device that is a partition, since only a disk is written. */
 	if (found->device->info.parent_device != 0U || (found->device->info.flags & KERN_BLOCK_PARTITION) != 0U) {
 		session_disk_free(found);
 		return EINVAL;
@@ -801,6 +845,8 @@ session_unmount_disk(
 			error = errno;
 			break;
 		}
+
+		/* Reads the whole mount table of the running system. */
 		error = ioctl(fd, KERN_SYSTEM_GET_MOUNTS, query);
 		if (error != 0)
 			error = errno;
@@ -823,6 +869,8 @@ session_unmount_disk(
 				if (same == 0)
 					device = &scan->device[j];
 			}
+
+			/* Skips a mount that is not on a device of the scan. */
 			if (device == NULL)
 				continue;
 			if (device->info.device != registration && device->info.parent_device != registration)
@@ -834,10 +882,14 @@ session_unmount_disk(
 				left--;
 			}
 		}
+
+		/* Forgets the error of the last pass, as the count of mounts left decides. */
 		error = 0;
 		if (left == 0U)
 			break;
 	}
+
+	/* Releases the buffers and reports an error that ended the passes. */
 	free(query);
 	free(scan);
 	if (error != 0)
@@ -893,6 +945,8 @@ session_free_slot(
 			if (table->parts[i].slot == candidate)
 				taken = 1;
 		}
+
+		/* Takes the first slot no entry has. */
 		if (!taken) {
 			*slot = candidate;
 			return 0;
@@ -947,7 +1001,7 @@ session_has_esp(
 }
 
 /*
- * Checks a partition right before it is cleared or formatted (spec 7.4):
+ * Checks a partition right before it is cleared or formatted:
  * nothing of its disk mounted, the disk not the running system's, the
  * kernel maps a partition at the tuple's range on the tuple's disk with
  * the tuple's PARTUUID, and the kernel's partitions are the disk's table.
@@ -990,6 +1044,8 @@ session_partition_ready(
 		free(scan);
 		return ENODEV;
 	}
+
+	/* Refuses the disk the running system lives on. */
 	if (disk->live) {
 		free(scan);
 		return EBUSY;
@@ -1001,6 +1057,8 @@ session_partition_ready(
 		free(scan);
 		return ESTALE;
 	}
+
+	/* Refuses a partition with another PARTUUID than the planned one. */
 	differs = strcasecmp(partition->identity.partuuid, tuple->partuuid);
 	if (differs != 0) {
 		free(scan);
@@ -1013,6 +1071,8 @@ session_partition_ready(
 		free(scan);
 		return error;
 	}
+
+	/* Checks that the kernel's partitions are the table's. */
 	error = session_kernel_matches(scan, disk, &table);
 	dp_free(&table);
 	if (error != 0) {
@@ -1054,6 +1114,8 @@ session_kernel_matches(
 		if (scan->device[i].info.parent_device == disk->info.device)
 			mapped++;
 	}
+
+	/* Refuses a kernel that maps a partition the table does not have. */
 	if (mapped != table->count)
 		return ESTALE;
 
@@ -1110,11 +1172,15 @@ session_clear_ends(
 		else if (count != (ssize_t)piece)
 			error = EIO;
 	}
+
+	/* Writes the cleared ends out to the device. */
 	if (error == 0) {
 		synced = fsync(fd);
 		if (synced != 0)
 			error = errno;
 	}
+
+	/* Releases the partition and the zeros, and reports a failed clearing. */
 	close(fd);
 	free(zero);
 	if (error != 0)
@@ -1143,6 +1209,7 @@ session_format(
 	struct timespec pause;
 	unsigned tries;
 	unsigned count;
+	int differs;
 	int status;
 	int error;
 
@@ -1164,9 +1231,12 @@ session_format(
 	if (kind != NULL) {
 		argument[count++] = "-t";
 		argument[count++] = (char *)kind;
-		if (strcmp(kind, "ufs") == 0)
+		differs = strcmp(kind, "ufs");
+		if (differs == 0)
 			argument[count++] = "--profile=native";
 	}
+
+	/* Ends the command line with the partition's device. */
 	argument[count++] = path;
 	argument[count] = NULL;
 
@@ -1258,10 +1328,14 @@ session_diskpart(
 			/* A disk whose table the request does not quote again: it is the one by its name and size. */
 			error = 0;
 		}
+
+		/* Reports a disk that could not be looked at again. */
 		if (error != 0) {
 			session_disk_free(&found);
 			return error;
 		}
+
+		/* Makes the phrase diskpart is given: WRITE for a batch, ERASE for init. */
 		word = "WRITE";
 		if (initialize)
 			word = "ERASE";
@@ -1282,6 +1356,8 @@ session_diskpart(
 			*reload_failed = 1;
 			return 0;
 		}
+
+		/* Ends the tries at a success, and logs any other status. */
 		if (status == 0)
 			break;
 		syslog(LOG_NOTICE, "diskpart %s %s ended %d", operation[0], path, status);
@@ -1292,6 +1368,8 @@ session_diskpart(
 			session_disk_free(&found);
 			return error;
 		}
+
+		/* Refuses to try again when the table changed or the tries are used up. */
 		differs = memcmp(before, found.digest, sizeof(before));
 		session_disk_free(&found);
 		if (differs != 0 || tries + 1U >= SESSION_TRIES)
@@ -1303,7 +1381,7 @@ session_diskpart(
 	return 0;
 }
 
-/* Deletes the partition a request names (spec 7.1). */
+/* Deletes the partition a request names. */
 static int
 session_edit_delete(
 	struct admin_session *session,
@@ -1321,6 +1399,8 @@ session_edit_delete(
 		session_fail(session, "edit", EINVAL, "not a GPT disk");
 		return EINVAL;
 	}
+
+	/* Finds the entry the request names. */
 	part = session_find_entry(&found->table, &request->part);
 	if (part == NULL) {
 		session_fail(session, "edit", ESTALE, "the partition is not there");
@@ -1337,6 +1417,8 @@ session_edit_delete(
 		session_fail(session, "edit", error, "the table was not changed");
 		return error;
 	}
+
+	/* Reports a table the kernel could not use until a restart. */
 	if (reload_failed) {
 		session_say(session, "STATE reload-failed\n");
 		session_fail(session, "edit", EBUSY, "the table was written; the kernel uses it after a restart");
@@ -1350,7 +1432,7 @@ session_edit_delete(
 /*
  * Creates a partition of the zedBSD "unassigned" type with no name and a
  * new PARTUUID, and before it, for a disk without one, an ESP, in one
- * write (spec 4.4, 7.1).  The new partitions' ends are cleared and the
+ * write.  The new partitions' ends are cleared and the
  * ESP formatted; if that fails, both entries are deleted again in one
  * write.
  */
@@ -1388,10 +1470,14 @@ session_edit_create(
 		with_esp = 1;
 		entries = 2;
 	}
+
+	/* Refuses a disk that does not have a GPT. */
 	if (!found->loaded || found->table.format != DP_GPT) {
 		session_fail(session, "edit", EINVAL, "not a GPT disk");
 		return EINVAL;
 	}
+
+	/* Refuses a table with no room for the new entries. */
 	if (found->table.count + entries > 16U) {
 		session_fail(session, "edit", ENOSPC, "the table has no room for another entry");
 		return ENOSPC;
@@ -1403,6 +1489,8 @@ session_edit_create(
 		session_fail(session, "edit", EEXIST, "the disk has an ESP");
 		return EEXIST;
 	}
+
+	/* Refuses a disk with no ESP when none is made with the partition. */
 	if (!with_esp && !has_esp) {
 		session_fail(session, "edit", EINVAL, "the disk has no ESP; one is made with the partition");
 		return EINVAL;
@@ -1434,6 +1522,8 @@ session_edit_create(
 		session_fail(session, "edit", error, "no slot or GUID for the partition");
 		return error;
 	}
+
+	/* Names the new partitions' disk and ranges. */
 	esp.disk = request->disk.registration;
 	esp.start = request->esp_new.start;
 	esp.sectors = request->esp_new.sectors;
@@ -1456,6 +1546,8 @@ session_edit_create(
 		operation[count++] = esp.partuuid;
 		operation[count++] = SESSION_ESP_NAME;
 	}
+
+	/* Adds the partition itself, after the ESP when there is one. */
 	snprintf(part_slot, sizeof(part_slot), "%u", part_number);
 	snprintf(part_start, sizeof(part_start), "%llu", (unsigned long long)part.start);
 	snprintf(part_count, sizeof(part_count), "%llu", (unsigned long long)part.sectors);
@@ -1471,6 +1563,8 @@ session_edit_create(
 		session_fail(session, "edit", error, "the table was not changed");
 		return error;
 	}
+
+	/* Reports a table the kernel could not use until a restart. */
 	if (reload_failed) {
 		session_say(session, "STATE reload-failed\n");
 		session_fail(session, "edit", EBUSY, "the table was written; the kernel uses it after a restart");
@@ -1493,6 +1587,8 @@ session_edit_create(
 			operation[count++] = "delete";
 			operation[count++] = esp_slot;
 		}
+
+		/* Deletes the partition itself, after the ESP's entry. */
 		operation[count++] = "delete";
 		operation[count++] = part_slot;
 		undone = session_diskpart(&request->disk, operation, count, &reload_failed);
@@ -1520,13 +1616,15 @@ session_payload_directory(
 	const char *path)
 {
 	struct stat status;
+	int is_directory;
 	int error;
 
 	/* The directory itself, not a link. */
 	error = lstat(path, &status);
 	if (error != 0)
 		return errno;
-	if (!S_ISDIR(status.st_mode) || status.st_uid != 0 || (status.st_mode & 022) != 0)
+	is_directory = S_ISDIR(status.st_mode);
+	if (!is_directory || status.st_uid != 0 || (status.st_mode & 022) != 0)
 		return EPERM;
 
 	/* Succeeded: only root changes it. */
@@ -1545,11 +1643,14 @@ session_payload_open(
 {
 	char path[SESSION_PATH_MAX];
 	struct stat status;
+	const char *slash;
 	int descriptor;
+	int regular;
 	int error;
 
 	/* The file, by a name with no directory in it. */
-	if (strchr(name, '/') != NULL || name[0] == '\0' || name[0] == '.')
+	slash = strchr(name, '/');
+	if (slash != NULL || name[0] == '\0' || name[0] == '.')
 		return EINVAL;
 	snprintf(path, sizeof(path), "%s/%s", directory, name);
 	descriptor = open(path, O_RDONLY | O_NOFOLLOW | O_CLOEXEC);
@@ -1563,7 +1664,10 @@ session_payload_open(
 		close(descriptor);
 		return error;
 	}
-	if (!S_ISREG(status.st_mode) || status.st_uid != 0 || (status.st_mode & 022) != 0) {
+
+	/* Refuses a file that is not a regular file of root's that others cannot write. */
+	regular = S_ISREG(status.st_mode);
+	if (!regular || status.st_uid != 0 || (status.st_mode & 022) != 0) {
 		close(descriptor);
 		return EPERM;
 	}
@@ -1668,6 +1772,8 @@ session_open_directory(
 	int current;
 	int next;
 	int made;
+	int dot;
+	int dotdot;
 	int error;
 
 	/* The base, as a descriptor of its own. */
@@ -1687,9 +1793,13 @@ session_open_directory(
 			close(current);
 			return EINVAL;
 		}
+
+		/* Takes the next component of the path, and refuses "." and "..". */
 		memcpy(component, start, length);
 		component[length] = '\0';
-		if (strcmp(component, ".") == 0 || strcmp(component, "..") == 0) {
+		dot = strcmp(component, ".");
+		dotdot = strcmp(component, "..");
+		if (dot == 0 || dotdot == 0) {
 			close(current);
 			return EINVAL;
 		}
@@ -1703,6 +1813,8 @@ session_open_directory(
 				return error;
 			}
 		}
+
+		/* Opens the component, never through a link. */
 		next = openat(current, component, O_RDONLY | O_DIRECTORY | O_NOFOLLOW | O_CLOEXEC);
 		error = errno;
 		close(current);
@@ -1735,13 +1847,15 @@ session_write_new(
 	char temporary[SESSION_PATH_MAX];
 	size_t written;
 	ssize_t count;
+	int differs;
 	int ended;
 	int fd;
 	int error;
 
 	/* The new name, free of an earlier attempt's file. */
 	snprintf(temporary, sizeof(temporary), "%s%s", leaf, SESSION_NEW_SUFFIX);
-	if (strcmp(leaf, SESSION_CFG) == 0)
+	differs = strcmp(leaf, SESSION_CFG);
+	if (differs == 0)
 		snprintf(temporary, sizeof(temporary), "%s", SESSION_CFG_NEW);
 	(void)unlinkat(directory, temporary, 0);
 	fd = openat(directory, temporary, O_WRONLY | O_CREAT | O_EXCL | O_NOFOLLOW | O_CLOEXEC, mode);
@@ -1759,17 +1873,25 @@ session_write_new(
 			error = errno;
 			break;
 		}
+
+		/* Refuses a write that wrote nothing. */
 		if (count == 0) {
 			error = EIO;
 			break;
 		}
+
+		/* Counts the bytes written so far. */
 		written += (size_t)count;
 	}
+
+	/* Writes the file out to the device. */
 	if (error == 0) {
 		ended = fsync(fd);
 		if (ended != 0)
 			error = errno;
 	}
+
+	/* Closes the file, and removes the new name when the write failed. */
 	ended = close(fd);
 	if (ended != 0 && error == 0)
 		error = errno;
@@ -1838,7 +1960,7 @@ session_copy_boot(
 }
 
 /*
- * Looks into an existing ESP before anything is written (spec 5.4): a
+ * Looks into an existing ESP before anything is written: a
  * FAT the kernel mounts, without zedbsd.cfg or the zedBSD loader of
  * another system, with room for the loader and 16 MiB.  Notes whether
  * the firmware's default loader is another system's (then the loader goes
@@ -1858,13 +1980,15 @@ session_esp_look(
 	unsigned i;
 	int other;
 	int found;
+	int differs;
 	int error;
 
 	/* The room the loader needs. */
 	index = installation->session->index;
 	needed = SESSION_ESP_SPARE;
 	for (i = 0; i < index->boot_count; i++) {
-		if (strncmp(index->boot[i].place, "esp:", 4U) == 0)
+		differs = strncmp(index->boot[i].place, "esp:", 4U);
+		if (differs == 0)
 			needed += index->boot[i].bytes;
 	}
 
@@ -1912,7 +2036,7 @@ session_esp_look(
 /*
  * Step 1: the plan checked again, the disk as the final page showed it,
  * the payload root's, the units and their order, the partitions laid out
- * and the root large enough (spec 5.6, 7.2).
+ * and the root large enough.
  */
 static int
 session_install_check(
@@ -1959,6 +2083,8 @@ session_install_check(
 		if (same == 0)
 			has_base = 1;
 	}
+
+	/* Refuses a choice without the base unit. */
 	if (!has_base)
 		return EINVAL;
 	error = index_closure(index, chosen, request->install.unit_count, installation->order, &installation->order_count);
@@ -1974,6 +2100,8 @@ session_install_check(
 		if (same == 0)
 			installation->graphical = 1;
 	}
+
+	/* Drops the autologin of a system with no graphical session. */
 	if (!installation->graphical)
 		request->install.autologin = 0;
 
@@ -2008,7 +2136,7 @@ session_install_check(
 }
 
 /*
- * Lays out a whole disk (spec 5.7): the ESP at the first MiB, the swap
+ * Lays out a whole disk: the ESP at the first MiB, the swap
  * partition after it when the plan has one, and the root to the last MiB,
  * each with a new PARTUUID, and a new GUID for the disk.
  */
@@ -2051,7 +2179,9 @@ session_install_whole_layout(
 	if (end <= installation->root.start)
 		return ENOSPC;
 	installation->root.sectors = end - installation->root.start;
-	installation->root_slot = installation->has_swap_partition ? 3U : 2U;
+	installation->root_slot = 2U;
+	if (installation->has_swap_partition)
+		installation->root_slot = 3U;
 
 	/* The new GUIDs. */
 	error = session_random_guid(installation->disk_uuid);
@@ -2069,7 +2199,7 @@ session_install_whole_layout(
 }
 
 /*
- * Finds the chosen partitions in the table (spec 7.4): the ESP an ESP, the
+ * Finds the chosen partitions in the table: the ESP an ESP, the
  * root and the swap partition other entries; the root and the swap
  * partition take new PARTUUIDs.
  */
@@ -2134,7 +2264,7 @@ session_install_chosen_layout(
 }
 
 /*
- * Checks the root's size (spec 5.6): what is installed and a tenth more,
+ * Checks the root's size: what is installed and a tenth more,
  * the swap file, and 1 GiB; the inodes for the entries and a fifth more.
  */
 static int
@@ -2184,7 +2314,7 @@ session_install_size(
 
 /*
  * Step 2: nothing of the disk mounted, and an existing ESP looked into
- * (spec 5.4) while nothing is written yet.
+ * while nothing is written yet.
  */
 static int
 session_install_claim(
@@ -2219,7 +2349,7 @@ session_install_claim(
 }
 
 /*
- * Step 3: the table (spec 5.2): a new GPT for the whole disk, or the
+ * Step 3: the table: a new GPT for the whole disk, or the
  * chosen root and swap partition marked with their types, names and new
  * PARTUUIDs and no attributes, in one write.
  */
@@ -2250,6 +2380,8 @@ session_install_table(
 		snprintf(slot[parts], sizeof(slot[parts]), "%u", installation->esp_slot);
 		parts++;
 	}
+
+	/* Adds the swap partition when the installation makes one. */
 	if (installation->has_swap_partition) {
 		part[parts] = &installation->swap;
 		type[parts] = KERN_GPT_TYPE_ZEDBSD_SWAP;
@@ -2257,6 +2389,8 @@ session_install_table(
 		snprintf(slot[parts], sizeof(slot[parts]), "%u", installation->swap_slot);
 		parts++;
 	}
+
+	/* Adds the root, the last partition of the batch. */
 	part[parts] = &installation->root;
 	type[parts] = KERN_GPT_TYPE_ZEDBSD_UFS;
 	name[parts] = SESSION_ROOT_NAME;
@@ -2297,6 +2431,8 @@ session_install_table(
 		session_say(installation->session, "STATE table written, reload-failed\n");
 		return EBUSY;
 	}
+
+	/* Tells the installer the table is written. */
 	session_say(installation->session, "STATE table written\n");
 
 	/* Cancelled: taken at the end of the step. */
@@ -2309,7 +2445,7 @@ session_install_table(
 }
 
 /*
- * Step 4: the filesystems (spec 7.2): a new ESP as FAT32, the swap
+ * Step 4: the filesystems: a new ESP as FAT32, the swap
  * partition's header, and the root as native UFS, each partition checked
  * and its ends cleared first.
  */
@@ -2349,7 +2485,7 @@ session_install_format(
 	return 0;
 }
 
-/* Step 5: the new root mounted without set-ID (spec 7.2), and opened. */
+/* Step 5: the new root mounted without set-ID, and opened. */
 static int
 session_install_mount(
 	struct session_installation *installation)
@@ -2390,7 +2526,7 @@ session_install_mount(
 
 /*
  * Step 6: the units unpacked in their order, the kernel and the logo put
- * on the root, and the record of what was installed (spec 6.4).
+ * on the root, and the record of what was installed.
  */
 static int
 session_install_unpack(
@@ -2407,6 +2543,8 @@ session_install_unpack(
 		if (error != 0)
 			return error;
 	}
+
+	/* Reports the bytes unpacked so far. */
 	session_say(
 		installation->session,
 		"BYTES %llu %llu\n",
@@ -2610,13 +2748,15 @@ session_install_boot_files(
 	size_t length;
 	unsigned i;
 	int directory;
+	int differs;
 	int error;
 
 	/* Each boot file of the root (the loader is the ESP's). */
 	index = installation->session->index;
 	for (i = 0; i < index->boot_count; i++) {
 		place = index->boot[i].place;
-		if (strncmp(place, "esp:", 4U) == 0)
+		differs = strncmp(place, "esp:", 4U);
+		if (differs == 0)
 			continue;
 		while (*place == '/')
 			place++;
@@ -2645,7 +2785,7 @@ session_install_boot_files(
 }
 
 /*
- * Step 7: the installed system's settings (spec 7.2): its user and both
+ * Step 7: the installed system's settings: its user and both
  * passwords, the automatic login, the hostname, sshd kept from root
  * logins, and the swap file when there is no swap partition.
  */
@@ -2684,7 +2824,7 @@ session_install_settings(
 }
 
 /*
- * Makes the swap file (spec 5.5): zeros written whole (no hole), mkswap,
+ * Makes the swap file: zeros written whole (no hole), mkswap,
  * then a trial swapon and swapoff, each limited in time, for the kernel
  * takes a file of at most so many extents.  A file the kernel refuses is
  * removed and the system has no swap; one the live system will not give
@@ -2716,6 +2856,8 @@ session_install_swapfile(
 		free(zero);
 		return error;
 	}
+
+	/* Writes the swap file out as zeros. */
 	error = 0;
 	written = 0;
 	while (written < installation->swapfile_bytes) {
@@ -2729,17 +2871,25 @@ session_install_swapfile(
 			error = errno;
 			break;
 		}
+
+		/* Refuses a write that wrote nothing. */
 		if (count == 0) {
 			error = EIO;
 			break;
 		}
+
+		/* Counts the bytes written so far. */
 		written += (uint64_t)count;
 	}
+
+	/* Writes the swap file out to the device. */
 	if (error == 0) {
 		ended = fsync(fd);
 		if (ended != 0)
 			error = errno;
 	}
+
+	/* Closes the swap file, and reports a failed write. */
 	ended = close(fd);
 	if (ended != 0 && error == 0)
 		error = errno;
@@ -2767,6 +2917,8 @@ session_install_swapfile(
 		(void)unlinkat(installation->root_fd, SESSION_SWAPFILE, 0);
 		return 0;
 	}
+
+	/* Stops using the swap file after the trial. */
 	argument[0] = SESSION_SWAPOFF;
 	error = session_run(argument, NULL, NULL, 0, SESSION_SWAP_SECONDS, &status);
 	if (error != 0 || status != 0) {
@@ -2812,7 +2964,7 @@ session_install_release_root(
 }
 
 /*
- * Step 9: the ESP published (spec 5.4, 7.2): the loader at the firmware's
+ * Step 9: the ESP published: the loader at the firmware's
  * default place unless another system's loader is there (then
  * EFI/ZEDBSD), and zedbsd.cfg last, written under another name and
  * renamed.
@@ -2835,15 +2987,19 @@ session_install_esp(
 	int found;
 	int esp;
 	int directory;
+	int differs;
 	int error;
 
 	/* The loader of the index. */
 	index = installation->session->index;
 	loader = NULL;
 	for (i = 0; i < index->boot_count; i++) {
-		if (strncmp(index->boot[i].place, "esp:", 4U) == 0)
+		differs = strncmp(index->boot[i].place, "esp:", 4U);
+		if (differs == 0)
 			loader = &index->boot[i];
 	}
+
+	/* Refuses an index with no loader for this machine. */
 	if (loader == NULL)
 		return ENOENT;
 	leaf = strrchr(loader->place, '/');
@@ -2895,6 +3051,8 @@ session_install_esp(
 		error = session_copy_boot(loader, directory, leaf);
 		close(directory);
 	}
+
+	/* Closes the ESP and reports a failed write. */
 	if (error != 0) {
 		close(esp);
 		return error;
@@ -2955,6 +3113,8 @@ session_install_cleanup(
 		close(installation->root_fd);
 		installation->root_fd = -1;
 	}
+
+	/* Writes out and unmounts the new root. */
 	if (installation->root_mounted) {
 		sync();
 		failed = unmount(SESSION_TARGET, 0);

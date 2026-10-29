@@ -78,7 +78,7 @@ glDispatchCompute(
 	GLuint groups[3];
 	uint64_t started;
 
-	/* The grid's three counts; the recording is timed when ZEDBSD_GLES_COMPUTE_TRACE is 2 (ws101-p016). */
+	/* The grid's three counts; the recording is timed when ZEDBSD_GLES_COMPUTE_TRACE is 2. */
 	groups[0] = num_groups_x;
 	groups[1] = num_groups_y;
 	groups[2] = num_groups_z;

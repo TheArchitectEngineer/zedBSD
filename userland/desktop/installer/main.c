@@ -232,6 +232,7 @@ main_parse(
 {
 	int status;
 	int index;
+	int same;
 
 	/* The defaults. */
 	*display = NULL;
@@ -240,17 +241,25 @@ main_parse(
 
 	/* Each argument. */
 	for (index = 1; index < argc; index++) {
-		if (strncmp(argv[index], "--display=", 10U) == 0) {
+		/* The display to connect to. */
+		same = strncmp(argv[index], "--display=", 10U);
+		if (same == 0) {
 			*display = argv[index] + 10;
 			continue;
 		}
-		if (strncmp(argv[index], "--width=", 8U) == 0) {
+
+		/* The window's width. */
+		same = strncmp(argv[index], "--width=", 8U);
+		if (same == 0) {
 			status = main_number(argv[index] + 8, width);
 			if (status != 0)
 				return status;
 			continue;
 		}
-		if (strncmp(argv[index], "--height=", 9U) == 0) {
+
+		/* The window's height. */
+		same = strncmp(argv[index], "--height=", 9U);
+		if (same == 0) {
 			status = main_number(argv[index] + 9, height);
 			if (status != 0)
 				return status;
@@ -321,6 +330,8 @@ main_loop(
 			inst_log("DONE reason=disconnected");
 			return 0;
 		}
+
+		/* Lets a language change reach the catalogs. */
 		if (app->language != NULL)
 			(void)kl_settings_dispatch(app->language);
 
@@ -333,10 +344,14 @@ main_loop(
 				app->dirty = 1;
 				continue;
 			}
+
+			/* A helper's pipe became readable or hung up. */
 			if (event.kind == KL_APP_FD) {
 				inst_helper_ready(app, event.fd, event.ready);
 				continue;
 			}
+
+			/* Only this window's inputs are taken. */
 			if (event.kind != KL_APP_WINDOW || event.window != app->window)
 				continue;
 			main_event(app, &event.input);
@@ -493,6 +508,8 @@ main_resize(
 		(void)usleep(MAIN_RESIZE_WAIT_US);
 		status = kl_window_present_resize(app->window, &app->width, &app->height);
 	}
+
+	/* Gives up when the presenter never accepted the size. */
 	if (status != 0) {
 		fprintf(stderr, "INSTALLER FAILED operation=present error=%d\n", status);
 		return -1;
@@ -553,17 +570,25 @@ main_log_controls(
 	const struct inst_logged *control;
 	unsigned i;
 	int differs;
+	int same;
 
 	/* The same list on the same screen and dialog is not logged again. */
 	differs = 0;
-	if (!app->logged_once || app->logged_screen != app->screen || app->logged_dialog != app->dialog)
+	if (!app->logged_once)
+		differs = 1;
+	if (app->logged_screen != app->screen)
+		differs = 1;
+	if (app->logged_dialog != app->dialog)
 		differs = 1;
 	if (app->drawn_count != app->logged_count)
 		differs = 1;
 	for (i = 0; i < app->drawn_count && !differs; i++) {
-		if (memcmp(&app->drawn[i], &app->logged[i], sizeof(app->drawn[i])) != 0)
+		same = memcmp(&app->drawn[i], &app->logged[i], sizeof(app->drawn[i]));
+		if (same != 0)
 			differs = 1;
 	}
+
+	/* Nothing changed since the last log. */
 	if (!differs)
 		return;
 

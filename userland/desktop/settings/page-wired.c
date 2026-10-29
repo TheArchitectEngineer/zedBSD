@@ -116,7 +116,7 @@ se_wired_card(
 		y += WIRED_ROW;
 	}
 
-	/* The IPv6, which the system does not have yet (ws089-p022: the user's decision), faint. */
+	/* The IPv6, which the system does not have yet, faint. */
 	(void)kl_text_draw_fit(app->text, canvas, x + WIRED_PAD, kl_text_center(WIRED_TEXT_ROW, y + 8, 36), "IPv6", WIRED_TEXT_ROW, 0, WIRED_FIELD_X - 30, SE_COLOR_TEXT_FAINT);
 	(void)kl_text_draw_fit(app->text, canvas, x + WIRED_FIELD_X, kl_text_center(WIRED_TEXT_ROW, y + 8, 36), "Not available on " ZEDBSD_OS_NAME " yet", WIRED_TEXT_ROW, 0, width - WIRED_FIELD_X - WIRED_PAD, SE_COLOR_TEXT_FAINT);
 	y += 50;

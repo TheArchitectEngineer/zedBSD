@@ -4707,7 +4707,7 @@ draw_system_bar(
 	/* The strip. */
 	draw_bar_strip(server, command, &colours, 0, 0, (int32_t)server->width);
 
-	/* The launcher: the mark (ws035-p117) in the bar's deeper colours (ws035-p118). */
+	/* The launcher: the mark in the bar's deeper colours. */
 	glass_draw_mark(server, command, BAR_LAUNCHER_X, BAR_LAUNCHER_Y, BAR_LAUNCHER_SIZE, GLASS_MARK_BAR, 1.0f);
 
 	/* The line after the launcher. */
