@@ -2,7 +2,7 @@
 
 # ws242-p005: GOP の scrub 済みの末尾（256 MiB）の検査、firmware の package の確かめ
 
-Status: in-progress（2026-10-29 P2: 実装済み・host 試験と build まで。実機・QEMU の試験は未実施。cleared にしない）
+Status: cleared（2026-10-29 P5、q1678-i02。RTX 2070 の実機で layout ok（scrub の検査を通る、wpr2 135M・heap 105M）を [p008](../phase008/phase.md) で確かめた。超える場合は host 試験だけ。旧: P2 の実装済み・host 試験と build まで）
 Disposition: normal
 Parent: [WS242](../ws.md)
 Queue: q1678-i01（P2）

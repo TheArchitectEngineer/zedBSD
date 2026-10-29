@@ -11,8 +11,9 @@
  * compute-launch.c holds the parts that touch no hardware, so the host
  * test runs them as the kernel does: the compute queue meta data (QMD
  * version 2.2 on Turing, 3.0 on Ampere and Ada) a launch reads, the push
- * buffer that binds the generation's compute class and launches a QMD, and the IR of the first program (every
- * invocation writes 42 at its index).  compute.c runs the stage on the GPU.
+ * buffer that binds the generation's compute class and launches a QMD, and
+ * the IR of the first program (every invocation writes 42 at its index).
+ * compute.c runs the stage on the GPU.
  */
 
 #ifndef DRIVERS_GPU_NVRTX_NVRTX_COMPUTE_H

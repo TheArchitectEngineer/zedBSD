@@ -910,12 +910,12 @@ uint64_t nvrtx_vram_size_mib(uint32_t value);
 uint64_t nvrtx_vga_workspace(uint64_t vram_size, uint32_t value);
 int nvrtx_wpr_layout(uint64_t vram_size, uint64_t vga, uint64_t boot_size, uint64_t image_size, uint64_t heap_os, uint64_t heap_min, struct nvrtx_wpr_layout *layout);
 int nvrtx_wpr_scrubbed(const struct nvrtx_wpr_layout *layout);
-
-uint32_t nvrtx_gsp_hold_falcons(enum nvrtx_gsp_hold point);
 void nvrtx_wpr_record(uint8_t *record, const struct nvrtx_wpr_layout *layout, const struct nvrtx_wpr_sources *sources);
 void nvrtx_libos_region(uint8_t *page, unsigned index, const char *name, uint64_t address, uint64_t size);
 void nvrtx_log_buffer(uint8_t *buffer, uint64_t bus, size_t size);
 void nvrtx_rmargs(uint8_t *args, uint64_t queue_pages, uint32_t pte_count);
+
+uint32_t nvrtx_gsp_hold_falcons(enum nvrtx_gsp_hold point);
 
 size_t nvrtx_radix3_pages(size_t image_pages);
 int nvrtx_radix3_fill(const struct nvrtx_pages *image, const struct nvrtx_pages *table);

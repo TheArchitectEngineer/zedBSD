@@ -1239,12 +1239,17 @@ gsp_hold(
 	/* Gives the firmware's picture its window back. */
 	nvrtx_console_restore(gpu);
 
-	/* Says what is left. */
-	nvrtx_stage_mark("%s; bus master off (%d), falcon reset gsp %d sec2 %d; the firmware's picture is back, memory kept for a dump, power cycle before the next GSP boot",
-	    what,
+	/*
+	 * Says what is left, one short mark at a time (a mark is cut at the
+	 * console's width).
+	 */
+	nvrtx_stage_mark("%s", what);
+	nvrtx_stage_mark("hold: bus master off (%d), falcon reset gsp %d sec2 %d",
 	    master_error,
 	    gsp_error,
 	    sec2_error);
+	nvrtx_stage_mark("hold: the firmware's picture is back, memory kept for a dump");
+	nvrtx_stage_mark("hold: a region left stops the next GSP boot until power-off");
 }
 
 /*
@@ -1432,8 +1437,7 @@ gsp_init_done(
 	if (fail) {
 		(void)nvrtx_rpc_wait(gpu, NVRTX_EVENT_INIT_DONE, 0U, GSP_FAIL_INIT_US, &length);
 		gsp_progress(gpu, GSP_FAIL_INIT_US / 1000U);
-		nvrtx_stage_mark("gsp-init fail on purpose (nvrtx.fail=gsp-init)");
-		gsp_hold(gpu, NVRTX_GSP_HOLD_INIT, "gsp-init fail");
+		gsp_hold(gpu, NVRTX_GSP_HOLD_INIT, "gsp-init fail on purpose (nvrtx.fail=gsp-init)");
 		return ETIMEDOUT;
 	}
 
@@ -1461,7 +1465,7 @@ gsp_init_done(
 			gsp_progress(gpu, (uint32_t)(elapsed / 1000U));
 
 		nvrtx_stage_mark("gsp-init fail (%d)", error);
-		gsp_hold(gpu, NVRTX_GSP_HOLD_INIT, "gsp-init fail");
+		gsp_hold(gpu, NVRTX_GSP_HOLD_INIT, "gsp-init: the GSP did not say it is up");
 		return error;
 	}
 

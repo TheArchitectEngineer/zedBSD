@@ -10,7 +10,7 @@
 #                   reboot): as boot (after a fail, the region left asks for a power cycle)
 #   cycle           Debian, the machine's power cycled (SwitchBot plug AC276E42B252), zedBSD started: as boot
 #   restore=VMUNIX  the boot line without the test lines, VMUNIX put in, Debian: the kernel's cksum on zedBSD and
-#                   the RTX's driver on Debian
+#   kernel=VMUNIX   the RTX's driver on Debian (kernel= puts a kernel under test in the same way)
 #   usage: plan/ws242/tests/rtx-regress.sh OUT VMUNIX STEP...   (from the top of the tree)
 # Copyright (C) 2026 Awe Morris; SPDX-License-Identifier: Zlib
 set -u
@@ -96,8 +96,8 @@ for step in "$@"; do
 		until [ "$(ZS_TIMEOUT=15 deb uname -s 2> /dev/null)" = Linux ] || [ "$(date +%s)" -ge $end ]; do sleep 10; done
 		look cycle
 		;;
-	restore=*)
-		back=${step#restore=}
+	restore=*|kernel=*)
+		back=${step#*=}
 		setcfg
 		$MEASURE deploy --kernel "$back" > "$OUT/restore.log" 2>&1 || say "FAIL deploy $back"
 		rip=$($MEASURE zedbsd 2>> "$OUT/measure.log")

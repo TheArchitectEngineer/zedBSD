@@ -2,7 +2,7 @@
 
 # ws242-p007: GTX 16・RTX 30・40 を既定で起動
 
-Status: in-progress（2026-10-29 P2: 実装済み・host 試験と build まで。実機・QEMU の試験は未実施。cleared にしない。main への merge は p004・p006 と一緒に、p008 の後に Q1）
+Status: cleared（2026-10-29 P5、q1678-i02。RTX 2070（verified の family）の既定の起動が変わらないことを [p008](../phase008/phase.md) で確かめた。未検証の family の既定の起動は実機なし（host 試験だけ）。旧: P2 の実装済み・host 試験と build まで）
 Disposition: normal
 Parent: [WS242](../ws.md)
 Queue: q1678-i01（P2）

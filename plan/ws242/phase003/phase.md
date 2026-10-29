@@ -2,7 +2,7 @@
 
 # ws242-p003: nvrtx の host 試験の復元と追従、identify・profile・製品の表・起動の判断の項
 
-Status: in-progress（2026-10-29 P2: 実装済み・host 試験と build まで。実機・QEMU の試験は未実施（Queue の範囲で試験なし）。cleared にしない）
+Status: cleared（2026-10-29 P5、q1678-i02。RTX 2070 の実機で identify（TU106、GeForce RTX 2070）と既定の起動を [p008](../phase008/phase.md) で確かめた。旧: P2 の実装済み・host 試験と build まで）
 Disposition: normal
 Parent: [WS242](../ws.md)
 Queue: q1678-i01（P2）

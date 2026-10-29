@@ -2,7 +2,7 @@
 
 # ws242-p004: chip の SM を compiler に、QMD 3.0・compute の class・PCAS2_B、3D の class、HBLANK_DELAY
 
-Status: in-progress（2026-10-29 P2: 実装済み・host 試験と build まで。実機・QEMU の試験は未実施。cleared にしない）
+Status: cleared（2026-10-29 P5、q1678-i02。RTX 2070（SM75・c597・QMD 2.2）の実機で mview の描画と hang の試験が通った（[p008](../phase008/phase.md)）。SM86・89・QMD 3.0・PCAS2_B は実機なし（host 試験だけ）。compute-test（nvrtx.compute=1）は実機で流していない。旧: P2 の実装済み・host 試験と build まで）
 Disposition: normal
 Parent: [WS242](../ws.md)
 Queue: q1678-i01（P2）

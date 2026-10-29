@@ -2,7 +2,7 @@
 
 # ws242-p006: GSP の起動の段ごとに諦めて firmware の画面に戻す道
 
-Status: in-progress（2026-10-29 P2: 実装済み・host 試験と build まで。実機・QEMU の試験は未実施（RTX 2070 の故意の失敗は p008）。cleared にしない）
+Status: cleared（2026-10-29 P5、q1678-i02。RTX 2070 の実機で frts・booter・gsp-init の止めの道を故意に通し、host は止まらず、次の warm reboot（Debian 経由）は普通に起動した（[p008](../phase008/phase.md)）。印が 79 桁で切れる不具合を p008 で直した。物理の画面は未観測、unload・teardown の点は未実施。旧: P2 の実装済み・host 試験と build まで）
 Disposition: normal
 Parent: [WS242](../ws.md)
 Queue: q1678-i01（P2）
