@@ -132,6 +132,13 @@ struct kwl_import {
 	 * (the cursor plane's held images).  0 for an import not made yet.
 	 */
 	uint64_t generation;
+	/*
+	 * The task that moves the image to its layout (struct kwl_compose's
+	 * tasks), 0 for none: the drawings given after it come after it in the
+	 * queue, but the cursor thread is given the image only once the task
+	 * has completed, and the image is let go only after it has.
+	 */
+	uint64_t task;
 };
 
 /* The glass look's images and glyphs (glass.c). */
@@ -752,6 +759,23 @@ struct kwl_compose {
 	uint64_t stall_ms;
 	unsigned stall_lines;
 	/*
+	 * The main thread's tasks (render-thread.h): command buffers of
+	 * task_pool, which only the main thread uses, that the render thread
+	 * submits with a fence of their own before the drawings given after
+	 * them.  task_command is the task being recorded (numbered task_open,
+	 * 0 for none), given at the next flush; task_given is the number of
+	 * the last task given, task_done that of the last whose completion was
+	 * applied (tasks complete in their order, so every task up to it has).
+	 * task_error is a failure to give one, which ends the compositor at
+	 * the next poll.
+	 */
+	VkCommandPool task_pool;
+	VkCommandBuffer task_command;
+	uint64_t task_open;
+	uint64_t task_given;
+	uint64_t task_done;
+	VkResult task_error;
+	/*
 	 * The backdrop (backdrop.c); the framebuffer of the frame being
 	 * recorded, which its pass is taken up again on; and the blurred scene
 	 * the glass samples from now on in the frame (VK_NULL_HANDLE: the
@@ -901,6 +925,12 @@ void kwl_compose_park(struct kwl_server *server);
 void kwl_compose_unpark(struct kwl_server *server);
 void kwl_compose_forget(struct kwl_server *server, unsigned output, unsigned heads_mask);
 uint64_t kwl_compose_generation(struct kwl_compose *compose);
+VkResult kwl_compose_task_record(struct kwl_compose *compose, VkCommandBuffer *command);
+uint64_t kwl_compose_task_current(struct kwl_compose *compose);
+void kwl_compose_task_flush(struct kwl_compose *compose);
+int kwl_compose_task_ready(struct kwl_compose *compose, const struct kwl_import *import);
+int kwl_compose_tasks_busy(struct kwl_compose *compose);
+void kwl_compose_task_wait(struct kwl_compose *compose, uint64_t number);
 void kwl_queue_lock(struct kwl_compose *compose);
 void kwl_queue_unlock(struct kwl_compose *compose);
 void kwl_device_wait_idle(struct kwl_compose *compose);

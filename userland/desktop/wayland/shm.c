@@ -460,6 +460,9 @@ kwl_host_image_batch_begin(
 /*
  * Submits the layout moves recorded since kwl_host_image_batch_begin and
  * waits for them once, before the first frame samples those images.
+ * While the render thread runs (an output turning), the moves went into
+ * the task being recorded instead, which is given to it now and not
+ * waited for: the frames given after it come after it in the queue.
  */
 VkResult
 kwl_host_image_batch_end(
@@ -471,17 +474,18 @@ kwl_host_image_batch_end(
 
 	/* Later images are moved one by one again. */
 	compose->setup_batching = 0;
+
+	/* The render thread submits the moves. */
+	if (compose->render_started) {
+		kwl_compose_task_flush(compose);
+		return VK_SUCCESS;
+	}
+
+	/* The start's command buffer, made by its first image. */
 	command = compose->setup_command;
 	compose->setup_command = VK_NULL_HANDLE;
 	if (command == VK_NULL_HANDLE)
 		return VK_SUCCESS;
-
-	/*
-	 * The render thread submits nothing meanwhile (a batch while it runs:
-	 * an output turning, WS217); the first image's move waited for it too.
-	 */
-	if (compose->render_started)
-		kwl_render_wait_idle(&compose->render);
 
 	/* The recorded moves, submitted together. */
 	result = vkEndCommandBuffer(command);
@@ -493,7 +497,7 @@ kwl_host_image_batch_end(
 		kwl_queue_lock(compose);
 		result = vkQueueSubmit(compose->queue, 1U, &submit, VK_NULL_HANDLE);
 
-		/* One wait for all of them, before the first frame (under the queue's lock: the start, before the cursor's thread). */
+		/* One wait for all of them, before the first frame (under the queue's lock: the start, before the render and cursor threads). */
 		if (result == VK_SUCCESS)
 			result = vkQueueWaitIdle(compose->queue);
 		kwl_queue_unlock(compose);
@@ -895,6 +899,9 @@ image_create(
 	result = image_layout(compose, import->staging, VK_IMAGE_LAYOUT_PREINITIALIZED);
 	if (result != VK_SUCCESS)
 		return result;
+
+	/* The task that moves them, if any, which the image is let go after. */
+	import->task = kwl_compose_task_current(compose);
 	result = image_layout(compose, import->image, VK_IMAGE_LAYOUT_UNDEFINED);
 	if (result != VK_SUCCESS)
 		return result;
@@ -936,8 +943,10 @@ image_create(
 
 /*
  * Moves a new host-written image to the general layout, keeping what the
- * host wrote: recorded into the start's batch while there is one, or
- * submitted and waited for alone.
+ * host wrote: recorded into the task being recorded while the render
+ * thread runs (it is given at the next flush, after the host's writes of
+ * this pass), into the start's batch while there is one, or submitted
+ * and waited for alone.
  */
 static VkResult
 image_layout(
@@ -951,21 +960,22 @@ image_layout(
 	VkCommandBuffer command;
 	VkResult result;
 
+	/* The render thread submits it as a task, ahead of the frames that sample the image. */
+	if (compose->render_started) {
+		result = kwl_compose_task_record(compose, &command);
+		if (result != VK_SUCCESS)
+			return result;
+		result = image_layout_record(command, image, old_layout);
+		return result;
+	}
+
 	/* The start's batch: its command buffer made and begun by the first image. */
 	if (compose->setup_batching && compose->setup_command != VK_NULL_HANDLE) {
 		result = image_layout_record(compose->setup_command, image, old_layout);
 		return result;
 	}
 
-	/*
-	 * The render thread records and submits nothing meanwhile: the frames'
-	 * pool and the queue are used here outside a walk (a cursor shape made
-	 * late, ws213-p004).
-	 */
-	if (compose->render_started)
-		kwl_render_wait_idle(&compose->render);
-
-	/* A command buffer, the batch's or a one-time one. */
+	/* A command buffer, the batch's or a one-time one (before the render thread, which records from the same pool). */
 	memset(&allocate, 0, sizeof(allocate));
 	allocate.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO;
 	allocate.commandPool = compose->pool;
@@ -1050,6 +1060,9 @@ image_release(
 	struct kwl_import *import)
 {
 	struct kwl_import **position;
+
+	/* Its move to its layout has run on the GPU (a task given or being recorded names it). */
+	kwl_compose_task_wait(compose, import->task);
 
 	/* The image leaves the list the frames copy from. */
 	for (position = &compose->host_images; *position != NULL; position = &(*position)->host_next) {

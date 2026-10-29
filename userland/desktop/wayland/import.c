@@ -246,7 +246,7 @@ import_image(
 
 	/*
 	 * The image goes to the layout it is sampled in, once: in the next
-	 * frame's commands, or now when too many images wait.
+	 * frame's commands, or in a task ahead of it when too many images wait.
 	 */
 	if (compose->layout_count < KWL_LAYOUTS_MAX) {
 		compose->layouts[compose->layout_count] = import;
@@ -288,7 +288,12 @@ import_image(
 	return VK_SUCCESS;
 }
 
-/* Moves an imported image to the shader-readable general layout. */
+/*
+ * Moves an imported image to the shader-readable general layout: in the
+ * task being recorded while the render thread runs (the frames given
+ * after it come after it in the queue), or submitted and waited for alone
+ * before it does.
+ */
 static VkResult
 import_layout(
 	struct kwl_compose *compose,
@@ -301,15 +306,31 @@ import_layout(
 	VkCommandBuffer command;
 	VkResult status;
 
-	/*
-	 * The render thread records and submits nothing meanwhile: the frames'
-	 * pool and the queue are used here, at an import, outside a walk
-	 * (ws213-p004).
-	 */
-	if (compose->render_started)
-		kwl_render_wait_idle(&compose->render);
+	/* The barrier to the general layout. */
+	memset(&barrier, 0, sizeof(barrier));
+	barrier.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
+	barrier.srcAccessMask = 0U;
+	barrier.dstAccessMask = VK_ACCESS_SHADER_READ_BIT;
+	barrier.oldLayout = VK_IMAGE_LAYOUT_UNDEFINED;
+	barrier.newLayout = VK_IMAGE_LAYOUT_GENERAL;
+	barrier.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+	barrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+	barrier.image = import->image;
+	barrier.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+	barrier.subresourceRange.levelCount = 1U;
+	barrier.subresourceRange.layerCount = 1U;
 
-	/* A one-time command buffer. */
+	/* The render thread submits it as a task, which the image is let go after. */
+	if (compose->render_started) {
+		status = kwl_compose_task_record(compose, &command);
+		if (status != VK_SUCCESS)
+			return status;
+		vkCmdPipelineBarrier(command, VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT, VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT, 0U, 0U, NULL, 0U, NULL, 1U, &barrier);
+		import->task = kwl_compose_task_current(compose);
+		return VK_SUCCESS;
+	}
+
+	/* A one-time command buffer (before the render thread, which records from the same pool). */
 	memset(&allocate, 0, sizeof(allocate));
 	allocate.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO;
 	allocate.commandPool = compose->pool;
@@ -329,20 +350,8 @@ import_layout(
 	/* Begins the transition; failure skips recording and still releases the command. */
 	status = vkBeginCommandBuffer(command, &begin);
 
-	/* The barrier to the general layout. */
+	/* The barrier recorded. */
 	if (status == VK_SUCCESS) {
-		memset(&barrier, 0, sizeof(barrier));
-		barrier.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
-		barrier.srcAccessMask = 0U;
-		barrier.dstAccessMask = VK_ACCESS_SHADER_READ_BIT;
-		barrier.oldLayout = VK_IMAGE_LAYOUT_UNDEFINED;
-		barrier.newLayout = VK_IMAGE_LAYOUT_GENERAL;
-		barrier.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
-		barrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
-		barrier.image = import->image;
-		barrier.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
-		barrier.subresourceRange.levelCount = 1U;
-		barrier.subresourceRange.layerCount = 1U;
 		vkCmdPipelineBarrier(command, VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT, VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT, 0U, 0U, NULL, 0U, NULL, 1U, &barrier);
 
 		/* Finishes the barrier recording before it can be submitted. */
@@ -384,6 +393,9 @@ import_release(
 	struct kwl_import *import)
 {
 	unsigned index;
+
+	/* A task that moves it to its layout has run on the GPU. */
+	kwl_compose_task_wait(compose, import->task);
 
 	/* An image still waiting for its layout is no longer waited for. */
 	if (import->layout_pending) {

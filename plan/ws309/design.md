@@ -100,6 +100,8 @@
 | `kwl_render_wait_idle`（render-thread.c:467） | 上の 3 つで使う所が無くなるので消す |
 
 - task の message: `kwl_render_task(render, task)`（command buffer・fence・印）、render は submit し、fence を待つか次の poll で見て、終わったら TASK_DONE を出口へ（main は command buffer と fence を解放し、image を `ready` に）。
+- 実装（p008）での変え方: draw-list は `pending` を見ず submission order に頼る（render は LIST より先に受けた task を先に submit）。task が飛んでいる間は host の staging の書き込み（描画・shm の upload・layer の絵）をしない。
+  `pending` を見るのは cursor plane（box）だけ。task の完了の前の image の解放は p009 まで main が task の完了を待つ（[phase008](phase008/phase.md)）。
 - **cursor thread と queue**（J2 の決定）: cursor thread も同じ queue に submit・present している（cursor-thread.c:505・555）。device の queue は 1 本（compose.c:1472 の queueCount）。Vulkan の外部の同期の規則を満たすため、
   render と cursor（と §6 の V2 の present）が queue を使う区間を `kwl_queue_lock`（mutex、submit・present の区間だけ、µs）で守る。lock を持って待つ事はしない（fence の待ちは lock の外）。main は queue を使わない。
 
