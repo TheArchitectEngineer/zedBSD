@@ -124,7 +124,7 @@ p001 の設計の要点（第 2 版）: QEMU の usb-net（CDC ECM）は descrip
 
 | Phase | 目的 | 状態 | 依存 |
 | --- | --- | --- | --- |
-| [p013](phase013/phase.md) | USB CDC NCM の送受信の速さ（5330 の RTL8156）: NTB に複数の datagram、RX の 2 つの buffer | planned（2026-10-30 P3: 設計） | p003、p012 |
+| [p013](phase013/phase.md) | USB CDC NCM の送受信の速さ（5330 の RTL8156）: NTB に複数の datagram、RX の 2 つの buffer | in-progress（2026-10-30 P3: 17dd7f7d0・bff52ee82、5330 で send 272 → 1513、recv 1225 → 1411 Mbit/s（Linux 2353）。残り: xHCI の endpoint ごとの要求 1 つ（HCD の変更は Q1 の判断）） | p003、p012 |
 
 ## ユーザーの指示（2026-10-29、IPv6）
 
