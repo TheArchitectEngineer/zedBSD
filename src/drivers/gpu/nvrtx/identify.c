@@ -370,9 +370,10 @@ nvrtx_family_name(
  *
  * nvrtx.gsp=0 leaves every GPU to the firmware, and a chip without a family
  * record has no GSP path.  Otherwise nvrtx.gsp=1 boots any chip with a
- * path; without it the GSP is booted only on a family seen working on real
- * hardware, and only where the firmware's picture is on the GPU (a GPU the
- * firmware showed nothing on has nothing the default boot would keep).
+ * path; without it the GSP is booted on every family, seen working on real
+ * hardware or not, but only where the firmware's picture is on the GPU (a
+ * GPU the firmware showed nothing on has nothing the default boot would
+ * keep).
  */
 enum nvrtx_boot_choice
 nvrtx_boot_choose(
@@ -397,13 +398,13 @@ nvrtx_boot_choose(
 		return NVRTX_BOOT_START;
 	}
 
-	/* By default a family not yet seen on hardware stays with the firmware. */
-	if (profile->verified == 0)
-		return NVRTX_BOOT_LEAVE_UNSEEN;
-
 	/* By default only a GPU that shows the firmware's picture is booted. */
 	if (gop_on_gpu == 0)
 		return NVRTX_BOOT_LEAVE_NO_PICTURE;
+
+	/* A family not yet seen on hardware is booted too, and says so. */
+	if (profile->verified == 0)
+		return NVRTX_BOOT_START_UNSEEN;
 
 	/* Boots a seen family that shows the firmware's picture. */
 	return NVRTX_BOOT_START;

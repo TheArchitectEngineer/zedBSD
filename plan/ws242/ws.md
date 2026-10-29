@@ -7,7 +7,7 @@ Status: incomplete（すぐ取り組む物。2026-10-27 ユーザー「すぐ取
 Primary Milestone: MG006
 Parent: [Master](../master.md)
 Related: [WS037](../ws037/ws.md)（nvrtx の本体、RTX 2070 で desktop）、[WS240](../ws240/ws.md)（RTX 50、まだ開始しない）
-Resume point（2026-10-29 P2、q1678-i01）: 設計の第 2 版（[design.md](design.md)、review [design-review.md](design-review.md) に答えた版）の Phase を p003〜p009 の番号に振り直して phase.md を作った（設計の表の p005a → p005、p005b → p006、p005c → p007、p006 → p008、p007 → p009）。実装は p003 から順に、試験なし（host 試験と build まで）。旧: p001 の再開点・p002 は下の表。
+Resume point（2026-10-29 P2、q1678-i01）: p003〜p007 を実装した（host 試験と build まで、どれも「実装済み・試験未実施」で in-progress。branch agent/p2-ws242）。次は p008（RTX 2070 の実機の回帰、RDNA と差し替え、T1）で、その結果で p003〜p007 を cleared にするか決める。main への merge は試験の後に Q1（p007 の既定の起動は p004・p006 と一緒に）。設計の第 2 版の Phase を p003〜p009 に振り直した対応は [design.md](design.md) の第 2 版の表の下。
 <!-- awesome-plan-current:end -->
 
 ## ユーザーの指示（原文、2026-10-15）
@@ -36,6 +36,6 @@ nvrtx が RTX 20（Turing、GTX 16xx を含む）・30（Ampere）・40（Ada）
 | ws242-p004 | [SM を compiler に、QMD 3.0・class・PCAS2_B、HBLANK_DELAY](phase004/phase.md) | in-progress（実装済み・試験未実施。HBLANK_DELAY は入れない判断） | p003 | P2（q1678-i01） |
 | ws242-p005 | [scrub 済みの末尾 256 MiB の検査、firmware の package の確かめ](phase005/phase.md) | in-progress（実装済み・試験未実施） | p003 | P2（q1678-i01） |
 | ws242-p006 | [段ごとに諦めて firmware の画面に戻す道](phase006/phase.md) | in-progress（実装済み・試験未実施） | p004 | P2（q1678-i01） |
-| ws242-p007 | [GTX 16・RTX 30・40 を既定で起動](phase007/phase.md) | planned | p004・p006 | P2（q1678-i01） |
+| ws242-p007 | [GTX 16・RTX 30・40 を既定で起動](phase007/phase.md) | in-progress（実装済み・試験未実施） | p004・p006 | P2（q1678-i01） |
 | ws242-p008 | [RTX 2070 の実機の回帰](phase008/phase.md)（RDNA と差し替え、Q242-4） | planned | p004〜p007 | 未定（T1） |
 | ws242-p009 | [規約の全文と出典の監査](phase009/phase.md) | planned | p003〜p008 | 未定 |

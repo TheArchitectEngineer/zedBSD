@@ -16,12 +16,15 @@
  * core never suspends the function, and a machine without an NVIDIA GPU is not
  * touched at all.
  *
- * Otherwise (the default) on a chip of a verified family (TU10x) that shows the
- * firmware's picture, or on any Turing, Ampere or Ada chip with nvrtx.gsp=1
- * (GTX 16, RTX 30 and RTX 40 are not yet seen on real hardware, so they boot
- * only when asked), the attach keeps the function and starts a worker thread
- * that runs the GSP boot (gsp.c) once the root file system holds the firmware.
- * The kept function refuses a system suspend.
+ * Otherwise (the default) on any Turing, Ampere or Ada chip (GeForce RTX 20,
+ * 30 and 40, GTX 16) that shows the firmware's picture, or on any of them with
+ * nvrtx.gsp=1, the attach keeps the function and starts a worker thread that
+ * runs the GSP boot (gsp.c) once the root file system holds the firmware.  The
+ * families not yet seen working on real hardware (GTX 16, RTX 30 and RTX 40)
+ * say so in the marks.  A boot that fails part-way gives the firmware's
+ * picture back where it can; a machine whose GPU does not come up this way
+ * is started again with nvrtx.gsp=0 on the boot line, which leaves every GPU
+ * to the firmware.  The kept function refuses a system suspend.
  *
  * At the reboot or the shutdown of the machine the PCI shutdown hook stops
  * a GSP kept up (the GPU device, then unload), so the hub's state of this boot
@@ -101,10 +104,10 @@ drv_pci_nvrtx_driver_register(void)
 /*
  * Runs the read-only stages on one function, then keeps it or gives it back.
  *
- * The function is kept on a chip of a verified family whose GSP path
- * exists and which shows the firmware's picture, unless the boot says
- * nvrtx.gsp=0, or on any chip with a GSP path when the boot says
- * nvrtx.gsp=1; otherwise the bind is refused and it stays with the firmware.
+ * The function is kept on a chip whose GSP path exists and which shows the
+ * firmware's picture, unless the boot says nvrtx.gsp=0, or on any chip with
+ * a GSP path when the boot says nvrtx.gsp=1; otherwise the bind is refused
+ * and it stays with the firmware.
  */
 static int
 nvrtx_attach(
@@ -174,7 +177,7 @@ nvrtx_attach(
 	case NVRTX_BOOT_START_UNSEEN:
 		/* A family not yet seen working says so before its boot starts. */
 		if (choice == NVRTX_BOOT_START_UNSEEN) {
-			nvrtx_stage_mark("console done; %s (%s) not yet seen on hardware, booting it",
+			nvrtx_stage_mark("console done; %s (%s) not yet seen on hardware, booting it (nvrtx.gsp=0 leaves it to the firmware)",
 			    device.chip.name,
 			    profile->name);
 		}
@@ -191,11 +194,6 @@ nvrtx_attach(
 		break;
 	case NVRTX_BOOT_LEAVE_NO_PATH:
 		nvrtx_stage_mark("console done; no GSP path for %s yet", device.chip.name);
-		break;
-	case NVRTX_BOOT_LEAVE_UNSEEN:
-		nvrtx_stage_mark("console done; %s (%s) not yet seen on hardware, left to the firmware (nvrtx.gsp=1 boots it)",
-		    device.chip.name,
-		    profile->name);
 		break;
 	case NVRTX_BOOT_LEAVE_NO_PICTURE:
 		nvrtx_stage_mark("console done; no firmware picture on %s, left to the firmware (nvrtx.gsp=1 boots it)", device.chip.name);

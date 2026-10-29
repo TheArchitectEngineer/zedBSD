@@ -124,9 +124,9 @@ enum nvrtx_falcon_style {
  * generation's differences from it instead of testing chip numbers.  The
  * records are constant and live as long as the kernel.
  *
- * A family not yet seen working on real hardware (verified zero) is booted
- * only when the boot asks for it (nvrtx.gsp=1); by default its GPU is left
- * to the firmware's picture.
+ * verified records whether the family was seen working on real hardware;
+ * a family not yet seen (verified zero) is booted all the same, and its
+ * boot says so in the marks.
  */
 struct nvrtx_profile {
 	const char *name;
@@ -212,8 +212,6 @@ enum nvrtx_boot_choice {
 	NVRTX_BOOT_LEAVE_OFF,
 	/* Leaves the GPU to the firmware because the chip has no GSP path. */
 	NVRTX_BOOT_LEAVE_NO_PATH,
-	/* Leaves a family not yet seen on real hardware to the firmware (nvrtx.gsp=1 boots it). */
-	NVRTX_BOOT_LEAVE_UNSEEN,
 	/* Leaves a GPU the firmware showed no picture on (nvrtx.gsp=1 boots it). */
 	NVRTX_BOOT_LEAVE_NO_PICTURE
 };
