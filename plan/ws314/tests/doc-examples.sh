@@ -60,6 +60,28 @@ if [ "${1:-}" = guest ]; then
 	guest() { timeout 120 python3 plan/tools/guest/guest.py run "$1" 2>&1 </dev/null; }
 	keys() { timeout 60 python3 plan/ws035/tests/qmp-keys.py "$runtime/qmp.sock" "$@" >/dev/null 2>&1; }
 	pointer() { timeout 60 python3 plan/ws035/tests/qmp-pointer.py "$runtime/qmp.sock" "$@" >/dev/null 2>&1; }
+	# The compositor's picture through the Venus head's VNC, with a deadline a loaded host meets (up to 3 tries).
+	shot() {
+		tries=0
+		while [ $tries -lt 3 ]; do
+			if timeout 200 python3 -c '
+import sys
+sys.path.insert(0, "plan/ws014/tests")
+sys.path.insert(0, "plan/ws035/tests")
+from venus_rfb import capture
+from ppm2png import read_ppm, write_png
+if capture(sys.argv[1], sys.argv[2] + ".ppm", 120) is None:
+	sys.exit(1)
+width, height, pixels = read_ppm(sys.argv[2] + ".ppm")
+write_png(sys.argv[2], width, height, pixels)
+print("picture %s %dx%d" % (sys.argv[2], width, height))
+' "$runtime/vnc.sock" "$1" >> "$2" 2>&1; then
+				return 0
+			fi
+			tries=$((tries + 1))
+		done
+		return 1
+	}
 
 	# The image, made the standard way (a config.mk build and files of the tree), on the build's own sysroot.
 	if timeout 1800 make -j16 ZEDBSD_CONFIG=plan/tools/titlebar/config-amd64-menu.mk BUILD="$build" sysroot-amd64 \
@@ -135,16 +157,24 @@ EOF
 		*.o|*.log) continue ;;
 		esac
 		name=$(basename "$program")
-		guest "chmod 0755 /tmp/$name; export XDG_RUNTIME_DIR=/tmp HOME=/tmp; cd /tmp; /tmp/$name > /tmp/$name.out 2>&1 </dev/null & echo \$! > /tmp/$name.pid; sleep 8; echo started" > "$out/$name.start.txt"
+		# The notification of 01-app goes after a few seconds; the windows are waited for longer.
+		wait_start=8
+		[ "$name" = 01-app ] && wait_start=2
+		guest "chmod 0755 /tmp/$name; export XDG_RUNTIME_DIR=/tmp HOME=/tmp; cd /tmp; /tmp/$name > /tmp/$name.out 2>&1 </dev/null & echo \$! > /tmp/$name.pid; sleep $wait_start; echo started" > "$out/$name.start.txt"
+		# The input of each, at the places of the windows the compositor centres on its 1280x800 output.
 		case $name in
 		02-window) pointer move 640 400 sleep 300 move 660 410 sleep 600 ;;
-		04-counter|04-counter-parts) keys '<up>' '<up>' '<up>'; sleep 2; pointer move 640 400 sleep 600 ;;
-		05-widgets) keys '<tab>' '<ret>'; sleep 2 ;;
+		03-titlebar) pointer move 536 258 sleep 300 down sleep 80 up sleep 600 down sleep 80 up sleep 600 move 640 420 sleep 300 ;;
+		04-counter) keys '<up>' '<up>' '<up>'; sleep 2; pointer move 727 448 sleep 300 down sleep 80 up sleep 1500 ;;
+		04-counter-parts) keys '<up>' '<up>' '<up>'; sleep 2; pointer move 727 448 sleep 1500 ;;
+		05-widgets) keys '<tab>' '<ret>'; sleep 2
+			pointer move 488 424 sleep 300 down sleep 80 up sleep 600 move 406 331 sleep 300 down sleep 80 up sleep 600 \
+				move 713 369 sleep 300 down sleep 60 up sleep 100 down sleep 60 up sleep 1500 ;;
 		06-menu) keys '<ctrl-equal>' '<ctrl-equal>'; sleep 2; pointer move 640 400 sleep 300 right-down sleep 80 right-up sleep 1200 ;;
+		07-services) pointer move 670 542 sleep 300 down sleep 80 up sleep 1000 move 476 542 sleep 300 down sleep 80 up sleep 6000 ;;
 		*) sleep 1 ;;
 		esac
-		if timeout 120 python3 plan/ws035/tests/zdesktop-check.py "$out/shots/$name.png" --runtime "$runtime" \
-			> "$out/$name.shot.txt" 2>&1; then
+		if shot "$out/shots/$name.png" "$out/$name.shot.txt"; then
 			cp "$out/shots/$name.png" "build/review/ws314-doc-$name.png"
 			report PASS "picture $name (build/review/ws314-doc-$name.png)"
 		else

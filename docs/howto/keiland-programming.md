@@ -16,8 +16,9 @@ and know nothing of Keiland yet.  The reviewer of the earlier version could not 
    edit the code inside the blocks; if a program must change, change the file, copy it into the block again, run the
    test (it is not linked from here), and fix every line number this guide cites from it.
 2. The pattern of every chapter, in this order:
-   a. What the chapter's program does and what it looks like (one short paragraph and the screenshot when there is
-      one: keiland-examples/NN.png next to the program).
+   a. What the chapter's program does and what it looks like (one short paragraph and the screenshot, an image link
+      to keiland-examples/NAME.png; each picture was taken on a running Keiland desktop, and the chapter's WRITE
+      comment says which input led to it, so the caption can say so).
    b. The program, whole.
    c. "Reading the program" (inductive): walk through the program in the order it runs, citing line ranges as links
       of the form [lines 118-127](keiland-examples/04-counter.c#L118-L127), and quoting the two to six lines being
@@ -83,7 +84,7 @@ the one thread that opened it.
 
 <!-- WRITE (chapter 1, summary): The program connects to the desktop, posts a notification so that something is seen
 (a notification under org.example.Hello), listens to the desktop for two seconds, and ends.  Screenshot
-keiland-examples/01-app.png (the notification) when there is one.  Terms first defined here: application (struct
+keiland-examples/01-app.png: the notification it posts.  Terms first defined here: application (struct
 kl_app, one connection to the desktop's compositor), compositor, application ID, event, event queue, dispatch (wait
 and read), take.  -->
 
@@ -266,7 +267,7 @@ as key inputs with `repeated` set, after the inputs read with them.
 
 <!-- WRITE (chapter 2, summary): The program opens a 480x320 window, paints the theme's ground, and draws a dot that
 follows the pointer; the close button ends it.  It is chapter 1's program with a window, a frame and a real main loop.
-Screenshot keiland-examples/02-window.png.  Terms first defined here: window, configure (the compositor gives the
+Screenshot keiland-examples/02-window.png: the window with the dot under the pointer.  Terms first defined here: window, configure (the compositor gives the
 size), presenter (KL_PRESENT_*), frame (the pixels the program draws and shows: premultiplied 0xAARRGGBB words, stride
 counted in words), canvas, input (struct kl_window_event, delivered as KL_APP_WINDOW), main loop, and the program's
 "dirty", "resized" and "closed" flags as a pattern every later example keeps. -->
@@ -643,7 +644,8 @@ frame of the new size and draws. On `KL_WINDOW_CLOSE` it closes the window
 <!-- WRITE (chapter 3, summary): The program shows one colour at a time; Back and Forward in the titlebar step through
 five colours, the search field finds a colour by name as it is typed, and the window's title is the colour's name.
 It is chapter 2's program with titlebar controls and without the pointer's dot.  Screenshot
-keiland-examples/03-titlebar.png.  Terms first defined here: titlebar presentation (menu, controls, tabs), control,
+keiland-examples/03-titlebar.png: after Forward was clicked twice, Sun is shown, its name is the title, and Back is
+enabled (it is disabled at the first colour).  Terms first defined here: titlebar presentation (menu, controls, tabs), control,
 role, priority, action, action state, declarative and retained (the compositor keeps what the program gave until it
 gives something else). -->
 
@@ -1137,7 +1139,8 @@ still works, with only its title.
 explained kl_ui from one kl_button line.  Order it strictly: the program first, then one frame followed through the
 program, then the rules.  The program is a counter: a number and three buttons, Less, Reset (disabled at 0) and More;
 Up and Down change the number.  It is chapter 2's program with a struct kl_ui, a font, a struct kl_style and three
-kl_button calls.  Screenshot keiland-examples/04-counter.png.  Terms first defined here: kl_ui (the widgets' record of
+kl_button calls.  Screenshot keiland-examples/04-counter.png: after Up three times and one click on More, the number
+is 4, Reset is enabled, and More is lit under the pointer.  Terms first defined here: kl_ui (the widgets' record of
 one window), widget (a function called while a frame is drawn), immediate mode, frame of the widgets (kl_ui_begin to
 kl_ui_end; say it is the same frame as chapter 2's pixels), id and index, record (where a widget was drawn), "resolved
 against the frame last drawn", click reported in the next frame, unclaimed input (kl_ui_take), style, theme,
@@ -2443,7 +2446,8 @@ so that the records stay whole; only the pixels outside the clip are kept.
 <!-- WRITE (chapter 5, summary): A greeter: a text field for a name, a list of greetings, a Shout switch, a size
 slider, four colour swatches the program draws itself, and a Greet button; Greet, Enter in the field, or a double click
 or Enter in the list writes the greeting at the bottom; Escape clears it.  It follows chapter 4's structure exactly
-(say so; the loop, resize and frame functions are the counter's).  Screenshot keiland-examples/05-widgets.png.  Terms
+(say so; the loop, resize and frame functions are the counter's).  Screenshot keiland-examples/05-widgets.png: after
+Tab and Enter in the field, a click on the green swatch, a click on Shout and a double click on Good evening.  Terms
 first defined here: a widget's state struct (struct kl_field, struct kl_list), focus and its order (the order of
 drawing), row, ink, hit bits (KL_HIT_*), the program's own widget (kl_ui_hit). -->
 
@@ -3095,8 +3099,8 @@ move it, and the program draws its content at the scroll's `x` and `y`.
 
 <!-- WRITE (chapter 6, summary): The counter of chapter 4 with the window's menu (File: Quit; Edit: Copy, Paste, Less,
 More, Reset; View: Small Number, Large Number) with shortcuts, and a context menu on a right click or a long press.
-The buttons, the keys and the menus all ask for the same actions.  Screenshot keiland-examples/06-menu.png (the Edit
-menu open, when it can be taken).  Terms first defined here: menu table, item, submenu, menu role, shortcut,
+The buttons, the keys and the menus all ask for the same actions.  Screenshot keiland-examples/06-menu.png: the menu
+bar (File, Edit, View) in the titlebar, the number 2 after Ctrl+= twice, and the context menu after a right click.  Terms first defined here: menu table, item, submenu, menu role, shortcut,
 context menu.  "Action" and "action state" are chapter 3's. -->
 
 <!-- example: keiland-examples/06-menu.c -->
@@ -3724,7 +3728,8 @@ and nothing is shown; the program's keys still work.
 <!-- WRITE (chapter 7, summary): One program, 07-services.c, uses several services at once: glass, the appearance,
 translations, the file chooser and the recent list, the clipboard and notifications.  Say that this chapter's
 sections can be read in any order and each points at the lines of the program it explains.  Screenshot
-keiland-examples/07-services.png (on glass when the compositor offers it).  The settings, the system and sound have no
+keiland-examples/07-services.png: the card on the desktop's glass (the blurred wallpaper shows through it); and
+keiland-examples/07-services-chooser.png: the file chooser opened by Open..., hanging from the window's titlebar.  The settings, the system and sound have no
 example here; keep them short with links to their headers.  Terms first defined here: see-through, glass panel,
 appearance, accent, catalog, domain, settings dispatch, file chooser, recent list. -->
 

@@ -3,7 +3,7 @@
 # ws314-p011 解説の構成の設計（Opus）: 章ごとの完全な例と、書き直しの指示の comment
 
 - 親: [WS314](../ws.md)。Queue: q1691 / q1691-i01（担当 P6、2026-10-30）。
-- Status: in-progress（2026-10-30）
+- Status: cleared（2026-10-30。文章の書き直しは p012）
 - Disposition: normal
 
 ## 目的・受け入れ
@@ -56,7 +56,23 @@
 - `sh plan/ws314/tests/doc-examples.sh`（host）: 8 本の例を clang 19 と gcc で `-std=gnu17 -Wall -Wextra -Werror`、worktree の Linux build
   （`make -f userland/desktop/keiland-linux.mk KEILAND_LINUX_BUILD=build/p011-linux build/p011-linux/lib/libkeiland.so`、warning 0）の
   libkeiland.so と link、文書の block が file と byte で一致、marker の file が在る: 2026-10-30 SUMMARY pass=40 fail=0 not-done=0。
-- QEMU（zedBSD の Venus の guest）: 実行中（下に追記）。
+- QEMU（zedBSD の Venus の guest、`sh plan/ws314/tests/doc-examples.sh guest`）: lean な desktop の image
+  （plan/tools/titlebar/build-menu-image.sh build/amd64、その build の sysroot-amd64）、例を その sysroot と libkeiland で zedBSD 向けに
+  compile（-Wall -Wextra -Werror）、runtime build/p011-run、boot の disk は qemu の wrapper で cache=unsafe、SSH の待ちは 300 s。
+  compositor を `--testing --glass` で起こし、例ごとに起動 → QMP で入力 → Venus の head の VNC から画面 → 終了。console・serial の log は
+  読まない。2026-10-30 2 回目: SUMMARY pass=18 fail=0（1 回目は VNC の capture の 10 s の期限が host の負荷で切れて 01 だけ FAIL、
+  期限を 120 s・3 回に直した）。画面で確かめた事（PNG は build/review/ws314-doc-*.png）:
+  01 通知「Hello / A Keiland application is running.」、02 窓と pointer の下の点、03 Forward の 2 回の click で Sun・title が Sun・Back が
+  有効、04 Up 3 回と More の click で 4（click が次の frame で数に入る流れ）、04-counter-parts Up 3 回で 3 と More の明かり（pointer だけ
+  動いた frame）、05 Tab と Enter で「Hello, World!」の後、緑の swatch（kl_ui_hit）・Shout・Good evening の double click（kl_list_row の
+  ACTIVATED）で「GOOD EVENING, WORLD!」が緑、06 menu bar（File・Edit・View）・Ctrl+= 2 回で 2・右 click の context menu、07 glass の
+  card・Appearance: Light・0 files opened（1 回目）、Open... で file chooser の sheet（2 回目）。各例の stderr に失敗の行は無い
+  （titlebar・menu・pacing・glass・chooser の ENOTSUP 等の行が出ていない）。
+- 文書の画面: 上の PNG を窓の周りで切り抜き `docs/howto/keiland-examples/*.png`（8 枚、計 約 470 KB）に置き、WRITE comment に
+  各画面がどの入力の後かを書いた。
+- 未実施: Linux の compositor での実行（zedBSD の Venus で代えた）、07 の翻訳の切り替え（ui.language の変更）と clipboard の中身・
+  recent の一覧の確かめ、Notify の click の通知の画面（chooser の画面に覆われた）、03 の検索 field への入力、06 の menu の click と
+  Paste、05 の slider の操作。
 - 実機: 対象外。
 
 ## 残り
