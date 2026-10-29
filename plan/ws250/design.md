@@ -24,7 +24,7 @@ session ごとの channel（案 A）と session ごとの worker を必須に含
 | --- | --- | --- |
 | 1 | **session ごとの channel**（`struct nvrtx_work_channel`）を session の最初の frame で遅延して作る。vaspace（page table）は今の 1 本を共有し、channel ごとに user の heap から 2 MiB の VA の区画を取って ring・semaphore・fence の push・own の context buffer を置く。作れなければ（RM の拒否・32 個の上限）その session は今の共有の work channel（chid 4）を使う（今と同じ振る舞いへの退避） | 4.1、4.2 |
 | 2 | **犯人の手がかり**: 主は GR に今載っている context（FECS の current context の register と channel の instance block の照合、4.3）。読めない時の代わりに、全ての submit の segment の前に置く待たない release（start stamp）で「始まったが終わらない run」とその始まりの時刻を見て、**最後に始まった channel** を犯人にする（WFI の preempt で GR を取った者が最後に始まる） | 4.3 |
-| 3 | **判定は reaper だけ**: 待つ側（executor・completer）は期限（submit か最後の取り消しの終わりから 2 s）で reaper を起こし、自分の channel が READY の間は待ち続ける（上限は submit から 8 s、越えたら自分を喪失）。reaper が「期限を過ぎた run がある」時に犯人を 1 つ選んで取り消す。判定は hardware に触らない関数（`recover.c`、host 試験に scheduler の model） | 4.4 |
+| 3 | **判定は reaper だけ**: 待つ側（executor・completer）は期限（submit か最後の取り消しの終わりから 2 s）で reaper を起こし、自分の channel が READY の間は待ち続ける（上限は同じ起点（submit か最後の取り消しの終わり）から 8 s、取り消しの間は数えない。越えたら自分を喪失。2026-10-29 実機の S4 で直した）。reaper が「期限を過ぎた run がある」時に犯人を 1 つ選んで取り消す。判定は hardware に触らない関数（`recover.c`、host 試験に scheduler の model） | 4.4 |
 | 4 | **回復の thread**（node に 1 本、`reaper`、node の寿命の間）: 250 ms ごとの見張りと、取り消しの唯一の実行者。取り消しは STOP_CHANNEL（bImmediate=1）→ 失敗なら RC の event を 500 ms 待つ → 来なければ RESET_CHANNEL → 証拠があれば SCHEDULE off・object の FREE・channel の FREE。RPC の timeout は今の 5 s と `rpc_unanswered` のまま。共有の channel（退避）の犯人は共有の channel ごと取り消し、共有の session を全部喪失にする | 4.5 |
 | 5 | **RC の event**（`NVRTX_EVENT_CHANNEL_ERROR`）を chid で channel に結ぶ: その channel の session を喪失にし（`run_lost`）、rc の印を立て、reaper を起こす。handler は queue_lock だけで動く。type 79（bus から落ちた）は device の fault | 4.6 |
 | 6 | **`rpc_lock`**: runtime の RM の call（channel の open・close・kill）と drain の turn を直列にする mutex。drain は 20 ms の turn ごとに手放し、待つ者がいれば 1 tick 寝て譲る | 4.7 |
@@ -156,7 +156,7 @@ gpu
 ### 4.4 期限と犯人の判定（p003）
 
 - **待つ側**（`vk_node_wait`: executor の待ちと lane の completer）: 期限は `max(submit, 最後の取り消しの終わり) + 2 s`。期限で reaper を起こし、
-  自分の channel が READY の間は待ち続ける。上限は submit から 8 s（`VK_NODE_RUN_US` の 4 倍。共通の層の stop の期限 10 s の内）: 越えたら自分を喪失
+  自分の channel が READY の間は待ち続ける。上限は同じ起点（submit か最後の取り消しの終わり）から 8 s で、reaper が取り消している間は越えても待つ（2026-10-29 実機: STOP が 1 回 2.3〜4 s かかり、S4 の犯人 2 つの後ろの mview の run が submit から 8 s で巻き添えの喪失になったので直した）: 越えたら自分を喪失
   （今と同じ EIO、`run_lost`）。channel が LOST 以後になったら即 EIO。共有の channel の待ちも同じ。
 - **reaper の判定**（`nvrtx_recover_culprit`、`recover.c`、hardware に触らない）: 入力は channel ごとの view（終わらない run があるか、その最も古い物の
   submit の時刻、始まったか・始まりの時刻、GR に載っているか（照合が働いた時だけ））、今の時刻、最後の取り消しの終わり、`RUN_US`。

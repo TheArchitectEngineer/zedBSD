@@ -2,7 +2,7 @@
 
 # ws250-p005: session ごとの lane
 
-Status: in-progress（2026-10-29 P5、q1676-i01。実装済み・試験未実施（実機の S2 待ち）。cleared にしない）
+Status: cleared（2026-10-29 P5、q1676-i02。実機の S0・S2 が通った。停滞は GR の側の分だけ）
 Parent: [WS250](../ws.md)
 Approval: p002 と同じ。2026-10-29 Q250-5「含める (推し)」。
 
@@ -33,3 +33,9 @@ build warning 0、host 試験 PASS。実機の S2（mview の停滞が GR の分
 
 - 実機の S2（mview の停滞が GR の分だけ）と S0（fps の回帰）。lane の thread が増えた時の振る舞いは実機でしか見られない。
 - `node->lock` を手放す間に他の session の frame が触る物の監査は vk 層の slot の再利用の道だけ（execute_start は session の slot だけを触る）。
+
+## 実機（2026-10-29 P5、q1676-i02、[p004 の「実機」](../phase004/phase.md)）
+
+- S0: fps の回帰なし（49.17〜49.50）。S2: mview の停滞は 1 回 4334 ms ＝ 期限の 2.0 s＋STOP の 2.3 s（どちらも GR の上: WFI で犯人の draw が GR を離さない）。
+  CPU の側の待ち（slot の再利用・park の marker）で他の session が止まった形は見えない（停滞は取り消しの終わりで解ける）。設計の「約 2 s」より長いのは STOP の時間（p003 の U1）。
+- S4: 犯人 2 つの間も mview は止まって待ち、取り消しの後に再開して完走（p003 の直しの後）。

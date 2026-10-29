@@ -2,7 +2,7 @@
 
 # ws250-p002: session ごとの channel と rpc_lock
 
-Status: in-progress（2026-10-29 P5、q1676-i01。実装済み・試験未実施（実機の S0 待ち）。cleared にしない）
+Status: cleared（2026-10-29 P5、q1676-i02。実機の S0 が通った）
 Parent: [WS250](../ws.md)
 Approval: 2026-10-27 ユーザー「すぐ取り組むものの一つです。」、2026-10-29 Q250-4「案 A を必須に」、2026-10-29（Q1 の中継）「作業の手が空いてしまったら、テストなしで実装だけ進める戦略で、残っているWSのphaseをまんべんなく進めましょう。」
 
@@ -36,3 +36,9 @@ build（amd64 vmunix）warning 0、`plan/tools/nvrtx/nvrtx-vk-host-test.sh` PASS
 - 未実施: 実機（design.md 6.3 の S0: dmesg の `channel 16: session channel on runlist`、mview の fps が p011 の値から −5% 以内、desktop の回帰）、QEMU の boot の回帰。
 - 実機で U3（chid 16〜 の USERD、別の VA の promote）が通らなければ、`channel %u: no session channel` の log で退避（共有）になる。GPU の側で働かない時は
   session の run が期限で喪失になる（逃げ道は boot の語 `nvrtx.channels=0`）。
+
+## 実機（2026-10-29 P5、q1676-i02、[p004 の「実機」](../phase004/phase.md)）
+
+- S0: dmesg に `channel 18〜20: session channel on runlist 0`（U3: chid 16〜 の USERD と、golden と違う VA の own の buffer の promote を RM が通し、GPU で動く）。
+  mview scene-5000 49.50・49.33・49.17 fps（3 回、p011 の 49.1〜49.5 の内、−5% 以内）。`nvrtx.channels=0` の退避は要らなかった。
+- rpc_lock と drain の 20 ms の turn: 実機の全 scenario で RPC の timeout・`rpc_unanswered` は出ていない。

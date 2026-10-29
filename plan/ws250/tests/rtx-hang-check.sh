@@ -82,10 +82,9 @@ $AS_USER "$ENVS /tmp/vkhang" 2>&1
 wait
 grep -E 'MVIEW (SPIN|STAGES|FAILED|FPS|HITCH )' /tmp/s2-mview.log
 $AS_USER "$ENVS /tmp/vkhang --loops" 2>&1
-env XDG_RUNTIME_DIR=/run/user/1000 keiland-shot /tmp/s2.png > /dev/null 2>&1
 dmesg | tail -n +\$n | grep -E '$KLINES'
 EOS
-ZS_TIMEOUT=60 zs "$IP" "cat /tmp/s2.png" > "$OUT/s2.png" 2> /dev/null < /dev/null
+ZS_TIMEOUT=30 zs "$IP" "env XDG_RUNTIME_DIR=/run/user/1000 keiland-shot /tmp/s2.png > /dev/null 2>&1; cat /tmp/s2.png" > "$OUT/s2.png" 2> /dev/null < /dev/null
 say "S2 $(grep -E 'VKHANG' "$OUT/s2.log" | head -1) | $(grep -E 'MVIEW SPIN|MVIEW FAILED' "$OUT/s2.log" | tail -1) | control $(grep -E 'VKHANG' "$OUT/s2.log" | tail -1) | $(grep -cE 'stopped' "$OUT/s2.log") stopped, $(grep -cE 'stuck' "$OUT/s2.log") stuck"
 
 # S3: five times.
@@ -134,7 +133,7 @@ say "S5 $(grep S5ENDED "$OUT/s5.log") | control $(grep -E 'VKHANG' "$OUT/s5.log"
 
 # The desktop at the end.
 ZS_TIMEOUT=30 zs "$IP" "env XDG_RUNTIME_DIR=/run/user/1000 keiland-shot /tmp/end.png > /dev/null 2>&1; cat /tmp/end.png" > "$OUT/end.png" 2> /dev/null < /dev/null
-say "shots: $OUT/s2.png $OUT/end.png ($(wc -c < "$OUT/end.png") bytes at the end)"
+say "shots: $OUT/s2.png $OUT/end.png ($(wc -c < "$OUT/s2.png") bytes after S2, $(wc -c < "$OUT/end.png") at the end)"
 
 # S1: the GSP left alone (nvrtx.kill=0), then the line taken out again.
 if [ "$PROBE" = --probe ]; then
