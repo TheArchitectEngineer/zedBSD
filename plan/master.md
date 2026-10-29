@@ -21,7 +21,7 @@
 | --- | --- | --- | --- |
 | P1 | q1662-i10 in-progress | [ws309](ws309/ws.md) p013・p014 cleared（main e554645ca）、p016 → p017 → p018。p015 はユーザーの判断待ち（[phase015](ws309/phase015/phase.md)「要る判断」） | — |
 | P2 | q1690-i01 in-progress | [ws314](ws314/ws.md) p001・p002 cleared（main d05c1582d）、p003 設計 → p004〜p010 | — |
-| P3 | q1679-i02 in-progress、q1689-i01 pending | [ws221](ws221/ws.md) p012 SACK の送る側（tcp-model）→ q1689 5330 の USB 2.5G の NCM。10GbE の recv は ATR 有効で Linux の 90〜97%（bbc43c185） | 5330（10.0.10.3 は 00:18 に返却） |
+| P3 | q1689-i01 返却（次の起動で p014） | [ws221](ws221/ws.md) p010・p012 cleared、p013 NCM 1513/1411 Mbit/s、次は p014 xHCI（design-reviewer → 実装） | 5330 |
 | P4 | q1665-i10 in-progress | BUG-355・358 は直した（main ed93695ac）。[ws307](ws307/ws.md) p011 の通しを既定の項目で流し直す → 日本語の画面 | QEMU |
 | P5 | q1692-i01 in-progress | RTX 2070 で Notes の起動の確かめ（WS243 は completed、main 65d8082c1） | 10.0.10.3 |
 | P6 | q1667-i05 返却 | [ws282](ws282/ws.md)・[ws284](ws284/ws.md) は main に merge 済み、別のツリーのセッションは [ws282 handover](ws282/handover.md)・[ws284 handover](ws284/handover.md) の試験から続ける | — |
