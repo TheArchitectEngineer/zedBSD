@@ -36,6 +36,8 @@ GPU ごとに同じ手順（desktop の 60 fps、重い 3D の model の 50 fps�
 
 ## Phase
 
+- 2026-10-29 ユーザー（原文）: 「WS291は、Keilandのスレッドの修正を適用後でないと、正確にならないかもしれないです。」→ Q1: desktop の fps の受け入れ（p010 の 60 fps）は WS309（Keiland の thread の整理）の後に測り直して判定する。それまでは driver の側の直し（cursor・lock）だけを進め、compositor の側の調整はしない。
+
 | Phase | 内容 | 依存 | 状態 |
 | --- | --- | --- | --- |
 | [p001](phase001/phase.md) | desktop の計測と 60 fps（既に 60 fps なら記録して閉じる） | WS039 p009 | cleared（2026-10-26、main bad29b52f、全段 60 fps） |

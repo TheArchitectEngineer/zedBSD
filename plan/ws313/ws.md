@@ -27,6 +27,12 @@ Resume point: p001 の design-reviewer、p003 の媒体と試験の script。配
   （例: 一つは GPU（Mali の driver と Vulkan）、一つは周辺の driver（MMC・USB・Ethernet・display））。配下にも AGENTS.md の規則を渡す。
   commit は同じ index を同時に触らないよう順に。上限に当たったら Q1 が配下を止める事がある。
 
+## ユーザーの指示（原文、2026-10-29、Mali）
+
+「Maliのドライバは、このGPUでとりあえずデスクトップを動かせるように、シェーダーコンパイラ、コマンド投入、シェーダ実行などを、一通り実装して、UATとデバッグに備えてください。デスクトップが動かせる範囲の実装でよいですが、余裕があればきちんと実装の対応範囲を他のGPUと同様に広げてください。」
+
+- 解釈（Q1）: Mali-G310（Valhall・CSF）の Vulkan（libvulkan の Mali の backend）・Valhall の shader の compiler・command の投入・shader の実行を、まず Keiland の desktop が動く範囲で一通り実装し、実機の UAT とデバッグに備える。余裕があれば他の GPU（RDNA・nvrtx・PowerVR）と同じ対応範囲へ広げる。実機の試験は無い前提で、host の試験（compiler の出力の照合、command stream の組み立て）で確かめる。
+
 ## ユーザーの判断（2026-10-29、§8）
 
 - 2026-10-29 §8 の判断（ユーザーのクリック、Q1 の中継。前置きで WS・状態・未決・用語を説明した）:

@@ -39,6 +39,8 @@ main に未 merge の branch: `agent/p2-ws291l`（WS291、merge の前に venus-
 web の取得は禁止のまま。HAL の差分の承認は無い（WS307 の hal-fw-variables.md はユーザーの review 待ち）。
 <!-- master:agents:end -->
 
+**ユーザー不在の間の自律実行（2026-10-29 12:4x ユーザー「夜まで寝ます。しばらく質問に回答できないので、疑問で止まったphaseがあれば、質問はメッセージ表示だけしてクリック回答にはせず、別なphaseに移って作業を進めてください。」）**: 判断が要る Phase は uncleared・止めにして理由と要る判断を記録し、Q1 は問いをメッセージで書くだけ（クリックの問いにしない）。担当は別の Phase に移る。
+
 ### 統合の注意
 
 <!-- master:merge:start -->
