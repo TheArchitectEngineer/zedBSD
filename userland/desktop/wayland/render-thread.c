@@ -113,7 +113,9 @@ kwl_render_destroy(
 	render->task_flights = NULL;
 	render->task_flights_tail = NULL;
 
-	/* A completion never posted, and those of jobs never seen complete. */
+	/* A park's message never posted, a completion never posted, and those of jobs never seen complete. */
+	free(render->park_message);
+	render->park_message = NULL;
 	free(render->completion);
 	render->completion = NULL;
 	while (render->flight_count > 0U) {
@@ -184,6 +186,7 @@ enum kwl_render_step
 kwl_render_step(
 	struct kwl_render_thread *render)
 {
+	struct kwl_render_message *notice;
 	struct kwl_render_message *tasks;
 	enum kwl_render_step step;
 	unsigned listed;
@@ -236,6 +239,17 @@ kwl_render_step(
 			return KWL_RENDER_STEP_WORKED;
 		}
 
+		/*
+		 * A park is answered once every task given before it has
+		 * completed (drained: nothing the thread submitted still runs),
+		 * meanwhile the oldest task's fence for a moment.
+		 */
+		if (render->park && !render->parked && tasks_left) {
+			pthread_mutex_unlock(&render->lock);
+			(void)render_tasks_reap(render, KWL_RENDER_POLL_NS);
+			return KWL_RENDER_STEP_WORKED;
+		}
+
 		/* A park is answered once; the thread calls no Vulkan but its tasks' until it ends. */
 		if (render->park) {
 			if (!render->parked) {
@@ -243,8 +257,14 @@ kwl_render_step(
 				pthread_cond_broadcast(&render->answered);
 			}
 
-			/* Parked with a task in flight: its fence for a moment, then the next look. */
+			/* A park asked without waiting is told by its message, after the messages before it. */
+			notice = render->park_message;
+			render->park_message = NULL;
 			pthread_mutex_unlock(&render->lock);
+			if (notice != NULL)
+				render_post(render, notice);
+
+			/* Parked with a task in flight: its fence for a moment, then the next look. */
 			if (render->task_flights != NULL) {
 				(void)render_tasks_reap(render, KWL_RENDER_POLL_NS);
 				return KWL_RENDER_STEP_WORKED;
@@ -423,7 +443,8 @@ kwl_render_wait_message(
 /*
  * Parks the render thread for the main thread's change of the swapchains:
  * waits at most wait_ms for the thread to answer, which it does after the
- * frame in flight, at a point where it calls no Vulkan.  Returns 0 when
+ * frame in flight and the tasks given before, at a point where it calls
+ * no Vulkan.  Returns 0 when
  * parked, ETIMEDOUT otherwise.
  */
 int
@@ -458,6 +479,32 @@ kwl_render_park(
 }
 
 /*
+ * Parks the render thread without waiting (the display thread's changes,
+ * design 4.3): the thread parks after the frame in flight and the tasks
+ * given before, and posts the message given (the main thread's, kind
+ * KWL_RENDER_PARKED) back in its queue, after the messages before it.  A
+ * thread parked already posts it at its next look.
+ */
+void
+kwl_render_park_request(
+	struct kwl_render_thread *render,
+	struct kwl_render_message *message)
+{
+	/* The request and its message, and the thread woken for it. */
+	message->kind = KWL_RENDER_PARKED;
+	message->next = NULL;
+	pthread_mutex_lock(&render->lock);
+
+	free(render->park_message);
+	render->park_message = message;
+	render->park = 1U;
+	render->sequence++;
+	pthread_cond_broadcast(&render->changed);
+
+	pthread_mutex_unlock(&render->lock);
+}
+
+/*
  * Ends a park.
  */
 void
@@ -468,6 +515,8 @@ kwl_render_unpark(
 	pthread_mutex_lock(&render->lock);
 
 	render->park = 0U;
+	free(render->park_message);
+	render->park_message = NULL;
 	render->sequence++;
 	pthread_cond_broadcast(&render->changed);
 

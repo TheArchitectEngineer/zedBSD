@@ -1159,6 +1159,7 @@ event_loop(
 		if (scanout_slot != 0 && descriptors[scanout_slot].revents != 0)
 			kwl_scanout_ended(server);
 		kwl_compose_poll(server);
+		kwl_display_take(server);
 		kwl_glass_glyphs_poll(server);
 		kwl_glass_blur_take(server);
 		kwl_keyboard_hand_take(server);
@@ -1349,8 +1350,7 @@ service_cleanup(
 
 	/* A screen the lid put out is lit for whoever comes next, and the backlight closed (backend-host.c). */
 	kwl_lid_screen_restore(server);
-	kl_backend_backlight_close(server->backlight);
-	server->backlight = NULL;
+	kwl_backlight_close(server);
 
 	/* Closes the operating system's side last, after everything that used it. */
 	kl_backend_close(server->backend);

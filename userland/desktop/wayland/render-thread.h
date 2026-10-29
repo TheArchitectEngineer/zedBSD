@@ -28,8 +28,13 @@
  * Every message to the main thread goes through one ordered queue: a
  * frame's completion always comes before the ready that follows it.  A
  * park stops the thread at a point where it calls no Vulkan (after the
- * frame in flight), for the main thread to change the swapchains; images
- * the thread holds stay held unless the main thread forgets them there.
+ * frame in flight), for the swapchains to be changed; images the thread
+ * holds stay held unless the main thread forgets them there.  The thread
+ * answers a park only once every task given before it has completed too
+ * (the park drains its work, so nothing it submitted still runs on the
+ * GPU), and the main thread either waits for the answer or asks without
+ * waiting and is told by a message in the queue, after the completions
+ * that came before it.
  *
  * The thread is the only one that submits the main thread's work to the
  * queue: a task is a command buffer the main thread recorded (an image's
@@ -113,7 +118,9 @@ enum kwl_render_message_kind {
 	/* A frame or a layer's picture completed (or failed). */
 	KWL_RENDER_COMPLETED,
 	/* A task completed (or its submission or its fence failed). */
-	KWL_RENDER_TASK_DONE
+	KWL_RENDER_TASK_DONE,
+	/* The thread parked, drained, for a park asked without waiting (the main thread's message given back). */
+	KWL_RENDER_PARKED
 };
 
 /*
@@ -261,7 +268,9 @@ struct kwl_render_ops {
  *
  * Under lock: the want; the answer to the ready outstanding (for which
  * number) and the job it carries; the park and stop requests and whether
- * the thread is parked (it answers on answered); whether a frame is in
+ * the thread is parked (it answers on answered), and the message a park
+ * asked without waiting is told with (park_message, the main thread's,
+ * posted back once parked); whether a frame is in
  * flight, and whether a job is being recorded, submitted and presented
  * (running); the message queue and whether the main thread was woken for it;
  * the held images (the thread's, written by the main thread only while
@@ -288,6 +297,7 @@ struct kwl_render_thread {
 	struct kwl_render_job job;
 	unsigned park;
 	unsigned parked;
+	struct kwl_render_message *park_message;
 	unsigned stop;
 	unsigned busy;
 	unsigned running;
@@ -326,6 +336,7 @@ void kwl_render_answer(struct kwl_render_thread *render, uint64_t number, enum k
 struct kwl_render_message *kwl_render_take(struct kwl_render_thread *render);
 int kwl_render_wait_message(struct kwl_render_thread *render, unsigned wait_ms);
 int kwl_render_park(struct kwl_render_thread *render, unsigned wait_ms);
+void kwl_render_park_request(struct kwl_render_thread *render, struct kwl_render_message *message);
 void kwl_render_unpark(struct kwl_render_thread *render);
 void kwl_render_forget(struct kwl_render_thread *render, unsigned output, unsigned heads_mask);
 void kwl_render_task(struct kwl_render_thread *render, struct kwl_render_message *task);
