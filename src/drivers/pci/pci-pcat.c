@@ -654,6 +654,7 @@ pcat_allocate_irqs(
 	unsigned capability;
 	unsigned entries;
 	unsigned index;
+	int error;
 
 	(void)context;
 
@@ -668,11 +669,13 @@ pcat_allocate_irqs(
 	/* Gives several vectors from the MSI-X table. */
 	if (type == DRV_PCI_IRQ_MSIX) {
 		/* Finds the capability; a device without one has no MSI-X. */
-		if (drv_pci_device_find_capability(device, 0x11U, &capability) != 0)
+		error = drv_pci_device_find_capability(device, 0x11U, &capability);
+		if (error != 0)
 			return ENOTSUP;
 
 		/* Reads how many entries the table holds. */
-		if (drv_pci_device_config_read16(device, capability + PCAT_MSIX_CONTROL, &control) != 0)
+		error = drv_pci_device_config_read16(device, capability + PCAT_MSIX_CONTROL, &control);
+		if (error != 0)
 			return EIO;
 		entries = (unsigned)(control & PCAT_MSIX_TABLE_SIZE) + 1U;
 
