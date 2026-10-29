@@ -5,7 +5,7 @@
 
 | 担当 | 定義 | 仕事（Queue） | worktree / branch | 状態 | 最後の merge |
 | --- | --- | --- | --- | --- | --- |
-| P1 | phase-runner | ws309 (q1662-i10) | `/home/awe/zedBSD-worktrees/p1-ws309i` / `agent/p1-ws309i` | running | 98e3eae2a（merge a9d07b850） |
+| P1 | phase-runner | ws309 (q1662-i10) | `/home/awe/zedBSD-worktrees/p1-ws309i` / `agent/p1-ws309i` | running | 85532ee5e（merge 4a0f11a7f） |
 | P2 | phase-runner | ws068 (q1686-i01) | `/home/awe/zedBSD-worktrees/p2-ws068` / `agent/p2-ws068` | running（試験待ちの branch: agent/p2-ws242 fda52e406、agent/p2-ws217 fb1b270d2） | 45aa87120（merge fe49f1d60） |
 | P3 | phase-runner | ws221 p010 (q1679-i02) | `/home/awe/zedBSD-worktrees/p3-ws221g` / `agent/p3-ws221g` | running | b05aacf5b（merge b4d1043b3） |
 | P4 | phase-runner | ws307 (q1665-i10) | `/home/awe/zedBSD-worktrees/p4-ws307n` / `agent/p4-ws307n` | running（試験待ちの branch: agent/p4-ws283 b7fd8d23e） | 580a117e3（merge ee83a6eda） |
