@@ -3,7 +3,7 @@
 # ws291-p011 NVIDIA: scene-5000 を 50 fps（非同期の submit）
 
 - 親: [WS291](../ws.md)。依存: [p010a](../phase010a/phase.md)（cleared）。
-- 状態: in-progress（2026-10-29 11:31 P2、q1670-i05。実装と実機の 2 回の計測は済み、50 fps は未達、record の 1.3 ms を調べ中）。
+- 状態: in-progress（2026-10-29 12:15 P2、q1670-i05。scene-5000 49.1〜49.5 fps（NVK 50.1、単独の run 49.1）、50 の判定は Q1）。
 - 出典: WS291 の表の p011 の行。2026-10-29 Q1「p011 の非同期の submit（GPU の待ちを lock の外へ）は Q1 の判断でこの p011 で行う。
   WS250 は担当が無く止まっているので、plan/ws250/design.md の期限の STOP・session ごとの worker と食い違わない形にして（WS250 はその上に作る）」。
 - 基準: NVK（Linux）の scene-5000 は 50.1 fps（p010）。zedBSD の起点は 42.24 fps（p010a の s1）。
@@ -96,7 +96,26 @@
   vkhang --loops も lost、mview after-hang は描かず、desktop の shot は取れない。共有の work channel に終わらない run が残り、取り消しが無いため。
   Q1 の判断（2026-10-29）: 「hang の後に他の session が続く件は p011 の範囲の外（WS250 の取り消しと復帰）」。p011 の受け入れは scene-5000 の fps（50）で見る。
 
-### 再開点（11:31 P2）
+### 2 回目の枠（2026-10-29 11:43〜12:14、同じ script、hang は無し）
 
-- 次の枠（P1 の 12:15 の後）で vmunix-p011c（339ddc909、cksum 286899472）を `rtx-async-check.sh OUT build/ws291/vmunix-va1 build/ws291/vmunix-p011c` で。
-  record が 0.1〜0.3 ms に落ちれば frame ≈ 20.5 ms（約 48〜49 fps）の見込み。残りは GPU の 0.6〜0.9 ms（vertex の program、p012 以降の予備）。
+- de077be78: completer の待ちは 2 ms の spin の後 1 tick（1 ms）の sleep で見ていたので、20 ms の run の終わりを遅れて見ていた。session の前の run の
+  長さ（submit から終わり）を `run_took_us` に覚え、その 1.5 ms 前まで sleep、そこから 2 ms spin（`nvrtx_work_wait_late`）。host: build warning 0・
+  vmunix check PASS・host test PASS 86/0。
+
+| kernel | scene-5000 fps（perf 無し・perf 有り） | copies 1 fps | STAGES（frame・record・submit・fence ms） | kernel |
+| --- | --- | --- | --- | --- |
+| c vmunix-p011c（339ddc909、WC、cksum 286899472） | 48.90・48.46 | 1908 | 20.60・0.08・0.17・20.03 | ended avg 19.61 ms、gpu 19.5+0.1 |
+| d vmunix-p011d（de077be78、WC+late spin、cksum 3979244274） | 49.45・48.83 | 1870 | 20.45・0.11・0.25・19.83 | ended avg 19.50 ms（＝GPU） |
+| d2（同じ kernel、2 回目） | 49.14・49.15 | 1888 | 20.31・0.12・0.22・19.69 | gpu 19.5+0.1 |
+| NVK（p010） | 50.1（単独の run 49.1） | — | 19.90・0.08・0.05・19.36 | — |
+
+- record は 1.36 → 0.08〜0.12 ms（NVK 0.08）: 見立てどおり UC の user の map への instance の書き込みだった。起床の遅れも消えた（ended ＝ GPU の時間）。
+- shot（copies 1、起動の直後）: c・d・d2 とも Linux の参照と max 76、16 以上の差 2 画素（p010a と同じ）。PNG: worktree の build/review/p011-d2-shot-1.png。
+- 証拠: build/ws291/measure/p011-c・p011-d・p011-d2。終わりに Debian、RTX は vfio-pci（lspci）、NVMe の kernel は vmunix-va1（cksum 1463007375、
+  nvrtx.vk.perf の行 0）。lock は 12:14 に返した。
+
+### 再開点（12:15 P2）
+
+- 起点 42.24 → 49.1〜49.5 fps。frame 20.2〜20.3 ms のうち GPU 19.5 ms、CPU（acquire・record・submit・present）約 0.5 ms と fence の残り約 0.2 ms。
+  NVK の 50.1 との差は約 0.3 ms、NVK 自身の run の幅（49.1〜50.1）の中。50 以上を確かにするには GPU の側（vertex の program の質、1 frame 19.5 ms）
+  を p012 以降の予備で詰める。cleared の判定（50.1 に対する 49.1〜49.5 の扱い）は Q1 に頼む。

@@ -777,6 +777,7 @@ int nvrtx_work_map_system(struct nvrtx_gpu *gpu, const uint64_t *pages, size_t c
 int nvrtx_work_unmap(struct nvrtx_gpu *gpu, uint64_t va, uint64_t size);
 int nvrtx_work_submit(struct nvrtx_gpu *gpu, uint64_t push_va, size_t length, uint32_t *fence);
 int nvrtx_work_wait(struct nvrtx_gpu *gpu, uint32_t fence, uint32_t timeout_us);
+int nvrtx_work_wait_late(struct nvrtx_gpu *gpu, uint32_t fence, uint32_t timeout_us, uint32_t quiet_us);
 bool nvrtx_work_passed(struct nvrtx_gpu *gpu, uint32_t fence);
 int nvrtx_work_run_time(struct nvrtx_gpu *gpu, uint32_t fence, uint64_t *gpu_ns);
 

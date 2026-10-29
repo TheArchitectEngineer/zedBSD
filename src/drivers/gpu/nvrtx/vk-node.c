@@ -38,6 +38,12 @@
 #define VK_NODE_RUN_US			2000000U
 
 /*
+ * How long before a run is expected to end (as the session's last run
+ * took) a wait starts to look at the fence without sleeping.
+ */
+#define VK_NODE_SPIN_EARLY_US		1500U
+
+/*
  * The executor's own runs are on this boundary (the page tables' big page).
  *
  * Value referenced: Linux v6.19
@@ -581,7 +587,9 @@ vk_node_wait(
 	uint64_t start;
 	uint64_t age;
 	uint64_t spent;
+	uint64_t took;
 	uint32_t left;
+	uint32_t quiet;
 	int error;
 
 	node = session->node;
@@ -598,8 +606,14 @@ vk_node_wait(
 	if (age < VK_NODE_RUN_US)
 		left = (uint32_t)(VK_NODE_RUN_US - age);
 
+	/* The run is expected to take as long as the session's last one: the wait sleeps until shortly before. */
+	quiet = 0U;
+	took = __atomic_load_n(&session->run_took_us, __ATOMIC_RELAXED);
+	if (took > age + VK_NODE_SPIN_EARLY_US && took - age - VK_NODE_SPIN_EARLY_US < left)
+		quiet = (uint32_t)(took - age - VK_NODE_SPIN_EARLY_US);
+
 	/* Waits for the fence. */
-	error = nvrtx_work_wait(node->gpu, fence, left);
+	error = nvrtx_work_wait_late(node->gpu, fence, left, quiet);
 	spent = nvrtx_now_us();
 	*waited_us = spent - start;
 	if (error != 0) {
@@ -608,7 +622,8 @@ vk_node_wait(
 		return EIO;
 	}
 
-	/* Counts the run's time from its submission to the end the wait saw. */
+	/* The next wait expects as long; counts the run's time from its submission to the end the wait saw. */
+	__atomic_store_n(&session->run_took_us, spent - submitted_us, __ATOMIC_RELAXED);
 	nvrtx_node_count(node, &node->counts.ended, 1U);
 	nvrtx_node_count(node, &node->counts.run_us, spent - submitted_us);
 	nvrtx_node_count_max(node, &node->counts.run_max_us, spent - submitted_us);
