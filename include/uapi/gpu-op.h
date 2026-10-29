@@ -1554,8 +1554,9 @@ enum gpu_op {
 	 * ranges do not clear is sent as a fixed value
 	 * (libvulkan/commands.c: command_encode_depth_ranges).
 	 * Sent by: libvulkan/commands-generated.inc: vkCmdClearDepthStencilImage.
-	 * Decoded by: mali/vk/vk-command.c: decode_regions; i915 and bcm2711
-	 * do not decode it; a Venus host answers it.
+	 * Decoded by: ghci/vk/vk-command.c: record_arguments;
+	 * mali/vk/vk-command.c: decode_regions; i915 and bcm2711 do not
+	 * decode it; a Venus host answers it.
 	 */
 	GPU_OP_CMD_CLEAR_DEPTH_STENCIL_IMAGE = 120,
 
