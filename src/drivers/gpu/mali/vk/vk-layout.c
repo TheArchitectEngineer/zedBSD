@@ -757,7 +757,10 @@ slot_hold(
 		*place = object;
 }
 
-/* vkCreateRenderPass: one subpass of colour attachments of taken formats. */
+/*
+ * vkCreateRenderPass: one subpass of colour attachments of taken formats
+ * and at most one depth and stencil attachment the tile buffer takes.
+ */
 static int
 create_render_pass(
 	struct mali_vk_session *session,
@@ -783,14 +786,14 @@ create_render_pass(
 	if (reader->error != 0)
 		return EINVAL;
 
-	/* One subpass, colour only, within the bounds. */
+	/* One subpass, within the bounds, without input attachments. */
 	error = 0;
 	pass = NULL;
 	if (info.subpassCount != 1U || info.attachmentCount > MALI_VK_ATTACHMENTS_MAX) {
 		error = ENOTSUP;
 	} else {
 		subpass = &info.pSubpasses[0];
-		if (subpass->colorAttachmentCount > MALI_VK_ATTACHMENTS_MAX || subpass->pDepthStencilAttachment != NULL || subpass->inputAttachmentCount != 0U)
+		if (subpass->colorAttachmentCount > MALI_VK_ATTACHMENTS_MAX || subpass->inputAttachmentCount != 0U)
 			error = ENOTSUP;
 	}
 
@@ -807,17 +810,37 @@ create_render_pass(
 			pass->format[index] = mali_vk_format_find(info.pAttachments[index].format);
 			pass->load_op[index] = info.pAttachments[index].loadOp;
 			pass->store_op[index] = info.pAttachments[index].storeOp;
-			if (pass->format[index] == NULL || !pass->format[index]->render)
+			pass->stencil_load_op[index] = info.pAttachments[index].stencilLoadOp;
+			pass->stencil_store_op[index] = info.pAttachments[index].stencilStoreOp;
+			if (pass->format[index] == NULL)
+				error = ENOTSUP;
+			else if (!pass->format[index]->render && mali_surface_zs_find(pass->format[index]->vk) == NULL)
 				error = ENOTSUP;
 		}
 
+		/* The colour references; a pass of none draws to one target without an attachment. */
 		subpass = &info.pSubpasses[0];
+		pass->color[0] = VK_ATTACHMENT_UNUSED;
 		pass->color_count = subpass->colorAttachmentCount;
 		for (index = 0; index < subpass->colorAttachmentCount; index++) {
 			attachment = subpass->pColorAttachments[index].attachment;
 			if (attachment != VK_ATTACHMENT_UNUSED && attachment >= info.attachmentCount)
 				error = EINVAL;
+			else if (attachment != VK_ATTACHMENT_UNUSED && pass->format[attachment] != NULL && !pass->format[attachment]->render)
+				error = ENOTSUP;
 			pass->color[index] = attachment;
+		}
+
+		/* The depth and stencil attachment, of a format the tile buffer takes. */
+		pass->depth = VK_ATTACHMENT_UNUSED;
+		if (subpass->pDepthStencilAttachment != NULL)
+			pass->depth = subpass->pDepthStencilAttachment->attachment;
+		if (pass->depth != VK_ATTACHMENT_UNUSED && pass->depth >= info.attachmentCount) {
+			error = EINVAL;
+		} else if (pass->depth != VK_ATTACHMENT_UNUSED && pass->format[pass->depth] != NULL) {
+			pass->zs_format = mali_surface_zs_find(pass->format[pass->depth]->vk);
+			if (pass->zs_format == NULL)
+				error = ENOTSUP;
 		}
 
 		if (error != 0) {

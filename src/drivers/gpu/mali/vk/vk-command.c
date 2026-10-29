@@ -93,6 +93,10 @@ mali_vk_command_route(
 	case GPU_OP_CMD_BIND_PIPELINE:
 	case GPU_OP_CMD_SET_VIEWPORT:
 	case GPU_OP_CMD_SET_SCISSOR:
+	case GPU_OP_CMD_SET_DEPTH_BIAS:
+	case GPU_OP_CMD_SET_STENCIL_COMPARE_MASK:
+	case GPU_OP_CMD_SET_STENCIL_WRITE_MASK:
+	case GPU_OP_CMD_SET_STENCIL_REFERENCE:
 	case GPU_OP_CMD_BIND_DESCRIPTOR_SETS:
 	case GPU_OP_CMD_BIND_INDEX_BUFFER:
 	case GPU_OP_CMD_BIND_VERTEX_BUFFERS:
@@ -605,6 +609,18 @@ decode(
 					error = take_data(session, entry, &rect, sizeof(rect));
 			}
 		}
+		break;
+	case GPU_OP_CMD_SET_DEPTH_BIAS:
+		/* [constant factor][clamp][slope factor], as float bits */
+		for (index = 0; index < 3U; index++)
+			entry->values[index] = drv_i915_wire_read_u32(reader);
+		break;
+	case GPU_OP_CMD_SET_STENCIL_COMPARE_MASK:
+	case GPU_OP_CMD_SET_STENCIL_WRITE_MASK:
+	case GPU_OP_CMD_SET_STENCIL_REFERENCE:
+		/* [face mask][value] */
+		entry->values[0] = drv_i915_wire_read_u32(reader);
+		entry->values[1] = drv_i915_wire_read_u32(reader);
 		break;
 	case GPU_OP_CMD_BIND_DESCRIPTOR_SETS:
 		/* [bind point][layout][first][count][count][sets][dynamic][dynamic][offsets] */

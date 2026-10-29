@@ -3,7 +3,7 @@
 # ws313-p011: Mali の render の node・scheduler・Vulkan の executor・CS の命令の builder
 
 Status: in-progress（実装済み・実機未試験）
-Queue: q1675-i02（P7 の配下 D）、q1675-i03 の一部（P7 の配下 D2: render pass の LOAD・display の import）、q1675-i04 の一部（P7 の配下 D3: WLS の dispatch・拡大の blit、続けて clear attachments・depth と sample mask を書く fragment program の DCD・ZSD）
+Queue: q1675-i02（P7 の配下 D）、q1675-i03 の一部（P7 の配下 D2: render pass の LOAD・display の import）、q1675-i04 の一部（P7 の配下 D3: WLS の dispatch・拡大の blit、続けて clear attachments・depth と sample mask を書く fragment program の DCD・ZSD）、q1675-i05 の一部（P7: FBD の大きさの修正・depth attachment、配下 P7-B: mip level）
 WS: [WS313](../ws.md)、設計 [gpu.md](../gpu.md) §11・§13。compiler は配下 C（§12）。
 
 ## ユーザーの指示（原文、2026-10-29、Q1 経由）
@@ -68,6 +68,28 @@ WS: [WS313](../ws.md)、設計 [gpu.md](../gpu.md) §11・§13。compiler は配
 | `tests/mali-vk-desc-host-test.c` | WLS の語の照合（13 checks を追加） |
 | `src/drivers/gpu/mali/vk/vk-draw.c`（D3 の続き） | pass の中の vkCmdClearAttachments を `clear_attachments`・`clear_rect` で draw に（通常の `draw()` とは別の関数、同じ IDVS の staging register を全て書く）。`draw()` には、fragment program が `writes_depth` の時に ZSD の Depth source を Shader（3）・DCD の kill と ZS update を Force Late、`writes_sample_mask` の時に DCD の Shader Modifies Coverage（bit 20）を足した。discards の時の bit 20 は足していない |
 | `tests/mali-vk-meta-host-test.c`（新） | 埋め込みの SPIR-V を host の Mali compiler で compile し、blit（compute、8×8×1、push 52 byte、storage buffer 2 本 set 0 binding 0・1、長さを読まない）・clear の vertex（position だけ、vertex index、viewport の 6 語が FAU の中）・clear の colour（location 0〜7 に移した各々が その location だけ）の形を確かめる。引数の directory に SPIR-V を書き出す |
+
+## 実装（q1675-i05、P7 と配下 P7-B、2026-10-29、実機未試験）
+
+**FBD の大きさの修正（今夜の試験に効く見込み）**: `vk-desc.h` の `MALI_DESC_FBD_BYTES` を 64 → 128（v10.xml の aggregate "Framebuffer" = Parameters 64 + Padding 64。panvk も RT を pan_size(FRAMEBUFFER) の後に置く）。`pass_begin` は padding の 16 語を 0 で書く。今までは RT を fbd+64 に書いていた（GPU は fbd+128 から読む見込み）。commit 78a87b871。
+
+| file | 中身 |
+| --- | --- |
+| `vk/vk-surface.{h,c}`（新、前の P7 の packer を P7-B が仕上げた） | depth/stencil の format の表（D16・X8_D24・D32・D24S8、S8 は executor の format に無い）、level の並び（Mesa の pan_layout.c の手順: 1 layer に level を続け、行・level を 64 byte に揃える）、FBD の word 12・13、ZS CRC 拡張（ZS Target・S Target、linear、clean tile write）、Depth/stencil descriptor（stencil の face・mask・reference、depth の test・write・compare・bias、Depth source、Stencil from shader）、DCD の kill と ZS update（Mesa の pan_earlyzs の形）、sampler の LOD 語（8.8 の丸めは llroundf に合わせた） |
+| `vk.h`・`vk-format.c`・`vk-layout.c` | format に X8_D24_UNORM・D24_UNORM_S8_UINT（attachment だけ、sample しない）、zs の format に DEPTH_STENCIL_ATTACHMENT の feature。render pass は depth/stencil attachment を 1 つ（`depth`・`zs_format`・stencil の load/store op）、colour 無しの pass は target 1 つ（attachment 無し、internal R8G8B8A8、何も書かない） |
+| `vk-pipeline.c` | `depth_state`: depth の test・write・compare、stencil の test と 2 face、raster の depth bias、dynamic の bias・compare mask・write mask・reference の印 |
+| `vk-command.c`・`vk-build.h`・`vk-queue.c` | vkCmdSetDepthBias・SetStencilCompareMask・WriteMask・Reference を record し、`mali_vk_draw_set_state` で build に保つ（face の mask で front・back） |
+| `vk-draw.c` | depth/stencil attachment の有る pass: FBD・ZS 拡張・RT の順に確保、`pass_depth`（view の level・layer の address・pitch・level の bytes、clear 値の depth の float と stencil、store で write back、LOAD で preload の bit、clear して store する aspect は clean tile write と frame shader の ALWAYS）、framebuffer pointer の ZS の bit。draw ごとに `draw_depth`（pipeline の状態に pass の aspect と program の writes_depth・writes_stencil、dynamic の値）で ZSD と kill/update。depth の clamp を viewport の minDepth・maxDepth に。colour target も view の level・layer に。attachment の無い pass の draw は前と同じ語 |
+| P7-B: `vk-memory.c`・`vk-queue.c`・`vk-meta.c`・`vk-preload.c`・`vk-device.c` | image の mipLevels（level 0 から 1 texel まで、最大 14）、`mali_vk_image_level_address`・`mali_vk_image_level_pitch`、subresource layout の level、view の baseMipLevel・levelCount、sampler の minLod・maxLod・bias と mipmap mode（範囲 0 で bias 無しなら従来の MIPMAP_NONE）、texture の plane を layer×level（layer が外、level が内、pan_texture.c の順）、size の query、copy・blit・clear color image・compute の blit を level ごとに、preload の texture を view の level・layer に、maxMipLevels 14、zs の format の DS attachment の usage |
+| tests | `tests/mali-vk-surface-host-test.c`（新、155 checks）、`tests/mali-vk-desc-host-test.c`（level の texture、89 checks）、`c5-build-check.sh` に vk-surface の行 |
+
+判断（推しで進めた所）:
+- depth・stencil の LOAD は FBD の「Z Preload Enable」「S Preload Enable」（v10.xml に有る field）で。**Mesa はこの bit を使わず、frame shader の pre-frame の draw で読み戻す**。実機で depth の LOAD が効かない・fault するなら、bit を外して frame shader（ZS_EMIT で書く preload の program）にする。desktop の経路に depth は無い。
+- kill/update の「program が memory に書く」は false にした（program に印が無い）。storage に書く fragment program と depth test の組み合わせは Mesa と違いうる。
+- D24S8 の depth aspect の buffer→image の copy は 4 byte を書くので stencil の byte も上書きする。stencil aspect の copy は log を出して飛ばす。pass の中の vkCmdClearAttachments の depth・stencil の aspect、vkCmdClearDepthStencilImage は未対応（前と同じ）。
+- plane の slice stride（word 6）は level の bytes を書く（Mesa は 2D・1 sample で 0）。1 level で今までの値のまま。
+
+確かめ（host と build だけ）: 下の「確かめ」の i05 の行。
 
 ## 判断（推しで進めた所）
 
@@ -153,19 +175,22 @@ WS: [WS313](../ws.md)、設計 [gpu.md](../gpu.md) §11・§13。compiler は配
 - （D3 の続き）desktop の draw が変わらないことの確かめ: `python3 -I plan/tools/nvrtx/sm75-desktop-extract.py <worktree> build/d3-desk/spv` で出した 60 本のうち fragment の 41 本を host の Mali compiler に通し（小さな probe、build/d3-desk/）、`writes_depth`・`writes_sample_mask` が 41 本とも 0（build/d3-desk/flags.txt）。
 - （D3 の続き）未実施: clear の draw の host 試験（vk-draw.c は kernel に依るので、stream と descriptor を偽の memory で組み立てる試験は無い。program の形だけ確かめた）、実機（clear の draw が GPU で動くか、location 1 以上の fragment program の ATEST、恒等の viewport の y の向き）。
 
+- （i05、2026-10-29）`sh plan/ws313/tests/c5-build-check.sh i05c` → ALL PASS（5 つの vmunix の warning 0、host: vk-desc 89・vk-surface 155・vk-frame 49・meta 125・compiler 37 行・desktop 60/60 他）。desktop の listing 67 本は前と SAME。FBD の修正の commit だけで odroid-c5・odroid-c5-keiland の vmunix warning 0、vk-frame 49・vk-desc 78。
+- （i05）未実施: 実機（全部: FBD の 128 byte、ZS 拡張と ZSD、kill/update、depth の preload の bit、level の plane の並び、sampler の LOD）、QEMU（無い）、vk-draw.c の depth の経路の host 試験（kernel に依るので無い。packer は vk-surface の試験）。
+
 ## 残り（夜の結果で直す順）
 
 1. self-test と render の stream の起動（上の 1〜4）。
 2. compute の dispatch（`vkdemo` の compute、C の compute shader）: RUN_COMPUTE の task increment（今は 1）、TSD、FAU の pointer の形。
 3. 三角形: RUN_IDVS の staging register、tiler context・heap、FBD・RT、blend の memory format（BGRA を RGBA 順にしている、未確認）、ZSD。
 4. compositor: ~~LOAD の pass の pre-frame の shader~~（D2 で実装、実機未試験）、~~clear attachments~~（D3 で draw、実機未試験）、~~拡大の blit、cursor の形式の変換の blit~~（D3 で compute の blit、実機未試験）、AFBC 無しの性能、target 1 以上の LOAD。
-5. 改善: 非同期の submit（ring に複数の job、IRQ で完了）、TILER_OOM、~~shared memory~~（D3 で WLS、実機未試験）、mip・array・depth、WLS の instance の数を GPU の THREAD_MAX_THREADS・THREAD_FEATURES から。
+5. 改善: 非同期の submit（ring に複数の job、IRQ で完了）、TILER_OOM、~~shared memory~~（D3 で WLS、実機未試験）、~~mip・depth~~（i05、実機未試験）、WLS の instance の数を GPU の THREAD_MAX_THREADS・THREAD_FEATURES から。
 
 ## P7 への案（変えていない）
 
 - ~~（D3）`plan/ws313/tests/c5-build-check.sh` に `tests/mali-vk-meta-host-test.c` の行~~（P7 が足した、2026-10-29。引数無しで流す）。
 - ~~（D3）`vk-desc.c` の `NO_WORKGROUP_MEMORY` の語~~: **P7 が v10.xml の log2 の形（word 1 = 0x1f）に直した**（2026-10-29、q1675-i04）。判断: Mesa（panvk・gallium）が v10 の実機で使う語は gen_pack の util_logbase2(0x80000000) = 31 で、今までの 0x80000000 は field としては「instance 1 個・size scale 0・base 0」という Mesa が出さない語だった。どちらも G310 の実機では未試験だが、資料の上で正しく実機で使われている形に合わせる方を推しとした。全ての TSD（compute の dispatch、pass の draw、pre-frame の DCD が指す TSD）の word 1 が変わるので、**夜に最初の compute・draw で TSD の fault（`mali: render: submission K failed` の fault の値が TSD の descriptor を指す）が出たら、まずこの 1 語（`vk-desc.c` の `NO_WORKGROUP_MEMORY`）を 0x80000000U に戻して比べる**。`tests/mali-vk-desc-host-test.c` の 2 か所も 0x1fU に。
-- （D3）compiler（A3）: OpFunctionCall の inline（glslc の -O 無しの出力の関数が lower されない）。
+- ~~（D3）compiler（A3）: OpFunctionCall の inline~~（i05 で実装、Mali だけ feature を立てる）。
 - （D3 の続き）夜の後: discards の program の DCD に Shader Modifies Coverage（bit 20）を足すか（Mesa の prepare_dcd は discard を coverage の変更に数える。desktop の draw の DCD が変わるので今は足していない）。
 
 - ~~`display/display.c` の `import_image`~~（D2 で実装、実機未試験）。

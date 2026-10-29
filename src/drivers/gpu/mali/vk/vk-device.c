@@ -557,8 +557,9 @@ format(
 }
 
 /*
- * vkGetPhysicalDeviceImageFormatProperties: 2D images of one level and
- * sample of a taken format, of layers (cube compatible ones too).
+ * vkGetPhysicalDeviceImageFormatProperties: 2D images of one sample of
+ * a taken format, of levels down to one texel and of layers (cube
+ * compatible ones too).
  */
 static int
 image_format(
@@ -594,6 +595,8 @@ image_format(
 		supported |= VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT;
 	if (entry != NULL && entry->storage)
 		supported |= VK_IMAGE_USAGE_STORAGE_BIT;
+	if (entry != NULL && mali_surface_zs_find(vk_format) != NULL)
+		supported |= VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT;
 
 	/* Refuses another type, another flag, an unknown format or a usage it does not allow. */
 	result = (uint32_t)VK_SUCCESS;
@@ -608,7 +611,7 @@ image_format(
 		record.maxExtent.width = MALI_VK_IMAGE_EDGE;
 		record.maxExtent.height = MALI_VK_IMAGE_EDGE;
 		record.maxExtent.depth = 1;
-		record.maxMipLevels = 1;
+		record.maxMipLevels = mali_surface_level_count(MALI_VK_IMAGE_EDGE, MALI_VK_IMAGE_EDGE);
 		record.maxArrayLayers = MALI_VK_IMAGE_LAYERS;
 		record.sampleCounts = VK_SAMPLE_COUNT_1_BIT;
 		record.maxResourceSize = MALI_RENDER_MAX_BYTES;

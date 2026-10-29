@@ -188,6 +188,8 @@ mali_vk_meta_blit(
 	uint32_t filter)
 {
 	const struct mali_shader_program *program;
+	const struct mali_surface_level *source_level;
+	const struct mali_surface_level *target_level;
 	uint32_t words[MALI_VK_META_FAU_WORDS];
 	uint32_t counts[3];
 	int32_t source_x0;
@@ -262,27 +264,30 @@ mali_vk_meta_blit(
 		return 0;
 	if (target_x0 < 0 || target_y0 < 0)
 		return 0;
-	if ((uint32_t)target_x1 > target->width || (uint32_t)target_y1 > target->height)
-		return 0;
-	width = (uint32_t)(target_x1 - target_x0);
-	height = (uint32_t)(target_y1 - target_y0);
-
-	/* The layers, inside both images. */
+	/* The layers of a level, inside both images. */
 	layers = blit_layers(&region->srcSubresource, source);
 	if (layers == 0U)
 		return 0;
 	if (blit_layers(&region->dstSubresource, target) < layers)
 		return 0;
+	source_level = &source->level[region->srcSubresource.mipLevel];
+	target_level = &target->level[region->dstSubresource.mipLevel];
+	if ((uint32_t)target_x1 > target_level->width || (uint32_t)target_y1 > target_level->height)
+		return 0;
+	width = (uint32_t)(target_x1 - target_x0);
+	height = (uint32_t)(target_y1 - target_y0);
 
 	/* The program and its code. */
 	error = mali_vk_meta_program(build, MALI_VK_META_BLIT, &program, &code);
 	if (error != 0)
 		return ENOTSUP;
 
-	/* The source from its first layer; the target from the region's first texel. */
-	source_address = mali_vk_image_address(source) + (uint64_t)region->srcSubresource.baseArrayLayer * source->layer_bytes;
-	target_address = mali_vk_image_address(target) + (uint64_t)region->dstSubresource.baseArrayLayer * target->layer_bytes;
-	target_address += (uint64_t)target_y0 * target->row_pitch + (uint64_t)target_x0 * 4U;
+	/* The source from its level of its first layer; the target from the region's first texel of its level. */
+	source_address = mali_vk_image_level_address(source, region->srcSubresource.mipLevel, region->srcSubresource.baseArrayLayer);
+	target_address = mali_vk_image_level_address(target, region->dstSubresource.mipLevel, region->dstSubresource.baseArrayLayer);
+	if (source_address == 0U || target_address == 0U)
+		return 0;
+	target_address += (uint64_t)target_y0 * target_level->pitch + (uint64_t)target_x0 * 4U;
 
 	/* The push constants: the source's corner and steps, the region, the pitches and layers in words, the source's extent, the flags. */
 	kern_memset(words, 0, sizeof(words));
@@ -292,12 +297,12 @@ mali_vk_meta_blit(
 	words[BLIT_STEP_Y] = (uint32_t)(int32_t)(((int64_t)(source_y1 - source_y0) * 65536) / (int64_t)height);
 	words[BLIT_WIDTH] = width;
 	words[BLIT_HEIGHT] = height;
-	words[BLIT_SOURCE_PITCH] = (uint32_t)(source->row_pitch / 4U);
-	words[BLIT_TARGET_PITCH] = (uint32_t)(target->row_pitch / 4U);
+	words[BLIT_SOURCE_PITCH] = source_level->pitch / 4U;
+	words[BLIT_TARGET_PITCH] = target_level->pitch / 4U;
 	words[BLIT_SOURCE_LAYER] = (uint32_t)(source->layer_bytes / 4U);
 	words[BLIT_TARGET_LAYER] = (uint32_t)(target->layer_bytes / 4U);
-	words[BLIT_SOURCE_WIDTH] = source->width;
-	words[BLIT_SOURCE_HEIGHT] = source->height;
+	words[BLIT_SOURCE_WIDTH] = source_level->width;
+	words[BLIT_SOURCE_HEIGHT] = source_level->height;
 	if (filter == VK_FILTER_LINEAR)
 		words[BLIT_FLAGS] |= MALI_META_BLIT_LINEAR;
 	if (source_order != target_order)
@@ -674,7 +679,7 @@ blit_order(
 	}
 }
 
-/* Gives the layers of a blit's side inside its image: zero when they do not fit. */
+/* Gives the layers of a blit's side inside its image: zero when they or the level do not fit. */
 static uint32_t
 blit_layers(
 	const VkImageSubresourceLayers *layers,
@@ -682,8 +687,8 @@ blit_layers(
 {
 	uint32_t count;
 
-	/* A first layer of the image. */
-	if (layers->baseArrayLayer >= image->layers)
+	/* A level and a first layer of the image. */
+	if (layers->mipLevel >= image->levels || layers->baseArrayLayer >= image->layers)
 		return 0;
 
 	/* The rest of the image, or the count when it fits. */
