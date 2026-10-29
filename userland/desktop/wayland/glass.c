@@ -166,6 +166,14 @@
 
 /* The blurred wallpaper is this many times smaller than the output. */
 #define GLASS_BLUR_SCALE	4U
+
+/*
+ * How long a drawing the blur thread made waits, in milliseconds, for a
+ * pass where no frame in flight copies a host image's staging, so that it
+ * is written into the images there are: past it new images are made
+ * (which is slower than writing, but waits for nothing).
+ */
+#define GLASS_BLUR_HOLD_MS	200U
 #define GLASS_BLUR_RADIUS	6U
 #define GLASS_BLUR_PASSES	3U
 
@@ -467,6 +475,10 @@ static const struct kwl_lane_ops blur_ops = {
 };
 static struct kwl_lane glass_blur;
 static unsigned glass_blur_running;
+
+/* A drawing waiting for a pass where the images may be written (GLASS_BLUR_HOLD_MS), and since when. */
+static struct glass_blur_job *glass_blur_held;
+static uint64_t glass_blur_held_ms;
 static struct glass_answer glass_answer;
 
 /* Whether glass_loader's lock has been made (once, by the first begin). */
@@ -574,6 +586,10 @@ kwl_glass_close(
 	if (glass_blur_running) {
 		kwl_lane_stop(&glass_blur);
 		glass_blur_running = 0U;
+	}
+	if (glass_blur_held != NULL) {
+		blur_free(glass_blur_held);
+		glass_blur_held = NULL;
 	}
 	memset(&glass_answer, 0, sizeof(glass_answer));
 
@@ -914,6 +930,8 @@ kwl_glass_blur_take(
 	struct kwl_server *server)
 {
 	struct wallpaper_picture picture;
+	struct glass_blur_job *job;
+	int writable;
 	int done;
 
 	/* A picture read (or not) by the loader. */
@@ -942,6 +960,17 @@ kwl_glass_blur_take(
 	/* The drawings made. */
 	if (glass_blur_running)
 		(void)kwl_lane_take(&glass_blur, server);
+
+	/* One that waited for the images: now that they may be written, or new ones once it waited long enough. */
+	job = glass_blur_held;
+	if (job == NULL)
+		return;
+	writable = kwl_compose_host_writable(server);
+	if (!writable && kwl_milliseconds() - glass_blur_held_ms < GLASS_BLUR_HOLD_MS)
+		return;
+	glass_blur_held = NULL;
+	blur_apply(server, job);
+	blur_free(job);
 }
 
 /*
@@ -1041,6 +1070,25 @@ blur_done(
 		job->width = server->width;
 		job->height = server->height;
 		kwl_lane_submit(&glass_blur, &job->lane, &blur_ops, 0U);
+		return;
+	}
+
+	/*
+	 * Held for a pass where the images it fits may be written (instead of
+	 * new ones made); one held already is shown first, as it is older.
+	 */
+	if (job->error == 0 &&
+	    server->compose != NULL &&
+	    server->compose->glass != NULL &&
+	    server->compose->glass->wallpaper.width == job->width &&
+	    server->compose->glass->wallpaper.height == job->height &&
+	    !kwl_compose_host_writable(server)) {
+		if (glass_blur_held != NULL) {
+			blur_apply(server, glass_blur_held);
+			blur_free(glass_blur_held);
+		}
+		glass_blur_held = job;
+		glass_blur_held_ms = kwl_milliseconds();
 		return;
 	}
 
