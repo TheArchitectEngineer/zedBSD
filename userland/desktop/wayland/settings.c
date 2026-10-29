@@ -98,6 +98,7 @@ static void settings_apply_number(struct kwl_server *server, const char *name, i
 static void settings_apply_repeat(struct kwl_server *server, int starting);
 static void settings_apply_appearance(struct kwl_server *server, int starting);
 static void settings_apply_accent(struct kwl_server *server, int starting);
+static void settings_apply_lock(struct kwl_server *server);
 static void settings_mark(struct kwl_server *server, const char *name);
 static void settings_flush(struct kwl_server *server);
 static int settings_emit_value(struct kwl_client *client, uint32_t id, const struct kwl_settings_entry *entry);
@@ -672,6 +673,13 @@ settings_apply(
 		return;
 	}
 
+	/* The minutes without input before a login session locks (0 never). */
+	differs = strcmp(name, "power.lock");
+	if (differs == 0) {
+		settings_apply_lock(server);
+		return;
+	}
+
 	/* Chooses the input method, which is started again with it (WS154). */
 	differs = strcmp(name, "ime.method");
 	if (differs == 0) {
@@ -748,6 +756,32 @@ settings_apply_accent(
 	/* Tells the clients, once anything can be bound. */
 	if (!starting)
 		kwl_theme_changed(server);
+}
+
+/*
+ * Sets how long a login session goes without input before it locks, from
+ * the setting's minutes (0 never).  A time the command line gave
+ * (--lock-idle) stays, and a desktop that is not a login session does not
+ * lock.  The time counts from the last input, as before the change.
+ */
+static void
+settings_apply_lock(
+	struct kwl_server *server)
+{
+	int32_t minutes;
+
+	/* Only a login session locks, and --lock-idle wins over the setting. */
+	if (!server->session || server->lock_idle_given)
+		return;
+
+	/* The setting's minutes; one below none is never. */
+	minutes = (int32_t)(server->lock_idle_ms / 60000U);
+	settings_apply_number(server, "power.lock", &minutes);
+	if (minutes < 0)
+		minutes = 0;
+
+	/* From the next tick on (shell.c). */
+	server->lock_idle_ms = (uint64_t)minutes * 60000U;
 }
 
 /* Tells the keyboards bound already the repeat again (nothing is bound before the look is made). */

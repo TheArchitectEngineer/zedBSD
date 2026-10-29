@@ -1183,6 +1183,8 @@ struct se_look {
 	/* The minutes without input before a sleep, on the adapter and on battery (0 never; ws052-p013). */
 	int sleep_ac;
 	int sleep_battery;
+	/* The minutes without input before the screen locks (0 never). */
+	int lock_minutes;
 	int dragging;
 	struct kl_rect slider;
 	struct kl_rect sliders[8];

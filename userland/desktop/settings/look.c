@@ -133,6 +133,7 @@ se_look_open(
 	look->repeat_delay = LOOK_DELAY_DEFAULT;
 	look->sleep_ac = LOOK_SLEEP_AC;
 	look->sleep_battery = LOOK_SLEEP_BATTERY;
+	look->lock_minutes = 0;
 	look->wallpaper[0] = '\0';
 
 	/* The settings; without them the pages still show the defaults. */
@@ -495,6 +496,9 @@ look_read(
 	/* The minutes without input before a sleep (ws052-p013; 30 on the adapter, 15 on battery). */
 	look->sleep_ac = kl_settings_get_int(look->settings, "power.sleep.ac", LOOK_SLEEP_AC);
 	look->sleep_battery = kl_settings_get_int(look->settings, "power.sleep.battery", LOOK_SLEEP_BATTERY);
+
+	/* The minutes without input before the screen locks (never unless chosen). */
+	look->lock_minutes = kl_settings_get_int(look->settings, "power.lock", 0);
 
 	/*
 	 * The picture: the chosen one, or none (empty) for the default.  flags

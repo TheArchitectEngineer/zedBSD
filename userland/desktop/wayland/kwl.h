@@ -1359,7 +1359,8 @@ struct kwl_server {
 	uint64_t logout_ms;
 	/*
 	 * The lock screen (ws035-p102): whether it shows, how long without
-	 * input locks the session (--lock-idle, 0: never), and when the last
+	 * input locks the session (--lock-idle, or else the power.lock
+	 * setting; 0: never), whether --lock-idle gave it, and when the last
 	 * input came.
 	 */
 	unsigned locked;
