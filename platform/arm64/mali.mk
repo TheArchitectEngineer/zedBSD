@@ -32,9 +32,12 @@ ARM64_MALI_SOURCES := \
 	src/drivers/gpu/mali/vk/vk-desc.c \
 	src/drivers/gpu/mali/vk/vk-queue.c \
 	src/drivers/gpu/mali/vk/vk-draw.c \
+	src/drivers/gpu/mali/vk/vk-frame.c \
+	src/drivers/gpu/mali/vk/vk-preload.c \
 	src/drivers/gpu/mali/compiler/va-compile.c \
 	src/drivers/gpu/mali/compiler/va-encode.c \
 	src/drivers/gpu/mali/compiler/va-schedule.c \
 	$(filter-out $(KERN_GPU_SOURCES),src/drivers/gpu/compiler/spirv.c src/drivers/gpu/compiler/optimize.c src/drivers/gpu/i915/vk/vk-codec.c) \
 	src/drivers/gpu/mali/display/osd.c \
+	src/drivers/gpu/mali/display/scanout.c \
 	src/drivers/gpu/mali/display/display.c

@@ -3,7 +3,7 @@
 # ws313-p011: Mali の render の node・scheduler・Vulkan の executor・CS の命令の builder
 
 Status: in-progress（実装済み・実機未試験）
-Queue: q1675-i02（P7 の配下 D）
+Queue: q1675-i02（P7 の配下 D）、q1675-i03 の一部（P7 の配下 D2: render pass の LOAD・display の import）
 WS: [WS313](../ws.md)、設計 [gpu.md](../gpu.md) §11・§13。compiler は配下 C（§12）。
 
 ## ユーザーの指示（原文、2026-10-29、Q1 経由）
@@ -35,18 +35,47 @@ WS: [WS313](../ws.md)、設計 [gpu.md](../gpu.md) §11・§13。compiler は配
 | `tests/mali-cs-host-test.c` | 命令の encode（v10.xml の field の位置から手で詰めた値）、ring の列（panthor の値と照合）、copy・fill・行の loop を小さな interpreter で走らせて memory を照合 |
 | `tests/mali-vk-desc-host-test.c` | descriptor の pack と blend の式（replace・straight alpha・premultiplied、MIN の拒否） |
 
+## 実装（q1675-i03、配下 D2、2026-10-29）
+
+| file | 中身 |
+| --- | --- |
+| `src/drivers/gpu/mali/vk/vk-frame.{h,c}`（新） | frame shader の descriptor の pack（host で走る）: pre-frame の draw（DCD）、depth/stencil（全て通し何も書かない）、sampler（nearest・clamp to edge・正規化しない）、FBD の pre-frame 0 の mode と frame shader DCD の pointer、RT の clean tile write |
+| `src/drivers/gpu/mali/vk/vk-preload.{h,c}`（新）・`vk-preload-spirv.h`（新） | LOAD の pre-frame の draw: FragCoord の整数で texelFetch して colour 0 に出す fragment program（GLSL の source と glslc の再生成の方法を配列の傍の comment に）。program は node で 1 回（最初に LOAD の pass が来た時）`mali_shader_compile`、code は session ごとに 1 回 session の bo に写す。texture＋plane・sampler・resource table（4 本）・SPD・blend・ZSD・3 本の DCD を stage に |
+| `src/drivers/gpu/mali/vk/vk-draw.c` | `pass_begin` を分けた: TSD を先に、`pass_targets`（RT。CLEAR かつ STORE の target に clean tile write）、`pass_preload`（colour target 0 が LOAD なら pre-frame の draw）、FBD に pre-frame 0（INTERSECT、clean tile の target があれば ALWAYS）と DCD の pointer。LOAD の不足の 1 行は session ごとに 1 度に |
+| `src/drivers/gpu/mali/render.{h,c}` | `mali_render`: `preload`（node の program）・`preload_refused`。`mali_session`: `preload_code`・`preload_failed`・`load_warned`・`preload_used`。display の口 `mali_render_scanout_hold`（render_backing が出した page の表の pointer で export を探し、bo の参照を 1 つ取る）・`mali_render_scanout_drop` |
+| `src/drivers/gpu/mali/sched.c` | pre-frame の draw を含む submission が FAULT・timeout で失敗したら、node の `preload_refused` を立て 1 行（以後の LOAD は従来の動作） |
+| `src/drivers/gpu/mali/display/scanout.{h,c}`（新） | import の検査（host で走る）: RGBA8888・BGRA8888、linear、行が 4 byte の倍数で幅以上、始まりが 4 byte、DEVICE でない、page が 1 本の連続、行が allocation と page の中。外れは ENOTSUP と理由 |
+| `src/drivers/gpu/mali/display/display.c` | `import_image`: 検査 → render の node の export の bo を保持 → resource（`bo`・`image`・`physical`・`address` は render の uncached の view）。constraints に SHARED・FOREIGN。present: BLOB は import の exported の layout と一致する時だけ、flip（§5 の (a)、import は dcache の clean 無し）か CPU の copy。read・write・map は import に ENOTSUP。free で bo の参照を返す。拒否は 1 度だけ 1 行 |
+| `platform/arm64/mali.mk` | `vk-frame.c`・`vk-preload.c`・`display/scanout.c` |
+| `tests/mali-vk-frame-host-test.c`（新） | DCD・ZSD・sampler・FBD の frame shader の語・clean tile の bit を v10.xml の field の位置から手で詰めた値と照合 |
+| `tests/mali-scanout-host-test.c`（新） | import の検査の通る形・拒む形（形式・tiling・stride・offset・空・allocation の外・page の外・DEVICE・page 無し・page の隙間） |
+| `tests/mali-preload-host-test.c`（新） | 埋め込みの SPIR-V を host の Mali compiler で compile し、pre-frame の draw が前提にする形（fragment、texture 1 本 entry 0 で size を読まない、buffer・FAU 無し、colour 0、FragCoord を読む）を確かめる。引数の path に SPIR-V を書き出す |
+
 ## 判断（推しで進めた所）
 
 - **同期の submit**: 1 回の vkQueueSubmit は GPU の終わりを待ってから返る（5 s で timeout）。fence・job の marker・frame の callback はその場で完了できる。scheduler は group 1 つ・slot 1 つの直列で、session の切り替えは AS の table の差し替え（group は動いたまま、ring は空）。速さより確かさ。
 - **AS の差し替え**: 動いている group の AS slot の TRANSTAB を、ring が空の間に disable（cache の clean）→ enable で替える。**未確認**: firmware がこれを許すか。だめなら group の terminate・config・start に替える（`mali_queue_stop`・`mali_queue_open` は既にある）。
 - **転送は CS の loop**: copy・fill・clear・同じ大きさの blit を front end の LOAD/STORE_MULTIPLE の loop で行う（GPU の上で動き、shader が要らない）。拡大・縮小・形式の変換の blit は走らせず 1 行を出す。
-- **render pass の LOAD**: tile は clear 色で始まり、前の内容を読み戻さない（pre-frame の shader が要る、未実装）。LOAD の pass は session ごとに 1 度「draws on a cleared tile」を出す。**desktop への影響**: compositor が damage の部分だけを LOAD で描くと、他の部分が消える。
+- **render pass の LOAD**（D2 で置き換え。下の D2 の判断）: ~~tile は clear 色で始まり、前の内容を読み戻さない~~。
 - **tiler の heap**: 8 MiB の 1 chunk を pass ごとに使い直す。HEAP_SET・heap の context・TILER_OOM の処理は無い（溢れたら FAULT として出る）。
 - **tile の大きさ**: 16×16（256 px）、colour buffer は target あたり 1 KiB。hierarchy mask は TILER_FEATURES の levels から Mesa の手順の前半で。
 - **workgroup memory（shared）を使う compute** は走らせない（1 行）。
 - **image は linear だけ**（AFBC・tiled 無し）、1 level・1 layer・1 sample。
 - **float**: kernel は `-mgeneral-regs-only` なので、viewport の変換と clear 色の unorm8 は整数（16 bit の小数の固定小数点）で計算する。
-- **display（gpu0）への出し方**: render の node は image の export の backing（連続の page）を出す。display の node（`display/display.c`）は今は import を拒否する（P7 の担当、下の「P7 への案」）。
+- **display（gpu0）への出し方**: render の node は image の export の backing（連続の page）を出す。display の node の import は D2 で実装（下）。
+
+### D2 の判断（q1675-i03）
+
+- **compositor の範囲**: Keiland の compositor（`userland/desktop/wayland/`）の LOAD の pass は全て colour attachment 1 本（attachment 0）、format は出力の format（`compose->format`、BGRA8 か RGBA8 の UNORM の見込み）、damage の frame は render area を damage の矩形にする。よって pre-frame の draw は **colour target 0 の LOAD だけ**を扱う。target 1 以上の LOAD は従来どおり（1 行）。
+- **INTERSECT（primitive が触れる tile だけ preload）**: Mesa の panvk と同じ。LOAD の target は clean tile write を立てないので、primitive の無い tile は書き戻されず memory の前の内容が残る（preload の帯域が要らない）。CLEAR の target があれば ALWAYS（pan_fix_frame_shader_mode と同じ）。
+- **CLEAR の target に clean tile write**（範囲の際の修正）: 今まで RT に clean tile write が無く、CLEAR の pass で primitive の無い tile が clear されずに古い内容のまま残っていた（Mesa の pan_get_clean_tile_info は clear の target に立てる）。LOAD と同じ field なので一緒に直した。DONT_CARE は立てない。
+- **program**: compiler の口 `mali_shader_compile` に SPIR-V（glslc で作り C の配列に）。FragCoord は x・y を 1 成分ずつ読む形にした（vec4 で読むと compiler が z・w の LD_VAR_SPECIAL を出し、primitive の無い frame shader で何を読むか分からないため）。compile の結果: 256 byte、61 register（64 の割当）、preload r59・r60、ATEST→BLEND（host の compiler で確かめた）。Mesa の frame shader は ATEST を省いて FORCE_EARLY にするが、ここは ATEST 付きの program に FORCE_EARLY の kill・update（Mesa は ATEST 付きの通常の draw でも FORCE_EARLY を使う）。
+- **作る時と置き場**: program は node で 1 回（render の `preload`、guard で公開、同時の compile は片方を捨てる）、boot では compile しない（最初の LOAD の pass の時）。code は session ごとの bo（session の resource として close で消える）。stage に毎回写す案は、同じ address に違う code が来る時の命令 cache が気になるので採らなかった。
+- **blend**: pre-frame の draw の blend は通常の draw と同じ `mali_desc_blend`（fixed function、replace、4 成分、memory format は `blend_format`）。Mesa は OPAQUE の mode と round to FB precision・sRGB の bit を使うが、通常の draw と揃えた（通常の draw の blend が正しければ preload も正しい、の形）。
+- **DCD の値**（Mesa panvk の cmd_emit_dcd の colour preload から）: allow forward pixel to kill・to be killed、kill と ZS update は FORCE_EARLY、clean fragment write、sample mask 0xffff、render target mask と flags 2 の write mask は target 0、depth 0〜1、FAU 無し、TSD は pass のもの、blend 1 本。DCD は 3 本（pre-frame 0・1・post）を確保し 0 だけ詰める。
+- **失敗の時**: compile の失敗・形の不一致は node で 1 度 1 行、code の bo の失敗は session で 1 度 1 行、どれも従来の動作（cleared tile）。pre-frame の draw を含む submission が GPU で FAULT・timeout したら node の preload を止める（1 行）。その session は従来どおり lost になる（それは止められない）。boot の経路は通らない。
+- **display の import**: libvulkan は import が ENOTSUP なら copy の route に戻る（`wsi-swapchain.c`、FORMAT_NOT_SUPPORTED は fallback、他の error は失敗）ので、形が合わない物は全て ENOTSUP にした。SHARED・FOREIGN を constraints に出すと、libvulkan は direct（render の node の linear の image に直に描く）か GPU-copy の route を試す。import は render の node の export を bo の参照で保持する（core の pin は resource_destroy までで、plane が見ている間に destroy されると memory が先に消えるため。powervr の lookup と同じ考え）。CPU の copy は render の uncached の view から。flip は §5 の (a) の条件（画面と同じ幅・高さ・pitch・byte 順、16 byte、4 GiB 未満、角と中央の alpha）。render の bo は 4 GiB 未満（MALI_DMA_LIMIT）。
+- **範囲の外にした物**: 3（clear attachments・拡大の blit）。compositor は vkCmdClearAttachments を使わない。拡大の blit は複数の head の mirror（`heads.c`）だけ。cursor の 1:1 の形式の変換の blit は出力が B8G8R8A8_UNORM でない時だけ（`cursor-thread.c`）で、今は走らない（1 行）。
 
 ## 夜の serial で見る行（`mali:` で始まる。gpu.md §9 の行の後）
 
@@ -56,7 +85,9 @@ WS: [WS313](../ws.md)、設計 [gpu.md](../gpu.md) §11・§13。compiler は配
 4. `mali: render node ready (stream on group 1, address space 2, ring at 100000)`。失敗なら `mali: render: …`・`mali: render node not registered (…)`。
 5. desktop の起動の後: `mali: vk: command frame failed opcode=N error=E bytes=B`（executor が拒否した command。N は uapi/gpu-op.h の番号）、`mali: vk: stage S not compiled (E) at I: reason`（C の compiler の拒否）、`mali: vk: recorded command N is not run (E)`。
 6. GPU の失敗: `mali: render: submission K failed (E): stream … bytes …, fault …, fatal …, F faults` と `mali: render: group 1 stream 0 insert … extract … at …`、続けて `mali: MMU fault …`（gpu.md §9）。fault の address と `at`（CS の命令の位置）で、どの命令・どの descriptor かを stage の中で切り分ける。
-7. `mali: vk: a pass that loads its attachment draws on a cleared tile`・`a scaling or converting blit is not run`・`a blend the fixed function does not take …`・`a clear of attachments inside a pass is not run` は機能の不足の印（1 度だけ）。
+7. `mali: vk: a pass that loads its attachment draws on a cleared tile`・`a scaling or converting blit is not run`・`a blend the fixed function does not take …`・`a clear of attachments inside a pass is not run` は機能の不足の印（1 度だけ）。D2 の後、LOAD の行は session ごとに 1 度で、target 1 以上の LOAD か pre-frame の draw が作れない時だけ出る。
+8. （D2）pre-frame の draw: `mali: vk: the program that loads an attachment is not compiled (E) at I: reason; loads draw on cleared tiles`・`mali: vk: the program that loads an attachment <理由>; loads draw on cleared tiles`（compile の失敗・形の不一致、node で 1 度）、`mali: vk: the code that loads an attachment has no memory (E) …`・`… is not mapped (E) …`（session で 1 度）。pre-frame の draw を含む submission の失敗: 6 の行の後に `mali: render: submission K ran a pre-frame load; later loads draw on cleared tiles`。fault の address が FBD の frame shader の DCD・texture・plane・SPD・pre-frame の code の bo のどれかなら preload を疑う。**行が何も出ず damage の外が消えなければ成功**（目で見る）。
+9. （D2）display: `mali: display lease N: shared frames flipped`（import を OSD1 に直に。期待する行）・`shared frames copied`（import を CPU で写す。flip の条件を外れた）・`copied-in frames flipped`・`copied-in frames copied`（従来の copy の route）。import の拒否は `mali: display: an image is not imported (E): the image <理由>; its frames are copied`（1 度）。gpu.md §5 の「display lease N: frames flipped / copied」の行の形が変わった。
 
 ## 確かめ
 
@@ -64,15 +95,25 @@ WS: [WS313](../ws.md)、設計 [gpu.md](../gpu.md) §11・§13。compiler は配
 - host: `cc -std=c11 -Wall -Wextra -Werror -Isrc -Iinclude tests/mali-cs-host-test.c src/drivers/gpu/mali/cs/cs-build.c` → `all checks passed (61)`。`tests/mali-vk-desc-host-test.c src/drivers/gpu/mali/vk/vk-desc.c` → `all checks passed (47)`（出力は build/pd/mali-check/）。
 - 未実施: 実機（全部）、QEMU（S7D・Mali の machine が無い）、libvulkan の regression（libvulkan は変えていない）、executor の wire の host 試験（command buffer から stream の組み立てを偽の memory で回す試験は書いていない）。
 
+- （D2）build: `cd /home/awe/zedBSD-worktrees/p7-ws313c && timeout 1800 make -j6 ZEDBSD_CONFIG=config/ci/config-odroid-c5-keiland.mk BUILD=build/d2 build/d2/vmunix > build/d2.log 2>&1` → exit 0、`grep -c ' warning:' build/d2.log` = 0（2026-10-29 14:30 頃、A2 の未 commit の compiler の変更を含む worktree で）。`git diff --check` 0。
+- （D2）host（出力は build/d2-host/）:
+  - `cc -std=c11 -Wall -Wextra -Werror -Isrc -Iinclude tests/mali-vk-frame-host-test.c src/drivers/gpu/mali/vk/vk-frame.c src/drivers/gpu/mali/vk/vk-desc.c` → `all checks passed (49)`。
+  - `cc -std=c11 -Wall -Wextra -Werror -Isrc -Iinclude tests/mali-scanout-host-test.c src/drivers/gpu/mali/display/scanout.c` → `all checks passed (19)`。
+  - `cc -std=gnu11 -DKERN_USER_ABI_LP64 -Iinclude -Isrc -I. -idirafter libc/include -Wall -Wextra -Werror tests/mali-preload-host-test.c src/drivers/gpu/mali/compiler/va-compile.c src/drivers/gpu/mali/compiler/va-encode.c src/drivers/gpu/mali/compiler/va-schedule.c src/drivers/gpu/compiler/spirv.c src/drivers/gpu/compiler/optimize.c -lm` → `program: 256 bytes, 61 registers, preload 1800`、`all checks passed (15)`。書き出した SPIR-V は comment の GLSL を `glslc --target-env=vulkan1.0 -fshader-stage=frag`（shaderc 2025.2）で作った物と `cmp` で一致。
+  - その SPIR-V を compiler の host 試験（`tests/mali-compiler-host-test.c` を `mali-compiler-desktop-test.sh` と同じ flag で build、`--trials 50`）に通して `PASS`（全ての語が ISA.xml の表で decode でき、1 lane の模型が IR の参照と一致）。listing に LD_VAR_SPECIAL が無い（0 個）。
+  - 既存の `tests/mali-cs-host-test.c` → `all checks passed (61)`、`tests/mali-vk-desc-host-test.c` → `all checks passed (47)`（変えていないことの確かめ）。
+- （D2）未実施: 実機（全部。pre-frame の draw が GPU で動くか、FBD の frame shader の field、INTERSECT と clean tile write の振る舞い、OSD1 の flip の import）、QEMU（無い）、libvulkan の route の選び方の実際（SHARED を出した後の direct・GPU-copy・copy の別は夜の 9 の行で見る）、executor の wire の host 試験。
+
 ## 残り（夜の結果で直す順）
 
 1. self-test と render の stream の起動（上の 1〜4）。
 2. compute の dispatch（`vkdemo` の compute、C の compute shader）: RUN_COMPUTE の task increment（今は 1）、TSD、FAU の pointer の形。
 3. 三角形: RUN_IDVS の staging register、tiler context・heap、FBD・RT、blend の memory format（BGRA を RGBA 順にしている、未確認）、ZSD。
-4. compositor: LOAD の pass の pre-frame の shader（C に fragment program を頼む）、clear attachments、拡大の blit、AFBC 無しの性能。
+4. compositor: ~~LOAD の pass の pre-frame の shader~~（D2 で実装、実機未試験）、clear attachments、拡大の blit、cursor の形式の変換の blit（出力が BGRA8 UNORM でない時）、AFBC 無しの性能、target 1 以上の LOAD。
 5. 改善: 非同期の submit（ring に複数の job、IRQ で完了）、TILER_OOM、shared memory、mip・array・depth。
 
 ## P7 への案（変えていない）
 
-- `display/display.c` の `import_image`: render の node の export（`DRV_GPU_BACKING_CONTIGUOUS`、page の表）を受け、OSD1 の flip（§5 の (a)）の対象にする。今は import を拒否するので、compositor は display の node の自分の resource に copy して present するしかない（CPU か、Vulkan の image を display の resource に写す道）。
+- ~~`display/display.c` の `import_image`~~（D2 で実装、実機未試験）。
+- （D2）gpu.md §5 の route の行の形（`display lease N: shared|copied-in frames flipped|copied`）と §13 に pre-frame の draw・clean tile write の 1 行を足すこと（gpu.md は D2 の所有の外）。
 - libvulkan: 変更なし（powervr と同じ capset 4・vendor の印 SDBZ・flags 7 を返す）。

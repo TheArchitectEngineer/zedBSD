@@ -33,6 +33,8 @@
 #include "drivers/gpu/mali/mali-private.h"
 
 struct mali_vk_session;
+struct mali_shader_program;
+struct drv_gpu_scanout_backing;
 
 /*
  * The fixed places of every session's space: the node's ring, its sync
@@ -153,6 +155,22 @@ struct mali_session {
 	bool lost;
 	bool isolated;
 	bool stopping;
+
+	/*
+	 * The GPU address of the session's copy of the program that reads a
+	 * loaded attachment back into the tiles (vk-preload.c): zero until a
+	 * pass of the session first loads one.  Its resource is among the
+	 * session's and goes with them.  preload_failed says the copy could
+	 * not be made (said once); the session's loads then draw on cleared
+	 * tiles.  load_warned says a load of the session was drawn on a
+	 * cleared tile (said once a session).  preload_used says the stream
+	 * being built runs a pre-frame draw; the submission takes it, so a
+	 * failed one stops the node's loads from using the draw.
+	 */
+	uint64_t preload_code;
+	bool preload_failed;
+	bool load_warned;
+	bool preload_used;
 };
 
 /*
@@ -182,6 +200,16 @@ struct mali_render {
 	bool faulted;
 	unsigned submissions;
 	unsigned failures;
+
+	/*
+	 * The program that reads a loaded attachment back into the tiles,
+	 * compiled the first time a pass loads one (vk-preload.c) and kept
+	 * for the node's life; preload_refused says the compile failed (said
+	 * once) or that a submission running the program failed, and every
+	 * load then draws on cleared tiles.  Both are set under guard.
+	 */
+	struct mali_shader_program *preload;
+	bool preload_refused;
 };
 
 /* The buffer objects and resources of render.c. */
@@ -195,6 +223,15 @@ struct mali_resource *mali_session_blob(struct mali_session *session, uint32_t i
 /* The session's stage memory of render.c: bytes for one submission, with their GPU address. */
 int mali_stage_take(struct mali_session *session, uint64_t bytes, uint64_t align, volatile uint8_t **view, uint64_t *gpu_address);
 void mali_stage_reset(struct mali_session *session);
+
+/*
+ * The display node's hold on an image export of this node, found by the
+ * backing render_backing() handed out (render.c): the object, retained
+ * until the hold is dropped.  ENOTSUP for a backing this node did not
+ * hand out.
+ */
+int mali_render_scanout_hold(const struct drv_gpu_scanout_backing *backing, struct mali_bo **bo);
+void mali_render_scanout_drop(struct mali_bo *bo);
 
 /* The submissions and the recovery of sched.c. */
 int mali_sched_start(struct mali_render *render);
