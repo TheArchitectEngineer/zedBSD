@@ -58,7 +58,7 @@ web の取得は禁止のまま。HAL の差分の承認は無い（WS307 の ha
 
 <!-- master:focus:start -->
 - 公開は rev.5 まで（実質のベータ2）。次に何をやるか（以前の「ベータ3・ベータ4」の段は取り消し）は Q1 とユーザーが整理中。下の「保留の WS」はその整理の対象。
-- **Keiland の thread の整理**（[WS309](ws309/ws.md)、incomplete）: 設計は確定（design.md、J1 は V2 swapchain 共有）、p001〜p003 cleared、P1 が p005 から実装中。構成の表とユーザーの決定の原文は ws309/ws.md。未決は手書きの照合の pool の N。ゲームモードは Vulkan display（VK_KHR_display）の仕様の中で実装する（ユーザー「工数が多くてもかまいません。」）。
+- **Keiland の thread の整理**（[WS309](ws309/ws.md)、incomplete）: 設計は確定（design.md、J1 は V2 swapchain 共有）、p001〜p010・p019 cleared（2026-10-29）、P1 が p011 から実装中。構成の表とユーザーの決定の原文は ws309/ws.md（手書きの照合の pool の N は 2026-10-29 ユーザーの回答「CPU 数で固定 (推し)」で決定済み）。ゲームモードは Vulkan display（VK_KHR_display）の仕様の中で実装する（ユーザー「工数が多くてもかまいません。」）。
 - **GPU の描画の速さ**（[WS291](ws291/ws.md)）: RDNA は重い scene で Linux と同等（scene-1500 201.8 対 200.4 fps、scene-6500 49.2 対 50.1）、小さな submit の多い run（big・subs）は Linux の 1/3〜1/10。次は案 4・5（ユーザーの判断）、その後 NVIDIA → PowerVR、Linux 以上の後に WS306。
 - **5330 の電源と性能**（[WS299](ws299/ws.md)）: direct の書き 88%、UFS の file の書き 52%、CPU の速さは Debian の 70〜90%（idle が C1 だけ・HWP 無し・hybrid を知らない、別の WS が要る）。継続はユーザーの判断。その後は WS300 → WS052 → WS301 → WS302 → 熱と fan（[pm-plan.md](agents/P1/pm-plan.md)）。
 - **GHCI 1.0 の driver**（[WS290](ws290/ws.md)）: 保留（FPGA 側の設計の完了と、ユーザーの明示の再開の指示を待つ）。p017 は実装・host 試験・QEMU 済み、残りは実機（p014・M9）と p015。
