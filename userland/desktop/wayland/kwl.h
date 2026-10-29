@@ -1458,13 +1458,17 @@ struct kwl_server {
 	/*
 	 * The lid (backend-host.c, ws132-p008): its state and whether the lock
 	 * standing is its own (lid.c); whether the screen is out (drawn black);
-	 * the built-in panel's backlight while the compositor has it open (NULL
-	 * on a machine without one, or before the first closing), the
-	 * brightness to give back at the opening, and whether it was put out.
+	 * the brightness to give back at the opening, and whether it was put
+	 * out.  The built-in panel's backlight is the display thread's
+	 * (display-thread.c): its state (KWL_BACKLIGHT_*), the error of its
+	 * open, and the brightness as the thread last read it (or as last asked
+	 * of it).
 	 */
 	struct kwl_lid lid;
 	unsigned screen_off;
-	struct kl_backend_backlight *backlight;
+	unsigned backlight_state;
+	int backlight_error;
+	unsigned backlight_percent;
 	unsigned backlight_saved;
 	unsigned backlight_out;
 	/*
@@ -2750,6 +2754,20 @@ void kwl_io_stop(struct kwl_server *server);
 int kwl_io_input_find(struct kwl_server *server);
 int kwl_io_file_submit(struct kwl_server *server, struct kwl_lane_job *job, const struct kwl_lane_ops *ops, uint64_t key);
 int kwl_io_device_submit(struct kwl_server *server, struct kwl_lane_job *job, const struct kwl_lane_ops *ops, uint64_t key);
+
+/*
+ * The built-in panel's backlight, opened, read and set on the display
+ * thread (display-thread.c); server->backlight_state says whether it is
+ * not asked for yet, being opened, open, or not there.
+ */
+#define KWL_BACKLIGHT_UNKNOWN	0U
+#define KWL_BACKLIGHT_OPENING	1U
+#define KWL_BACKLIGHT_OPEN	2U
+#define KWL_BACKLIGHT_NONE	3U
+void kwl_backlight_start(struct kwl_server *server);
+int kwl_backlight_get(struct kwl_server *server, unsigned *percent);
+int kwl_backlight_set(struct kwl_server *server, unsigned percent);
+void kwl_backlight_close(struct kwl_server *server);
 void kwl_io_file_finish(struct kwl_server *server);
 void kwl_io_input_close(struct kwl_server *server, int descriptor);
 int kwl_input_probe(struct kwl_server *server, int descriptor, const char *path, const struct kl_backend_input_caps *capabilities);

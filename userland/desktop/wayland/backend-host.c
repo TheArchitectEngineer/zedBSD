@@ -21,6 +21,7 @@
 
 #include "userland/desktop/wayland/kwl.h"
 
+#include <errno.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -412,9 +413,9 @@ kwl_lid_screen_restore(
 {
 	int error;
 
-	/* The backlight back, when the lid put it out. */
+	/* The backlight back, when the lid put it out (by the display thread, or here at the end). */
 	if (server->backlight_out) {
-		error = kl_backend_backlight_set(server->backlight, server->backlight_saved);
+		error = kwl_backlight_set(server, server->backlight_saved);
 		printf("KWL LID backlight on percent=%u error=%d\n", server->backlight_saved, error);
 		server->backlight_out = 0;
 	}
@@ -605,26 +606,22 @@ kwl_screen_off(
 		printf("KWL LID screen off why=%s\n", why);
 	}
 
-	/* The backlight, opened the first time it is needed. */
-	if (server->backlight == NULL) {
-		error = kl_backend_backlight_open(&server->backlight);
-		if (error != 0) {
-			server->backlight = NULL;
-			printf("KWL LID backlight none error=%d\n", error);
-			return;
-		}
+	/* The backlight, opened by the display thread; a machine without one has nothing to put out. */
+	percent = 100U;
+	error = kwl_backlight_get(server, &percent);
+	if (error != 0 && error != EAGAIN) {
+		printf("KWL LID backlight none error=%d\n", error);
+		return;
 	}
 
 	/* Already out. */
 	if (server->backlight_out)
 		return;
 
-	/* Its brightness kept (full when it cannot say, or was already dark), then off. */
-	percent = 100U;
-	error = kl_backend_backlight_get(server->backlight, &percent);
+	/* Its brightness kept (full when it cannot say yet, or was already dark), then off by the display thread. */
 	if (error != 0 || percent == 0U)
 		percent = 100U;
-	error = kl_backend_backlight_set(server->backlight, 0U);
+	error = kwl_backlight_set(server, 0U);
 	if (error != 0) {
 		printf("KWL LID backlight off error=%d\n", error);
 		return;

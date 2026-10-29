@@ -67,8 +67,15 @@ enum display_kind {
 	/* Heads' swapchains destroyed (their displays given back) and made. */
 	DISPLAY_HEADS,
 	/* The displays connected read. */
-	DISPLAY_ENUMERATE
+	DISPLAY_ENUMERATE,
+	/* The backlight opened and read. */
+	DISPLAY_LIGHT_OPEN,
+	/* The backlight set and read again. */
+	DISPLAY_LIGHT_SET
 };
+
+/* The key of the backlight's setting: only the latest one not started yet is run. */
+#define DISPLAY_LIGHT_KEY	1U
 
 /*
  * One job of the display thread: its kind, the server (read on the thread
@@ -84,8 +91,9 @@ enum display_kind {
  * and height the game mode's size (DISPLAY_SCANOUT_QUERY); rests and opens
  * (rest_count and open_count of them, the caller's until its then) the
  * heads' swapchains to destroy and to make (DISPLAY_HEADS); list the
- * displays read (DISPLAY_ENUMERATE, the caller's until its then); error
- * the result.  spare says the job is display_spare (no memory for one).
+ * displays read (DISPLAY_ENUMERATE, the caller's until its then);
+ * percent the backlight's brightness asked for and read
+ * (DISPLAY_LIGHT_*); error the result.  spare says the job is display_spare (no memory for one).
  */
 struct display_job {
 	struct kwl_lane_job lane;
@@ -111,6 +119,7 @@ struct display_job {
 	struct kwl_head_opening *opens;
 	unsigned open_count;
 	struct kwl_display_list *list;
+	unsigned percent;
 	int error;
 	unsigned spare;
 };
@@ -128,6 +137,7 @@ static void display_run(struct kwl_lane_job *lane);
 static void display_done(void *context, struct kwl_lane_job *lane);
 static void display_drop(struct kwl_lane_job *lane);
 static void display_done_step(struct kwl_server *server, struct display_job *job);
+static void display_light_submit(struct kwl_server *server, struct display_job *job, uint64_t key);
 static void display_open_run(struct display_job *job);
 static struct display_change *display_change_new(kwl_display_fn *then, void *context);
 static void display_change_end(struct kwl_server *server, struct display_change *change, int error);
@@ -143,6 +153,9 @@ static const struct kwl_lane_ops display_ops = {
 	display_done,
 	display_drop
 };
+
+/* The built-in panel's backlight, used by the display thread only (or here once it has stopped). */
+static struct kl_backend_backlight *display_light;
 
 /* The job used when no memory is left for one: run on the event loop's thread at once, so one is enough. */
 static struct display_job display_spare;
@@ -172,8 +185,9 @@ kwl_display_start(
 		return;
 	}
 
-	/* Succeeded: the changes run there from now on. */
+	/* Succeeded: the changes run there from now on; the panel's backlight is opened and read there first. */
 	compose->display_started = 1U;
+	kwl_backlight_start(server);
 }
 
 /*
@@ -799,6 +813,24 @@ display_run(
 		kwl_display_list_read(job->server, job->list);
 		job->error = 0;
 		break;
+	case DISPLAY_LIGHT_OPEN:
+		/* Opened, and its brightness read. */
+		job->error = kl_backend_backlight_open(&display_light);
+		if (job->error != 0) {
+			display_light = NULL;
+			break;
+		}
+		(void)kl_backend_backlight_get(display_light, &job->percent);
+		break;
+	case DISPLAY_LIGHT_SET:
+		/* Set, and read again (a failure leaves what the driver has). */
+		if (display_light == NULL) {
+			job->error = ENODEV;
+			break;
+		}
+		job->error = kl_backend_backlight_set(display_light, job->percent);
+		(void)kl_backend_backlight_get(display_light, &job->percent);
+		break;
 	default:
 		job->error = EINVAL;
 		break;
@@ -817,6 +849,10 @@ display_done(
 	/* What goes on with it, kept before the job goes; the change's next step runs as a step. */
 	server = context;
 	compose = server->compose;
+	if (compose == NULL) {
+		display_done_step(server, (struct display_job *)lane);
+		return;
+	}
 	compose->display_in_step++;
 	display_done_step(server, (struct display_job *)lane);
 	compose->display_in_step--;
@@ -880,11 +916,129 @@ display_done_step(
 		printf("KWL DISPLAY step=take ms=%llu\n", (unsigned long long)(kwl_milliseconds() - started));
 		then(server, error, then_context);
 		return;
+	case DISPLAY_LIGHT_OPEN:
+		/* Open (and read), or not there; the clients hear of the light. */
+		if (error != 0) {
+			server->backlight_state = KWL_BACKLIGHT_NONE;
+			server->backlight_error = error;
+		} else {
+			server->backlight_state = KWL_BACKLIGHT_OPEN;
+			server->backlight_percent = job->percent;
+		}
+		display_job_free(job);
+		kwl_displays_tell(server);
+		return;
+	case DISPLAY_LIGHT_SET:
+		/* What the driver has now; a failure is logged. */
+		if (error != 0)
+			printf("KWL DISPLAYS light error=%d percent=%u\n", error, job->percent);
+		server->backlight_percent = job->percent;
+		display_job_free(job);
+		return;
 	default:
 		display_job_free(job);
 		then(server, error, then_context);
 		return;
 	}
+}
+
+/*
+ * Asks the display thread to open the built-in panel's backlight and read
+ * it, once (at the display thread's start, or at the first need); the
+ * clients hear of the light when it is open.
+ */
+void
+kwl_backlight_start(
+	struct kwl_server *server)
+{
+	struct display_job *job;
+
+	/* Once. */
+	if (server->backlight_state != KWL_BACKLIGHT_UNKNOWN)
+		return;
+
+	/* The job. */
+	server->backlight_state = KWL_BACKLIGHT_OPENING;
+	job = display_job_new(server, DISPLAY_LIGHT_OPEN, NULL, NULL);
+	display_light_submit(server, job, 0U);
+}
+
+/*
+ * Gives the backlight's brightness as the display thread last read it (or
+ * as last asked of it).  Returns 0, EAGAIN while it is being opened, or
+ * the error of its open (no backlight).
+ */
+int
+kwl_backlight_get(
+	struct kwl_server *server,
+	unsigned *percent)
+{
+	/* Opened first. */
+	kwl_backlight_start(server);
+	if (server->backlight_state == KWL_BACKLIGHT_NONE)
+		return server->backlight_error;
+	if (server->backlight_state != KWL_BACKLIGHT_OPEN)
+		return EAGAIN;
+
+	/* Succeeded: the copy. */
+	*percent = server->backlight_percent;
+	return 0;
+}
+
+/*
+ * Asks the display thread to set the backlight (only the latest asking not
+ * started yet is run); the copy follows at once, and the thread's reading
+ * after.  Returns 0, or the error of its open (no backlight).
+ */
+int
+kwl_backlight_set(
+	struct kwl_server *server,
+	unsigned percent)
+{
+	struct display_job *job;
+
+	/* Opened first (the setting follows the open in the thread's order). */
+	kwl_backlight_start(server);
+	if (server->backlight_state == KWL_BACKLIGHT_NONE)
+		return server->backlight_error;
+
+	/* The copy, then the job. */
+	server->backlight_percent = percent;
+	job = display_job_new(server, DISPLAY_LIGHT_SET, NULL, NULL);
+	job->percent = percent;
+	display_light_submit(server, job, DISPLAY_LIGHT_KEY);
+	return 0;
+}
+
+/*
+ * Closes the backlight at the end, once the display thread has stopped.
+ */
+void
+kwl_backlight_close(
+	struct kwl_server *server)
+{
+	/* Closed. */
+	kl_backend_backlight_close(display_light);
+	display_light = NULL;
+	server->backlight_state = KWL_BACKLIGHT_UNKNOWN;
+}
+
+/* Gives the display thread a backlight's job with a key (0 for none), or runs it here (no thread, or the end). */
+static void
+display_light_submit(
+	struct kwl_server *server,
+	struct display_job *job,
+	uint64_t key)
+{
+	/* Here, at once. */
+	if (server->compose == NULL || !server->compose->display_started || job->spare) {
+		display_run(&job->lane);
+		display_done(server, &job->lane);
+		return;
+	}
+
+	/* Succeeded: the thread has it. */
+	kwl_lane_submit(&server->compose->display_lane, &job->lane, &display_ops, key);
 }
 
 /* Frees a job not run (the thread stopped): its change never goes on, at the end. */

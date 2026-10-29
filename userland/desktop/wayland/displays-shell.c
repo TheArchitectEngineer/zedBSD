@@ -93,7 +93,6 @@ static struct displays_held *displays_held_list;
 static void displays_snapshot(struct kwl_object *object);
 static void displays_output(struct kwl_object *object, struct kwl_server *server, unsigned index);
 static void displays_label(const char *key, char *label, size_t size);
-static int displays_light_open(struct kwl_server *server);
 static int displays_light_get(struct kwl_server *server, unsigned *percent);
 static int displays_light_set(struct kwl_server *server, unsigned percent, int *saved);
 static int displays_apply_request(struct kwl_object *object, const unsigned char *bytes, size_t size);
@@ -410,11 +409,8 @@ kwl_displays_tick(
 	if (!compose->config.has_brightness)
 		return;
 
-	/* The panel's light, where the machine has one the compositor may set. */
-	error = displays_light_open(server);
-	if (error != 0)
-		return;
-	error = kl_backend_backlight_set(server->backlight, compose->config.brightness);
+	/* The panel's light, where the machine has one the compositor may set (by the display thread). */
+	error = kwl_backlight_set(server, compose->config.brightness);
 	printf("KWL DISPLAYS boot light percent=%u error=%d\n", compose->config.brightness, error);
 }
 
@@ -636,38 +632,17 @@ displays_label(
 	(void)snprintf(label, size, "%s", key);
 }
 
-/* Opens the panel's light the first time it is needed (shared with the lid's); returns 0 or the backend's error. */
-static int
-displays_light_open(
-	struct kwl_server *server)
-{
-	int error;
-
-	/* Open already. */
-	if (server->backlight != NULL)
-		return 0;
-
-	/* Opened now. */
-	error = kl_backend_backlight_open(&server->backlight);
-	if (error != 0) {
-		server->backlight = NULL;
-		return error;
-	}
-
-	/* Succeeded: the light is open. */
-	return 0;
-}
-
-/* Reads the panel's light: the one kept for the opening while the lid holds the panel out. */
+/* Reads the panel's light (the display thread's last reading): the one kept for the opening while the lid holds the panel out. */
 static int
 displays_light_get(
 	struct kwl_server *server,
 	unsigned *percent)
 {
+	unsigned now;
 	int error;
 
-	/* The light. */
-	error = displays_light_open(server);
+	/* The light, as the display thread last read it. */
+	error = kwl_backlight_get(server, &now);
 	if (error != 0)
 		return error;
 
@@ -677,19 +652,16 @@ displays_light_get(
 		return 0;
 	}
 
-	/* The driver's. */
-	error = kl_backend_backlight_get(server->backlight, percent);
-	if (error != 0)
-		return error;
-
 	/* Succeeded: the light. */
+	*percent = now;
 	return 0;
 }
 
 /*
  * Sets the panel's light (kept for the opening while the lid holds it
- * out) and keeps it in displays.conf; *saved is 0 or the error of writing
- * it.  Returns 0 or the backend's error.
+ * out; else set by the display thread, whose failure is logged) and keeps
+ * it in displays.conf; *saved is 0 or the error of writing it.  Returns 0
+ * or the error of the light's open (none).
  */
 static int
 displays_light_set(
@@ -700,17 +672,14 @@ displays_light_set(
 	struct kwl_display_config wanted;
 	int error;
 
-	/* The light. */
+	/* Kept for the opening, or set by the display thread (a failure is logged there). */
 	*saved = 0;
-	error = displays_light_open(server);
-	if (error != 0)
-		return error;
-
-	/* Kept for the opening, or set now. */
 	if (server->backlight_out) {
+		if (server->backlight_state == KWL_BACKLIGHT_NONE)
+			return server->backlight_error;
 		server->backlight_saved = percent;
 	} else {
-		error = kl_backend_backlight_set(server->backlight, percent);
+		error = kwl_backlight_set(server, percent);
 		if (error != 0)
 			return error;
 	}

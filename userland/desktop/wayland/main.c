@@ -1350,8 +1350,7 @@ service_cleanup(
 
 	/* A screen the lid put out is lit for whoever comes next, and the backlight closed (backend-host.c). */
 	kwl_lid_screen_restore(server);
-	kl_backend_backlight_close(server->backlight);
-	server->backlight = NULL;
+	kwl_backlight_close(server);
 
 	/* Closes the operating system's side last, after everything that used it. */
 	kl_backend_close(server->backend);
