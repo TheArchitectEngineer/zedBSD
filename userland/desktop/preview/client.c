@@ -6,22 +6,20 @@
  */
 
 /*
- * The callers' side of keiland-preview (WS168 p004; client.h): the input
- * opened (a regular file only: never a FIFO or a device, which would block
- * or reach a driver), the child started with it and the output, followed
+ * The callers' side of keiland-preview (client.h): the input opened (a
+ * regular file only: never a FIFO or a device, which would block or reach
+ * a driver), the child started with it and the output (spawn.h), followed
  * until it ends or its time is up, and the PPM it wrote read back.
  */
 
-#include "client.h"
+#include "spawn.h"
 
 #include <errno.h>
 #include <fcntl.h>
-#include <signal.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <sys/stat.h>
-#include <sys/wait.h>
 #include <time.h>
 #include <unistd.h>
 
@@ -35,6 +33,16 @@
 #define CLIENT_INFO_MAX		512U
 #define CLIENT_INFO_SIDE_MAX	1000000L
 
+/*
+ * The output of a picture being made without waiting: a temporary file
+ * removed from its folder, open here only.  It lives from
+ * preview_picture_begin until the picture is done or given up.
+ */
+struct preview_output {
+	int fd;
+};
+
+static int client_read(int fd, struct preview_picture *picture);
 static uint64_t client_clock_ms(void);
 static int client_temporary(char *path, size_t size);
 static int client_number(const unsigned char *data, size_t size, size_t *at, int *number);
@@ -42,21 +50,22 @@ static int client_info_parse(char *text, struct preview_info *info);
 static int client_info_field(const char *name, const char *value, struct preview_info *info);
 
 /*
- * Starts a preview of an input file into an output descriptor (open for
- * writing; the caller closes it after).  Returns 0 with the job (finished
- * at once when it was made in this process), EINVAL for an input that is
- * not a regular file, or an errno value.
+ * Starts a preview of an input file into an output file (made, or emptied,
+ * for the preview: the user's alone).  Returns 0 with the job (finished at
+ * once when it was made in this process), EINVAL for an input that is not
+ * a regular file, or an errno value.
  */
 int
 preview_start(
 	const char *input,
-	int output,
+	const char *output,
 	const struct preview_request *request,
 	struct preview_job *job)
 {
 	unsigned char head[5];
 	struct stat status;
 	ssize_t got;
+	int written;
 	int regular;
 	int error;
 	int pdf;
@@ -81,13 +90,30 @@ preview_start(
 	if (pdf)
 		job->limit_ms = PREVIEW_LIMIT_PDF_MS;
 
-	/* The child (or this process). */
+	/* The output, made for the preview. */
+	written = open(output, O_CREAT | O_TRUNC | O_WRONLY | O_CLOEXEC, 0600);
+	if (written < 0) {
+		error = errno;
+		(void)close(fd);
+		return error;
+	}
+
+	/* The child (or this process); both files are its alone from here. */
 	job->started_ms = client_clock_ms();
-	error = preview_spawn(fd, output, request, &job->pid, &job->status);
+	error = preview_spawn(fd, written, request, &job->child, &job->status);
 	(void)close(fd);
+	(void)close(written);
 	if (error != 0)
 		return error;
-	job->finished = job->pid == 0;
+
+	/* Made at once in this process, or by a child that runs. */
+	job->finished = 1;
+	if (job->child != NULL) {
+		job->finished = 0;
+		job->apart = 1;
+	}
+
+	/* Succeeded: the preview is being made. */
 	return 0;
 }
 
@@ -101,36 +127,26 @@ preview_poll(
 	struct preview_job *job)
 {
 	uint64_t now;
-	pid_t ended;
-	int status;
-	int exited;
-	int signalled;
+	int ended;
 
 	/* Finished already. */
 	if (job->finished)
 		return 1;
 
-	/* Ended, or still running. */
-	ended = waitpid(job->pid, &status, WNOHANG);
-	if (ended == job->pid) {
+	/* Ended (the system freed its record), or still running. */
+	ended = preview_child_ended(job->child, &job->status);
+	if (ended) {
+		job->child = NULL;
 		job->finished = 1;
-		job->status = PREVIEW_KILLED;
-		exited = WIFEXITED(status);
-		signalled = WIFSIGNALED(status);
-		if (exited)
-			job->status = WEXITSTATUS(status);
-		else if (signalled)
-			job->status = PREVIEW_KILLED + WTERMSIG(status);
 		return 1;
 	}
 
 	/* Past its time: ended and collected. */
 	now = client_clock_ms();
 	if (now - job->started_ms > job->limit_ms) {
-		(void)kill(job->pid, SIGKILL);
-		(void)waitpid(job->pid, &status, 0);
+		job->status = preview_child_end(job->child);
+		job->child = NULL;
 		job->finished = 1;
-		job->status = PREVIEW_KILLED + SIGKILL;
 		return 1;
 	}
 
@@ -211,29 +227,35 @@ preview_picture_begin(
 	const struct preview_request *request,
 	struct preview_pending *pending)
 {
+	struct preview_output *output;
 	char path[256];
 	int error;
 
-	/* Makes the output, a file removed from its folder at once. */
+	/* The output's record. */
 	memset(pending, 0, sizeof(*pending));
-	pending->output = client_temporary(path, sizeof(path));
-	if (pending->output < 0) {
+	output = malloc(sizeof(*output));
+	if (output == NULL)
+		return ENOMEM;
+
+	/* Makes the output, a file whose name goes once the child has it open. */
+	output->fd = client_temporary(path, sizeof(path));
+	if (output->fd < 0) {
 		error = errno;
+		free(output);
 		return error;
 	}
 
-	/* Removes its name: only this process knows the file from here. */
+	/* Starts the child writing it, then removes its name: only this process knows the file from here. */
+	error = preview_start(input, path, request, &pending->job);
 	(void)unlink(path);
-
-	/* Starts the child writing it. */
-	error = preview_start(input, pending->output, request, &pending->job);
 	if (error != 0) {
-		(void)close(pending->output);
-		pending->output = -1;
+		(void)close(output->fd);
+		free(output);
 		return error;
 	}
 
 	/* Succeeded: the picture is being made. */
+	pending->output = output;
 	return 0;
 }
 
@@ -265,13 +287,14 @@ preview_picture_follow(
 	status = pending->job.status;
 	*error = preview_status_error(status);
 	if (status == PREVIEW_OK) {
-		(void)lseek(pending->output, 0, SEEK_SET);
-		*error = preview_read(pending->output, picture);
+		(void)lseek(pending->output->fd, 0, SEEK_SET);
+		*error = client_read(pending->output->fd, picture);
 	}
 
 	/* The output goes (it was removed from its folder already). */
-	(void)close(pending->output);
-	pending->output = -1;
+	(void)close(pending->output->fd);
+	free(pending->output);
+	pending->output = NULL;
 
 	/* Succeeded: the picture is done, made or not. */
 	return 1;
@@ -291,9 +314,11 @@ preview_picture_cancel(
 	(void)preview_poll(&pending->job);
 
 	/* The output goes. */
-	if (pending->output >= 0)
-		(void)close(pending->output);
-	pending->output = -1;
+	if (pending->output != NULL) {
+		(void)close(pending->output->fd);
+		free(pending->output);
+	}
+	pending->output = NULL;
 }
 
 /*
@@ -347,14 +372,16 @@ preview_info_read(
 	memset(&job, 0, sizeof(job));
 	job.limit_ms = PREVIEW_LIMIT_MS;
 	job.started_ms = client_clock_ms();
-	error = preview_spawn(input, output, &request, &job.pid, &job.status);
+	error = preview_spawn(input, output, &request, &job.child, &job.status);
 	if (error != 0) {
 		(void)close(output);
 		return error;
 	}
 
 	/* Made in this process (FreeBSD) it has finished; else it is waited for. */
-	job.finished = job.pid == 0;
+	job.finished = 1;
+	if (job.child != NULL)
+		job.finished = 0;
 	result = preview_wait(&job);
 
 	/* A child that did not answer. */
@@ -419,12 +446,24 @@ preview_status_error(
 }
 
 /*
+ * Frees a picture read back.
+ */
+void
+preview_picture_release(
+	struct preview_picture *picture)
+{
+	/* The pixels. */
+	free(picture->pixels);
+	memset(picture, 0, sizeof(*picture));
+}
+
+/*
  * Reads the binary PPM a child wrote (P6, a comment line or none, a size
  * of at most PREVIEW_SIDE_MAX each way, 255, and all the pixels).
  * Returns 0 with the picture, EINVAL for anything else, or ENOMEM.
  */
-int
-preview_read(
+static int
+client_read(
 	int fd,
 	struct preview_picture *picture)
 {
@@ -500,18 +539,6 @@ preview_read(
 		picture->pixels[index] = 0xff000000U | ((uint32_t)bytes[index * 3U] << 16) | ((uint32_t)bytes[index * 3U + 1U] << 8) | bytes[index * 3U + 2U];
 	free(bytes);
 	return 0;
-}
-
-/*
- * Frees a picture read back.
- */
-void
-preview_picture_release(
-	struct preview_picture *picture)
-{
-	/* The pixels. */
-	free(picture->pixels);
-	memset(picture, 0, sizeof(*picture));
 }
 
 /* The time in milliseconds (the monotonic clock). */

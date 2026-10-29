@@ -1,7 +1,8 @@
 #!/bin/sh
 # WS314's tests on zedBSD (QEMU, Venus): post-test.c, process-test.c, launch-test.c and instance-test.c built for zedBSD
 # against the image's libkeiland, Terminal running a command (its shell's end closes it), a Terminal's new window
-# (Ctrl+Shift+N: kl_launch) and Files opening a text in Text Editor (a double click: kl_launch), each as the desktop
+# (Ctrl+Shift+N: kl_launch), Files opening a text in Text Editor (a double click: kl_launch) and a picture's thumbnail
+# (keiland-preview's child), each as the desktop
 # program of a compositor of its own (/bin/wayland --testing at 1280x800).  The image is built first:
 #   plan/tools/guest/test-image.sh plan/ws314/tests/config-amd64-guest.mk IMGBUILD
 #   usage: plan/ws314/tests/guest.sh OUT IMGBUILD       (OUT under build/, e.g. build/p2-q/run1)
@@ -54,6 +55,9 @@ if [ $failed = 0 ]; then
 		g put "$out/$t-test" "/tmp/$t-test" >> "$out/put.log" 2>&1 || failed=1
 	done
 	g put plan/ws314/tests/guest-client.sh /tmp/ws314-client.sh >> "$out/put.log" 2>&1 || failed=1
+	g put docs/howto/keiland-examples/01-app.png /tmp/ws314-picture.png >> "$out/put.log" 2>&1 || failed=1
+	# Without the input method: a Terminal's keys reach the menus' shortcuts straight from the seat.
+	g run 'if [ -e /usr/libexec/keiland-ime ]; then mv /usr/libexec/keiland-ime /usr/libexec/keiland-ime.off; fi' >> "$out/put.log" 2>&1
 	G_TIMEOUT=400 g run "chmod 755 /tmp/*-test /tmp/ws314-client.sh; rm -rf /tmp/ws314run; mkdir -m 700 /tmp/ws314run; export XDG_RUNTIME_DIR=/tmp/ws314run HOME=/tmp/ws314home; mkdir -p \$HOME; rm -f /tmp/ws314-done /tmp/ws314-files; /bin/wayland --testing --timeout=900 --width=1280 --height=800 --desktop-client=/tmp/ws314-client.sh > /tmp/wayland.log 2>&1 </dev/null & i=0; while [ ! -e /tmp/ws314-done ] && [ \$i -lt 300 ]; do sleep 1; i=\$((i+1)); done; echo waited=\$i" > "$out/guest.out" 2>&1
 	# A new window of the Terminal t1 (its log has the new one's too: a launch writes where its starter does).
 	newwindow=FAIL
@@ -71,7 +75,7 @@ if [ $failed = 0 ]; then
 	# Files on the folder of one text, in the list view; a double click on its row opens it in Text Editor.
 	opened=FAIL
 	g run 'touch /tmp/ws314-files' > /dev/null 2>&1
-	if expect /tmp/files.log 'ZFILES LOCATION kind=folder path=/tmp/ws314demo items=1 error=0' 90; then
+	if expect /tmp/files.log 'ZFILES LOCATION kind=folder path=/tmp/ws314demo items=2 error=0' 90; then
 		sleep 3
 		keys '<ctrl-2>'
 		sleep 2
@@ -86,6 +90,10 @@ if [ $failed = 0 ]; then
 		fi
 	fi
 	echo "files-open=$opened" > "$out/files-open.txt"
+	# The picture's thumbnail, made by keiland-preview's child (child=1).
+	thumb=FAIL
+	expect /tmp/files.log 'ZFILES THUMB path=/tmp/ws314demo/picture.png error=0 .* status=0 child=1' 30 && thumb=PASS
+	echo "thumbnail=$thumb" > "$out/thumbnail.txt"
 	for t in post process launch instance terminal t1 files wayland; do
 		g run "cat /tmp/$t.log" > "$out/$t.log" 2>&1
 	done
@@ -120,4 +128,6 @@ echo "terminal new window: $(cat "$out/newwindow.txt" 2>/dev/null)"
 grep -q PASS "$out/newwindow.txt" 2>/dev/null || failed=1
 echo "files open: $(cat "$out/files-open.txt" 2>/dev/null)"
 grep -q PASS "$out/files-open.txt" 2>/dev/null || failed=1
+echo "files thumbnail: $(cat "$out/thumbnail.txt" 2>/dev/null)"
+grep -q PASS "$out/thumbnail.txt" 2>/dev/null || failed=1
 [ $failed = 0 ] && echo "ws314-guest: PASS" || echo "ws314-guest: FAIL"

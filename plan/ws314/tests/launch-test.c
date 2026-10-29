@@ -310,7 +310,11 @@ main(void)
 	const char *socket_name;
 	const char *base;
 
+	/* Kept: the C library may reuse getenv's string. */
 	socket_name = test_server_start();
+	if (socket_name == NULL)
+		return 1;
+	socket_name = strdup(socket_name);
 	if (socket_name == NULL)
 		return 1;
 
@@ -327,9 +331,7 @@ main(void)
 	options.display = socket_name;
 	app = kl_app_open(&options);
 	if (app == NULL) {
-		fprintf(stderr, "kl_app_open: %s (display=%s XDG_RUNTIME_DIR=%s WAYLAND_SOCKET=%s)\n", strerror(errno), socket_name,
-		    getenv("XDG_RUNTIME_DIR") != NULL ? getenv("XDG_RUNTIME_DIR") : "-",
-		    getenv("WAYLAND_SOCKET") != NULL ? getenv("WAYLAND_SOCKET") : "-");
+		fprintf(stderr, "kl_app_open: %s (display=%s)\n", strerror(errno), socket_name);
 		return 1;
 	}
 

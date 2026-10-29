@@ -76,7 +76,7 @@ for file in userland/desktop/libkeiland/ui/canvas.c userland/desktop/libkeiland/
     userland/desktop/libkeiland/ui/ui.c userland/desktop/libkeiland/ui/field.c userland/desktop/libkeiland/ui/input.c \
     userland/desktop/libkeiland/ui/theme.c userland/desktop/libkeiland/ui/scroll.c userland/desktop/libkeiland/ui/text-touch.c userland/desktop/libkeiland/ui/text-bar.c userland/desktop/libkeiland/ui/text-select.c \
     userland/desktop/libkeiland/ui/widgets.c userland/desktop/libkeiland/ui/cards.c userland/desktop/libkeiland/ui/list.c userland/desktop/libkeiland/ui/views.c \
-    plan/tools/files/host-appearance.c; do
+    plan/tools/files/host-appearance.c plan/tools/files/host-launch.c; do
 	object="$out/obj/keiui-$(basename "$file" .c).o"
 	"$cc" $flags -Iuserland/desktop/libkeiland/ui -c "$file" -o "$object"
 	objects="$objects $object"

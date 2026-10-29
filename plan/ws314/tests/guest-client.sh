@@ -1,6 +1,7 @@
 #!/bin/sh
 # The desktop program of guest.sh's compositor: WS314's tests one after another, Terminal running a command, then a
-# Terminal (t1) for guest.sh to ask for a new window, and Files on a folder of one text once guest.sh asks for it.
+# Terminal (t1) for guest.sh to ask for a new window, and Files on a folder of a text and a picture once guest.sh
+# asks for it.
 # Copyright (C) 2026 Awe Morris; SPDX-License-Identifier: Zlib
 /tmp/post-test > /tmp/post.log 2>&1
 /tmp/process-test > /tmp/process.log 2>&1
@@ -18,4 +19,5 @@ i=0
 while [ ! -e /tmp/ws314-files ] && [ $i -lt 240 ]; do sleep 1; i=$((i+1)); done
 mkdir -p /tmp/ws314demo /tmp/fhome
 printf 'Notes\n' > /tmp/ws314demo/notes.txt
+cp /tmp/ws314-picture.png /tmp/ws314demo/picture.png
 HOME=/tmp/fhome /bin/files --token=f1 --timeout-s=120 --width=1000 --height=640 /tmp/ws314demo > /tmp/files.log 2>&1
