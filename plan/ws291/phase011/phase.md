@@ -153,7 +153,7 @@
 - frame と GPU の差: mview の fence 19.7 ms と GPU の run 19.4〜19.5 ms の約 0.3 ms（完了の検出から app の起床まで）と、1 frame の 2 つ目の run（present、約 0.1 ms）。
 - nvrtx の big-N・subs-N・scene-1500 は zedBSD で未計測（NVK: big-1000 136.2、subs-1000 75.4、scene-1500 165.6 fps）。差の大きい所を探すには bench の 1 枠が要る。
 
-### bench の差（2026-10-30 03:42〜03:48、kernel f1 = main 相当、`build/ws291/rtx-bench.sh`、list は bench.list と scene-5000）
+### bench の差（2026-10-30 03:42〜03:48、kernel f1 = main 相当、`plan/ws291/tests/rtx-bench.sh`、list は bench.list と scene-5000）
 
 | run | zedBSD fps（record・submit ms） | NVK fps（p010） |
 | --- | --- | --- |
@@ -201,7 +201,7 @@
   19.8〜24.1）、subs は不変。d1（dirty state）は big-1000 の submit が 15 → 18〜30 ms と悪い: big-N は draw ごとに pipeline・sets・push が変わるので
   組は省けず、比べと写し（vertex の構造 約 650 byte、push 256 byte）の分だけ重い → 効果なし、main に入れない（branch に残す）。r1（slot の続き）は
   subs の submit 141 → 134 ms・fence 0.27 → 6.7 ms で frame は不変 → 効果なし、main に入れない。
-- libvulkan の timing（r1、`VULKAN_ZEDBSD_SUBMIT_TIMING=1`、05:00〜05:03、`build/ws291/rtx-subsprof.sh`）:
+- libvulkan の timing（r1、`VULKAN_ZEDBSD_SUBMIT_TIMING=1`、05:00〜05:03、`plan/ws291/tests/rtx-subsprof.sh`）:
   - subs-100: 1 submit 122 µs = reserve 24 + execute 76（kernel の transaction、command_ran 66 µs、caller の thread で走った: deferred 6 回のみ）+ 他、
     reap 21 µs。kernel の 1 submit 約 66 µs（16 draw の record の decode と executor と GPU への submit）が主（RDNA は 1 submit 全体で約 39 µs）。
   - big-1000: frame 44.5 ms = record 26.3 + submit 17.3。transaction は 1 frame に約 9 回、1 回の kernel の時間 平均 3.7 ms（1 MiB の batch の decode）。
