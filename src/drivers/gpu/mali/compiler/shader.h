@@ -358,6 +358,13 @@ struct mali_shader_program {
 	 */
 	uint32_t writes_stencil;
 	uint32_t reads_sample_id;
+
+	/*
+	 * Whether the program writes memory other threads or later work can
+	 * see: a store to a storage buffer or a storage image, or an atomic
+	 * operation on either (not shared memory).
+	 */
+	uint32_t writes_memory;
 };
 
 /*

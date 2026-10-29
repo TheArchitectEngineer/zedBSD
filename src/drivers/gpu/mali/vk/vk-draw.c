@@ -110,6 +110,13 @@
 #define CLEAR_COLOR		3U
 
 /*
+ * A clear value's tag: a colour's four words, or a depth's float bits
+ * and a stencil value (in the first two of the four).
+ */
+#define CLEAR_TAG_COLOR		0U
+#define CLEAR_TAG_DEPTH_STENCIL	1U
+
+/*
  * The tile buffer's format of a colour target without an attachment (one
  * written nothing, as a pass of only a depth and stencil attachment has):
  * R8G8B8A8.
@@ -152,6 +159,20 @@
 /* The blend state of a replace, as the pipeline packs it: ONE and ZERO, added, for colour and alpha. */
 #define REPLACE_EQUATION	(1U | (1U << 13))
 
+/*
+ * The blend's memory format of the 8-bit formats: the tile buffer's
+ * RGBA8 ("Format" RGBA8 TB 237 in bits 12..19, the RGBA order 0); the
+ * pixel word's sRGB bit and its component order's field.
+ *
+ * Values referenced:
+ * Mesa 26.2.6 src/panfrost/genxml/v10.xml (enum "Format": RGBA8 TB 237;
+ * enum "RGB Component Order": RGBA 0) and src/panfrost/lib/pan_format.h
+ * (MALI_PACK_FMT: the sRGB bit 20).
+ */
+#define BLEND_RGBA8_TB		(237U << 12)
+#define PIXEL_SRGB		(1U << 20)
+#define PIXEL_ORDER_MASK	0xfffU
+
 /* The float 1.0's bits, for the depth clamp and the point size. */
 #define FLOAT_ONE		0x3f800000U
 
@@ -184,7 +205,7 @@ static int pass_preload(struct mali_vk_build *build, struct pass_state *state, u
 static void pass_end(struct mali_vk_build *build, struct pass_state *state, uint64_t fbd);
 static void draw(struct mali_vk_build *build, struct pass_state *state, const struct mali_vk_record *entry);
 static int clear_attachments(struct mali_vk_build *build, struct pass_state *state, const struct mali_vk_record *entry);
-static int clear_rect(struct mali_vk_build *build, struct pass_state *state, uint32_t target, const uint32_t *color, const VkClearRect *rect);
+static int clear_rect(struct mali_vk_build *build, struct pass_state *state, const uint32_t *clear, const VkClearRect *rect);
 static void viewport_words(const VkViewport *viewport, uint32_t *words);
 static int64_t fixed_from_float(uint32_t bits);
 static uint32_t float_from_fixed(int64_t value);
@@ -737,12 +758,15 @@ draw(
 	 * operations: of the pipeline's tests in a pass with a depth and
 	 * stencil attachment; else one that passes everything (the depth
 	 * from a program that writes it), the kill late for a program that
-	 * discards or writes its depth.
+	 * discards or writes its depth, and the kill late for a program that
+	 * writes memory (it runs even where a later pixel covers it).
 	 *
 	 * Procedure referenced:
 	 * Mesa 26.2.6 src/panfrost/vulkan/csf/panvk_vX_cmd_draw.c
 	 * (prepare_dcd: a depth written by the shader forces late kill and
-	 * update; a written sample mask modifies the coverage).
+	 * update; a written sample mask modifies the coverage) and
+	 * src/panfrost/lib/pan_earlyzs.c (analyze: a shader with side effects
+	 * is killed late).
 	 */
 	kern_memset(words, 0, sizeof(words));
 	words[0] = DEPTH_WORD0;
@@ -755,6 +779,8 @@ draw(
 		flags = (KILL_FORCE_LATE << 2) | (KILL_FORCE_LATE << 4);
 	if (fragment->writes_depth != 0U)
 		flags = (KILL_FORCE_LATE << 2) | (KILL_FORCE_LATE << 4);
+	if (fragment->writes_memory != 0U)
+		flags = (flags & ~(3U << 2)) | (KILL_FORCE_LATE << 2);
 	if (state->zs)
 		draw_depth(build, state, graphics, fragment, words, &flags);
 	store(depth_view, words, 8);
@@ -876,11 +902,13 @@ draw(
 }
 
 /*
- * Draws a clear of attachments inside a pass: for each colour
- * attachment it names and each of its rectangles, a draw of the
- * rectangle by the executor's clear programs.  ENOTSUP when the
- * programs are not there, or a rectangle is of a layer past the first
- * (the pass draws one layer); the draws written before stay.
+ * Draws a clear of attachments inside a pass: for each attachment it
+ * names (a colour attachment with a colour value, or the depth and
+ * stencil attachment with a depth and stencil value) and each of its
+ * rectangles, a draw of the rectangle by the executor's clear programs.
+ * ENOTSUP when the programs are not there, or a rectangle is of a layer
+ * past the first (the pass draws one layer); the draws written before
+ * stay.
  */
 static int
 clear_attachments(
@@ -889,12 +917,12 @@ clear_attachments(
 	const struct mali_vk_record *entry)
 {
 	const uint32_t *words;
+	const uint32_t *attachment;
 	const VkClearRect *rects;
 	uint32_t attachments;
 	uint32_t count;
 	uint32_t index;
 	uint32_t rect;
-	uint32_t target;
 	int refused;
 	int error;
 
@@ -906,16 +934,18 @@ clear_attachments(
 		return 0;
 	rects = (const VkClearRect *)(const void *)&words[attachments * CLEAR_WORDS];
 
-	/* Each colour attachment with a colour value, each rectangle; a refusal is kept and the others go on. */
+	/* Each attachment whose value is of its aspects, each rectangle; a refusal is kept and the others go on. */
 	refused = 0;
 	for (index = 0; index < attachments; index++) {
-		if ((words[index * CLEAR_WORDS + CLEAR_ASPECTS] & VK_IMAGE_ASPECT_COLOR_BIT) == 0U)
+		attachment = &words[index * CLEAR_WORDS];
+		if ((attachment[CLEAR_ASPECTS] & VK_IMAGE_ASPECT_COLOR_BIT) != 0U && attachment[CLEAR_TAG] != CLEAR_TAG_COLOR)
 			continue;
-		if (words[index * CLEAR_WORDS + CLEAR_TAG] != 0U)
+		if ((attachment[CLEAR_ASPECTS] & VK_IMAGE_ASPECT_COLOR_BIT) == 0U && attachment[CLEAR_TAG] != CLEAR_TAG_DEPTH_STENCIL)
 			continue;
-		target = words[index * CLEAR_WORDS + CLEAR_TARGET];
+
+		/* The rectangles of the attachment. */
 		for (rect = 0; rect < count; rect++) {
-			error = clear_rect(build, state, target, &words[index * CLEAR_WORDS + CLEAR_COLOR], &rects[rect]);
+			error = clear_rect(build, state, attachment, &rects[rect]);
 			if (error == ENOTSUP) {
 				refused = ENOTSUP;
 				continue;
@@ -935,38 +965,54 @@ clear_attachments(
 }
 
 /*
- * Draws one clear rectangle of one colour target: the vertex program
+ * Draws one clear rectangle of one attachment: the vertex program
  * places the rectangle's corners in pixels (the viewport transform is
- * the identity), the fragment program of the target's location writes
- * the colour; the blend of the target replaces every component, the
- * other targets' blends write nothing, the scissor is the rectangle
- * inside the render area.  The registers of the run are those of a
- * pass's own draw, every one written, so the next draw finds nothing of
- * the clear's.  Nothing for a target the pass does not store, or a
- * rectangle outside the area.
+ * the identity, its depth offset the cleared depth), a fragment program
+ * of the clear's writes the colour.  A colour attachment's target
+ * blends a replace of every component, the other targets' blends write
+ * nothing, and the depth and stencil pass untouched.  The depth and
+ * stencil attachment's clear writes no colour: its depth test always
+ * passes and writes the vertex's depth, its stencil test always passes
+ * and replaces the stencil with the clear's value, each only for the
+ * aspects the clear names and the pass has.  The scissor is the
+ * rectangle inside the render area.  The registers of the run are
+ * those of a pass's own draw, every one written, so the next draw finds
+ * nothing of the clear's.  Nothing for a colour target the pass does not
+ * store, an aspect the pass does not have, or a rectangle outside the
+ * area.
  *
  * Procedure referenced:
  * Mesa 26.2.6 src/panfrost/vulkan/csf/panvk_vX_cmd_draw.c (the draw's
- * staging registers, as draw() takes them); the Vulkan specification 1.0
- * (vkCmdClearAttachments: the rectangles of the attachment cleared as
- * if drawn, regardless of the pipeline's state).
+ * staging registers, as draw() takes them); src/vulkan/runtime/
+ * vk_meta_clear.c (a depth and stencil clear as a rectangle at the
+ * clear's depth, depth always passing and written, stencil always
+ * passing and replaced by the reference with full masks); the Vulkan
+ * specification 1.0 (vkCmdClearAttachments: the rectangles of the
+ * attachment cleared as if drawn, regardless of the pipeline's state).
  */
 static int
 clear_rect(
 	struct mali_vk_build *build,
 	struct pass_state *state,
-	uint32_t target,
-	const uint32_t *color,
+	const uint32_t *clear,
 	const VkClearRect *rect)
 {
 	const struct mali_shader_program *vertex;
 	const struct mali_shader_program *fragment;
 	const struct mali_vk_image_view *view;
+	struct mali_surface_zs_state zs;
+	struct mali_surface_kill kill;
 	uint32_t words[MALI_VK_META_FAU_WORDS];
 	uint32_t blend[4];
 	uint32_t index;
 	uint32_t attachment;
 	uint32_t equation;
+	uint32_t target;
+	uint32_t target_mask;
+	uint32_t flags;
+	bool color;
+	bool depth_aspect;
+	bool stencil_aspect;
 	bool supported;
 	int32_t box[4];
 	volatile uint8_t *blend_view;
@@ -982,15 +1028,31 @@ clear_rect(
 	uint64_t depth;
 	int error;
 
-	/* A colour target of the pass that is stored. */
-	if (target >= state->targets || target >= MALI_VK_ATTACHMENTS_MAX)
-		return 0;
-	attachment = state->pass->color[target];
-	if (attachment == VK_ATTACHMENT_UNUSED || attachment >= state->framebuffer->count)
-		return 0;
-	if ((state->target_mask & (1U << target)) == 0U)
-		return 0;
-	view = state->framebuffer->views[attachment]->payload;
+	/* A colour clear: a colour target of the pass that is stored, drawn by its location's program. */
+	color = false;
+	if ((clear[CLEAR_ASPECTS] & VK_IMAGE_ASPECT_COLOR_BIT) != 0U)
+		color = true;
+	depth_aspect = false;
+	stencil_aspect = false;
+	target = 0;
+	if (color) {
+		target = clear[CLEAR_TARGET];
+		if (target >= state->targets || target >= MALI_VK_ATTACHMENTS_MAX)
+			return 0;
+		attachment = state->pass->color[target];
+		if (attachment == VK_ATTACHMENT_UNUSED || attachment >= state->framebuffer->count)
+			return 0;
+		if ((state->target_mask & (1U << target)) == 0U)
+			return 0;
+	} else {
+		/* A depth and stencil clear: the aspects it names that the pass's attachment has, drawn by location 0's program. */
+		if (state->zs && state->has_depth && (clear[CLEAR_ASPECTS] & VK_IMAGE_ASPECT_DEPTH_BIT) != 0U)
+			depth_aspect = true;
+		if (state->zs && state->has_stencil && (clear[CLEAR_ASPECTS] & VK_IMAGE_ASPECT_STENCIL_BIT) != 0U)
+			stencil_aspect = true;
+		if (!depth_aspect && !stencil_aspect)
+			return 0;
+	}
 
 	/* The pass's one layer. */
 	if (rect->layerCount == 0U)
@@ -1026,7 +1088,12 @@ clear_rect(
 	if (error != 0)
 		return ENOTSUP;
 
-	/* The vertex program's FAU words: the rectangle, then the identity viewport transform (scales one, offsets zero). */
+	/*
+	 * The vertex program's FAU words: the rectangle, then the identity
+	 * viewport transform (scales one, offsets zero); the vertex's depth
+	 * is zero, so the depth offset is the depth the rectangle is drawn
+	 * at, the cleared depth's float bits for a depth clear.
+	 */
 	kern_memset(words, 0, sizeof(words));
 	words[0] = (uint32_t)box[0];
 	words[1] = (uint32_t)box[1];
@@ -1038,16 +1105,23 @@ clear_rect(
 	words[vertex->viewport_fau_word + 3U] = FLOAT_ZERO;
 	words[vertex->viewport_fau_word + 4U] = FLOAT_ZERO;
 	words[vertex->viewport_fau_word + 5U] = FLOAT_ZERO;
+	if (depth_aspect)
+		words[vertex->viewport_fau_word + 5U] = clear[CLEAR_COLOR];
+
+	/* The words into the stage. */
 	error = mali_vk_meta_fau(build, words, vertex->fau_words, &vertex_fau);
 	if (error != 0)
 		return error;
 
-	/* The fragment program's: the colour's four words. */
+	/* The fragment program's: the colour's four words (a depth and stencil clear's colour is not written). */
 	kern_memset(words, 0, sizeof(words));
-	words[0] = color[0];
-	words[1] = color[1];
-	words[2] = color[2];
-	words[3] = color[3];
+	if (color) {
+		words[0] = clear[CLEAR_COLOR];
+		words[1] = clear[CLEAR_COLOR + 1U];
+		words[2] = clear[CLEAR_COLOR + 2U];
+		words[3] = clear[CLEAR_COLOR + 3U];
+	}
+
 	error = mali_vk_meta_fau(build, words, fragment->fau_words, &fragment_fau);
 	if (error != 0)
 		return error;
@@ -1059,7 +1133,7 @@ clear_rect(
 	if (table == 0U || position_shader == 0U || fragment_shader == 0U)
 		return build->error;
 
-	/* One blend a colour target: the cleared one replaced, the others not written. */
+	/* One blend a colour target: a colour clear's target replaced, every other target not written. */
 	blend_view = mali_vk_build_take(build, (uint64_t)state->targets * MALI_DESC_BLEND_BYTES, 64U, &blends);
 	depth_view = mali_vk_build_take(build, MALI_DESC_BYTES, 64U, &depth);
 	if (blend_view == NULL || depth_view == NULL)
@@ -1069,7 +1143,7 @@ clear_rect(
 		view = NULL;
 		if (attachment != VK_ATTACHMENT_UNUSED && attachment < state->framebuffer->count)
 			view = state->framebuffer->views[attachment]->payload;
-		if (index == target) {
+		if (color && index == target) {
 			equation = mali_desc_blend_equation(REPLACE_EQUATION, 0xfU, &supported);
 			mali_desc_blend(blend, false, equation, 0xfU, index, view != NULL ? blend_format(view->format) : 0U);
 		} else {
@@ -1080,11 +1154,42 @@ clear_rect(
 		store(blend_view + (uint64_t)index * MALI_DESC_BLEND_BYTES, blend, 4);
 	}
 
-	/* The depth and stencil descriptor that passes everything. */
+	/*
+	 * The depth and stencil descriptor and the kill and update
+	 * operations: a colour clear's passes everything and is killed weak
+	 * early; a depth and stencil clear's tests always pass, write the
+	 * depth and replace the stencil of the aspects it clears.
+	 */
+	kern_memset(&zs, 0, sizeof(zs));
+	zs.has_depth = depth_aspect;
+	zs.has_stencil = stencil_aspect;
+	zs.depth_test = depth_aspect;
+	zs.depth_write = depth_aspect;
+	zs.depth_compare = VK_COMPARE_OP_ALWAYS;
+	zs.stencil_test = stencil_aspect;
+	zs.front.fail_op = VK_STENCIL_OP_REPLACE;
+	zs.front.pass_op = VK_STENCIL_OP_REPLACE;
+	zs.front.depth_fail_op = VK_STENCIL_OP_REPLACE;
+	zs.front.compare_op = VK_COMPARE_OP_ALWAYS;
+	zs.front.compare_mask = 0xffU;
+	zs.front.write_mask = 0xffU;
+	zs.front.reference = clear[CLEAR_COLOR + 1U] & 0xffU;
+	zs.back = zs.front;
 	kern_memset(words, 0, sizeof(words));
 	words[0] = DEPTH_WORD0;
 	words[1] = DEPTH_WORD1;
 	words[4] = DEPTH_WORD4;
+	flags = (KILL_WEAK_EARLY << 2) | (KILL_WEAK_EARLY << 4);
+	target_mask = 1U << target;
+	if (!color) {
+		/* The descriptor of the clear's tests, and the operations they allow. */
+		mali_surface_depth_stencil(words, &zs);
+		kern_memset(&kill, 0, sizeof(kill));
+		kill.state = &zs;
+		flags = mali_surface_kill_flags(&kill);
+		target_mask = 0;
+	}
+
 	store(depth_view, words, 8);
 
 	/* The programs, their tables and FAU, the pass's storage. */
@@ -1116,13 +1221,13 @@ clear_rect(
 	mali_cs_emit(&build->cs, mali_cs_move32(MALI_CS_IDVS_DEPTH_HIGH, FLOAT_ONE));
 	mali_cs_move64(&build->cs, MALI_CS_IDVS_OCCLUSION, 0);
 
-	/* No varyings, the blends, the depth, a strip without culls, weak early kill, the target alone. */
+	/* No varyings, the blends, the depth, a strip without culls, the kill, the colour target alone or none. */
 	mali_cs_emit(&build->cs, mali_cs_move32(MALI_CS_IDVS_VARYING_SIZE, vertex->varying_bytes));
 	mali_cs_move64(&build->cs, MALI_CS_IDVS_BLEND, (blends & ~0xfULL) | state->targets);
 	mali_cs_move64(&build->cs, MALI_CS_IDVS_DEPTH_STENCIL, depth);
 	mali_cs_emit(&build->cs, mali_cs_move32(MALI_CS_IDVS_TILER_FLAGS, mali_desc_primitive(MALI_DESC_DRAW_TRIANGLE_STRIP, 0)));
-	mali_cs_emit(&build->cs, mali_cs_move32(MALI_CS_IDVS_DCD0, (KILL_WEAK_EARLY << 2) | (KILL_WEAK_EARLY << 4)));
-	mali_cs_emit(&build->cs, mali_cs_move32(MALI_CS_IDVS_DCD1, 0xffffU | ((1U << target) << 16)));
+	mali_cs_emit(&build->cs, mali_cs_move32(MALI_CS_IDVS_DCD0, flags));
+	mali_cs_emit(&build->cs, mali_cs_move32(MALI_CS_IDVS_DCD1, 0xffffU | (target_mask << 16)));
 	mali_cs_emit(&build->cs, mali_cs_move32(MALI_CS_IDVS_PRIMITIVE_SIZE, FLOAT_ONE));
 
 	/* The run, as a pass's own draw. */
@@ -1266,7 +1371,7 @@ draw_depth(
 	/* The kill and update operations, keeping the other flags. */
 	kill.state = &zs;
 	kill.coverage = fragment->discards != 0U || fragment->writes_sample_mask != 0U;
-	kill.writes_memory = false;
+	kill.writes_memory = fragment->writes_memory != 0U;
 	direction = mali_surface_kill_flags(&kill);
 	*flags = (*flags & ~0x3cU) | direction;
 }
@@ -1529,23 +1634,40 @@ draw_mode(
 }
 
 /*
- * Gives the memory format the blend converts a target's colour from: the
- * format's pixel word with its components in RGBA order (the tile
- * buffer's order; the writeback swizzle orders the memory).
+ * Gives the memory format the fixed-function blend converts a target's
+ * colour to: for a format of 8-bit unsigned normalized components (one
+ * to four, either order) the tile buffer's RGBA8 with the format's sRGB
+ * bit; for any other the format's pixel word in the RGBA order (the
+ * fixed function does not take the RGB1 order; the render target's
+ * writeback orders the memory).
+ *
+ * Values referenced:
+ * Mesa 26.2.6 src/panfrost/lib/pan_format.c (pan_blendable_formats:
+ * BFMT_SRGB of R8, R8G8, R8G8B8A8 and B8G8R8A8 blends as
+ * MALI_BLEND_PU_R8G8B8A8, RGBA8 TB in the RGBA order, with the sRGB bit
+ * 20; BFMT_FLOAT as the format in the RGBA order), src/panfrost/lib/
+ * pan_format.h (pan_dithered_format_from_pipe_format: a format with no
+ * blendable entry blends as its own pixel word),
+ * src/panfrost/vulkan/panvk_vX_blend.c (the fixed function's RGB1 order
+ * forced to RGBA) and src/panfrost/genxml/v10.xml (enum "Format": RGBA8
+ * TB 237).
  */
 static uint32_t
 blend_format(
 	const struct mali_vk_format *format)
 {
-	uint32_t pixel;
-
-	/* A BGRA order becomes RGBA. */
-	pixel = format->pixel;
-	if ((pixel & 0xfffU) == 4U)
-		pixel &= ~0xfffU;
-
-	/* Succeeded: the word. */
-	return pixel;
+	/* One case a format of 8-bit unsigned normalized components; any other keeps its own format. */
+	switch (format->vk) {
+	case VK_FORMAT_R8_UNORM:
+	case VK_FORMAT_R8G8_UNORM:
+	case VK_FORMAT_R8G8B8A8_UNORM:
+	case VK_FORMAT_R8G8B8A8_SRGB:
+	case VK_FORMAT_B8G8R8A8_UNORM:
+	case VK_FORMAT_B8G8R8A8_SRGB:
+		return BLEND_RGBA8_TB | (format->pixel & PIXEL_SRGB);
+	default:
+		return format->pixel & ~PIXEL_ORDER_MASK;
+	}
 }
 
 /*

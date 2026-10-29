@@ -90,6 +90,7 @@ static const uint32_t model_immediates[32] = ISA_TABLE_IMMEDIATES;
 #define IMAGE_TEXELS	4096U
 #define CVT_TOKEN	0xC7000000U
 #define GRDESC_TOKEN	0x6D000000U
+#define OFFSETS_NONE	0xFFFFFFFFU
 
 /* The inputs of one trial, shared by the reference and the model. */
 struct trial {
@@ -151,6 +152,9 @@ static int32_t level_fixed(float level);
 static void apply_level(uint32_t *texel, int32_t fixed);
 static float gradient_sum(const float *derivatives, uint32_t count);
 static void apply_gradient(uint32_t *texel, float sum);
+static void apply_offset(uint32_t *texel, int32_t s, int32_t t, int32_t r);
+static int32_t signed_bits(uint32_t value, uint32_t bits);
+static void apply_ir_offset(uint32_t *texel, uint32_t offset);
 static float cube_gradient_level(const float *p, const float *dpdx, const float *dpdy, uint32_t width);
 static uint32_t image_texel(uint32_t x, uint32_t y, uint32_t layer);
 static uint32_t format_components(uint32_t format);
@@ -418,6 +422,43 @@ apply_gradient(
 }
 
 /*
+ * Adds a constant texel offset (s, t, r) to a texel: each weighed by its
+ * place, to the fourth channel, so a lost, swapped or wrongly signed
+ * component shows.
+ */
+static void
+apply_offset(
+	uint32_t *texel,
+	int32_t s,
+	int32_t t,
+	int32_t r)
+{
+	texel[3] = as_bits(as_float(texel[3]) + (float)(s + 16 * t + 256 * r) / 4096.0f);
+}
+
+/* Gives the low bits of a value as a signed number. */
+static int32_t
+signed_bits(
+	uint32_t value,
+	uint32_t bits)
+{
+	uint32_t sign;
+
+	value &= (1U << bits) - 1U;
+	sign = 1U << (bits - 1U);
+	return (int32_t)(value ^ sign) - (int32_t)sign;
+}
+
+/* Adds the IR's constant texel offset (u in bits 11:8, v in 7:4, r in 3:0) to a texel. */
+static void
+apply_ir_offset(
+	uint32_t *texel,
+	uint32_t offset)
+{
+	apply_offset(texel, signed_bits(offset >> 8, 4U), signed_bits(offset >> 4, 4U), signed_bits(offset, 4U));
+}
+
+/*
  * The level of a cube sample with derivatives, from the direction p, its
  * derivatives and the cube's width: the major axis third (z winning a tie
  * over y, y over x), the face coordinates' derivatives by the quotient
@@ -638,6 +679,7 @@ reference_texture(
 	slot = find_texture(program, inst->location, inst->immediate);
 	if (inst->op != DRV_GPU_IR_TEXTURE) {
 		texture_value((uint32_t)slot, as_float(value[inst->src[0]]), as_float(value[inst->src[1]]), texel);
+		apply_ir_offset(texel, inst->component & 0xFFFU);
 		if (inst->op == DRV_GPU_IR_SAMPLE_BIAS || inst->op == DRV_GPU_IR_SAMPLE_LOD)
 			apply_level(texel, level_fixed(as_float(value[inst->src[2]])));
 		return;
@@ -670,6 +712,7 @@ reference_texture(
 		if (arrayed && inst->src[1] > 3U)
 			layer = value[inst->src[0] + 3U];
 		texel_value((uint32_t)slot, (float)(int32_t)value[inst->src[0]], (float)(int32_t)value[inst->src[0] + 1U], r, layer, 0U, texel);
+		apply_ir_offset(texel, (inst->component >> 8) & 0xFFFU);
 		return;
 	}
 	compare = message == DRV_GPU_IR_TEXTURE_SAMPLE_COMPARE || message == DRV_GPU_IR_TEXTURE_SAMPLE_BIAS_COMPARE ||
@@ -724,6 +767,7 @@ reference_texture(
 	if (arrayed)
 		layer = sampled_layer(PARAM(first + coordinates * stride));
 	texel_value((uint32_t)slot, s, t, r, layer, face, base);
+	apply_ir_offset(base, (inst->component >> 8) & 0xFFFU);
 
 	/* A level or bias changes the texel. */
 	if (lod_slot != DRV_GPU_IR_TEXTURE_MAX_PARAMS)
@@ -1355,6 +1399,8 @@ model_texture(
 	uint32_t index;
 	uint32_t slot;
 	uint32_t descriptor;
+	uint32_t offsets;
+	uint32_t narrow;
 	int32_t level;
 	int fetch;
 	int gather;
@@ -1391,8 +1437,9 @@ model_texture(
 		layer = staging[used++];
 	if (compare)
 		reference = as_float(staging[used++]);
+	offsets = OFFSETS_NONE;
 	if (((word >> 11) & 1U) != 0U)
-		used++;
+		offsets = used++;
 
 	/* An explicit level or a bias is 8.8 fixed point in the low half of its register. */
 	levelled = 0;
@@ -1426,6 +1473,27 @@ model_texture(
 	}
 	slot = m->r[word & 0x3FU] & 0x3FFU;
 	texel_value(slot, s, t, r, layer, face, base);
+
+	/*
+	 * The texel offset: signed bytes s, t, r of the offsets word (its top
+	 * byte a texel load's level), else signed nibbles s, t, r in the
+	 * handle's high word (Mesa's pan_nir_lower_tex.c packs them so); the
+	 * high word's other bits (a narrow level or layer) are not modelled.
+	 */
+	narrow = m->r[((word & 0x3FU) + 1U) & 63U];
+	if ((narrow & ~0xFFFU) != 0U) {
+		m->result->why = "a texture handle with a narrow level or layer";
+		return 1;
+	}
+	if (offsets != OFFSETS_NONE) {
+		if (narrow != 0U) {
+			m->result->why = "a texel offset in both the handle and the offsets word";
+			return 1;
+		}
+		apply_offset(base, signed_bits(staging[offsets & 7U], 8U), signed_bits(staging[offsets & 7U] >> 8, 8U), signed_bits(staging[offsets & 7U] >> 16, 8U));
+	} else {
+		apply_offset(base, signed_bits(narrow, 4U), signed_bits(narrow >> 4, 4U), signed_bits(narrow >> 8, 4U));
+	}
 
 	/* The level or bias changes the texel. */
 	if (levelled)
