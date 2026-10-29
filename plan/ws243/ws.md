@@ -58,8 +58,9 @@ Resume point: 完了。残りは下の「制限・移管」（i915・amdrdna の
 - driver の work channel が回復で止められた後の作り直し（再 open）は WS250 の回復にも無く、実装していない（app の作成は壊れない形にした）。
 - GR の runlist で draw が止まっている間は copy engine の消しも待ち、2 s を越えると以後 CPU の消しに戻る（安全側）。
 - BUG-353 の glass maps の作り直しの時間（video=0）は未計測（`plan/ws309/tests/rtx-bug353-pair.sh` は未実施）。
-- 今後も使う試験（Q1 に移管を頼む）: `rtx-video-check.sh`・`rtx-p004.sh`・`rtx-s5-check.sh`・`nv12-hashes.py`・`venus-videoplayer.sh`（と config）、host 試験
-  `nvdec-host-test`・`wire-host-test`・`plane-header-host-test`・`copy-clear-host-test`。clip は git の外（`build/ws243/clips`、作り方は p006）。
+- 今後も使う試験は `plan/tools/rtx-video/` に移した（2026-10-30、git mv）: `rtx-video-check.sh`・`rtx-p004.sh`・`rtx-s5-check.sh`・`nv12-hashes.py`・
+  `venus-videoplayer.sh`（と `config-amd64-venus-video.mk`）・`rtx-notes-check.sh`（と `config-amd64-rtx-inject.mk`、BUG-361）、host 試験 `nvdec-host-test`・
+  `wire-host-test`・`plane-header-host-test`・`copy-clear-host-test`。clip は git の外（`build/ws243/clips`、作り方は p006）。
 
 ## Phase
 
