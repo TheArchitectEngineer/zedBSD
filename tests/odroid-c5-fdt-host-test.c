@@ -116,6 +116,13 @@ main(
 	failures += check(reserves(&info, EXPECT_SECMON_BASE, EXPECT_SECMON_SIZE),
 			  "the secure monitor's memory is reserved");
 	failures += check(!reserves(&info, 0, DISABLED_DUMP_SIZE), "a reservation whose status is off is left out");
+	failures += check(info.no_map_count >= 1 &&
+			  info.no_map[0].base == EXPECT_SECMON_BASE && info.no_map[0].size == EXPECT_SECMON_SIZE,
+			  "the secure monitor's memory is kept out of the direct map (no-map)");
+
+	/* The early framebuffer is drawn on through the boot's tables, which map the first 2 GiB. */
+	failures += check(info.framebuffer_base + info.framebuffer_size <= 0x80000000ULL,
+			  "the framebuffer lies in the boot's mapped RAM");
 
 	/* The four cores: affinity in Aff1, brought up through PSCI, not a spin table. */
 	failures += check(info.cpu_count == 4, "four CPUs are listed");

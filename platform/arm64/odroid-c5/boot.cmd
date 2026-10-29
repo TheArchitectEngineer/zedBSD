@@ -12,6 +12,15 @@ setenv zedbsd_kernel_addr 0x20000000
 setenv zedbsd_fdt_addr 0x10000000
 setenv fdt_high 0xffffffffffffffff
 
+# The power domains of the blocks the kernel drives: the USB host (5),
+# the microSD controller (10) and the Ethernet (11).  The kernel cannot ask
+# the secure monitor itself, so U-Boot turns them on (0 is on) and shows
+# the state first for the log.
+powershow
+powerset 5 0
+powerset 10 0
+powerset 11 0
+
 # The console framebuffer: OSD1 scanning out 1920x1080 at 32 bits a pixel
 # (ARGB, blue in the low byte) from the reserved logo memory the device
 # tree's simple-framebuffer node describes.  U-Boot has brought HDMI up
@@ -23,12 +32,14 @@ setenv display_width 1920
 setenv display_height 1080
 setenv display_bpp 32
 setenv display_color_index 32
+setenv outputmode 1080p60hz
 osd open
 osd clear
 vout output ${outputmode}
 
-# The kernel's command line.
-setenv bootargs "login=console"
+# The kernel's command line; zedbsd_extra_args (set at the U-Boot prompt
+# with setenv, then "run bootcmd" or boot) adds to it, such as cpus=1.
+setenv bootargs "login=console ${zedbsd_extra_args}"
 
 echo "zedBSD: loading odroid-c5.dtb and vmunix"
 if load ${devtype} ${devnum}:${bootpart} ${zedbsd_fdt_addr} odroid-c5.dtb; then

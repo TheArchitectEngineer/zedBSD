@@ -16,7 +16,7 @@ Resume point: 今夜のユーザーの実機の試験（[tests/README.md](tests/
 
 - 解釈（Q1 経由）: p001 の調べと設計は短く（起動の道・console・各 block の register と出典・GPU の世代・Phase の表）、design-reviewer は 1 回で、すぐ実装へ。
   実機の試験なしで、起動と console・割り込み・timer・SMP・MMC・USB・Ethernet・display・GPU（Mali と Vulkan）・desktop の config まで code を書いて揃える。
-  確かめは build（warning 0）と、書ける所の host の試験・QEMU の `virt` での起動まで。各 Phase は「実装済み・実機未試験」と記録し cleared にしない。
+  確かめは build（warning 0）と、書ける所の host の試験まで（この board の HAL は QEMU の `virt` では起動しないので QEMU の起動は無い。2026-10-29 design-reviewer）。各 Phase は「実装済み・実機未試験」と記録し cleared にしない。
   夜の実機の試験の手順（媒体への書き込み・UART の配線・確かめる順・判定）を phase.md と `plan/ws313/tests/` の script にまとめる。
 
 ## ユーザーの指示（原文、2026-10-29、並列化）
@@ -58,7 +58,9 @@ Resume point: 今夜のユーザーの実機の試験（[tests/README.md](tests/
 | [p006](phase006/phase.md) | Ethernet（EQoS・RGMII の PHY） | in-progress（実装済み・実機未試験） | p002 |
 | [p007](phase007/phase.md) | display（U-Boot の mode の OSD1） | in-progress（実装済み・実機未試験） | p002 |
 | [p008](phase008/phase.md) | GPU（Mali-G310）と Vulkan の device | in-progress（kernel の driver は実装済み・実機未試験。Vulkan の段は設計だけ） | p002 |
-| p009 | desktop（Keiland の config） | planned | p007・p008 |
+| [p010](phase010/phase.md) | Valhall の shader compiler（`src/drivers/gpu/mali/compiler/`） | in-progress（配下 C） | p008 |
+| [p011](phase011/phase.md) | render の node・scheduler・Vulkan の executor・CS の builder | in-progress（配下 D） | p008・p010 |
+| p009 | desktop（Keiland の config） | planned | p007・p010・p011 |
 | 最後 | 規約の全文の見直し | planned | 全て |
 
 Audio（line-out）は desktop の表示の受け入れに要らないので Future Work の案（Q1 へ）。

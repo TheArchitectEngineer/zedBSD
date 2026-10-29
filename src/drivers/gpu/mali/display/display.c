@@ -238,6 +238,7 @@ static int map_screen(struct display *display);
 static void find_plane(struct display *display, const struct drv_fdt *fdt);
 static void clear_screen(struct display *display);
 static void copy_frame(struct display *display, const struct display_resource *resource, const struct gpu_display_present *request);
+static int frame_looks_opaque(const struct display_resource *resource, const struct gpu_display_present *request);
 static int can_flip(const struct display *display, const struct display_resource *resource, const struct gpu_display_present *request);
 static void point_plane(struct display *display, uint64_t address, struct display_resource *front, struct display_resource **freed);
 static void end_lease(struct display *display, struct display_resource **freed);
@@ -1178,6 +1179,43 @@ copy_frame(
 }
 
 /*
+ * Reports whether the frame's corners and centre carry a full alpha byte
+ * (the top byte in both packed formats).
+ */
+static int
+frame_looks_opaque(
+	const struct display_resource *resource,
+	const struct gpu_display_present *request)
+{
+	const uint32_t *row;
+	uint32_t rows[3];
+	uint32_t columns[3];
+	unsigned y;
+	unsigned x;
+
+	/* The first, middle and last rows and columns. */
+	rows[0] = 0U;
+	rows[1] = request->height / 2U;
+	rows[2] = request->height - 1U;
+	columns[0] = 0U;
+	columns[1] = request->width / 2U;
+	columns[2] = request->width - 1U;
+
+	/* Every sampled pixel must be opaque. */
+	for (y = 0U; y < 3U; y++) {
+		row = (const uint32_t *)(const void *)(resource->address + request->offset +
+						       (uint64_t)rows[y] * request->stride);
+		for (x = 0U; x < 3U; x++) {
+			if ((row[columns[x]] & DISPLAY_OPAQUE) != DISPLAY_OPAQUE)
+				return 0;
+		}
+	}
+
+	/* Succeeded: the samples are opaque. */
+	return 1;
+}
+
+/*
  * Reports whether the plane can read a frame from the resource itself:
  * flipping is allowed, and the frame has the screen's extent, row pitch
  * and byte order at a place the plane's address word names.  The caller
@@ -1214,6 +1252,15 @@ can_flip(
 	if ((address & (DISPLAY_SCAN_ALIGNMENT - 1U)) != 0U)
 		return 0;
 	if (address + (uint64_t)request->stride * request->height - 1U > DISPLAY_SCAN_LIMIT)
+		return 0;
+
+	/*
+	 * The plane blends by the alpha byte, so a frame whose alpha is not
+	 * full would show through; such a frame is copied, which makes every
+	 * pixel opaque.  A few pixels (the corners and the centre) stand for
+	 * the frame.
+	 */
+	if (!frame_looks_opaque(resource, request))
 		return 0;
 
 	/* Succeeded: the frame can be flipped. */

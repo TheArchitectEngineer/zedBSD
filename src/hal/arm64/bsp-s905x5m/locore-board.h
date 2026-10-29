@@ -94,4 +94,21 @@ arm64_boot_stub_end:
 	ubfx \register, \register, #8, #8
 .endm
 
+/*
+ * Maps the second GiB of RAM (0x4000_0000..0x7fff_ffff) Normal WB into
+ * the boot's tables: the bootloader's framebuffer, which the HAL clears
+ * and draws on before the kernel's own tables are built, is at
+ * 0x7f80_0000.
+ */
+.macro arm64_board_boot_extra_ram
+	mov x3, #0x40000000
+	add x3, x3, #0x701
+	adrp x1, arm64_l1_low
+	add x1, x1, :lo12:arm64_l1_low
+	str x3, [x1, #8]
+	adrp x1, arm64_l1_high
+	add x1, x1, :lo12:arm64_l1_high
+	str x3, [x1, #8]
+.endm
+
 #endif

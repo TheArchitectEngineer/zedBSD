@@ -9,12 +9,14 @@
 # device tree, data.img and the swapfile; partition 2 (type 0xa5, after it)
 # is the UFS root the kernel's autoroot finds.
 #
-# The bootloader is not part of zedBSD.  With --bootloader-from, the
-# bootloader area of another card image (Hardkernel's own ODROID-C5 image)
-# is copied in: the MBR's boot code and the sectors from 1 up to that
-# image's first partition or 8 MiB, whichever is lower; this image's
-# partition table stays.  Without it the card has no bootloader and needs
-# one written separately.
+# The bootloader (Amlogic's signed stages and Hardkernel's U-Boot) is not
+# built by zedBSD.  With --bootloader-from, the bootloader area of another
+# card image (Hardkernel's own ODROID-C5 image, uncompressed) is copied in:
+# the MBR's boot code and the sectors from 1 up to that image's first
+# partition or 8 MiB, whichever is lower; this image's partition table
+# stays.  A donor with a GPT's protective MBR, or whose area is all zero,
+# is refused.  A card without a bootloader is made only with
+# --no-bootloader, and then needs one written separately.
 
 from __future__ import annotations
 
@@ -53,6 +55,9 @@ def donor_area_end(donor: bytes) -> int:
         entry = donor[MBR_TABLE + index * 16:MBR_TABLE + (index + 1) * 16]
         kind = entry[4]
         start = struct.unpack("<I", entry[8:12])[0]
+        if kind == 0xEE:
+            raise SystemExit("make-odroid-c5-hdd-image: the bootloader donor has a GPT "
+                             "(protective MBR); its bootloader area cannot be told apart")
         if kind != 0 and 0 < start < end:
             end = start
     return end
@@ -64,6 +69,9 @@ def build(args: argparse.Namespace) -> None:
         require_file(path)
     if args.ufs_root.stat().st_size % SECTOR:
         raise SystemExit("make-odroid-c5-hdd-image: the UFS root is not whole sectors")
+    if args.bootloader_from is None and not args.no_bootloader:
+        raise SystemExit("make-odroid-c5-hdd-image: no bootloader: give --bootloader-from "
+                         "(Hardkernel's ODROID-C5 image) or --no-bootloader")
     if args.output.exists() and not args.force:
         raise SystemExit(f"make-odroid-c5-hdd-image: output exists (use --force): {args.output}")
 
@@ -85,9 +93,18 @@ def build(args: argparse.Namespace) -> None:
             with args.bootloader_from.open("rb") as donor_file:
                 donor = donor_file.read(BOOTLOADER_END_LBA * SECTOR)
             end = donor_area_end(donor)
+            area = donor[SECTOR:end * SECTOR]
+            if not any(area):
+                raise SystemExit(f"make-odroid-c5-hdd-image: the bootloader area of "
+                                 f"{args.bootloader_from} is empty (all zero, or the file is compressed)")
             mbr[0:MBR_CODE_BYTES] = donor[0:MBR_CODE_BYTES]
             image.seek(SECTOR)
-            image.write(donor[SECTOR:end * SECTOR])
+            image.write(area)
+            print(f"make-odroid-c5-hdd-image: bootloader: {len(area)} bytes "
+                  f"(sectors 1-{end - 1}) from {args.bootloader_from}")
+        else:
+            print("make-odroid-c5-hdd-image: bootloader: none (--no-bootloader); "
+                  "the card does not boot until one is written")
 
         image.seek(0)
         image.write(mbr)
@@ -115,6 +132,7 @@ def main() -> None:
     parser.add_argument("--swapfile", type=Path, required=True)
     parser.add_argument("--ufs-root", type=Path, required=True)
     parser.add_argument("--bootloader-from", type=Path)
+    parser.add_argument("--no-bootloader", action="store_true")
     parser.add_argument("--force", action="store_true")
     parser.add_argument("output", type=Path)
     build(parser.parse_args())

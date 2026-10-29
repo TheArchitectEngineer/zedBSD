@@ -92,7 +92,7 @@ The kernel has no SMC call open to drivers (nothing in include/hal/hal.h or incl
 2. meson-mmc.c + s905x5m-mmc.c (SD, root fs). Host test with fake registers.
 3. s905x5m-ethernet.c (glue, MDIO mux, PHY reset GPIOH_9, RTL8211F hook) + the dw-eqos hook; check that VF2 and RPi5 still build with zero warnings.
 4. s905x5m-usb.c (PHY + virtual PCI function, 32-bit DMA, IRQ SPI 130 + polling).
-5. Replace s905x5m-stubs.c in platform/arm64/s905x5m.mk; Q1 deletes the file.
+5. Replace s905x5m-stubs.c in platform/arm64/s905x5m.mk; the file was removed with git rm on 2026-10-29.
 
 ## Checks for the serial session (once code exists)
 

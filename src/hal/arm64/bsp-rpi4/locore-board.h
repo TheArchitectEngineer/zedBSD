@@ -40,4 +40,12 @@
 	and \register, \register, #0xff
 .endm
 
+/*
+ * Maps RAM past the first GiB into the boot's tables, for a board whose
+ * early boot touches it; the Raspberry Pi's framebuffer is in the first
+ * GiB, so nothing more is mapped.
+ */
+.macro arm64_board_boot_extra_ram
+.endm
+
 #endif

@@ -21,6 +21,7 @@ desktop の image は Arm の CSF の firmware（`mali-csf-firmware`）を入れ
 cd /home/awe/zedBSD-claude1
 # text の console の image（GPU なし）
 make ZEDBSD_CONFIG=config/ci/config-odroid-c5.mk ODROID_C5_BOOTLOADER_FROM=/path/to/hardkernel-odroid-c5.img disk-image
+# （bootloader 無しの image は ODROID_C5_NO_BOOTLOADER=y を明示した時だけ作る。SD からは起動しない）
 # desktop の image（Mali の driver つき）
 make ZEDBSD_CONFIG=config/ci/config-odroid-c5-keiland.mk BUILD=build/odroid-c5-keiland ODROID_C5_BOOTLOADER_FROM=/path/to/hardkernel-odroid-c5.img disk-image
 # 書き込み（/dev/sdX は microSD。間違えると他の disk を壊す）
@@ -31,7 +32,9 @@ image の形: MBR、先頭 8 MiB は bootloader（Hardkernel の image から写
 
 ## 確かめる順と判定
 
-`plan/ws313/tests/c5-night-test.sh [--device /dev/ttyUSBn] [--plug ID]` が順に待ち、最後に stage ごとの PASS・FAIL・SKIP を出す（最初の FAIL で止まる）。
+`plan/ws313/tests/c5-night-test.sh [--device /dev/ttyUSBn] [--plug ID] [--gpu]` が login prompt まで読み、各 stage の行を全ての行の中で探し、次の stage が時間の内に来なければ終わる。最後に stage ごとの PASS・FAIL・MISSING・SKIP・NOTE を出す。
+U-Boot の 2 stage（1・2）は、silent の build の U-Boot では echo が出ないので、欠けても MISSING として先を待つ。login の後の命令は、出力の中身（`df /` に mmc、`lsusb` に HID、`ifconfig -a` に inet、`--gpu` の時 `Mali-G310`）で PASS・FAIL を決める。framebuffer の PASS は HAL が描いた事だけなので、画面は写真で確かめる。
+U-Boot の prompt（`odroidc5#`）から kernel の引数を足す時は `setenv zedbsd_extra_args cpus=1` の後に `run bootcmd`（boot.scr が bootargs に足す）。boot.scr は最初に `powershow` で電源の domain の状態を出し、`powerset 5 0`・`10 0`・`11 0` で USB・SD・Ethernet を入れる。
 
 | 順 | stage（UART の行） | 判定と、FAIL の時に見る所 |
 | --- | --- | --- |
@@ -42,13 +45,14 @@ image の形: MBR、先頭 8 MiB は bootloader（Hardkernel の image から写
 | 5 | `ODROID-C5 FRAMEBUFFER PASS` | HDMI に三色（左から赤・緑・青）の 3 秒の模様と白い枠。色の順が違えば format（a8r8g8b8）、何も出なければ U-Boot の `osd`・`vout` の命令（boot.cmd）。`framebuffer unavailable` は UART だけで進む（FAIL と記す） |
 | 6 | `ARM64 MEMORY MAP PASS` | memory の量（2 GiB の見込み、DTS の linux,usable-memory） |
 | 7 | `ARM64 IRQ READY`・`ARM64 SMP cpu 3 online` | GIC と PSCI の CPU_ON。止まれば `ARM64 SMP cpu N … did not come up` |
-| 8 | `login: ` | SD の driver（`s905x5m-…` の行）と root の mount。止まれば SD の行 |
+| 8 | `login: ` | SD の driver（`s905x5m-…` の行）と root の mount。止まれば SD の行。`s905x5m-usb: about to read the controller` の後で止まれば USB の電源の domain（U-Boot の `powershow` の出力の 5 番） |
 | 9 | login の後の命令 | `uname -a`、`df /`、`dmesg | grep s905x5m`、`lsusb`（keyboard・hub）、`ifconfig -a`（en0 の link と DHCP）、`dmesg | grep mali`（GPU_ID） |
-| 10 | desktop | keiland の image で HDMI に Keiland が出るか（写真） |
+| 10 | desktop | keiland の image で HDMI に Keiland が出るか（写真）。Valhall の compiler と Vulkan の executor（p010・p011）は今夜は初めての実機なので、出なくても GPU の行（`mali:` の GPU_ID・firmware・MCU・queue・self-test、[gpu.md](../gpu.md) §9）を判定にする |
 
 固まった時は、UART の log を取り直さず、board の状態を写真と UART の最後の行で Q1 に送る（QEMU ではないので gdbstub は無い）。
 
 ## script
 
 - `c5-night-test.sh`: 電源（SwitchBot の plug を名指した時）→ `c5-serial.py` → 要約。各 command に時間の上限。何も消さない。
-- `c5-serial.py`: 921600 baud の生きた line を stage ごとに待つ（`--scale` で時間を伸ばす）。`--login USER:PASSWORD`（既定は image の kei:kei）と `--commands`。
+- `c5-serial.py`: 921600 baud の生きた line を読む（`--scale` で時間を伸ばす）。`--login USER:PASSWORD`（既定は image の kei:kei）・`--commands`・`--gpu`（keiland の image）。
+  2026-10-29 P7 が pty の偽の board（正常・silent の U-Boot・中身の無い出力）で、summary が期待どおりになる事を確かめた（実機の line では未試験）。
