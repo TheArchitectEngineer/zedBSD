@@ -163,10 +163,12 @@ int nvrtx_vk_memory_cpu(void *owner, void *backing, uint8_t **cpu);
 /*
  * The executor's own GPU memory (programs, push buffers, texture and
  * sampler tables), provided by the node: a run of bytes the CPU writes at
- * *cpu and the GPU reads at *va, and its release once the session's runs
+ * *cpu and the GPU reads at *va (in VRAM through the window, or with
+ * nvrtx_vk_gpu_alloc_system() in coherent system memory), and its release once the session's runs
  * have ended.  The token names the run to the node.
  */
 int nvrtx_vk_gpu_alloc(void *owner, uint64_t bytes, void **token, uint8_t **cpu, uint64_t *va);
+int nvrtx_vk_gpu_alloc_system(void *owner, uint64_t bytes, void **token, uint8_t **cpu, uint64_t *va);
 void nvrtx_vk_gpu_free(void *owner, void *token);
 
 /*

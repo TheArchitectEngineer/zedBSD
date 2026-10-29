@@ -149,6 +149,17 @@ nvrtx_vk_gpu_alloc(void *owner, uint64_t bytes, void **token, uint8_t **cpu, uin
 	return ENOMEM;
 }
 
+int
+nvrtx_vk_gpu_alloc_system(void *owner, uint64_t bytes, void **token, uint8_t **cpu, uint64_t *va)
+{
+	(void)owner;
+	(void)bytes;
+	(void)token;
+	(void)cpu;
+	(void)va;
+	return ENOMEM;
+}
+
 void
 nvrtx_vk_gpu_free(void *owner, void *token)
 {

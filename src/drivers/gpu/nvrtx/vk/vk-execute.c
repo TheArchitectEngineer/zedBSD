@@ -425,8 +425,10 @@ execute_slot_make(
 	uint32_t index;
 	int error;
 
-	/* The run. */
-	error = nvrtx_vk_gpu_alloc(session->owner, EXECUTE_RUN_BYTES, &slot->token, &slot->cpu, &slot->va);
+	/* The run, in system memory the CPU writes through its cache (else in VRAM). */
+	error = nvrtx_vk_gpu_alloc_system(session->owner, EXECUTE_RUN_BYTES, &slot->token, &slot->cpu, &slot->va);
+	if (error != 0)
+		error = nvrtx_vk_gpu_alloc(session->owner, EXECUTE_RUN_BYTES, &slot->token, &slot->cpu, &slot->va);
 	if (error != 0) {
 		slot->token = NULL;
 		return error;

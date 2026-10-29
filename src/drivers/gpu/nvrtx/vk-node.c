@@ -61,11 +61,13 @@
 #define VK_NODE_GR_TOLD_MAX		4U
 
 /*
- * One run of the executor's own GPU memory: the VRAM and where the work
- * channel reads it.
+ * One run of the executor's own GPU memory: the VRAM, or the coherent
+ * system memory when system is set, and where the work channel reads it.
  */
 struct vk_node_run {
 	struct nvrtx_bo bo;
+	struct nvrtx_buffer pages;
+	bool system;
 	uint64_t va;
 };
 
@@ -257,6 +259,63 @@ nvrtx_vk_gpu_alloc(
 }
 
 /*
+ * Allocates a run of the executor's own GPU memory in coherent system
+ * memory: the CPU writes it through its cache, without the window's
+ * uncached writes, and the work channel reads it at *va (the push
+ * buffers, constants and tables the CPU writes for every submission).
+ */
+int
+nvrtx_vk_gpu_alloc_system(
+	void *owner,
+	uint64_t bytes,
+	void **token,
+	uint8_t **cpu,
+	uint64_t *va)
+{
+	struct nvrtx_session *session;
+	struct vk_node_run *run;
+	uint64_t *pages;
+	size_t count;
+	size_t index;
+	int error;
+
+	session = owner;
+	count = (size_t)((bytes + NVRTX_GSP_PAGE_SIZE - 1U) / NVRTX_GSP_PAGE_SIZE);
+
+	/* The record and the list of its pages. */
+	run = kern_calloc(1U, sizeof(*run));
+	if (run == NULL)
+		return ENOMEM;
+	pages = kern_malloc(count * sizeof(*pages));
+	if (pages == NULL) {
+		kern_free(run);
+		return ENOMEM;
+	}
+
+	/* The memory, page by page in the work channel's space. */
+	error = nvrtx_buffer_alloc(session->node->gpu, count * NVRTX_GSP_PAGE_SIZE, &run->pages);
+	if (error == 0) {
+		for (index = 0U; index < count; index++)
+			pages[index] = run->pages.dma.device_address + (uint64_t)index * NVRTX_GSP_PAGE_SIZE;
+		error = nvrtx_work_map_system(session->node->gpu, pages, count, &run->va);
+		if (error != 0)
+			nvrtx_buffer_free(session->node->gpu, &run->pages);
+	}
+	kern_free(pages);
+	if (error != 0) {
+		kern_free(run);
+		return error;
+	}
+
+	/* Succeeded: the run is the executor's. */
+	run->system = true;
+	*token = run;
+	*cpu = (uint8_t *)run->pages.dma.address;
+	*va = run->va;
+	return 0;
+}
+
+/*
  * Frees a run of the executor's own GPU memory once the session's runs,
  * which may read it, have ended; when they do not end, it is kept for good.
  */
@@ -283,16 +342,24 @@ nvrtx_vk_gpu_free(
 		return;
 	}
 
-	/* Unmaps it; a run that stays mapped keeps its VRAM, so nothing else is mapped over it. */
-	error = nvrtx_work_unmap(session->node->gpu, run->va, run->bo.size);
+	/* Unmaps it; a run that stays mapped keeps its memory, so nothing else is mapped over it. */
+	if (run->system) {
+		error = nvrtx_work_unmap(session->node->gpu, run->va, run->pages.dma.size);
+	} else {
+		error = nvrtx_work_unmap(session->node->gpu, run->va, run->bo.size);
+	}
 	if (error != 0) {
 		nvrtx_stage_mark("executor: an executor run at %llx stayed mapped (%d)", (unsigned long long)run->va, error);
 		kern_free(run);
 		return;
 	}
 
-	/* The VRAM and the record. */
-	nvrtx_bo_free(session->node->gpu, &run->bo);
+	/* The memory and the record. */
+	if (run->system) {
+		nvrtx_buffer_free(session->node->gpu, &run->pages);
+	} else {
+		nvrtx_bo_free(session->node->gpu, &run->bo);
+	}
 	kern_free(run);
 }
 
