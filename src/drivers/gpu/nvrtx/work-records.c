@@ -93,6 +93,27 @@ nvrtx_work_push_objects(
 	return at;
 }
 
+/*
+ * Writes the push buffer that binds the copy class to its subchannel (4).
+ *
+ * Returns the length in bytes.
+ */
+size_t
+nvrtx_work_push_copy_object(
+	uint8_t *push,
+	uint32_t copy_class)
+{
+	size_t at;
+
+	/* The copy class on its subchannel. */
+	at = work_method(push, 0U, NVRTX_WORK_SUBCHANNEL_COPY, WORK_SET_OBJECT, 1U);
+	nvrtx_put32(push, at, copy_class);
+	at += 4U;
+
+	/* Succeeded: the push buffer's length. */
+	return at;
+}
+
 /* Writes an incrementing method header for a subchannel and returns where its data goes. */
 static size_t
 work_method(

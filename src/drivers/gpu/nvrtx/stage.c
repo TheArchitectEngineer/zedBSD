@@ -102,6 +102,9 @@
 /* The whole token that makes the GPU device a renderer. */
 #define STAGE_VK_OFF_TOKEN		"nvrtx.vk=0"
 
+/* The whole token that asks for the video decoder's channel. */
+#define STAGE_VIDEO_TOKEN		"nvrtx.video=1"
+
 /*
  * The whole token that asks for the renderer's and the display's counts every
  * 5 s.
@@ -317,6 +320,24 @@ nvrtx_stage_work_wanted(void)
 		return true;
 
 	/* Without it the GPU device has no work channel. */
+	return false;
+}
+
+/*
+ * Reports whether the boot asked for the video decoder's channel
+ * (nvrtx.video=1), which the renderer's video decode runs on.
+ */
+bool
+nvrtx_stage_video_wanted(void)
+{
+	bool present;
+
+	/* Looks for nvrtx.video=1 among the boot parameters. */
+	present = stage_token_present(STAGE_VIDEO_TOKEN);
+	if (present)
+		return true;
+
+	/* Without it the GPU device decodes no video. */
 	return false;
 }
 

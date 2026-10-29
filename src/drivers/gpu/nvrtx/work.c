@@ -137,6 +137,7 @@ static int work_tables(struct nvrtx_gpu *gpu);
 static int work_space(struct nvrtx_gpu *gpu);
 static int work_channel(struct nvrtx_gpu *gpu);
 static int work_objects(struct nvrtx_gpu *gpu);
+static void work_copy_object(struct nvrtx_gpu *gpu);
 static int work_first(struct nvrtx_gpu *gpu);
 static int work_entries_write(struct nvrtx_gpu *gpu, uint64_t va, const uint8_t *entries, uint64_t pages);
 static int work_ring_wait(struct nvrtx_gpu *gpu, uint32_t entry);
@@ -260,12 +261,19 @@ nvrtx_work_stop(
 		work->scheduled = 0;
 	}
 
-	/* Frees the 3D object, then the compute object. */
+	/* Frees the 3D object, then the copy object, then the compute object. */
 	if (work->threed_made != 0) {
 		error = nvrtx_rm_free(gpu, NVRTX_HANDLE_WORK_THREED);
 		if (error != 0)
 			failures++;
 		work->threed_made = 0;
+	}
+
+	if (work->copy_made != 0) {
+		error = nvrtx_rm_free(gpu, NVRTX_HANDLE_WORK_COPY);
+		if (error != 0)
+			failures++;
+		work->copy_made = 0;
 	}
 
 	if (work->compute_made != 0) {
@@ -329,6 +337,18 @@ nvrtx_work_release(
 		nvrtx_bo_free(gpu, &work->arena);
 		work->arena_made = 0;
 	}
+}
+
+/*
+ * Reports the VRAM address of the work channel's page tables' root, which
+ * another channel in the same space names in its instance block.
+ */
+uint64_t
+nvrtx_work_root(
+	const struct nvrtx_gpu *gpu)
+{
+	/* Succeeded: the tables' first byte in the arena. */
+	return gpu->work.arena.vram + WORK_TABLES_AT;
 }
 
 /*
@@ -1080,6 +1100,9 @@ work_objects(
 
 	work->compute_made = 1;
 
+	/* The copy object on the copy engine of the graphics runlist, with the video decoder only. */
+	work_copy_object(gpu);
+
 	/* Binds the channel to the graphics engine. */
 	kern_memset(params, 0, sizeof(params));
 	nvrtx_put32(params, 0U, NVRTX_ENGINE_GRAPHICS);
@@ -1100,8 +1123,55 @@ work_objects(
 }
 
 /*
- * Runs the channel's first submission: both classes on their subchannels,
- * then its fence.
+ * Makes the copy object on the channel when the boot asks for the video
+ * decoder (nvrtx.video=1): the class of the copy engine that shares the
+ * graphics runlist, on which the executor's copies out of block-linear
+ * video images run.  A copy object the resource manager refuses leaves
+ * the channel without one (the decoder then has no way out to a buffer).
+ *
+ * Values referenced: NVIDIA open-gpu-kernel-modules 570.144
+ * src/common/sdk/nvidia/inc/class/clb0b5sw.h
+ * (NVB0B5_ALLOCATION_PARAMETERS: version, engineType).
+ */
+static void
+work_copy_object(
+	struct nvrtx_gpu *gpu)
+{
+	uint8_t params[NVRTX_COPY_PARAMS_BYTES];
+	uint32_t engine;
+	bool wanted;
+	int error;
+
+	/* Only with the video decoder. */
+	wanted = nvrtx_stage_video_wanted();
+	if (!wanted)
+		return;
+
+	/* A copy engine must share the graphics runlist. */
+	engine = gpu->engine.pick.graphics_copy;
+	if (engine == 0xffffffffU) {
+		nvrtx_stage_mark("work-channel: no copy engine on the graphics runlist; no copy object");
+		return;
+	}
+
+	/* The object, version 1, on that copy engine. */
+	kern_memset(params, 0, sizeof(params));
+	nvrtx_put32(params, 0U, 1U);
+	nvrtx_put32(params, 4U, engine);
+	error = nvrtx_rm_allocate(gpu, NVRTX_HANDLE_WORK_CHANNEL, NVRTX_HANDLE_WORK_COPY, gpu->identity.chip.profile->class_copy, params, sizeof(params));
+	if (error != 0) {
+		nvrtx_stage_mark("work-channel: the copy object on engine %x was refused (%d)", (unsigned)engine, error);
+		return;
+	}
+
+	/* The stop frees it before the compute object. */
+	gpu->work.copy_made = 1;
+	nvrtx_stage_mark("work-channel ok: copy object on engine %x", (unsigned)engine);
+}
+
+/*
+ * Runs the channel's first submission: both classes (and the copy class)
+ * on their subchannels, then its fence.
  */
 static int
 work_first(
@@ -1126,6 +1196,8 @@ work_first(
 	push = (uint8_t *)work->fences.dma.address + (size_t)(NVRTX_WORK_RING_ENTRIES - 1U) * NVRTX_WORK_FENCE_BYTES;
 	push_va = WORK_FENCES_VA + (uint64_t)(NVRTX_WORK_RING_ENTRIES - 1U) * NVRTX_WORK_FENCE_BYTES;
 	length = nvrtx_work_push_objects(push, gpu->identity.chip.profile->class_threed, gpu->identity.chip.profile->class_compute);
+	if (work->copy_made != 0)
+		length += nvrtx_work_push_copy_object(push + length, gpu->identity.chip.profile->class_copy);
 
 	/* Opens the channel to submissions; the semaphore starts at 0. */
 	kern_memset(work->semaphore.dma.address, 0, NVRTX_GSP_PAGE_SIZE);

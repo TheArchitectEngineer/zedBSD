@@ -433,6 +433,13 @@ bool
 nvrtx_stage_work_wanted(void);
 
 /*
+ * Reports whether the boot asked for the video decoder's channel
+ * (nvrtx.video=1).
+ */
+bool
+nvrtx_stage_video_wanted(void);
+
+/*
  * Reports whether the GPU device is also a renderer (the default; nvrtx.vk=0
  * turns it off).
  */

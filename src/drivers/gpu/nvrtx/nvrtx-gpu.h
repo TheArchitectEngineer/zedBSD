@@ -27,6 +27,8 @@
 #include "drivers/gpu/nvrtx/nvrtx-private.h"
 #include "drivers/gpu/nvrtx/nvrtx-work.h"
 
+struct nvrtx_nvdec_state;
+
 struct nvrtx_node;
 
 /* The firmware directory the GSP files are read from; a chip's files are named by its profile below it. */
@@ -115,13 +117,14 @@ struct nvrtx_node;
 
 /*
  * The work channel's objects (work-channel): its address space
- * (owned by the driver), its graphics channel (chid 4) and the 3D and
- * compute objects on it, in the same families.
+ * (owned by the driver), its graphics channel (chid 4) and the 3D, compute
+ * and copy objects on it, in the same families.
  */
 #define NVRTX_HANDLE_WORK_SPACE		0x90f10004U
 #define NVRTX_HANDLE_WORK_CHANNEL	0xf1f00004U
 #define NVRTX_HANDLE_WORK_THREED	0x97000004U
 #define NVRTX_HANDLE_WORK_COMPUTE	0xc5c00004U
+#define NVRTX_HANDLE_WORK_COPY		0xc5b50004U
 
 /*
  * The first draw's place in the compute launch's range: its system-memory
@@ -376,6 +379,8 @@ struct nvrtx_work_state {
 	int channel_made;
 	int threed_made;
 	int compute_made;
+	/* Set when the channel has a copy object on its subchannel 4 (made only with the video decoder, nvrtx.video=1). */
+	int copy_made;
 	int scheduled;
 	int ready;
 	int timed;
@@ -646,6 +651,9 @@ struct nvrtx_gpu {
 	/* The work channel the GPU device keeps (work-channel). */
 	struct nvrtx_work_state work;
 
+	/* The video decoder's channel (nvdec-channel, nvdec.c), NULL until it is begun. */
+	struct nvrtx_nvdec_state *nvdec;
+
 	/* The VRAM allocator and the BAR1 window. */
 	struct nvrtx_memory_state memory_state;
 
@@ -775,6 +783,7 @@ void nvrtx_work_release(struct nvrtx_gpu *gpu);
 int nvrtx_work_map_vram(struct nvrtx_gpu *gpu, uint64_t physical, uint64_t size, uint64_t *va);
 int nvrtx_work_map_system(struct nvrtx_gpu *gpu, const uint64_t *pages, size_t count, uint64_t *va);
 int nvrtx_work_unmap(struct nvrtx_gpu *gpu, uint64_t va, uint64_t size);
+uint64_t nvrtx_work_root(const struct nvrtx_gpu *gpu);
 int nvrtx_work_submit(struct nvrtx_gpu *gpu, uint64_t push_va, size_t length, uint32_t *fence);
 int nvrtx_work_wait(struct nvrtx_gpu *gpu, uint32_t fence, uint32_t timeout_us);
 int nvrtx_work_wait_late(struct nvrtx_gpu *gpu, uint32_t fence, uint32_t timeout_us, uint32_t quiet_us);
