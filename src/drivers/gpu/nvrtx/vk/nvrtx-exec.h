@@ -136,6 +136,30 @@ size_t nvrtx_exec_uniform(uint8_t *push, size_t at, uint32_t group, uint32_t slo
 size_t nvrtx_exec_clear(uint8_t *push, size_t at, const uint32_t *colour, uint32_t x0, uint32_t y0, uint32_t x1, uint32_t y1);
 size_t nvrtx_exec_clear_depth(uint8_t *push, size_t at, uint32_t depth, uint32_t x0, uint32_t y0, uint32_t x1, uint32_t y1);
 size_t nvrtx_exec_barrier(uint8_t *push, size_t at);
+
+/*
+ * One region of a block-linear plane (blocks two GOBs high) copied out to
+ * a buffer by the copy engine: the plane's first byte, its bytes a row
+ * and its rows, the region's origin in bytes across and rows down, the
+ * region's first byte in the buffer and the buffer's row pitch, and the
+ * region's bytes a row and rows.
+ */
+struct nvrtx_exec_plane_copy {
+	uint64_t source;
+	uint32_t source_pitch;
+	uint32_t source_rows;
+	uint32_t x_bytes;
+	uint32_t y;
+	uint64_t destination;
+	uint32_t destination_pitch;
+	uint32_t line_bytes;
+	uint32_t lines;
+};
+
+/* The push buffer bytes one plane copy takes at most. */
+#define NVRTX_EXEC_PLANE_COPY_BYTES	96U
+
+size_t nvrtx_exec_copy_plane(uint8_t *push, size_t at, const struct nvrtx_exec_plane_copy *copy);
 void nvrtx_exec_texture_header(uint32_t *header, uint64_t address, uint32_t width, uint32_t height, uint32_t pitch, uint32_t format, const uint32_t *swizzle);
 void nvrtx_exec_texture_header_tiled(uint32_t *header, uint64_t address, uint32_t width, uint32_t height, uint32_t levels, uint32_t base_level, uint32_t level_count, uint32_t format, const uint32_t *swizzle);
 void nvrtx_exec_sampler_words(uint32_t *words, const struct nvrtx_exec_sampler *sampler);

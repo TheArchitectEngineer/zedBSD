@@ -32,6 +32,7 @@
 #include <uapi/errno.h>
 
 #include "drivers/gpu/nvrtx/nvrtx-node.h"
+#include "drivers/gpu/nvrtx/nvrtx-nvdec.h"
 #include "drivers/gpu/nvrtx/vk/nvrtx-vk.h"
 
 /* How long a push buffer may run before the executor calls the GPU lost. */
@@ -792,4 +793,79 @@ vk_node_backing_drop(
 
 	/* The record. */
 	kern_free(backing);
+}
+
+/*
+ * Reports whether the node's GPU decodes video: its decoder takes
+ * pictures and the work channel has the copy object its pictures are read
+ * out with.
+ */
+bool
+nvrtx_node_video_available(
+	struct nvrtx_node *node)
+{
+	bool ready;
+
+	/* The decoder's channel runs. */
+	ready = nvrtx_nvdec_ready(node->gpu);
+	if (!ready)
+		return false;
+
+	/* The copy object reads the pictures out. */
+	if (node->gpu->work.copy_made == 0)
+		return false;
+
+	/* Succeeded: the GPU decodes video. */
+	return true;
+}
+
+/* Reports whether the session's GPU decodes video (nvrtx_node_video_available()). */
+bool
+nvrtx_vk_video_available(
+	void *owner)
+{
+	struct nvrtx_session *session;
+	bool available;
+
+	session = owner;
+
+	/* The node's answer. */
+	available = nvrtx_node_video_available(session->node);
+	if (!available)
+		return false;
+
+	/* Succeeded: the GPU decodes video. */
+	return true;
+}
+
+/*
+ * Runs a decoder push buffer for a session and waits for it.  A session
+ * whose runs are lost decodes nothing; a decoder that does not finish
+ * loses the session's runs (and is taken out of use by the decoder's
+ * channel).  Returns EIO for both.
+ */
+int
+nvrtx_vk_video_decode(
+	void *owner,
+	uint64_t va,
+	uint32_t bytes)
+{
+	struct nvrtx_session *session;
+	int error;
+
+	session = owner;
+
+	/* A session whose run did not end puts nothing more on the GPU. */
+	if (__atomic_load_n(&session->run_lost, __ATOMIC_ACQUIRE) != 0)
+		return EIO;
+
+	/* The decoder runs the push buffer and is waited for. */
+	error = nvrtx_nvdec_run(session->node->gpu, va, bytes, NVRTX_NODE_DECODE_US);
+	if (error == ETIMEDOUT)
+		__atomic_store_n(&session->run_lost, 1, __ATOMIC_RELEASE);
+	if (error != 0)
+		return EIO;
+
+	/* Succeeded: the decoder has finished the picture. */
+	return 0;
 }

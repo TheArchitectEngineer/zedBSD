@@ -404,6 +404,8 @@ memory_bind_to(
 		place = &picture->offset;
 		if (picture->depth || picture->tiled)
 			align = NVRTX_VK_GOB_BYTES;
+		if (picture->video)
+			align = NVRTX_VK_VIDEO_ALIGN;
 	} else {
 		buffer = nvrtx_vk_payload(session, I915_VK_OBJ_BUFFER, resource);
 		if (buffer == NULL)
@@ -473,6 +475,8 @@ memory_requirements(
 			bytes = picture->bytes;
 		if (picture != NULL && (picture->depth || picture->tiled))
 			align = NVRTX_VK_GOB_BYTES;
+		if (picture != NULL && picture->video)
+			align = NVRTX_VK_VIDEO_ALIGN;
 	} else {
 		buffer = nvrtx_vk_payload(session, I915_VK_OBJ_BUFFER, resource);
 		if (buffer != NULL)

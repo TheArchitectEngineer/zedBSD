@@ -58,6 +58,17 @@
 /* The flags: opaque sharing, strict queues, checked quiescence (the profile libvulkan pairs with). */
 #define RUNTIME_VENDOR_FLAGS		7U
 
+/*
+ * The native record after the vendor suffix, sent when the device decodes
+ * video and the reply holds it: the capset's bytes with it, its tag and
+ * its flags (bit 0: an H.264 decode family), as libvulkan reads them.
+ */
+#define RUNTIME_NATIVE_CAPSET_BYTES	176U
+#define RUNTIME_NATIVE_MAGIC_AT		168U
+#define RUNTIME_NATIVE_FLAGS_AT		172U
+#define RUNTIME_NATIVE_MAGIC		0x5a4e4154U
+#define RUNTIME_NATIVE_VIDEO_H264	0x1U
+
 /* The timelines a queue may name (1 to 63; 0 is the context's own). */
 #define RUNTIME_TIMELINES		64U
 
@@ -206,8 +217,12 @@ runtime_capset(
 	void *session,
 	struct gpu_capset *capset)
 {
-	UNUSED_PARAMETER(private_data);
+	struct nvrtx_node *node;
+	bool video;
+
 	UNUSED_PARAMETER(session);
+
+	node = private_data;
 
 	/* Only the protocol's capset, version 0, in a reply that holds it. */
 	if (capset->capset_id != RUNTIME_CAPSET_ID || capset->capset_version != 0U)
@@ -223,6 +238,14 @@ runtime_capset(
 	nvrtx_put32(capset->data, RUNTIME_CAPSET_MAGIC_AT, RUNTIME_VENDOR_MAGIC);
 	nvrtx_put32(capset->data, RUNTIME_CAPSET_FLAGS_AT, RUNTIME_VENDOR_FLAGS);
 	capset->bytes = RUNTIME_CAPSET_BYTES;
+
+	/* The native record promises the video decode family, when there is one and the reply holds it. */
+	video = nvrtx_node_video_available(node);
+	if (video && capset->capacity >= RUNTIME_NATIVE_CAPSET_BYTES) {
+		nvrtx_put32(capset->data, RUNTIME_NATIVE_MAGIC_AT, RUNTIME_NATIVE_MAGIC);
+		nvrtx_put32(capset->data, RUNTIME_NATIVE_FLAGS_AT, RUNTIME_NATIVE_VIDEO_H264);
+		capset->bytes = RUNTIME_NATIVE_CAPSET_BYTES;
+	}
 
 	/* Succeeded: the capset is reported. */
 	return 0;

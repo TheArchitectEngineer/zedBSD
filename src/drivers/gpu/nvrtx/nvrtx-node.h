@@ -44,6 +44,9 @@ struct nvrtx_vk_session;
 /* The markers of supervised jobs the renderer holds at once (runtime.c). */
 #define NVRTX_NODE_MARKERS		64U
 
+/* How long a video decoder's picture is waited for (vk-node.c). */
+#define NVRTX_NODE_DECODE_US		2000000U
+
 /* Where a queue entry is: free (a marker), reserved, queued, being run. */
 #define NVRTX_ENTRY_FREE		0U
 #define NVRTX_ENTRY_RESERVED		1U
@@ -357,5 +360,6 @@ void nvrtx_node_backing_put(struct nvrtx_node *node, struct nvrtx_backing *backi
 int nvrtx_node_backing_cpu(struct nvrtx_node *node, struct nvrtx_backing *backing, volatile uint8_t **cpu);
 uint32_t nvrtx_node_resource_id(struct nvrtx_node *node);
 void nvrtx_node_blob_listed(struct nvrtx_node *node, struct nvrtx_session *session, struct nvrtx_resource *resource, uint32_t resource_id);
+bool nvrtx_node_video_available(struct nvrtx_node *node);
 
 #endif

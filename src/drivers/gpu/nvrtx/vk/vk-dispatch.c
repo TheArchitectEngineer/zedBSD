@@ -39,7 +39,8 @@ static const nvrtx_vk_route dispatch_routes[] = {
 	nvrtx_vk_pipeline_route,
 	nvrtx_vk_command_route,
 	nvrtx_vk_record_route,
-	nvrtx_vk_queue_route
+	nvrtx_vk_queue_route,
+	nvrtx_vk_video_route
 };
 
 /*
