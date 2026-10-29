@@ -59,8 +59,12 @@ enum tcp_state {
  * of the speed).  The window counts only the receive queue's free slots,
  * so the queue and the segments kept ahead stay within about one window
  * of packets together.  The 32-bit boards keep a few (tcp.c).
+ * CONFIG_TCP_REORDER_MAX sets another (a build that measures longer round
+ * trips, with CONFIG_TCP_RECEIVE_PACKETS).
  */
-#if defined(HAL_ARCH_AMD64) || defined(HAL_ARCH_ARM64) || \
+#if defined(CONFIG_TCP_REORDER_MAX)
+#define TCP_REORDER_MAX ((unsigned)CONFIG_TCP_REORDER_MAX)
+#elif defined(HAL_ARCH_AMD64) || defined(HAL_ARCH_ARM64) || \
     defined(HAL_ARCH_RISCV64)
 #define TCP_REORDER_MAX 128U
 #else
@@ -194,6 +198,21 @@ struct tcp_socket {
 	uint32_t cwnd;
 	uint32_t ssthresh;
 	uint32_t cwnd_acked;
+	/*
+	 * Whether the congestion window is what limits the sending (RFC 7661),
+	 * measured over rounds: a round ends when the acknowledgements reach
+	 * cwnd_round_end, the end of what was sent when it began.
+	 * cwnd_round_flight is the most sent and not acknowledged (the bytes
+	 * handed to the device, not those queued behind them) within the
+	 * round, cwnd_prev_flight that of the round before; cwnd_blocked says
+	 * the window held back a queued segment within the round (a write it
+	 * refuses has the flight within a segment of it already).  The window
+	 * grows only while a round uses it.
+	 */
+	uint32_t cwnd_round_end;
+	uint32_t cwnd_round_flight;
+	uint32_t cwnd_prev_flight;
+	unsigned cwnd_blocked;
 	/*
 	 * Delayed acknowledgements (RFC 1122 4.2.3.2, RFC 5681 4.2): the
 	 * in-order segments received since this end last sent anything, which
