@@ -4,7 +4,7 @@
 
 Status: planning
 Primary Milestone: MG008
-Resume point: p001（調べと設計）。担当は P7（q1675）。
+Resume point: p001 の design-reviewer、p003 の媒体と試験の script。配下 A（MMC・USB・Ethernet）と B（GPU・display）が実装中。担当は P7（q1675）。
 
 ## ユーザーの指示（原文、2026-10-29）
 
@@ -36,10 +36,21 @@ Resume point: p001（調べと設計）。担当は P7（q1675）。
 - HAL は既存の口で足りる見込み。HAL を変える必要があると主張する時は AGENTS.md §7 のとおり理由を具体的に。
 - 出典: Linux（GPL）の meson・panfrost・stmmac の driver と Mesa の panfrost/panvk は値・表を block ごとの出典で使えるが、code・comment・構造は写さない（guardrail）。
 
-## Phase（案、p001 で確定）
+## Phase（p001 の設計、[design.md](design.md) §5）
+
+実機なしで揃える。実装の Phase は「実装済み・実機未試験」と記録し、cleared にしない（ユーザーの指示、2026-10-29）。
 
 | Phase | 目的 | 状態 | 依存 |
 | --- | --- | --- | --- |
-| p001 | 調べと設計（S905X5M と ODROID-C5 の資料、起動の道、console、各 block の register と出典、GPU の世代の確かめ、実機の準備（UART・電源・媒体）、Phase の表） | planning | — |
-| p002〜 | 実装（p001 で分割: 起動と console → 割り込み・timer・SMP → MMC → USB → Ethernet → display → GPU → desktop） | planning | p001 |
-| 最後 | 規約の全文の見直し | planning | 全て |
+| [p001](phase001/phase.md) | 調べと設計 | in-progress（design-reviewer 待ち） | — |
+| p002 | HAL の BSP（起動・UART・FDT・GIC・timer・PSCI）と build の配線・config | in-progress（build 通る、実機未試験） | p001 |
+| p003 | 媒体（DTB・boot.scr・SD の image）と夜の試験の手順・script | planned | p002 |
+| p004 | SD（meson の MMC）と root | in-progress（配下 A） | p002 |
+| p005 | USB（PHY・CRG の xHCI） | in-progress（配下 A） | p002 |
+| p006 | Ethernet（EQoS・RGMII の PHY） | in-progress（配下 A） | p002 |
+| p007 | display（U-Boot の mode の OSD1） | in-progress（配下 B） | p002 |
+| p008 | GPU（Mali-G310）と Vulkan の device | in-progress（配下 B） | p002 |
+| p009 | desktop（Keiland の config） | planned | p007・p008 |
+| 最後 | 規約の全文の見直し | planned | 全て |
+
+Audio（line-out）は desktop の表示の受け入れに要らないので Future Work の案（Q1 へ）。
