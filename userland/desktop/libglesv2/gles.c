@@ -2462,7 +2462,8 @@ gles_version_three(
 
 /*
  * Reports whether a context offers OpenGL ES 3.1's compute (ws101-p009):
- * an OpenGL ES 3 context (not libGL's desktop GL) of OpenGL ES 3.0, whose
+ * an OpenGL ES 3 context of OpenGL ES 3.0 (or libGL's desktop GL of 4.3
+ * on, whose GLSL 4.30 has compute shaders), whose
  * queue runs compute, on a device whose limits are at least OpenGL ES
  * 3.1's minimums (workgroups, shared memory, four storage buffers a
  * stage, 2^27 bytes of a storage buffer).
@@ -2474,13 +2475,21 @@ gles_compute_offered(
 {
 	VkQueueFamilyProperties *families;
 	uint32_t count;
+	unsigned glsl_latest;
 	int compute;
 
-	/* An OpenGL ES 3 context of OpenGL ES 3.0 (the device's feature gles_version_three asks for; the state is being made), not desktop GL's. */
-	if (!context->display->features.vertexPipelineStoresAndAtomics ||
-	    gles_fixed != NULL ||
-	    context->version < 3)
+	/*
+	 * An OpenGL ES 3 context of OpenGL ES 3.0 (the device's feature
+	 * gles_version_three asks for; the state is being made), or desktop
+	 * GL's (libGL) of a version whose GLSL has compute shaders (4.30, 4.3).
+	 */
+	if (!context->display->features.vertexPipelineStoresAndAtomics || context->version < 3)
 		return 0;
+	if (gles_fixed != NULL) {
+		glsl_latest = gles_fixed->glsl_version();
+		if (glsl_latest < 430U)
+			return 0;
+	}
 
 	/* OpenGL ES 3.1's minimums of the compute limits. */
 	if (limits->maxComputeWorkGroupInvocations < 128U ||

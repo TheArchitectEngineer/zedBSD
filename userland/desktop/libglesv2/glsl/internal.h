@@ -686,7 +686,9 @@ struct glsl_builtin {
 
 /*
  * OpenGL ES 3.10 (ws101-p008): a 3.10 shader's version mask has both
- * GLSL_IN_ES300 and this bit, so it has everything 3.00 has.
+ * GLSL_IN_ES300 and this bit, so it has everything 3.00 has.  A desktop
+ * 4.30 shader's mask has this bit too: the compute shaders and shader
+ * storage blocks it stands for are 4.30's as well.
  */
 #define GLSL_IN_ES310		0x200U
 

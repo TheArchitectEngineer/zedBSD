@@ -290,6 +290,10 @@ glsl_version_mask(
 	if (shader->es)
 		return GLSL_IN_ES100;
 
+	/* Desktop 4.30 on: everything of 4.00, with OpenGL ES 3.10's compute shaders and shader storage blocks. */
+	if (shader->version >= GLSL_VERSION_430)
+		return GLSL_IN_330 | GLSL_IN_400 | GLSL_IN_TESS | GLSL_IN_ES310;
+
 	/* Desktop 4.00 on: everything of 3.30, with tessellation. */
 	if (shader->version >= GLSL_VERSION_400)
 		return GLSL_IN_330 | GLSL_IN_400 | GLSL_IN_TESS;

@@ -14,7 +14,8 @@ LIBGL_GLSL_SOURCES := userland/desktop/libglesv2/glsl/arena.c userland/desktop/l
 LIBGL_SOURCES := userland/desktop/libGL/context.c userland/desktop/libGL/fixed.c userland/desktop/libGL/immediate.c userland/desktop/libGL/gl3.c userland/desktop/libGL/gl33.c \
 	userland/desktop/libglesv2/gles.c userland/desktop/libglesv2/buffer.c userland/desktop/libglesv2/texture.c \
 	userland/desktop/libglesv2/spirv.c userland/desktop/libglesv2/program.c userland/desktop/libglesv2/draw.c \
-	userland/desktop/libglesv2/framebuffer.c userland/desktop/libglesv2/format.c userland/desktop/libglesv2/pixels.c userland/desktop/libglesv2/query.c userland/desktop/libglesv2/feedback.c $(LIBGL_GLSL_SOURCES)
+	userland/desktop/libglesv2/framebuffer.c userland/desktop/libglesv2/format.c userland/desktop/libglesv2/pixels.c userland/desktop/libglesv2/query.c userland/desktop/libglesv2/feedback.c \
+	userland/desktop/libglesv2/compute.c $(LIBGL_GLSL_SOURCES)
 
 # The public SONAME follows the standard spelling.
 LIBGL_IMAGE_DATA := $(if $(ZEDBSD_TOPLEVEL_BUILD),/lib/libGL.so=$(BUILD)/dynamic/libGL.so)

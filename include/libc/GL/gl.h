@@ -431,6 +431,22 @@ GLAPI void APIENTRY glVertexAttribP4uiv(GLuint index, GLenum type, GLboolean nor
 GLAPI void APIENTRY glPatchParameteri(GLenum pname, GLint value);
 GLAPI void APIENTRY glPatchParameterfv(GLenum pname, const GLfloat *values);
 
+/* OpenGL 4.3's compute shaders and shader storage buffers (contexts of 4.3 on; the constants are OpenGL ES 3.1's). */
+#define GL_COMPUTE_SHADER		0x91B9
+#define GL_SHADER_STORAGE_BUFFER	0x90D2
+#define GL_SHADER_STORAGE_BUFFER_BINDING 0x90D3
+#define GL_DISPATCH_INDIRECT_BUFFER	0x90EE
+#define GL_COMPUTE_WORK_GROUP_SIZE	0x8267
+#define GL_MAX_COMPUTE_WORK_GROUP_COUNT	0x91BE
+#define GL_MAX_COMPUTE_WORK_GROUP_SIZE	0x91BF
+#define GL_MAX_COMPUTE_WORK_GROUP_INVOCATIONS 0x90EB
+#define GL_MAX_SHADER_STORAGE_BUFFER_BINDINGS 0x90DD
+#define GL_SHADER_STORAGE_BARRIER_BIT	0x00002000
+#define GL_ALL_BARRIER_BITS		0xFFFFFFFF
+GLAPI void APIENTRY glDispatchCompute(GLuint num_groups_x, GLuint num_groups_y, GLuint num_groups_z);
+GLAPI void APIENTRY glDispatchComputeIndirect(GLintptr indirect);
+GLAPI void APIENTRY glMemoryBarrier(GLbitfield barriers);
+
 #ifdef __cplusplus
 }
 #endif

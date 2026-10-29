@@ -96,6 +96,8 @@
 		glDisableClientState;
 		glDisableVertexAttribArray;
 		glDisablei;
+		glDispatchCompute;
+		glDispatchComputeIndirect;
 		glDrawArrays;
 		glDrawArraysInstanced;
 		glDrawBuffer;
@@ -237,6 +239,7 @@
 		glMateriali;
 		glMaterialiv;
 		glMatrixMode;
+		glMemoryBarrier;
 		glMultMatrixd;
 		glMultMatrixf;
 		glNewList;

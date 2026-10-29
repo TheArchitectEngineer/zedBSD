@@ -1,0 +1,6 @@
+#version 330
+// expect: error: compute shaders need GLSL 4.30 or OpenGL ES 3.10
+layout(local_size_x = 1) in;
+void main()
+{
+}

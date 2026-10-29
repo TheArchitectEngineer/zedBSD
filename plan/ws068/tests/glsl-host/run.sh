@@ -34,6 +34,7 @@ version_of() {
 	*300*|*es300*) echo 300;;
 	*330*) echo 330;;
 	*400*) echo 400;;
+	*430*) echo 430;;
 	*140*) echo 140;;
 	*150*) echo 150;;
 	*120*) echo 120;;
@@ -43,15 +44,15 @@ version_of() {
 }
 
 # 1. Every pass shader compiles.
-for f in "$here"/pass/*.vert "$here"/pass/*.frag "$here"/pass/*.geom "$here"/pass/*.tesc "$here"/pass/*.tese; do
-	stage=vert; case $f in *.frag) stage=frag;; *.geom) stage=geom;; *.tesc) stage=tesc;; *.tese) stage=tese;; esac
+for f in "$here"/pass/*.vert "$here"/pass/*.frag "$here"/pass/*.geom "$here"/pass/*.tesc "$here"/pass/*.tese "$here"/pass/*.comp; do
+	stage=vert; case $f in *.frag) stage=frag;; *.geom) stage=geom;; *.tesc) stage=tesc;; *.tese) stage=tese;; *.comp) stage=comp;; esac
 	"$out/glsl-test" compile $stage "$f" "$(version_of "$f")" > "$out/compile.txt" 2>&1 || { cat "$out/compile.txt"; fail "compile $f"; }
 done
 echo "compile: done"
 
 # 2. Every fail shader fails as it expects.
 for f in "$here"/fail/*; do
-	stage=vert; case $f in *.frag) stage=frag;; *.geom) stage=geom;; *.tesc) stage=tesc;; *.tese) stage=tese;; esac
+	stage=vert; case $f in *.frag) stage=frag;; *.geom) stage=geom;; *.tesc) stage=tesc;; *.tese) stage=tese;; *.comp) stage=comp;; esac
 	"$out/glsl-test" expect $stage "$f" 100 > "$out/expect.txt" 2>&1 || { cat "$out/expect.txt"; fail "expect $f"; }
 done
 echo "expect: done"

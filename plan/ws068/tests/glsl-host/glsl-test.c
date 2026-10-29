@@ -8,7 +8,7 @@
 /*
  * ws068-p016..p018: runs zedBSD's GLSL compiler on the host.
  *
- *   glsl-test compile vert|frag|geom|tesc|tese FILE [DEFAULT_VERSION]
+ *   glsl-test compile vert|frag|geom|tesc|tese|comp FILE [DEFAULT_VERSION]
  *       compiles one shader and prints "compiled" or the info log
  *   glsl-test expect vert|frag FILE [DEFAULT_VERSION]
  *       compiles a shader that must fail, and checks the log against the
@@ -126,6 +126,9 @@ test_stage(
 	differs = strcmp(name, "geom");
 	if (differs == 0)
 		return GLSL_STAGE_GEOMETRY;
+	differs = strcmp(name, "comp");
+	if (differs == 0)
+		return GLSL_STAGE_COMPUTE;
 	differs = strcmp(name, "tesc");
 	if (differs == 0)
 		return GLSL_STAGE_TESS_CONTROL;

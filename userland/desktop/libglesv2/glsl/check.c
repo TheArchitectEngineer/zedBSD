@@ -136,8 +136,14 @@ glsl_check(
 	struct glsl_function *function;
 	unsigned mask;
 
-	/* A tessellation shader needs GLSL 4.00 or GL_ARB_tessellation_shader. */
+	/* A compute shader needs GLSL 4.30 or OpenGL ES 3.10. */
 	mask = glsl_version_mask(shader);
+	if (shader->stage == GLSL_STAGE_COMPUTE && (mask & GLSL_IN_ES310) == 0U) {
+		glsl_error(shader, 0U, "compute shaders need GLSL 4.30 or OpenGL ES 3.10");
+		return;
+	}
+
+	/* A tessellation shader needs GLSL 4.00 or GL_ARB_tessellation_shader. */
 	if ((shader->stage == GLSL_STAGE_TESS_CONTROL || shader->stage == GLSL_STAGE_TESS_EVALUATION) && (mask & GLSL_IN_TESS) == 0U) {
 		glsl_error(shader, 0U, "tessellation shaders need GLSL 4.00 or GL_ARB_tessellation_shader");
 		return;
@@ -3717,11 +3723,11 @@ check_storage_block(
 	unsigned index;
 	int allowed;
 
-	/* OpenGL ES 3.10's, in a compute shader. */
+	/* OpenGL ES 3.10's and desktop 4.30's, in a compute shader. */
 	type_node = node->child[0];
-	allowed = glsl_since(shader, 0U, GLSL_VERSION_ES310);
+	allowed = glsl_since(shader, GLSL_VERSION_430, GLSL_VERSION_ES310);
 	if (!allowed) {
-		glsl_error(shader, node->line, "buffer blocks need OpenGL ES 3.10");
+		glsl_error(shader, node->line, "buffer blocks need GLSL 4.30 or OpenGL ES 3.10");
 		return;
 	}
 	if (shader->stage != GLSL_STAGE_COMPUTE) {
