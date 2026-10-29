@@ -131,7 +131,9 @@ checksum_add(
 {
 	const uintptr_t *words;
 	uint64_t wide;
+	uint64_t wide2;
 	uintptr_t word;
+	uintptr_t word2;
 	uint32_t folded;
 
 	/* The leading words, two bytes at a time, until a machine word is aligned; an odd address all the way. */
@@ -141,10 +143,36 @@ checksum_add(
 		length -= 2;
 	}
 
-	/* The aligned machine words, their 32-bit halves added into 64 bits, which cannot overflow here. */
+	/*
+	 * The aligned machine words, their 32-bit halves added into 64 bits,
+	 * which cannot overflow here.  Four words a step go into two sums, so
+	 * that the additions of one step do not each wait for the one before.
+	 */
 	if (length >= sizeof(uintptr_t)) {
 		wide = 0;
+		wide2 = 0;
 		words = (const uintptr_t *)(const void *)data;
+		while (length >= 4U * sizeof(uintptr_t)) {
+			word = words[0];
+			word2 = words[1];
+			wide += (uint32_t)word;
+			wide2 += (uint32_t)word2;
+#if UINTPTR_MAX > 0xffffffffU
+			wide += (uint32_t)((uint64_t)word >> 32);
+			wide2 += (uint32_t)((uint64_t)word2 >> 32);
+#endif
+			word = words[2];
+			word2 = words[3];
+			wide += (uint32_t)word;
+			wide2 += (uint32_t)word2;
+#if UINTPTR_MAX > 0xffffffffU
+			wide += (uint32_t)((uint64_t)word >> 32);
+			wide2 += (uint32_t)((uint64_t)word2 >> 32);
+#endif
+			words += 4;
+			length -= 4U * sizeof(uintptr_t);
+		}
+		wide += wide2;
 		while (length >= sizeof(uintptr_t)) {
 			word = *words;
 			wide += (uint32_t)word;
