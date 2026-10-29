@@ -710,6 +710,12 @@ struct glsl_builtin {
 /* Per-sample shading's built-ins: 4.00 on, or 1.50 and 3.30 with GL_ARB_sample_shading. */
 #define GLSL_IN_SAMPLE		0x1000U
 
+/* textureGather and textureGatherOffset: 4.00 on, or 1.30 to 3.30 with GL_ARB_texture_gather. */
+#define GLSL_IN_GATHER		0x2000U
+
+/* The cube map array samplers and their lookups: 4.00 on, or 1.30 to 3.30 with GL_ARB_texture_cube_map_array. */
+#define GLSL_IN_CUBE_ARRAY	0x4000U
+
 /* The versions that share a feature. */
 #define GLSL_IN_ALL		0x1efU
 #define GLSL_IN_DESKTOP		0x0eeU
@@ -774,6 +780,10 @@ struct glsl_builtin {
 #define GLSL_SPECIAL_MEMORY_BARRIER_BUFFER 40U
 #define GLSL_SPECIAL_MEMORY_BARRIER_SHARED 41U
 #define GLSL_SPECIAL_GROUP_MEMORY_BARRIER 42U
+
+/* Desktop GLSL 4.00's texture gathers (GL_ARB_texture_gather). */
+#define GLSL_SPECIAL_TEXTURE_GATHER 43U
+#define GLSL_SPECIAL_TEXTURE_GATHER_OFFSET 44U
 
 /* The layout qualifiers of a declaration (glsl_node.layout). */
 #define GLSL_LAYOUT_STD140	0x01U
@@ -852,6 +862,12 @@ struct glsl_shader {
 	 */
 	unsigned tessellation;
 	unsigned sample_shading;
+
+	/* Whether GL_ARB_texture_gather was enabled (a desktop 1.30 to 3.30 shader; 4.00 on has its functions). */
+	unsigned texture_gather;
+
+	/* Whether GL_ARB_texture_cube_map_array was enabled (a desktop 1.30 to 3.30 shader; 4.00 on has its samplers). */
+	unsigned cube_map_array;
 	unsigned tess_vertices;
 	unsigned tess_domain;
 	unsigned tess_spacing;

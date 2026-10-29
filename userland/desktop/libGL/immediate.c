@@ -84,7 +84,7 @@ glEnd(void)
 	struct zegl_context *context;
 	struct fixed_state *fixed;
 	struct gles_state *state;
-	struct gles_attrib saved[4];
+	struct gles_attrib saved[GLES_ATTRIBS];
 	struct gles_buffer *array_buffer;
 	int recorded;
 	int flat;
@@ -108,7 +108,7 @@ glEnd(void)
 	if (fixed->vertex_count == 0U)
 		return;
 
-	/* The four attributes read the vertices for this draw (their arrays are put back after it). */
+	/* The four attributes read the vertices for this draw (every array is put back after it: a binding point they change may be read by others). */
 	state = gles_state(context);
 	memcpy(saved, state->attribs, sizeof(saved));
 	array_buffer = state->array_buffer;

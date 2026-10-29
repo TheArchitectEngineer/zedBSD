@@ -27,6 +27,7 @@
 		glBindTexture;
 		glBindTransformFeedback;
 		glBindVertexArray;
+		glBindVertexBuffer;
 		glBlendColor;
 		glBlendEquation;
 		glBlendEquationSeparate;
@@ -48,6 +49,7 @@
 		glClearDepth;
 		glClearDepthf;
 		glClearStencil;
+		glClipControl;
 		glClientWaitSync;
 		glColor3d;
 		glColor3f;
@@ -390,7 +392,9 @@
 		glVertexAttrib3fv;
 		glVertexAttrib4f;
 		glVertexAttrib4fv;
+		glVertexAttribBinding;
 		glVertexAttribDivisor;
+		glVertexAttribFormat;
 		glVertexAttribI1i;
 		glVertexAttribI1iv;
 		glVertexAttribI1ui;
@@ -411,6 +415,7 @@
 		glVertexAttribI4ui;
 		glVertexAttribI4uiv;
 		glVertexAttribI4usv;
+		glVertexAttribIFormat;
 		glVertexAttribIPointer;
 		glVertexAttribP1ui;
 		glVertexAttribP1uiv;
@@ -421,6 +426,7 @@
 		glVertexAttribP4ui;
 		glVertexAttribP4uiv;
 		glVertexAttribPointer;
+		glVertexBindingDivisor;
 		glVertexPointer;
 		glViewport;
 		glWaitSync;

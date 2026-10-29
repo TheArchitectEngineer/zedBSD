@@ -164,9 +164,9 @@ gles_texture_sync(
 		}
 	}
 
-	/* The image's layers: a cube map's faces, a 2D array's layers, one otherwise. */
+	/* The image's layers: a cube map's faces, a 2D array's layers (a cube map array's layer-faces), one otherwise. */
 	layers = faces;
-	if (shape == GLES_SHAPE_ARRAY)
+	if (shape == GLES_SHAPE_ARRAY || shape == GLES_SHAPE_CUBE_ARRAY)
 		layers = (uint32_t)texture->levels[base].depth;
 
 	/* A depth format is copied into its depth aspect; a barrier names every aspect it has. */
@@ -183,7 +183,7 @@ gles_texture_sync(
 	features = gles_image_features(state, format->vk);
 	memset(&create, 0, sizeof(create));
 	create.sType = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO;
-	if (shape == GLES_SHAPE_CUBE)
+	if (shape == GLES_SHAPE_CUBE || shape == GLES_SHAPE_CUBE_ARRAY)
 		create.flags = VK_IMAGE_CREATE_CUBE_COMPATIBLE_BIT;
 	create.imageType = VK_IMAGE_TYPE_2D;
 	create.format = format->vk;
@@ -244,6 +244,8 @@ gles_texture_sync(
 		view.viewType = VK_IMAGE_VIEW_TYPE_3D;
 	if (shape == GLES_SHAPE_ARRAY)
 		view.viewType = VK_IMAGE_VIEW_TYPE_2D_ARRAY;
+	if (shape == GLES_SHAPE_CUBE_ARRAY)
+		view.viewType = VK_IMAGE_VIEW_TYPE_CUBE_ARRAY;
 	view.format = format->vk;
 	view.components.r = texture_swizzle(texture->swizzle[0], VK_COMPONENT_SWIZZLE_R);
 	view.components.g = texture_swizzle(texture->swizzle[1], VK_COMPONENT_SWIZZLE_G);
@@ -317,7 +319,7 @@ gles_texture_sync(
 			copies[count].imageExtent.depth = 1U;
 			if (shape == GLES_SHAPE_3D)
 				copies[count].imageExtent.depth = (uint32_t)source->depth;
-			if (shape == GLES_SHAPE_ARRAY)
+			if (shape == GLES_SHAPE_ARRAY || shape == GLES_SHAPE_CUBE_ARRAY)
 				copies[count].imageSubresource.layerCount = (uint32_t)source->depth;
 			total += bytes;
 			count++;
@@ -536,9 +538,13 @@ gles_texture_black(
 	unsigned faces;
 	unsigned face;
 
-	/* Made once per shape and kind (a 3D texture has no depth one: no sampler compares it). */
+	/* Made once per shape and kind (a 3D texture has no depth one: no sampler compares it); a cube map array's six layer-faces. */
 	if (kind >= GLES_BLACK_KINDS)
 		kind = 0U;
+	if (shape == GLES_SHAPE_CUBE_ARRAY) {
+		texture = gles_texture_black_cube_array(state, kind, internals[kind], types[kind]);
+		return texture;
+	}
 	if (shape >= GLES_SHAPES)
 		shape = GLES_SHAPE_2D;
 	if (shape == GLES_SHAPE_3D && kind == 3U)
@@ -659,6 +665,65 @@ gles_texture_buffer_view(
 	texture->texel_view_buffer = buffer->buffer;
 	texture->texel_view_range = range;
 	return texture->texel_view;
+}
+
+/*
+ * Returns the cube map array texture of a kind (0 float, 1 int, 2
+ * unsigned, 3 depth) sampled where a unit has no complete one: one cube
+ * of black 1x1 faces (opaque) in an internal format and type, made at its
+ * first use; NULL when there is no memory or no format.
+ */
+struct gles_texture *
+gles_texture_black_cube_array(
+	struct gles_state *state,
+	unsigned kind,
+	GLenum internal,
+	GLenum type)
+{
+	const struct gles_format *format;
+	struct gles_texture *texture;
+	unsigned char *pixels;
+	unsigned char alpha;
+	unsigned face;
+
+	/* Made once per kind. */
+	if (state->black_cube_arrays[kind] != NULL)
+		return state->black_cube_arrays[kind];
+
+	/* The kind's format. */
+	format = gles_format_find(state, internal, type);
+	if (format == NULL)
+		return NULL;
+
+	/* The texture, read with nearest filters (integers and depth cannot be filtered). */
+	texture = texture_new(0U, GL_TEXTURE_CUBE_MAP_ARRAY);
+	if (texture == NULL)
+		return NULL;
+	texture->sampling.min_filter = GL_NEAREST;
+	texture->sampling.mag_filter = GL_NEAREST;
+
+	/* Six black layer-faces (opaque: alpha 255, or 1 for the integers). */
+	pixels = calloc(GLES_FACES, format->bytes);
+	if (pixels == NULL) {
+		gles_texture_free(state, texture);
+		return NULL;
+	}
+	alpha = 0U;
+	if (kind == 0U)
+		alpha = 255U;
+	if (kind == 1U || kind == 2U)
+		alpha = 1U;
+
+	/* Each face's alpha (a depth format has none). */
+	for (face = 0U; face < GLES_FACES; face++) {
+		if (alpha != 0U)
+			pixels[face * format->bytes + 3U] = alpha;
+	}
+	texture_level_set(texture, 0U, 0, 1, 1, (int)GLES_FACES, pixels, format);
+
+	/* Succeeded: the texture, kept. */
+	state->black_cube_arrays[kind] = texture;
+	return texture;
 }
 
 /*
@@ -952,6 +1017,8 @@ glDeleteTextures(
 				state->buffer_units[unit] = NULL;
 			if (state->ms_units[unit] == texture)
 				state->ms_units[unit] = NULL;
+			if (state->cube_array_units[unit] == texture)
+				state->cube_array_units[unit] = NULL;
 		}
 
 		/* Detached from the bound framebuffer object; the name and the texture go (its image waits for the frame). */
@@ -993,6 +1060,12 @@ glBindTexture(
 	case GL_TEXTURE_BUFFER:
 	case GL_TEXTURE_2D_MULTISAMPLE:
 		if (gles_fixed != NULL)
+			break;
+		gles_error(context, GL_INVALID_ENUM);
+		return;
+	case GL_TEXTURE_CUBE_MAP_ARRAY:
+		/* Desktop GL 4.0's cube map arrays (libGL), on a device that has them. */
+		if (gles_fixed != NULL && state->display->features.imageCubeArray)
 			break;
 		gles_error(context, GL_INVALID_ENUM);
 		return;
@@ -1049,6 +1122,9 @@ glBindTexture(
 		break;
 	case GL_TEXTURE_2D_MULTISAMPLE:
 		state->ms_units[state->active_unit] = texture;
+		break;
+	case GL_TEXTURE_CUBE_MAP_ARRAY:
+		state->cube_array_units[state->active_unit] = texture;
 		break;
 	default:
 		state->units[state->active_unit] = texture;
@@ -2317,7 +2393,8 @@ glGenerateMipmap(
 	faces = texture_faces(texture);
 	shape = texture_shape(texture);
 	for (face = 0U; face < faces; face++) {
-		if (format->vk == VK_FORMAT_R8G8B8A8_UNORM && shape != GLES_SHAPE_3D && shape != GLES_SHAPE_ARRAY) {
+		if (format->vk == VK_FORMAT_R8G8B8A8_UNORM && shape != GLES_SHAPE_3D && shape != GLES_SHAPE_ARRAY &&
+		    shape != GLES_SHAPE_CUBE_ARRAY) {
 			status = texture_mipmaps(texture, face, last);
 		} else {
 			status = texture_mipmaps_kept(texture, face, last);
@@ -2646,6 +2723,9 @@ texture_bound(
 		taken = TEXTURE_TAKES_3D;
 	} else if (target == GL_TEXTURE_2D_ARRAY) {
 		texture = state->array_units[state->active_unit];
+		taken = TEXTURE_TAKES_ARRAY;
+	} else if (target == GL_TEXTURE_CUBE_MAP_ARRAY && gles_fixed != NULL) {
+		texture = state->cube_array_units[state->active_unit];
 		taken = TEXTURE_TAKES_ARRAY;
 	} else if (target == GL_TEXTURE_RECTANGLE && gles_fixed != NULL) {
 		texture = state->rect_units[state->active_unit];
@@ -3194,6 +3274,10 @@ texture_volume_size(
 		return 1;
 	}
 
+	/* A cube map array's faces are square, its layer-faces whole cubes. */
+	if (texture->target == GL_TEXTURE_CUBE_MAP_ARRAY && (width != height || depth % 6 != 0))
+		return 0;
+
 	/* A 2D array's sides are a 2D texture's, its layers up to the most. */
 	side = 16384;
 	if ((GLsizei)state->limits.maxImageDimension2D < side)
@@ -3605,6 +3689,8 @@ texture_shape(
 		return GLES_SHAPE_3D;
 	case GL_TEXTURE_2D_ARRAY:
 		return GLES_SHAPE_ARRAY;
+	case GL_TEXTURE_CUBE_MAP_ARRAY:
+		return GLES_SHAPE_CUBE_ARRAY;
 	default:
 		break;
 	}

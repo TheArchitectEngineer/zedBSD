@@ -4,7 +4,7 @@
 
 Phase ID: `ws068-p039`
 Parent: [WS068](../ws.md)
-Status: cleared（2026-10-29 Q1: Venus で egl-p039 PASS（q1682-i02 P2）、p037 と同じく i915 実機は未実施のまま cleared）
+Status: cleared（2026-10-29 Q1: Venus で egl-p039 PASS（q1682-i02 P2）、p037 と同じく i915 実機は未実施のまま cleared） 2026-10-29 ユーザーの決定で WS068 の受け入れは Venus だけ（i915 実機は受け入れに含めない、[ws.md](../ws.md) の「ユーザーの決定」）。
 Phase disposition: normal
 依存: p004
 経緯: 2026-10-05 Q1 が p004 の範囲外から新設（その時は実行しない）。2026-10-29 ユーザー「作業の手が空いてしまったら、テストなしで実装だけ

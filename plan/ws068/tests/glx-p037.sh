@@ -33,15 +33,16 @@ expect_log() {
 	fi
 }
 
-# The squares' colours on the screen, for a window at X,Y of W x H (screen coordinates, from the top): the eleven
-# outcomes (the tessellation, ws068-p034, green when skipped; the indirect draw and the debug output, ws068-p036) in a grid of four columns and the fixed-function square in the next cell, the empty cells and the grey
-# between them.
+# The squares' colours on the screen, for a window at X,Y of W x H (screen coordinates, from the top): the fifteen
+# outcomes (the tessellation, ws068-p034, green when skipped; the indirect draw, the debug output, the clip control,
+# the texture gathers, the vertex attribute binding and the cube map arrays (green when skipped), ws068-p036) in a
+# grid of four columns and four rows and the fixed-function square in the last cell, and the grey between them.
 gl33_expect() {
 	x=$1; y=$2; w=$3; h=$4
-	for cell in 0 1 2 3 4 5 6 7 8 9 10 11; do
+	for cell in 0 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15; do
 		column=$((cell % 4)); row=$((cell / 4)); colour=00ff00
-		[ $cell -ge 12 ] && colour=202020
-		echo "--expect $((x + w * (125 + 250 * column) / 1000)),$((y + h * (17 + 33 * row) / 100)),$colour"
+		[ $cell -ge 16 ] && colour=202020
+		echo "--expect $((x + w * (125 + 250 * column) / 1000)),$((y + h * (125 + 250 * row) / 1000)),$colour"
 	done
 	echo "--expect $((x + w / 2)),$((y + h / 2)),202020"
 }

@@ -4,7 +4,18 @@
 
 Phase ID: `ws068-p035`
 Parent: [WS068](../ws.md)
-Status: in-progress（一部だけ実装・試験未実施。2026-10-29 q1682-i01 P2。cleared にしない）
+Status: 分割（2026-10-29 q1686-i01 P2、ユーザー「…phaseに分解して、目標を管理しながら、空いた時間に細々と取り組んで、WS完了に近づいていけるように、準備してください。」）。旧: in-progress（一部だけ実装・試験未実施、q1682-i01）
+
+## 分割の索引（2026-10-29）
+
+この phase.md は親の記録として残す（canceled にしないのは、下の「実装」の compute・SSBO の desktop の口が既に入っていて、その記録の本体だから）。
+残りは次の Phase で行う:
+
+| 残り | Phase |
+| --- | --- |
+| 1. image load/store | [ws068-p056](../phase056/phase.md)（GLSL）、[ws068-p057](../phase057/phase.md)（GL の API） |
+| 2. atomic counter | [ws068-p058](../phase058/phase.md) |
+| 3・4. vertex・fragment の storage block、desktop の compute の試験 | [ws068-p060](../phase060/phase.md) |
 Phase disposition: normal
 依存: p037。GLES 3.1 の compute の部分集合（GLSL ES 3.10 の compute、glDispatchCompute・SSBO・glMemoryBarrier）は WS101 の物（2026-09-30 main D4）。
 再開（2026-10-29）: ユーザー「作業の手が空いてしまったら、テストなしで実装だけ進める戦略で、残っているWSのphaseをまんべんなく進めましょう。」

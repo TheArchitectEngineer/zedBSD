@@ -945,7 +945,7 @@ run_program(
 	}
 
 	/* Its copy with gl_Position rewritten. */
-	patched = gles_spirv_position(program->code[rewritten], program->words[rewritten], 1, &patched_words);
+	patched = gles_spirv_position(program->code[rewritten], program->words[rewritten], 1, 1, &patched_words);
 	if (patched == NULL) {
 		printf("%s: FAIL (position)\n", name);
 		return -1;

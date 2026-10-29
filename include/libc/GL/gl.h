@@ -509,6 +509,44 @@ GLAPI void APIENTRY glGetPointerv(GLenum pname, void **params);
 #define GL_MIN_SAMPLE_SHADING_VALUE	0x8C37
 GLAPI void APIENTRY glMinSampleShading(GLfloat value);
 
+/* OpenGL 4.0's texture gathers (GL_ARB_texture_gather on every 3.x context). */
+#define GL_MIN_PROGRAM_TEXTURE_GATHER_OFFSET 0x8E5E
+#define GL_MAX_PROGRAM_TEXTURE_GATHER_OFFSET 0x8E5F
+#define GL_MAX_PROGRAM_TEXTURE_GATHER_COMPONENTS_ARB 0x8F9F
+
+/* OpenGL 4.0's cube map arrays (GL_ARB_texture_cube_map_array on a 3.x context of a device that has them). */
+#define GL_TEXTURE_CUBE_MAP_ARRAY	0x9009
+#define GL_TEXTURE_BINDING_CUBE_MAP_ARRAY 0x900A
+#define GL_PROXY_TEXTURE_CUBE_MAP_ARRAY	0x900B
+#define GL_SAMPLER_CUBE_MAP_ARRAY	0x900C
+#define GL_SAMPLER_CUBE_MAP_ARRAY_SHADOW 0x900D
+#define GL_INT_SAMPLER_CUBE_MAP_ARRAY	0x900E
+#define GL_UNSIGNED_INT_SAMPLER_CUBE_MAP_ARRAY 0x900F
+
+/* OpenGL 4.3's vertex attribute binding (GL_ARB_vertex_attrib_binding on every 3.x context). */
+#define GL_VERTEX_ATTRIB_BINDING	0x82D4
+#define GL_VERTEX_ATTRIB_RELATIVE_OFFSET 0x82D5
+#define GL_VERTEX_BINDING_DIVISOR	0x82D6
+#define GL_VERTEX_BINDING_OFFSET	0x82D7
+#define GL_VERTEX_BINDING_STRIDE	0x82D8
+#define GL_MAX_VERTEX_ATTRIB_RELATIVE_OFFSET 0x82D9
+#define GL_MAX_VERTEX_ATTRIB_BINDINGS	0x82DA
+#define GL_VERTEX_BINDING_BUFFER	0x8F4F
+GLAPI void APIENTRY glBindVertexBuffer(GLuint bindingindex, GLuint buffer, GLintptr offset, GLsizei stride);
+GLAPI void APIENTRY glVertexAttribFormat(GLuint attribindex, GLint size, GLenum type, GLboolean normalized, GLuint relativeoffset);
+GLAPI void APIENTRY glVertexAttribIFormat(GLuint attribindex, GLint size, GLenum type, GLuint relativeoffset);
+GLAPI void APIENTRY glVertexAttribBinding(GLuint attribindex, GLuint bindingindex);
+GLAPI void APIENTRY glVertexBindingDivisor(GLuint bindingindex, GLuint divisor);
+
+/* OpenGL 4.5's clip control (GL_ARB_clip_control on every 3.x context). */
+#define GL_LOWER_LEFT			0x8CA1
+#define GL_UPPER_LEFT			0x8CA2
+#define GL_CLIP_ORIGIN			0x935C
+#define GL_CLIP_DEPTH_MODE		0x935D
+#define GL_NEGATIVE_ONE_TO_ONE		0x935E
+#define GL_ZERO_TO_ONE			0x935F
+GLAPI void APIENTRY glClipControl(GLenum origin, GLenum depth);
+
 #ifdef __cplusplus
 }
 #endif

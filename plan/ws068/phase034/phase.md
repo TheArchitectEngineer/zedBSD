@@ -4,7 +4,7 @@
 
 Phase ID: `ws068-p034`
 Parent: [WS068](../ws.md)
-Status: in-progress（実装済み・試験未実施。2026-10-29 q1682-i01 P2。cleared にしない）
+Status: cleared（2026-10-29 q1686-i01 P2。Venus で glx-p037 の tessellation の outcome（向きと culling の検査を足した）と回帰 PASS、下の「検証」）。旧: in-progress（実装済み・試験未実施、q1682-i01）
 Phase disposition: normal
 依存: p037
 再開（2026-10-29）: ユーザー「作業の手が空いてしまったら、テストなしで実装だけ進める戦略で、残っているWSのphaseをまんべんなく進めましょう。」
@@ -57,6 +57,14 @@ Phase disposition: normal
    3.3 の context で使えるのは `#version 330` + `#extension GL_ARB_tessellation_shader`。
 3. domain の原点の違いは vertex order を入れ替えて吸収（VK_KHR_maintenance2 は libvulkan に無い）。
 
+## 試験の追加と修正（2026-10-29 q1686-i01 P2）
+
+- glxtest `--gl33` の tessellation の outcome に向きの検査を足した: `GL_TESS_GEN_VERTEX_ORDER` の glGet、back face の culling で ccw の
+  quad の domain の三角形は表として残り、cw の domain の物は捨てられること。
+- 足した検査が Venus で FAIL（build/tmp/q1686-v2: tess-cw-culled got=00ff00）。原因は libGLESv2 `draw.c` の raster が culling を
+  TRIANGLE_LIST の topology だけに付け、PATCH_LIST の draw では切っていたこと。PATCH_LIST にも付けた（Vulkan は tessellator の線と点を
+  cull しない）。
+
 ## 検証
 
 - build（2026-10-29）: amd64・arm64・riscv64 の `libGL.so`・`libGLESv2.so`・`libEGL.so` → exit 0、warning 0（sysroot を作り直し）。
@@ -65,3 +73,12 @@ Phase disposition: normal
   2 組の link と spirv-val（tesc・tese・書き換えた tese）、vk-run 26 試験（`60-tessellation`・`61-tessellation-levels` が lavapipe で期待の色））。
 - 未実施: Venus の glxtest `--gl33`（tessellation の outcome）と回帰、i915（i915 の libvulkan は tessellationShader を出さない: extension は名乗らない）。
   vertex order の入れ替えは culling 無しの試験だけで、向きは確かめていない。
+
+## 検証（2026-10-29 q1686-i01 P2、QEMU の Venus）
+
+- `sh plan/ws068/tests/venus-all.sh build/tmp/q1686-v2`（向きの検査を足した直後、culling の修正の前）: glx-p037 FAIL（tess-cw-culled got=00ff00）、
+  回帰 glx-p013・p031・p033、egl-p039・p019〜p030 PASS。
+- 修正の後 `build/tmp/q1686-v3`: glx-p037 PASS（tess-ccw-front・tess-cw-culled・tess-vertex-order ok）。glx-p031 は別の理由で FAIL
+  （試験が GL_ARB_compatibility を extension の先頭と仮定していた。GL_ARB_clip_control が前に並んだ。glxtest の gl31.c を順に依らない検査に直した）。
+- `build/tmp/q1686-v4`（tree e79b46c2f と未 commit の変更）: `venus-all: PASS`（glx-p037・p013・p031・p033、egl-p039・p019〜p030 の 16 本）。
+- 受け入れを満たした: Venus の glxtest `--gl33` の tessellation の outcome と回帰。i915 は受け入れに含めない（2026-10-29 ユーザーの決定）。

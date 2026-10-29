@@ -20,9 +20,17 @@
  *   glVertexAttribP3ui (signed), an RGB10_A2UI texture drawn into, and
  *   (when the context names GL_ARB_tessellation_shader; skipped, green,
  *   otherwise) a quad patch tessellated over the target, and a square
- *   drawn by glDrawArraysIndirect (GL_ARB_draw_indirect), and the debug
+ *   drawn by glDrawArraysIndirect (GL_ARB_draw_indirect), the debug
  *   output (GL_KHR_debug: a message inserted, an error, a group, a label,
- *   the log).
+ *   the log), and the clip control (GL_ARB_clip_control: the upper-left
+ *   origin turns the picture over and keeps the front faces, the depth
+ *   range from 0 clips what lies below it), the texture gathers
+ *   (GL_ARB_texture_gather: the red of a 2x2 texture's four texels), and
+ *   the vertex attribute binding (GL_ARB_vertex_attrib_binding: two
+ *   attributes of one interleaved binding point, then the colour from a
+ *   binding point of stride 0), and (when the context names
+ *   GL_ARB_texture_cube_map_array; skipped, green, otherwise) a cube map
+ *   array's faces looked up by direction and cube.
  *
  * The start's checks each print a line; a check whose value is not the
  * expected one fails the run.
@@ -36,7 +44,7 @@
 #include <string.h>
 
 /* The outcomes shown, the side of the framebuffer object, and the attribute locations of the corners and of a colour. */
-#define GL33_OUTCOMES		11U
+#define GL33_OUTCOMES		15U
 #define GL33_SIDE		8
 #define GL33_POSITION		0U
 #define GL33_COLOUR		1U
@@ -149,7 +157,8 @@ static const char gl33_attrib_fragment_source[] =
 /* The names of the outcomes. */
 static const char *const gl33_names[GL33_OUTCOMES] = {
 	"version", "time-elapsed", "timestamps", "dual-layout", "dual-bound", "packed-unsigned", "packed-signed", "rgb10-a2ui",
-	"tessellation", "draw-indirect", "debug"
+	"tessellation", "draw-indirect", "debug", "clip-control", "texture-gather", "attrib-binding",
+	"cube-map-array"
 };
 
 /* The debug messages the callback heard, by type: inserted markers, errors, pushes and pops. */
@@ -192,6 +201,72 @@ static const char gl33_tess_evaluation_source[] =
 	"\tvec4 above = mix(gl_in[2].gl_Position, gl_in[3].gl_Position, gl_TessCoord.x);\n"
 	"\tgl_Position = mix(below, above, gl_TessCoord.y);\n"
 	"}\n";
+/* The same quad domain with its triangles turned clockwise, which back-face culling discards. */
+static const char gl33_tess_clockwise_source[] =
+	"#version 330 core\n"
+	"#extension GL_ARB_tessellation_shader : require\n"
+	"layout(quads, equal_spacing, cw) in;\n"
+	"\n"
+	"void main()\n"
+	"{\n"
+	"\tvec4 below = mix(gl_in[0].gl_Position, gl_in[1].gl_Position, gl_TessCoord.x);\n"
+	"\tvec4 above = mix(gl_in[2].gl_Position, gl_in[3].gl_Position, gl_TessCoord.x);\n"
+	"\tgl_Position = mix(below, above, gl_TessCoord.y);\n"
+	"}\n";
+/* The clip control's square: the unit square placed by the rectangle (centre, half size) at a depth. */
+static const char gl33_depth_vertex_source[] =
+	"#version 330 core\n"
+	"layout(location = 0) in vec2 a_position;\n"
+	"uniform vec4 u_rect;\n"
+	"uniform float u_depth;\n"
+	"\n"
+	"void main()\n"
+	"{\n"
+	"\tgl_Position = vec4(u_rect.xy + a_position * u_rect.zw, u_depth, 1.0);\n"
+	"}\n";
+/*
+ * The texture gathers' fragment shader: green when the red of the four
+ * texels around the centre of the 2x2 texture (red, green / blue, white)
+ * and those at an offset of -1 (each clamped to the first) are as
+ * expected, red otherwise.
+ */
+static const char gl33_gather_source[] =
+	"#version 330 core\n"
+	"#extension GL_ARB_texture_gather : require\n"
+	"uniform sampler2D u_texture;\n"
+	"layout(location = 0) out vec4 o_colour;\n"
+	"\n"
+	"void main()\n"
+	"{\n"
+	"\to_colour = vec4(1.0, 0.0, 0.0, 1.0);\n"
+	"\tif (textureGather(u_texture, vec2(0.5)) == vec4(0.0, 1.0, 0.0, 1.0) &&\n"
+	"\t    textureGatherOffset(u_texture, vec2(0.5), ivec2(-1, -1)) == vec4(1.0))\n"
+	"\t\to_colour = vec4(0.0, 1.0, 0.0, 1.0);\n"
+	"}\n";
+/*
+ * The cube map array's fragment shader: green when the +X face of cube 1,
+ * the -Z face of cube 0 and the array's size are as expected (each
+ * layer-face's texel is (layer-face / 16, 1 - layer-face / 16, 0.5)).
+ */
+static const char gl33_cube_array_source[] =
+	"#version 330 core\n"
+	"#extension GL_ARB_texture_cube_map_array : require\n"
+	"uniform samplerCubeArray u_cubes;\n"
+	"layout(location = 0) out vec4 o_colour;\n"
+	"\n"
+	"bool near(vec4 got, float face)\n"
+	"{\n"
+	"\treturn all(lessThan(abs(got.rgb - vec3(face / 16.0, 1.0 - face / 16.0, 0.5)), vec3(0.02)));\n"
+	"}\n"
+	"\n"
+	"void main()\n"
+	"{\n"
+	"\to_colour = vec4(1.0, 0.0, 0.0, 1.0);\n"
+	"\tif (near(texture(u_cubes, vec4(1.0, 0.0, 0.0, 1.0)), 6.0) &&\n"
+	"\t    near(texture(u_cubes, vec4(0.0, 0.0, -1.0, 0.0)), 5.0) &&\n"
+	"\t    textureSize(u_cubes, 0) == ivec3(1, 1, 2))\n"
+	"\t\to_colour = vec4(0.0, 1.0, 0.0, 1.0);\n"
+	"}\n";
 static const char gl33_green_source[] =
 	"#version 330 core\n"
 	"layout(location = 0) out vec4 o_colour;\n"
@@ -214,8 +289,14 @@ static void gl33_dual(GLuint program, unsigned outcome, const char *what);
 static void gl33_packed(GLuint program, GLenum type, GLuint value, int four, unsigned outcome, const char *what);
 static void gl33_rgb10_a2ui(void);
 static void gl33_tessellation(void);
+static GLuint gl33_tess_program(const char *evaluation_source);
 static void gl33_draw_indirect(void);
 static void gl33_debug(void);
+static void gl33_clip_control(void);
+static void gl33_texture_gather(void);
+static void gl33_attrib_binding(void);
+static void gl33_cube_map_array(void);
+static unsigned gl33_clip_square(GLuint program, GLfloat top, GLfloat depth, int x, int y);
 static void APIENTRY gl33_debug_heard(GLenum source, GLenum type, GLuint id, GLenum severity, GLsizei length, const GLchar *message, const void *user);
 static int gl33_expect(const char *what, long got, long expected);
 
@@ -292,6 +373,10 @@ glxtest_gl33_start(void)
 	gl33_tessellation();
 	gl33_draw_indirect();
 	gl33_debug();
+	gl33_clip_control();
+	gl33_texture_gather();
+	gl33_attrib_binding();
+	gl33_cube_map_array();
 
 	/* The window again, and no error the checks did not expect. */
 	glBindFramebuffer(GL_FRAMEBUFFER, 0U);
@@ -328,25 +413,27 @@ glxtest_gl33_draw(
 	glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 	glBindVertexArray(gl33_square);
 
-	/* Each outcome in a cell of a grid of four columns. */
+	/* Each outcome in a cell of a grid of four columns and four rows. */
 	for (index = 0U; index < GL33_OUTCOMES; index++) {
 		rgb = GL33_RED;
 		if (gl33_outcomes[index])
 			rgb = GL33_GREEN;
 		x = -0.75f + 0.5f * (GLfloat)(index % 4U);
-		y = 0.66f - 0.66f * (GLfloat)(index / 4U);
-		gl33_quad(x, y, 0.2f, 0.25f, rgb);
+		y = 0.75f - 0.5f * (GLfloat)(index / 4U);
+		gl33_quad(x, y, 0.2f, 0.18f, rgb);
 	}
 
-	/* The next cell (the last of the third row) with the fixed function, as the compatibility profile keeps it. */
+	/* The next cell (the first of the fourth row) with the fixed function, as the compatibility profile keeps it. */
+	x = -0.75f + 0.5f * (GLfloat)(GL33_OUTCOMES % 4U);
+	y = 0.75f - 0.5f * (GLfloat)(GL33_OUTCOMES / 4U);
 	glBindVertexArray(0U);
 	glUseProgram(0U);
 	glColor3f(0.0f, 1.0f, 0.0f);
 	glBegin(GL_QUADS);
-	glVertex2f(0.55f, -0.91f);
-	glVertex2f(0.95f, -0.91f);
-	glVertex2f(0.95f, -0.41f);
-	glVertex2f(0.55f, -0.41f);
+	glVertex2f(x - 0.2f, y - 0.18f);
+	glVertex2f(x + 0.2f, y - 0.18f);
+	glVertex2f(x + 0.2f, y + 0.18f);
+	glVertex2f(x - 0.2f, y + 0.18f);
 	glEnd();
 }
 
@@ -374,7 +461,7 @@ glxtest_gl33_check(
 	glBindFramebuffer(GL_FRAMEBUFFER, 0U);
 	for (index = 0U; index <= GL33_OUTCOMES; index++) {
 		x = (int)((-0.75f + 0.5f * (float)(index % 4U) + 1.0f) * 0.5f * (float)width);
-		y = (int)((0.66f - 0.66f * (float)(index / 4U) + 1.0f) * 0.5f * (float)height);
+		y = (int)((0.75f - 0.5f * (float)(index / 4U) + 1.0f) * 0.5f * (float)height);
 		got = gl33_read(x, y);
 
 		/* Green is the expected outcome. */
@@ -792,7 +879,9 @@ gl33_rgb10_a2ui(void)
  * Checks GL_ARB_tessellation_shader when the context names it: the
  * square's corners as one patch of four vertices, tessellated as a quad
  * over the red target, make it green; the program's layouts and the
- * patch's vertices read back.  Skipped (green) without the extension.
+ * patch's vertices read back; with back faces culled, the counter-clockwise
+ * domain's triangles still cover the target and the clockwise domain's
+ * are discarded.  Skipped (green) without the extension.
  */
 static void
 gl33_tessellation(void)
@@ -800,14 +889,11 @@ gl33_tessellation(void)
 	const char *extensions;
 	const char *found;
 	GLuint program;
-	GLuint shaders[4];
+	GLuint clockwise;
 	GLint value;
-	GLint linked;
 	GLenum error;
 	unsigned got;
-	unsigned index;
 	int passed;
-	char log[512];
 
 	/* Without the extension, nothing to check. */
 	extensions = (const char *)glGetString(GL_EXTENSIONS);
@@ -818,25 +904,11 @@ gl33_tessellation(void)
 		return;
 	}
 
-	/* The four stages' program. */
-	shaders[0] = gl33_shader(GL_VERTEX_SHADER, gl33_tess_vertex_source);
-	shaders[1] = gl33_shader(GL_TESS_CONTROL_SHADER, gl33_tess_control_source);
-	shaders[2] = gl33_shader(GL_TESS_EVALUATION_SHADER, gl33_tess_evaluation_source);
-	shaders[3] = gl33_shader(GL_FRAGMENT_SHADER, gl33_green_source);
-	program = glCreateProgram();
-	for (index = 0U; index < 4U; index++) {
-		if (shaders[index] != 0U)
-			glAttachShader(program, shaders[index]);
-	}
-	glLinkProgram(program);
-	linked = GL_FALSE;
-	glGetProgramiv(program, GL_LINK_STATUS, &linked);
-	if (!linked) {
-		log[0] = '\0';
-		glGetProgramInfoLog(program, (GLsizei)sizeof(log), NULL, log);
-		printf("GLXTEST GL33 tessellation link failed: %s\n", log);
-	}
-	passed = gl33_expect("tess-linked", (long)linked, (long)GL_TRUE);
+	/* The four stages' program (0 when it did not link). */
+	program = gl33_tess_program(gl33_tess_evaluation_source);
+	passed = 1;
+	if (program == 0U)
+		passed = gl33_expect("tess-linked", 0L, 1L);
 
 	/* The program's layouts. */
 	value = 0;
@@ -844,6 +916,8 @@ gl33_tessellation(void)
 	passed &= gl33_expect("tess-output-vertices", (long)value, 4L);
 	glGetProgramiv(program, GL_TESS_GEN_MODE, &value);
 	passed &= gl33_expect("tess-mode", (long)value, (long)GL_QUADS);
+	glGetProgramiv(program, GL_TESS_GEN_VERTEX_ORDER, &value);
+	passed &= gl33_expect("tess-vertex-order", (long)value, (long)GL_CCW);
 
 	/* A triangle draw is refused; a patch of the four corners covers the red target. */
 	gl33_clear(GL33_RED);
@@ -864,15 +938,74 @@ gl33_tessellation(void)
 	got = gl33_read(0, 0);
 	passed &= gl33_expect("tessellation-corner", (long)got, (long)GL33_GREEN);
 
-	/* The program and its shaders go. */
+	/* Back faces culled: the counter-clockwise triangles are front faces, the clockwise ones are not. */
+	glEnable(GL_CULL_FACE);
+	glCullFace(GL_BACK);
+	gl33_clear(GL33_RED);
+	glDrawArrays(GL_PATCHES, 0, 4);
+	got = gl33_read(GL33_SIDE / 2, GL33_SIDE / 2);
+	passed &= gl33_expect("tess-ccw-front", (long)got, (long)GL33_GREEN);
+	clockwise = gl33_tess_program(gl33_tess_clockwise_source);
+	if (clockwise == 0U)
+		passed = gl33_expect("tess-cw-linked", 0L, 1L);
+	glGetProgramiv(clockwise, GL_TESS_GEN_VERTEX_ORDER, &value);
+	passed &= gl33_expect("tess-cw-vertex-order", (long)value, (long)GL_CW);
+	gl33_clear(GL33_RED);
+	glUseProgram(clockwise);
+	glDrawArrays(GL_PATCHES, 0, 4);
+	got = gl33_read(GL33_SIDE / 2, GL33_SIDE / 2);
+	printf("GLXTEST GL33 tessellation-cw-culled got=%06x\n", got);
+	passed &= gl33_expect("tess-cw-culled", (long)got, (long)GL33_RED);
+	glDisable(GL_CULL_FACE);
+	error = glGetError();
+	passed &= gl33_expect("tess-cull-glerror", (long)error, (long)GL_NO_ERROR);
+
+	/* The programs go. */
 	glPatchParameteri(GL_PATCH_VERTICES, 3);
 	glUseProgram(0U);
 	glDeleteProgram(program);
+	glDeleteProgram(clockwise);
+	gl33_outcomes[8] = passed;
+}
+
+/* Makes the four stages' tessellation program with an evaluation shader; 0 with a line when it does not link. */
+static GLuint
+gl33_tess_program(
+	const char *evaluation_source)
+{
+	GLuint program;
+	GLuint shaders[4];
+	GLint linked;
+	unsigned index;
+	char log[512];
+
+	/* The stages, attached and linked. */
+	shaders[0] = gl33_shader(GL_VERTEX_SHADER, gl33_tess_vertex_source);
+	shaders[1] = gl33_shader(GL_TESS_CONTROL_SHADER, gl33_tess_control_source);
+	shaders[2] = gl33_shader(GL_TESS_EVALUATION_SHADER, evaluation_source);
+	shaders[3] = gl33_shader(GL_FRAGMENT_SHADER, gl33_green_source);
+	program = glCreateProgram();
+	for (index = 0U; index < 4U; index++) {
+		if (shaders[index] != 0U)
+			glAttachShader(program, shaders[index]);
+	}
+	glLinkProgram(program);
 	for (index = 0U; index < 4U; index++) {
 		if (shaders[index] != 0U)
 			glDeleteShader(shaders[index]);
 	}
-	gl33_outcomes[8] = passed;
+	linked = GL_FALSE;
+	glGetProgramiv(program, GL_LINK_STATUS, &linked);
+	if (!linked) {
+		log[0] = '\0';
+		glGetProgramInfoLog(program, (GLsizei)sizeof(log), NULL, log);
+		printf("GLXTEST GL33 tessellation link failed: %s\n", log);
+		glDeleteProgram(program);
+		return 0U;
+	}
+
+	/* Succeeded: the program. */
+	return program;
 }
 
 /*
@@ -979,6 +1112,344 @@ gl33_debug(void)
 	passed &= gl33_expect("debug-log-text", (long)strcmp(text, marker), 0L);
 	glDisable(GL_DEBUG_OUTPUT);
 	gl33_outcomes[10] = passed;
+}
+
+/*
+ * Checks GL_ARB_clip_control: GL's own clip control read back; a bad
+ * origin refused; under GL_UPPER_LEFT a square over the clip space's top
+ * half lands in the target's bottom rows (GL's rows from the bottom) and
+ * stays a front face with back faces culled; under GL_ZERO_TO_ONE a square
+ * at depth -0.5 is clipped and one at 0.5 is not, where GL's own range
+ * keeps both.
+ */
+static void
+gl33_clip_control(void)
+{
+	GLuint program;
+	GLint value;
+	GLenum error;
+	unsigned got;
+	int passed;
+
+	/* GL's own: y = 1 at the top, depths from -1; an origin that is not one is refused. */
+	value = 0;
+	glGetIntegerv(GL_CLIP_ORIGIN, &value);
+	passed = gl33_expect("clip-origin", (long)value, (long)GL_LOWER_LEFT);
+	glGetIntegerv(GL_CLIP_DEPTH_MODE, &value);
+	passed &= gl33_expect("clip-depth-mode", (long)value, (long)GL_NEGATIVE_ONE_TO_ONE);
+	(void)glGetError();
+	glClipControl(GL_CW, GL_ZERO_TO_ONE);
+	error = glGetError();
+	passed &= gl33_expect("clip-bad-origin", (long)error, (long)GL_INVALID_ENUM);
+	glGetIntegerv(GL_CLIP_DEPTH_MODE, &value);
+	passed &= gl33_expect("clip-depth-kept", (long)value, (long)GL_NEGATIVE_ONE_TO_ONE);
+
+	/* The square's program. */
+	program = gl33_program(gl33_depth_vertex_source, gl33_green_source);
+	if (program == 0U) {
+		gl33_outcomes[11] = gl33_expect("clip-linked", 0L, 1L);
+		return;
+	}
+
+	/* GL's own origin: the top half of the clip space is the top rows. */
+	got = gl33_clip_square(program, 1.0f, 0.0f, GL33_SIDE / 2, GL33_SIDE - 2);
+	passed &= gl33_expect("clip-lower-left-top", (long)got, (long)GL33_GREEN);
+	got = gl33_clip_square(program, 1.0f, 0.0f, GL33_SIDE / 2, 1);
+	passed &= gl33_expect("clip-lower-left-bottom", (long)got, (long)GL33_RED);
+
+	/* The upper-left origin: the top half of the clip space is the bottom rows, its front faces kept. */
+	glClipControl(GL_UPPER_LEFT, GL_NEGATIVE_ONE_TO_ONE);
+	glGetIntegerv(GL_CLIP_ORIGIN, &value);
+	passed &= gl33_expect("clip-upper-left", (long)value, (long)GL_UPPER_LEFT);
+	got = gl33_clip_square(program, 1.0f, 0.0f, GL33_SIDE / 2, 1);
+	printf("GLXTEST GL33 clip-upper-left got=%06x\n", got);
+	passed &= gl33_expect("clip-upper-left-bottom", (long)got, (long)GL33_GREEN);
+	got = gl33_clip_square(program, 1.0f, 0.0f, GL33_SIDE / 2, GL33_SIDE - 2);
+	passed &= gl33_expect("clip-upper-left-top", (long)got, (long)GL33_RED);
+	glEnable(GL_CULL_FACE);
+	glCullFace(GL_BACK);
+	got = gl33_clip_square(program, 1.0f, 0.0f, GL33_SIDE / 2, 1);
+	passed &= gl33_expect("clip-upper-left-front", (long)got, (long)GL33_GREEN);
+	glDisable(GL_CULL_FACE);
+
+	/* The depth range from 0: below it is clipped, above it is not; GL's own keeps both. */
+	glClipControl(GL_LOWER_LEFT, GL_ZERO_TO_ONE);
+	glGetIntegerv(GL_CLIP_DEPTH_MODE, &value);
+	passed &= gl33_expect("clip-zero-to-one", (long)value, (long)GL_ZERO_TO_ONE);
+	got = gl33_clip_square(program, 0.0f, -0.5f, GL33_SIDE / 2, GL33_SIDE / 2);
+	printf("GLXTEST GL33 clip-zero-below got=%06x\n", got);
+	passed &= gl33_expect("clip-zero-below", (long)got, (long)GL33_RED);
+	got = gl33_clip_square(program, 0.0f, 0.5f, GL33_SIDE / 2, GL33_SIDE / 2);
+	passed &= gl33_expect("clip-zero-above", (long)got, (long)GL33_GREEN);
+	glClipControl(GL_LOWER_LEFT, GL_NEGATIVE_ONE_TO_ONE);
+	got = gl33_clip_square(program, 0.0f, -0.5f, GL33_SIDE / 2, GL33_SIDE / 2);
+	passed &= gl33_expect("clip-own-below", (long)got, (long)GL33_GREEN);
+	error = glGetError();
+	passed &= gl33_expect("clip-glerror", (long)error, (long)GL_NO_ERROR);
+
+	/* The program goes. */
+	glUseProgram(0U);
+	glDeleteProgram(program);
+	gl33_outcomes[11] = passed;
+}
+
+/*
+ * Clears the target to red, draws a green square at a depth over the
+ * clip space's whole width and from its top (1: over the top half; 0: over
+ * the whole), and returns the texel at x, y.
+ */
+static unsigned
+gl33_clip_square(
+	GLuint program,
+	GLfloat top,
+	GLfloat depth,
+	int x,
+	int y)
+{
+	unsigned got;
+
+	/* The square over red. */
+	gl33_clear(GL33_RED);
+	glUseProgram(program);
+	glUniform4f(glGetUniformLocation(program, "u_rect"), 0.0f, 0.5f * top, 1.0f, 1.0f - 0.5f * top);
+	glUniform1f(glGetUniformLocation(program, "u_depth"), depth);
+	glDrawArrays(GL_TRIANGLE_STRIP, 0, 4);
+
+	/* Succeeded: the texel. */
+	got = gl33_read(x, y);
+	return got;
+}
+
+/*
+ * Checks GL_ARB_texture_gather: the offsets' limits read back, and a
+ * shader that gathers the red of a 2x2 texture's texels (red, green /
+ * blue, white) turns the target green.
+ */
+static void
+gl33_texture_gather(void)
+{
+	static const GLubyte texels[16] = {
+		255U, 0U, 0U, 255U, 0U, 255U, 0U, 255U,
+		0U, 0U, 255U, 255U, 255U, 255U, 255U, 255U
+	};
+	GLuint program;
+	GLuint texture;
+	GLint value;
+	GLenum error;
+	unsigned got;
+	int passed;
+
+	/* The offsets' limits (OpenGL 4.0 asks for -8 and 7 at least) and the components gathered. */
+	value = 0;
+	glGetIntegerv(GL_MIN_PROGRAM_TEXTURE_GATHER_OFFSET, &value);
+	passed = 1;
+	if (value > -8)
+		passed = gl33_expect("gather-min-offset", (long)value, -8L);
+	glGetIntegerv(GL_MAX_PROGRAM_TEXTURE_GATHER_OFFSET, &value);
+	if (value < 7)
+		passed = gl33_expect("gather-max-offset", (long)value, 7L);
+	glGetIntegerv(GL_MAX_PROGRAM_TEXTURE_GATHER_COMPONENTS_ARB, &value);
+	passed &= gl33_expect("gather-components", (long)value, 4L);
+
+	/* The program. */
+	program = gl33_program(gl33_vertex_source, gl33_gather_source);
+	if (program == 0U) {
+		gl33_outcomes[12] = gl33_expect("gather-linked", 0L, 1L);
+		return;
+	}
+
+	/* The 2x2 texture, nearest, its rows from the bottom. */
+	glGenTextures(1, &texture);
+	glActiveTexture(GL_TEXTURE1);
+	glBindTexture(GL_TEXTURE_2D, texture);
+	glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA8, 2, 2, 0, GL_RGBA, GL_UNSIGNED_BYTE, texels);
+	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
+	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
+	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+
+	/* The square over red. */
+	gl33_clear(GL33_RED);
+	glUseProgram(program);
+	glUniform1i(glGetUniformLocation(program, "u_texture"), 1);
+	glUniform4f(glGetUniformLocation(program, "u_rect"), 0.0f, 0.0f, 1.0f, 1.0f);
+	glDrawArrays(GL_TRIANGLE_STRIP, 0, 4);
+	got = gl33_read(GL33_SIDE / 2, GL33_SIDE / 2);
+	printf("GLXTEST GL33 texture-gather got=%06x\n", got);
+	passed &= gl33_expect("texture-gather", (long)got, (long)GL33_GREEN);
+	error = glGetError();
+	passed &= gl33_expect("gather-glerror", (long)error, (long)GL_NO_ERROR);
+
+	/* The program and the texture go. */
+	glUseProgram(0U);
+	glDeleteProgram(program);
+	glBindTexture(GL_TEXTURE_2D, 0U);
+	glDeleteTextures(1, &texture);
+	glActiveTexture(GL_TEXTURE0);
+	gl33_outcomes[12] = passed;
+}
+
+/*
+ * Checks GL_ARB_vertex_attrib_binding: in a vertex array of its own, the
+ * corners and a red colour interleaved in one buffer (24 bytes a vertex)
+ * read through binding point 0 at offsets 0 and 8, and then the colour
+ * from binding point 1, one green element at a stride of 0, which every
+ * vertex reads; the binding points' and the attributes' state read back.
+ */
+static void
+gl33_attrib_binding(void)
+{
+	static const GLfloat interleaved[24] = {
+		-1.0f, -1.0f, 1.0f, 0.0f, 0.0f, 1.0f,
+		1.0f, -1.0f, 1.0f, 0.0f, 0.0f, 1.0f,
+		-1.0f, 1.0f, 1.0f, 0.0f, 0.0f, 1.0f,
+		1.0f, 1.0f, 1.0f, 0.0f, 0.0f, 1.0f
+	};
+	static const GLfloat green[4] = { 0.0f, 1.0f, 0.0f, 1.0f };
+	GLuint array;
+	GLuint buffers[2];
+	GLint value;
+	GLenum error;
+	unsigned got;
+	int passed;
+
+	/* The buffers: the interleaved vertices, and one colour. */
+	glGenBuffers(2, buffers);
+	glBindBuffer(GL_ARRAY_BUFFER, buffers[0]);
+	glBufferData(GL_ARRAY_BUFFER, (GLsizeiptr)sizeof(interleaved), interleaved, GL_STATIC_DRAW);
+	glBindBuffer(GL_ARRAY_BUFFER, buffers[1]);
+	glBufferData(GL_ARRAY_BUFFER, (GLsizeiptr)sizeof(green), green, GL_STATIC_DRAW);
+	glBindBuffer(GL_ARRAY_BUFFER, 0U);
+
+	/* A vertex array whose two attributes read binding point 0 at their offsets. */
+	glGenVertexArrays(1, &array);
+	glBindVertexArray(array);
+	glBindVertexBuffer(0U, buffers[0], 0, 24);
+	glVertexAttribFormat(GL33_POSITION, 2, GL_FLOAT, GL_FALSE, 0U);
+	glVertexAttribFormat(GL33_COLOUR, 4, GL_FLOAT, GL_FALSE, 8U);
+	glVertexAttribBinding(GL33_POSITION, 0U);
+	glVertexAttribBinding(GL33_COLOUR, 0U);
+	glEnableVertexAttribArray(GL33_POSITION);
+	glEnableVertexAttribArray(GL33_COLOUR);
+
+	/* The state of the binding point and of the colour attribute. */
+	value = 0;
+	glGetIntegeri_v(GL_VERTEX_BINDING_STRIDE, 0U, &value);
+	passed = gl33_expect("binding-stride", (long)value, 24L);
+	glGetIntegeri_v(GL_VERTEX_BINDING_BUFFER, 0U, &value);
+	passed &= gl33_expect("binding-buffer", (long)value, (long)buffers[0]);
+	glGetVertexAttribiv(GL33_COLOUR, GL_VERTEX_ATTRIB_RELATIVE_OFFSET, &value);
+	passed &= gl33_expect("binding-relative-offset", (long)value, 8L);
+	glGetVertexAttribiv(GL33_COLOUR, GL_VERTEX_ATTRIB_BINDING, &value);
+	passed &= gl33_expect("binding-of-colour", (long)value, 0L);
+
+	/* Interleaved: the square red over green. */
+	gl33_clear(GL33_GREEN);
+	glUseProgram(gl33_attrib);
+	glDrawArrays(GL_TRIANGLE_STRIP, 0, 4);
+	got = gl33_read(GL33_SIDE / 2, GL33_SIDE / 2);
+	passed &= gl33_expect("binding-interleaved", (long)got, (long)GL33_RED);
+
+	/* The colour from binding point 1's one element, which a stride of 0 gives every vertex: green over red. */
+	glBindVertexBuffer(1U, buffers[1], 0, 0);
+	glVertexAttribFormat(GL33_COLOUR, 4, GL_FLOAT, GL_FALSE, 0U);
+	glVertexAttribBinding(GL33_COLOUR, 1U);
+	gl33_clear(GL33_RED);
+	glDrawArrays(GL_TRIANGLE_STRIP, 0, 4);
+	got = gl33_read(GL33_SIDE / 2, GL33_SIDE / 2);
+	printf("GLXTEST GL33 attrib-binding got=%06x\n", got);
+	passed &= gl33_expect("binding-zero-stride", (long)got, (long)GL33_GREEN);
+	error = glGetError();
+	passed &= gl33_expect("binding-glerror", (long)error, (long)GL_NO_ERROR);
+
+	/* The vertex array and the buffers go; the square's vertex array is bound again. */
+	glUseProgram(0U);
+	glBindVertexArray(gl33_square);
+	glDeleteVertexArrays(1, &array);
+	glDeleteBuffers(2, buffers);
+	gl33_outcomes[13] = passed;
+}
+
+/*
+ * Checks GL_ARB_texture_cube_map_array when the context names it: a cube
+ * map array of two cubes of 1x1 faces, each layer-face a colour of its
+ * own, read by a shader by direction and cube; the binding read back.
+ * Skipped (green) without the extension.
+ */
+static void
+gl33_cube_map_array(void)
+{
+	GLubyte texels[12 * 4];
+	const char *extensions;
+	const char *found;
+	GLuint program;
+	GLuint texture;
+	GLint value;
+	GLenum error;
+	unsigned got;
+	unsigned face;
+	int passed;
+
+	/* Without the extension, nothing to check. */
+	extensions = (const char *)glGetString(GL_EXTENSIONS);
+	found = strstr(extensions, "GL_ARB_texture_cube_map_array");
+	if (found == NULL) {
+		printf("GLXTEST GL33 cube-map-array skipped (no GL_ARB_texture_cube_map_array)\n");
+		gl33_outcomes[14] = 1;
+		return;
+	}
+
+	/* The program. */
+	program = gl33_program(gl33_vertex_source, gl33_cube_array_source);
+	if (program == 0U) {
+		gl33_outcomes[14] = gl33_expect("cube-array-linked", 0L, 1L);
+		return;
+	}
+
+	/* Each layer-face's texel. */
+	for (face = 0U; face < 12U; face++) {
+		texels[face * 4U] = (GLubyte)(face * 16U);
+		texels[face * 4U + 1U] = (GLubyte)(255U - face * 16U);
+		texels[face * 4U + 2U] = 128U;
+		texels[face * 4U + 3U] = 255U;
+	}
+
+	/* The texture of two cubes, nearest, on unit 2. */
+	glGenTextures(1, &texture);
+	glActiveTexture(GL_TEXTURE2);
+	glBindTexture(GL_TEXTURE_CUBE_MAP_ARRAY, texture);
+	glTexImage3D(GL_TEXTURE_CUBE_MAP_ARRAY, 0, GL_RGBA8, 1, 1, 12, 0, GL_RGBA, GL_UNSIGNED_BYTE, texels);
+	glTexParameteri(GL_TEXTURE_CUBE_MAP_ARRAY, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
+	glTexParameteri(GL_TEXTURE_CUBE_MAP_ARRAY, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
+	value = 0;
+	glGetIntegerv(GL_TEXTURE_BINDING_CUBE_MAP_ARRAY, &value);
+	passed = gl33_expect("cube-array-binding", (long)value, (long)texture);
+
+	/* A depth that is not whole cubes is refused. */
+	(void)glGetError();
+	glTexImage3D(GL_TEXTURE_CUBE_MAP_ARRAY, 1, GL_RGBA8, 1, 1, 5, 0, GL_RGBA, GL_UNSIGNED_BYTE, NULL);
+	error = glGetError();
+	passed &= gl33_expect("cube-array-depth-refused", (long)error, (long)GL_INVALID_VALUE);
+
+	/* The square over red. */
+	gl33_clear(GL33_RED);
+	glUseProgram(program);
+	glUniform1i(glGetUniformLocation(program, "u_cubes"), 2);
+	glUniform4f(glGetUniformLocation(program, "u_rect"), 0.0f, 0.0f, 1.0f, 1.0f);
+	glDrawArrays(GL_TRIANGLE_STRIP, 0, 4);
+	got = gl33_read(GL33_SIDE / 2, GL33_SIDE / 2);
+	printf("GLXTEST GL33 cube-map-array got=%06x\n", got);
+	passed &= gl33_expect("cube-map-array", (long)got, (long)GL33_GREEN);
+	error = glGetError();
+	passed &= gl33_expect("cube-array-glerror", (long)error, (long)GL_NO_ERROR);
+
+	/* The program and the texture go. */
+	glUseProgram(0U);
+	glDeleteProgram(program);
+	glBindTexture(GL_TEXTURE_CUBE_MAP_ARRAY, 0U);
+	glDeleteTextures(1, &texture);
+	glActiveTexture(GL_TEXTURE0);
+	gl33_outcomes[14] = passed;
 }
 
 /* Counts a debug message the callback hears, by its type. */

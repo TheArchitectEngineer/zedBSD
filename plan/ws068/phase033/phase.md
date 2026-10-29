@@ -4,7 +4,7 @@
 
 Phase ID: `ws068-p033`
 Parent: [WS068](../ws.md)
-Status: cleared（2026-09-27。Venus で glx-p033 PASS、回帰 PASS。i915 実機は未実施）
+Status: cleared（2026-09-27。Venus で glx-p033 PASS、回帰 PASS。i915 実機は未実施） 2026-10-29 ユーザーの決定で WS068 の受け入れは Venus だけ（i915 実機は受け入れに含めない、[ws.md](../ws.md) の「ユーザーの決定」）。
 Phase disposition: normal
 承認: 2026-09-27 ユーザーの自走の指示（graphics が最優先）、design.md §6、WS068 の計画（p014 の分割）。試験は 2026-09-27 の
 ユーザーの方針（amd64 のみ、phase の最後に）。

@@ -23,6 +23,7 @@
  *   F a rectangle sampler of any texel type  r sampler2DRectShadow
  *   Q a buffer sampler of any texel type
  *   Z a multisample sampler of any texel type
+ *   K a cube map array sampler of any texel type  o samplerCubeArrayShadow
  *   v void (a result only)
  *
  * Every generic code of one signature takes the same size, so a
@@ -240,6 +241,9 @@ static const struct glsl_builtin builtins_table[] = {
 	{ "texture", "fq4", GLSL_BI_SPECIAL, GLSL_SPECIAL_SHADOW, BI_BOTH, GLSL_IN_130_UP },
 	{ "texture", "TF2", GLSL_BI_SPECIAL, GLSL_SPECIAL_TEXTURE, BI_BOTH, GLSL_IN_DESKTOP_140_UP },
 	{ "texture", "fr3", GLSL_BI_SPECIAL, GLSL_SPECIAL_SHADOW, BI_BOTH, GLSL_IN_DESKTOP_140_UP },
+	{ "texture", "TK4", GLSL_BI_SPECIAL, GLSL_SPECIAL_TEXTURE, BI_BOTH, GLSL_IN_CUBE_ARRAY },
+	{ "texture", "TK4f", GLSL_BI_SPECIAL, GLSL_SPECIAL_TEXTURE_BIAS, BI_FRAGMENT, GLSL_IN_CUBE_ARRAY },
+	{ "texture", "fo4f", GLSL_BI_SPECIAL, GLSL_SPECIAL_SHADOW, BI_BOTH, GLSL_IN_CUBE_ARRAY },
 	{ "textureProj", "TA2", GLSL_BI_SPECIAL, GLSL_SPECIAL_TEXTURE_PROJ, BI_BOTH, GLSL_IN_130_UP },
 	{ "textureProj", "TA4", GLSL_BI_SPECIAL, GLSL_SPECIAL_TEXTURE_PROJ, BI_BOTH, GLSL_IN_130_UP },
 	{ "textureProj", "TD3", GLSL_BI_SPECIAL, GLSL_SPECIAL_TEXTURE_PROJ, BI_BOTH, GLSL_IN_130_UP },
@@ -253,6 +257,7 @@ static const struct glsl_builtin builtins_table[] = {
 	{ "textureLod", "TE3f", GLSL_BI_SPECIAL, GLSL_SPECIAL_TEXTURE_LOD, BI_BOTH, GLSL_IN_130_UP },
 	{ "textureLod", "TC3f", GLSL_BI_SPECIAL, GLSL_SPECIAL_TEXTURE_LOD, BI_BOTH, GLSL_IN_130_UP },
 	{ "textureLod", "TR3f", GLSL_BI_SPECIAL, GLSL_SPECIAL_TEXTURE_LOD, BI_BOTH, GLSL_IN_130_UP },
+	{ "textureLod", "TK4f", GLSL_BI_SPECIAL, GLSL_SPECIAL_TEXTURE_LOD, BI_BOTH, GLSL_IN_CUBE_ARRAY },
 	{ "textureProjLod", "TD3f", GLSL_BI_SPECIAL, GLSL_SPECIAL_TEXTURE_PROJ_LOD, BI_BOTH, GLSL_IN_130_UP },
 	{ "textureProjLod", "TD4f", GLSL_BI_SPECIAL, GLSL_SPECIAL_TEXTURE_PROJ_LOD, BI_BOTH, GLSL_IN_130_UP },
 	{ "textureProjLod", "TE4f", GLSL_BI_SPECIAL, GLSL_SPECIAL_TEXTURE_PROJ_LOD, BI_BOTH, GLSL_IN_130_UP },
@@ -260,6 +265,7 @@ static const struct glsl_builtin builtins_table[] = {
 	{ "textureGrad", "TE333", GLSL_BI_SPECIAL, GLSL_SPECIAL_TEXTURE_GRAD, BI_BOTH, GLSL_IN_130_UP },
 	{ "textureGrad", "TC333", GLSL_BI_SPECIAL, GLSL_SPECIAL_TEXTURE_GRAD, BI_BOTH, GLSL_IN_130_UP },
 	{ "textureGrad", "TR322", GLSL_BI_SPECIAL, GLSL_SPECIAL_TEXTURE_GRAD, BI_BOTH, GLSL_IN_130_UP },
+	{ "textureGrad", "TK433", GLSL_BI_SPECIAL, GLSL_SPECIAL_TEXTURE_GRAD, BI_BOTH, GLSL_IN_CUBE_ARRAY },
 	{ "textureGrad", "fs322", GLSL_BI_SPECIAL, GLSL_SPECIAL_TEXTURE_GRAD, BI_BOTH, GLSL_IN_130_UP },
 	{ "textureOffset", "TD2j", GLSL_BI_SPECIAL, GLSL_SPECIAL_TEXTURE_OFFSET, BI_BOTH, GLSL_IN_130_UP },
 	{ "textureOffset", "TD2jf", GLSL_BI_SPECIAL, GLSL_SPECIAL_TEXTURE_OFFSET_BIAS, BI_FRAGMENT, GLSL_IN_130_UP },
@@ -277,6 +283,8 @@ static const struct glsl_builtin builtins_table[] = {
 	{ "textureSize", "jsi", GLSL_BI_SPECIAL, GLSL_SPECIAL_TEXTURE_SIZE, BI_BOTH, GLSL_IN_130_UP },
 	{ "textureSize", "jqi", GLSL_BI_SPECIAL, GLSL_SPECIAL_TEXTURE_SIZE, BI_BOTH, GLSL_IN_130_UP },
 	{ "textureSize", "kpi", GLSL_BI_SPECIAL, GLSL_SPECIAL_TEXTURE_SIZE, BI_BOTH, GLSL_IN_130_UP },
+	{ "textureSize", "kKi", GLSL_BI_SPECIAL, GLSL_SPECIAL_TEXTURE_SIZE, BI_BOTH, GLSL_IN_CUBE_ARRAY },
+	{ "textureSize", "koi", GLSL_BI_SPECIAL, GLSL_SPECIAL_TEXTURE_SIZE, BI_BOTH, GLSL_IN_CUBE_ARRAY },
 	{ "textureSize", "jF", GLSL_BI_SPECIAL, GLSL_SPECIAL_TEXTURE_SIZE, BI_BOTH, GLSL_IN_DESKTOP_140_UP },
 	{ "textureSize", "jr", GLSL_BI_SPECIAL, GLSL_SPECIAL_TEXTURE_SIZE, BI_BOTH, GLSL_IN_DESKTOP_140_UP },
 	{ "textureSize", "iQ", GLSL_BI_SPECIAL, GLSL_SPECIAL_TEXTURE_SIZE, BI_BOTH, GLSL_IN_DESKTOP_140_UP },
@@ -288,6 +296,14 @@ static const struct glsl_builtin builtins_table[] = {
 	{ "texelFetch", "TFj", GLSL_BI_SPECIAL, GLSL_SPECIAL_TEXEL_FETCH, BI_BOTH, GLSL_IN_DESKTOP_140_UP },
 	{ "texelFetch", "TQi", GLSL_BI_SPECIAL, GLSL_SPECIAL_TEXEL_FETCH, BI_BOTH, GLSL_IN_DESKTOP_140_UP },
 	{ "texelFetch", "TZji", GLSL_BI_SPECIAL, GLSL_SPECIAL_TEXEL_FETCH, BI_BOTH, GLSL_IN_150_UP },
+
+	/* Texture gathers: the first component of the four texels a bilinear lookup reads (GL_ARB_texture_gather). */
+	{ "textureGather", "TD2", GLSL_BI_SPECIAL, GLSL_SPECIAL_TEXTURE_GATHER, BI_BOTH, GLSL_IN_GATHER },
+	{ "textureGather", "TR3", GLSL_BI_SPECIAL, GLSL_SPECIAL_TEXTURE_GATHER, BI_BOTH, GLSL_IN_GATHER },
+	{ "textureGather", "TC3", GLSL_BI_SPECIAL, GLSL_SPECIAL_TEXTURE_GATHER, BI_BOTH, GLSL_IN_GATHER },
+	{ "textureGather", "TK4", GLSL_BI_SPECIAL, GLSL_SPECIAL_TEXTURE_GATHER, BI_BOTH, GLSL_IN_GATHER },
+	{ "textureGatherOffset", "TD2j", GLSL_BI_SPECIAL, GLSL_SPECIAL_TEXTURE_GATHER_OFFSET, BI_BOTH, GLSL_IN_GATHER },
+	{ "textureGatherOffset", "TR3j", GLSL_BI_SPECIAL, GLSL_SPECIAL_TEXTURE_GATHER_OFFSET, BI_BOTH, GLSL_IN_GATHER },
 
 
 	/* Derivatives (OpenGL ES needs OES_standard_derivatives). */
@@ -847,6 +863,16 @@ builtins_sampler_code(
 	case 'Z':
 		sampler = GLSL_SAMPLER_MS;
 		any_base = 1;
+		break;
+	case 'K':
+		sampler = GLSL_SAMPLER_CUBE;
+		arrayed = 1U;
+		any_base = 1;
+		break;
+	case 'o':
+		sampler = GLSL_SAMPLER_CUBE;
+		arrayed = 1U;
+		shadow = 1U;
 		break;
 	default:
 		return 0;

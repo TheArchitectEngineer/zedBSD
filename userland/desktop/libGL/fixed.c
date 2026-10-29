@@ -35,6 +35,7 @@
 /* The device features an extension may need (fixed_extension_entry.features, fixed_device_features). */
 #define FIXED_FEATURE_TESSELLATION 0x1U
 #define FIXED_FEATURE_SAMPLE_SHADING 0x2U
+#define FIXED_FEATURE_CUBE_ARRAY 0x4U
 
 /* GL's GL_CONTEXT_PROFILE_MASK bits. */
 #define FIXED_CORE_PROFILE	0x1
@@ -57,6 +58,7 @@ struct fixed_extension_entry {
 /* The extensions, by name. */
 static const struct fixed_extension_entry fixed_extensions[] = {
 	{ "GL_ARB_blend_func_extended", 33U, 0, 0U },
+	{ "GL_ARB_clip_control", 30U, 0, 0U },
 	{ "GL_ARB_compatibility", 31U, 1, 0U },
 	{ "GL_ARB_copy_buffer", 30U, 0, 0U },
 	{ "GL_ARB_depth_buffer_float", 30U, 0, 0U },
@@ -78,7 +80,9 @@ static const struct fixed_extension_entry fixed_extensions[] = {
 	{ "GL_ARB_sync", 30U, 0, 0U },
 	{ "GL_ARB_tessellation_shader", 32U, 0, FIXED_FEATURE_TESSELLATION },
 	{ "GL_ARB_texture_buffer_object", 30U, 0, 0U },
+	{ "GL_ARB_texture_cube_map_array", 30U, 0, FIXED_FEATURE_CUBE_ARRAY },
 	{ "GL_ARB_texture_float", 30U, 0, 0U },
+	{ "GL_ARB_texture_gather", 30U, 0, 0U },
 	{ "GL_ARB_texture_multisample", 32U, 0, 0U },
 	{ "GL_ARB_texture_rectangle", 30U, 0, 0U },
 	{ "GL_ARB_texture_rg", 30U, 0, 0U },
@@ -88,6 +92,7 @@ static const struct fixed_extension_entry fixed_extensions[] = {
 	{ "GL_ARB_timer_query", 33U, 0, 0U },
 	{ "GL_ARB_uniform_buffer_object", 30U, 0, 0U },
 	{ "GL_ARB_vertex_array_object", 30U, 0, 0U },
+	{ "GL_ARB_vertex_attrib_binding", 30U, 0, 0U },
 	{ "GL_ARB_vertex_type_2_10_10_10_rev", 33U, 0, 0U },
 	{ "GL_KHR_debug", 30U, 0, 0U }
 };
@@ -1740,11 +1745,13 @@ fixed_device_features(void)
 	if (state == NULL)
 		return features;
 
-	/* Tessellation shaders, and per-sample shading. */
+	/* Tessellation shaders, per-sample shading, and cube map arrays. */
 	if (state->display->features.tessellationShader)
 		features |= FIXED_FEATURE_TESSELLATION;
 	if (state->display->features.sampleRateShading)
 		features |= FIXED_FEATURE_SAMPLE_SHADING;
+	if (state->display->features.imageCubeArray)
+		features |= FIXED_FEATURE_CUBE_ARRAY;
 
 	/* Succeeded: the features. */
 	return features;

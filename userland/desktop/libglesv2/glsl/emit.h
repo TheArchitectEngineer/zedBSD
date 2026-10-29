@@ -66,6 +66,7 @@
 #define SPV_OP_IMAGE_SAMPLE_DREF_IMPLICIT_LOD 89U
 #define SPV_OP_IMAGE_SAMPLE_DREF_EXPLICIT_LOD 90U
 #define SPV_OP_IMAGE_FETCH		95U
+#define SPV_OP_IMAGE_GATHER		96U
 #define SPV_OP_IMAGE			100U
 #define SPV_OP_IMAGE_QUERY_SIZE_LOD	103U
 #define SPV_OP_IMAGE_QUERY_SIZE		104U
@@ -211,6 +212,7 @@
 #define SPV_CAPABILITY_SAMPLED_1D	43U
 #define SPV_CAPABILITY_IMAGE_QUERY	50U
 #define SPV_CAPABILITY_SAMPLED_BUFFER	46U
+#define SPV_CAPABILITY_SAMPLED_CUBE_ARRAY 45U
 #define SPV_MODEL_VERTEX		0U
 #define SPV_MODEL_GEOMETRY		3U
 #define SPV_MODEL_FRAGMENT		4U
@@ -315,6 +317,7 @@ struct glsl_module {
 	unsigned sampled_1d;
 	unsigned image_query;
 	unsigned sampled_buffer;
+	unsigned sampled_cube_array;
 	unsigned geometry;
 	unsigned tessellation;
 	unsigned sample_rate_shading;

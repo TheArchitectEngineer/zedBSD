@@ -94,6 +94,7 @@ static int program_merge(struct gles_program *program, struct gles_spirv *spirv,
 static int program_builtin_uniform(struct gles_program *program, const struct gles_uniform *uniform);
 static int program_layout(struct gles_state *state, struct gles_program *program);
 static int program_module(struct gles_state *state, const uint32_t *code, size_t words, VkShaderModule *module);
+static int program_keep_last(struct gles_program *program, const uint32_t *code, size_t words, char *log);
 static void program_unlink(struct gles_state *state, struct gles_program *program);
 static void program_uniform(GLint location, GLsizei count, unsigned components, const void *values, int integers);
 static void program_matrix(GLint location, GLsizei count, GLboolean transpose, const GLfloat *values, unsigned columns, unsigned rows);
@@ -127,6 +128,52 @@ gles_program_release(
 	/* The program. */
 	free(program->log);
 	free(program);
+}
+
+/*
+ * Returns a linked program's module of the last stage before the
+ * rasterizer with gl_Position's z kept as the shader wrote it (desktop
+ * GL's glClipControl(GL_ZERO_TO_ONE)) and y turned over when flip is
+ * nonzero, made at its first use and kept until the program's link goes;
+ * VK_NULL_HANDLE when it cannot be made.
+ */
+VkShaderModule
+gles_program_zero_module(
+	struct gles_state *state,
+	struct gles_program *program,
+	int flip)
+{
+	uint32_t *patched;
+	size_t patched_words;
+	unsigned index;
+	int status;
+
+	/* One made before. */
+	index = 0U;
+	if (flip)
+		index = 1U;
+	if (program->zero_modules[index] != VK_NULL_HANDLE)
+		return program->zero_modules[index];
+
+	/* Without the last stage's code there is none. */
+	if (program->last_code == NULL)
+		return VK_NULL_HANDLE;
+
+	/* The code with gl_Position's y turned over or not, its z as it is. */
+	patched = gles_spirv_position(program->last_code, program->last_words, flip, 0, &patched_words);
+	if (patched == NULL)
+		return VK_NULL_HANDLE;
+
+	/* Its module. */
+	status = program_module(state, patched, patched_words, &program->zero_modules[index]);
+	free(patched);
+	if (status != 0) {
+		program->zero_modules[index] = VK_NULL_HANDLE;
+		return VK_NULL_HANDLE;
+	}
+
+	/* Succeeded: the module. */
+	return program->zero_modules[index];
 }
 
 /*
@@ -2909,6 +2956,8 @@ program_sampler_type(
 {
 	/* A shadow sampler compares depth. */
 	if (info->shadow && info->sampler != GLSL_SAMPLER_RECT) {
+		if (info->sampler == GLSL_SAMPLER_CUBE && info->arrayed)
+			return GL_SAMPLER_CUBE_MAP_ARRAY_SHADOW;
 		if (info->sampler == GLSL_SAMPLER_CUBE)
 			return GL_SAMPLER_CUBE_SHADOW;
 		if (info->sampler == GLSL_SAMPLER_1D)
@@ -2941,6 +2990,12 @@ program_sampler_type(
 			return GL_UNSIGNED_INT_SAMPLER_2D_MULTISAMPLE;
 		return GL_SAMPLER_2D_MULTISAMPLE;
 	case GLSL_SAMPLER_CUBE:
+		if (info->arrayed && info->base == GLSL_INFO_INT)
+			return GL_INT_SAMPLER_CUBE_MAP_ARRAY;
+		if (info->arrayed && info->base == GLSL_INFO_UINT)
+			return GL_UNSIGNED_INT_SAMPLER_CUBE_MAP_ARRAY;
+		if (info->arrayed)
+			return GL_SAMPLER_CUBE_MAP_ARRAY;
 		if (info->base == GLSL_INFO_INT)
 			return GL_INT_SAMPLER_CUBE;
 		if (info->base == GLSL_INFO_UINT)
@@ -3349,7 +3404,7 @@ program_link_code(
 	}
 
 	/* The vertex shader's gl_Position made Vulkan's: for a window, y turned over (unchanged before a later stage, which does it). */
-	patched = gles_spirv_position(vertex_code, vertex_words, 1, &patched_words);
+	patched = gles_spirv_position(vertex_code, vertex_words, 1, 1, &patched_words);
 	if (later && patched != NULL) {
 		memcpy(patched, vertex_code, vertex_words * sizeof(uint32_t));
 		patched_words = vertex_words;
@@ -3366,10 +3421,24 @@ program_link_code(
 	}
 
 	/* And for a framebuffer object, whose image keeps GL's rows. */
-	patched_fbo = gles_spirv_position(vertex_code, vertex_words, 0, &patched_fbo_words);
+	patched_fbo = gles_spirv_position(vertex_code, vertex_words, 0, 1, &patched_fbo_words);
 	if (later && patched_fbo != NULL) {
 		memcpy(patched_fbo, vertex_code, vertex_words * sizeof(uint32_t));
 		patched_fbo_words = vertex_words;
+	}
+
+	/* The vertex shader's code kept when it is the last stage (glClipControl's depth range makes other modules of it). */
+	status = 0;
+	if (!later)
+		status = program_keep_last(program, vertex_code, vertex_words, log);
+	if (status != 0) {
+		free(vertex_code);
+		free(patched);
+		free(patched_fbo);
+		free(fragment_code);
+		gles_spirv_free(&vertex);
+		gles_spirv_free(&fragment);
+		return -1;
 	}
 
 	/* The code is in the copies now. */
@@ -3465,8 +3534,13 @@ program_link_geometry(
 	if (status != 0)
 		return -1;
 
+	/* Its code kept (glClipControl's depth range makes other modules of it). */
+	status = program_keep_last(program, code, words, log);
+	if (status != 0)
+		return -1;
+
 	/* The module for a window: y turned over. */
-	patched = gles_spirv_position(code, words, 1, &patched_words);
+	patched = gles_spirv_position(code, words, 1, 1, &patched_words);
 	if (patched == NULL) {
 		(void)snprintf(log, PROGRAM_LOG, "the geometry shader's gl_Position could not be rewritten\n");
 		return -1;
@@ -3481,7 +3555,7 @@ program_link_geometry(
 	}
 
 	/* And for a framebuffer object. */
-	patched = gles_spirv_position(code, words, 0, &patched_words);
+	patched = gles_spirv_position(code, words, 0, 1, &patched_words);
 	if (patched == NULL) {
 		(void)snprintf(log, PROGRAM_LOG, "the geometry shader's gl_Position could not be rewritten\n");
 		return -1;
@@ -3541,6 +3615,13 @@ program_link_tessellation(
 		return -1;
 	}
 
+	/* The evaluation stage's code kept when it is the last stage (glClipControl's depth range makes other modules of it). */
+	if (last) {
+		status = program_keep_last(program, linked->code[GLSL_STAGE_TESS_EVALUATION], linked->words[GLSL_STAGE_TESS_EVALUATION], log);
+		if (status != 0)
+			return -1;
+	}
+
 	/* The evaluation stage's two. */
 	status = program_stage_modules(state, linked->code[GLSL_STAGE_TESS_EVALUATION], linked->words[GLSL_STAGE_TESS_EVALUATION],
 				       last, &program->tess_evaluation_module, &program->tess_evaluation_module_fbo, log);
@@ -3586,7 +3667,7 @@ program_stage_modules(
 	}
 
 	/* The module for a window: y turned over. */
-	patched = gles_spirv_position(code, words, 1, &patched_words);
+	patched = gles_spirv_position(code, words, 1, 1, &patched_words);
 	if (patched == NULL) {
 		(void)snprintf(log, PROGRAM_LOG, "a shader's gl_Position could not be rewritten\n");
 		return -1;
@@ -3599,7 +3680,7 @@ program_stage_modules(
 	}
 
 	/* And for a framebuffer object. */
-	patched = gles_spirv_position(code, words, 0, &patched_words);
+	patched = gles_spirv_position(code, words, 0, 1, &patched_words);
 	if (patched == NULL) {
 		(void)snprintf(log, PROGRAM_LOG, "a shader's gl_Position could not be rewritten\n");
 		return -1;
@@ -3870,6 +3951,34 @@ program_module(
 	return 0;
 }
 
+/*
+ * Keeps a copy of the code of a program's last stage before the
+ * rasterizer, in place of one kept before.  Returns 0, or -1 with the log.
+ */
+static int
+program_keep_last(
+	struct gles_program *program,
+	const uint32_t *code,
+	size_t words,
+	char *log)
+{
+	uint32_t *copy;
+
+	/* The copy. */
+	copy = malloc(words * sizeof(uint32_t));
+	if (copy == NULL) {
+		(void)snprintf(log, PROGRAM_LOG, "out of memory\n");
+		return -1;
+	}
+	memcpy(copy, code, words * sizeof(uint32_t));
+
+	/* Succeeded: it replaces the one before. */
+	free(program->last_code);
+	program->last_code = copy;
+	program->last_words = words;
+	return 0;
+}
+
 /* Undoes a program's link: its Vulkan objects wait for the frame, its pipelines go, its tables are freed. */
 static void
 program_unlink(
@@ -3892,13 +4001,16 @@ program_unlink(
 	objects.modules[5] = program->tess_control_module;
 	objects.modules[6] = program->tess_evaluation_module;
 	objects.modules[7] = program->tess_evaluation_module_fbo;
+	objects.modules[8] = program->zero_modules[0];
+	objects.modules[9] = program->zero_modules[1];
 	objects.pipeline = program->compute_pipeline;
 	gles_garbage_keep(state, &objects);
 
-	/* The tables. */
+	/* The tables, and the last stage's code. */
 	free(program->uniforms);
 	free(program->locations);
 	free(program->uniform_data);
+	free(program->last_code);
 
 	/* Nothing linked. */
 	program->layout = VK_NULL_HANDLE;
@@ -3911,6 +4023,10 @@ program_unlink(
 	program->tess_control_module = VK_NULL_HANDLE;
 	program->tess_evaluation_module = VK_NULL_HANDLE;
 	program->tess_evaluation_module_fbo = VK_NULL_HANDLE;
+	program->zero_modules[0] = VK_NULL_HANDLE;
+	program->zero_modules[1] = VK_NULL_HANDLE;
+	program->last_code = NULL;
+	program->last_words = 0U;
 	program->uniforms = NULL;
 	program->uniform_count = 0U;
 	program->locations = NULL;

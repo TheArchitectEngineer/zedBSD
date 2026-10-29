@@ -4,7 +4,7 @@
 
 Phase ID: `ws068-p007`
 Parent: [WS068](../ws.md)
-Status: planning（2026-10-01 に phase.md を作った。範囲は ws.md の表の行のまま。保留の p034〜p037 を対象に含めるかは main の判断）
+Status: planning（WS068 の最後の Phase。2026-10-29: p034〜p068 を対象に含める（p035・p036 を p040〜p068 に分けた）。旧: 2026-10-01 に phase.md を作った。保留の p034〜p037 を対象に含めるかは main の判断）
 Phase disposition: normal
 Queue: なし
 
