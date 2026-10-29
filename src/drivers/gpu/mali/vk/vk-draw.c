@@ -159,6 +159,20 @@
 /* The blend state of a replace, as the pipeline packs it: ONE and ZERO, added, for colour and alpha. */
 #define REPLACE_EQUATION	(1U | (1U << 13))
 
+/*
+ * The blend's memory format of the 8-bit formats: the tile buffer's
+ * RGBA8 ("Format" RGBA8 TB 237 in bits 12..19, the RGBA order 0); the
+ * pixel word's sRGB bit and its component order's field.
+ *
+ * Values referenced:
+ * Mesa 26.2.6 src/panfrost/genxml/v10.xml (enum "Format": RGBA8 TB 237;
+ * enum "RGB Component Order": RGBA 0) and src/panfrost/lib/pan_format.h
+ * (MALI_PACK_FMT: the sRGB bit 20).
+ */
+#define BLEND_RGBA8_TB		(237U << 12)
+#define PIXEL_SRGB		(1U << 20)
+#define PIXEL_ORDER_MASK	0xfffU
+
 /* The float 1.0's bits, for the depth clamp and the point size. */
 #define FLOAT_ONE		0x3f800000U
 
@@ -1620,23 +1634,40 @@ draw_mode(
 }
 
 /*
- * Gives the memory format the blend converts a target's colour from: the
- * format's pixel word with its components in RGBA order (the tile
- * buffer's order; the writeback swizzle orders the memory).
+ * Gives the memory format the fixed-function blend converts a target's
+ * colour to: for a format of 8-bit unsigned normalized components (one
+ * to four, either order) the tile buffer's RGBA8 with the format's sRGB
+ * bit; for any other the format's pixel word in the RGBA order (the
+ * fixed function does not take the RGB1 order; the render target's
+ * writeback orders the memory).
+ *
+ * Values referenced:
+ * Mesa 26.2.6 src/panfrost/lib/pan_format.c (pan_blendable_formats:
+ * BFMT_SRGB of R8, R8G8, R8G8B8A8 and B8G8R8A8 blends as
+ * MALI_BLEND_PU_R8G8B8A8, RGBA8 TB in the RGBA order, with the sRGB bit
+ * 20; BFMT_FLOAT as the format in the RGBA order), src/panfrost/lib/
+ * pan_format.h (pan_dithered_format_from_pipe_format: a format with no
+ * blendable entry blends as its own pixel word),
+ * src/panfrost/vulkan/panvk_vX_blend.c (the fixed function's RGB1 order
+ * forced to RGBA) and src/panfrost/genxml/v10.xml (enum "Format": RGBA8
+ * TB 237).
  */
 static uint32_t
 blend_format(
 	const struct mali_vk_format *format)
 {
-	uint32_t pixel;
-
-	/* A BGRA order becomes RGBA. */
-	pixel = format->pixel;
-	if ((pixel & 0xfffU) == 4U)
-		pixel &= ~0xfffU;
-
-	/* Succeeded: the word. */
-	return pixel;
+	/* One case a format of 8-bit unsigned normalized components; any other keeps its own format. */
+	switch (format->vk) {
+	case VK_FORMAT_R8_UNORM:
+	case VK_FORMAT_R8G8_UNORM:
+	case VK_FORMAT_R8G8B8A8_UNORM:
+	case VK_FORMAT_R8G8B8A8_SRGB:
+	case VK_FORMAT_B8G8R8A8_UNORM:
+	case VK_FORMAT_B8G8R8A8_SRGB:
+		return BLEND_RGBA8_TB | (format->pixel & PIXEL_SRGB);
+	default:
+		return format->pixel & ~PIXEL_ORDER_MASK;
+	}
 }
 
 /*
