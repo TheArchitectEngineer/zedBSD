@@ -116,13 +116,6 @@ static void compose_log_kinds(struct kwl_server *server);
 #define COMPOSE_STALL_LATER_MS	60000U
 
 /*
- * How long the main thread waits for a task to complete before it lets go
- * of an image the task moves (one made and let go at once), in
- * milliseconds; past it the GPU is stuck and nothing may be destroyed.
- */
-#define COMPOSE_TASK_WAIT_MS	5000U
-
-/*
  * The draws one render job of the PowerVR driver holds (its
  * POWERVR_RENDER_DRAWS): a pass of more goes on in another job that
  * loads the pass's area again.  Only KWL PASSES counts with it.
@@ -851,6 +844,7 @@ kwl_compose_draw(
 	if (result == VK_SUCCESS && compose->list.failed)
 		result = VK_ERROR_OUT_OF_HOST_MEMORY;
 	if (result != VK_SUCCESS) {
+		compose->drawing_open = 0U;
 		compose->turn.frame = 0U;
 		compose->scene.valid = 0U;
 		printf("KWL VULKAN_ERROR operation=record result=%d\n", (int)result);
@@ -892,6 +886,7 @@ kwl_compose_draw(
 	compose->walk_cycles = kwl_cycles() - compose->walk_start_cycles;
 	compose->in_flight++;
 	compose->drawings_given++;
+	compose->drawing_open = 0U;
 	compose->flight_ms = kwl_milliseconds();
 	compose->ready_valid = 0U;
 	compose->want_kind = KWL_RENDER_NONE;
@@ -1057,9 +1052,9 @@ kwl_compose_give_tasks(
 }
 
 /*
- * Finishes the frame in flight now, waiting for it: before a client whose
- * buffers and callbacks it may hold is destroyed, before the main thread
- * uses the queue or waits for the device, and at exit.
+ * Finishes the frame in flight now, waiting for it: before the main thread
+ * uses the queue or waits for the device (an output's changes), and at
+ * exit.
  */
 void
 kwl_compose_quiesce(
@@ -1079,6 +1074,57 @@ kwl_compose_quiesce(
 	if (error != 0) {
 		kwl_fatal("KWL FAILED site=compose_poll errno=%d", error);
 		server->failed = 1;
+	}
+}
+
+/*
+ * Lets the drawings in flight forget a client that goes: their holds on
+ * its buffers are given back now and its frame callbacks leave them (the
+ * client is fatal, so neither is told), so that its objects may go at
+ * once.  The images they sample wait for those drawings when they are let
+ * go (kwl_compose_bury), so nothing waits here.
+ */
+void
+kwl_compose_client_gone(
+	struct kwl_server *server,
+	struct kwl_client *client)
+{
+	struct kwl_frame_slot *slot;
+	struct kwl_object **link;
+	struct kwl_object *callback;
+	struct kwl_object *buffer;
+	unsigned index;
+	unsigned held;
+
+	/* Without window mode nothing is held. */
+	if (server->compose == NULL)
+		return;
+
+	/* Each slot's holds and callbacks (those of a completed slot are none). */
+	for (index = 0U; index < KWL_FRAME_SLOTS; index++) {
+		slot = &server->compose->slots[index];
+
+		/* Its buffers, given back; the completion skips the empty places. */
+		for (held = 0U; held < slot->held_count; held++) {
+			buffer = slot->held[held];
+			if (buffer == NULL || buffer->client != client)
+				continue;
+			slot->held[held] = NULL;
+			kwl_buffer_put(buffer);
+		}
+
+		/* Its frame callbacks, out of the list and retired untold. */
+		link = &slot->callbacks;
+		while (*link != NULL) {
+			callback = *link;
+			if (callback->client != client) {
+				link = &callback->callback_next;
+				continue;
+			}
+			*link = callback->callback_next;
+			callback->callback_next = NULL;
+			kwl_object_destroy(callback);
+		}
 	}
 }
 
@@ -2744,8 +2790,9 @@ kwl_compose_list_begin(
 	/* The walk is timed from here to the replay (KWL PERF walk). */
 	compose->walk_start_cycles = kwl_cycles();
 
-	/* An empty list, with nothing bound and no quad waiting. */
+	/* An empty list, with nothing bound and no quad waiting; an image let go from now on may be in it. */
 	kwl_list_reset(&compose->list);
+	compose->drawing_open = 1U;
 	kwl_compose_bind_forget(compose);
 	kwl_batch_begin(compose);
 
@@ -2971,50 +3018,13 @@ kwl_compose_tasks_busy(
 }
 
 /*
- * Waits until the task numbered number has completed on the GPU, before
- * the main thread destroys an image its commands name (an image made and
- * let go before its move ran): the task being recorded is given first.
- * Usually it has completed already and nothing waits.  A GPU that does
- * not finish in COMPOSE_TASK_WAIT_MS ends the compositor at once, as no
- * object it may still use can be destroyed.
- */
-void
-kwl_compose_task_wait(
-	struct kwl_compose *compose,
-	uint64_t number)
-{
-	int error;
-
-	/* No task, or one whose completion was applied. */
-	if (number == 0U || number <= compose->task_done)
-		return;
-
-	/* The task being recorded goes to the render thread first. */
-	if (number == compose->task_open)
-		kwl_compose_task_flush(compose);
-
-	/* A task never given (its flush failed) has nothing on the GPU. */
-	if (number > compose->task_given)
-		return;
-
-	/* Until the render thread has seen its fence signalled. */
-	error = kwl_render_wait_task(&compose->render, number, COMPOSE_TASK_WAIT_MS);
-	if (error != 0) {
-		kwl_fatal("KWL FAILED site=compose_task errno=%d operation=wait number=%llu", error, (unsigned long long)number);
-		_exit(1);
-	}
-
-	/* Succeeded: the image may go. */
-	return;
-}
-
-/*
- * Lets go of an image record (allocated, and referred to by nothing else
- * from now on): destroyed now when no drawing given and not completed and
- * no task that moves it may still use it, otherwise once they have
- * completed (at a later poll), without waiting.  destroy releases its
- * objects and frees the record.  Without memory for the wait
- * the compositor ends, as nothing in use may be destroyed.
+ * Lets go of an image record: its objects are released now when no
+ * drawing being written, given and not completed and no task that moves
+ * it may still use them (always before the render thread starts and after
+ * it stops), otherwise once they have completed (at a later poll), without
+ * waiting.  destroy releases the objects; the record is cleared either way
+ * and may be used again or freed at once.  Without memory for the wait the
+ * compositor ends, as nothing in use may be destroyed.
  */
 void
 kwl_compose_bury(
@@ -3028,8 +3038,9 @@ kwl_compose_bury(
 
 	/* Nothing in flight uses it: now. */
 	ready = kwl_compose_task_ready(compose, import);
-	if (ready && compose->drawings_done >= compose->drawings_given) {
+	if (!compose->render_started || (ready && !compose->drawing_open && compose->drawings_done >= compose->drawings_given)) {
 		destroy(compose, import);
+		memset(import, 0, sizeof(*import));
 		return;
 	}
 
@@ -3039,9 +3050,10 @@ kwl_compose_bury(
 		kwl_fatal("KWL FAILED site=compose_bury errno=%d", ENOMEM);
 		_exit(1);
 	}
-	grave->drawings = compose->drawings_given;
-	grave->import = import;
+	grave->drawings = compose->drawings_given + compose->drawing_open;
+	grave->record = *import;
 	grave->destroy = destroy;
+	memset(import, 0, sizeof(*import));
 
 	/* The end of the list, where it waits after the graves let go before it. */
 	for (tail = &compose->graves; *tail != NULL; tail = &(*tail)->next)
@@ -4290,9 +4302,11 @@ kwl_compose_submit_quiet(
 	compose = server->compose;
 	kwl_host_images_take(compose, &compose->list);
 
-	/* A list that could not grow is not given. */
-	if (compose->list.failed)
+	/* A list that could not grow is not given (nor written any more). */
+	if (compose->list.failed) {
+		compose->drawing_open = 0U;
 		return VK_ERROR_OUT_OF_HOST_MEMORY;
+	}
 
 	/* The pictures it draws belong to this output's generation (layer-cache.c), as its slot says. */
 	compose->frame_layers_generation = compose->layers.generation;
@@ -4321,6 +4335,7 @@ kwl_compose_submit_quiet(
 	compose->walk_cycles = kwl_cycles() - compose->walk_start_cycles;
 	compose->in_flight++;
 	compose->drawings_given++;
+	compose->drawing_open = 0U;
 	compose->flight_ms = kwl_milliseconds();
 	compose->ready_valid = 0U;
 	compose->want_kind = KWL_RENDER_NONE;
@@ -4740,7 +4755,7 @@ compose_graves(
 	while (*link != NULL) {
 		/* Still in use by a drawing or its task given before. */
 		grave = *link;
-		ready = kwl_compose_task_ready(compose, grave->import);
+		ready = kwl_compose_task_ready(compose, &grave->record);
 		if (!all && (!ready || compose->drawings_done < grave->drawings)) {
 			link = &grave->next;
 			continue;
@@ -4748,7 +4763,7 @@ compose_graves(
 
 		/* Destroyed, and out of the list. */
 		*link = grave->next;
-		grave->destroy(compose, grave->import);
+		grave->destroy(compose, &grave->record);
 		free(grave);
 		destroyed++;
 	}

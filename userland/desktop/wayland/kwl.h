@@ -2261,6 +2261,7 @@ void kwl_shot_close(struct kwl_server *server);
 void kwl_shot_tick(struct kwl_server *server);
 void kwl_shot_complete(struct kwl_server *server);
 void kwl_compose_quiesce(struct kwl_server *server);
+void kwl_compose_client_gone(struct kwl_server *server, struct kwl_client *client);
 void kwl_compose_close(struct kwl_server *server);
 VkResult kwl_import_adopt(struct kwl_object *buffer, VkImage image, VkDeviceMemory memory, uint32_t width, uint32_t height, VkFormat format);
 void kwl_import_destroy(struct kwl_object *buffer);

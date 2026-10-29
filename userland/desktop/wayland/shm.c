@@ -39,10 +39,9 @@ static int surface_upload(struct kwl_server *server, struct kwl_object *surface)
 static VkResult image_create(struct kwl_compose *compose, uint32_t width, uint32_t height, VkSampler sampler, struct kwl_import *import);
 static VkResult image_layout(struct kwl_compose *compose, VkImage image, VkImageLayout old_layout);
 static VkResult image_layout_record(VkCommandBuffer command, VkImage image, VkImageLayout old_layout);
-static void image_copy_record(VkCommandBuffer command, struct kwl_import *import);
+static void image_copy_record(VkCommandBuffer command, const struct kwl_list_copy *copy);
 static void image_release(struct kwl_compose *compose, struct kwl_import *import);
 static void image_unlink(struct kwl_compose *compose, struct kwl_import *import);
-static void image_bury(struct kwl_compose *compose, struct kwl_import *import);
 static uint32_t word(const unsigned char *bytes, size_t offset);
 static uint32_t kwl_row_sum(const unsigned char *row, uint32_t width);
 
@@ -181,9 +180,9 @@ kwl_shm_upload(
 }
 
 /*
- * Releases a surface's wl_shm image: now when no frame is in flight,
- * otherwise after the frames given before (they may be sampling it), with
- * no wait.  No frame takes its staging from now on.
+ * Releases a surface's wl_shm image: now when nothing given before may
+ * still use it, otherwise after that, with no wait.  No frame takes its
+ * staging from now on.
  */
 void
 kwl_shm_image_destroy(
@@ -197,9 +196,9 @@ kwl_shm_image_destroy(
 	if (surface->shm_image == NULL || compose == NULL)
 		return;
 
-	/* Out of the list the next frames copy from, then let go. */
-	image_unlink(compose, surface->shm_image);
-	kwl_compose_bury(compose, surface->shm_image, image_bury);
+	/* Let go, then the record. */
+	kwl_host_image_release(compose, surface->shm_image);
+	free(surface->shm_image);
 	surface->shm_image = NULL;
 }
 
@@ -244,7 +243,7 @@ kwl_arrow_create(
 		return ENOMEM;
 	result = image_create(server->compose, ARROW_WIDTH, ARROW_HEIGHT, server->compose->sampler, arrow);
 	if (result != VK_SUCCESS) {
-		image_release(server->compose, arrow);
+		kwl_host_image_release(server->compose, arrow);
 		free(arrow);
 		return EIO;
 	}
@@ -283,7 +282,7 @@ kwl_arrow_destroy(
 	kwl_cursor_images_destroy(server);
 
 	/* Its Vulkan objects, then the record. */
-	image_release(server->compose, server->arrow);
+	kwl_host_image_release(server->compose, server->arrow);
 	free(server->arrow);
 	server->arrow = NULL;
 }
@@ -308,15 +307,20 @@ kwl_host_image_create(
 }
 
 /*
- * Releases an image kwl_host_image_create made.
+ * Lets go of a host image (kwl_host_image_create, a wl_shm copy, the
+ * arrow): no frame takes its staging from now on, and its objects go now
+ * when nothing given before may still use them, otherwise once that has
+ * completed, with no wait (kwl_compose_bury).  The record is cleared and
+ * may be used again or freed at once.
  */
 void
 kwl_host_image_release(
 	struct kwl_compose *compose,
 	struct kwl_import *import)
 {
-	/* Whatever part of it was made. */
-	image_release(compose, import);
+	/* Out of the list the next frames copy from, then let go. */
+	image_unlink(compose, import);
+	kwl_compose_bury(compose, import, image_release);
 }
 
 /*
@@ -400,6 +404,7 @@ kwl_host_images_take(
 	struct kwl_compose *compose,
 	struct kwl_list *list)
 {
+	struct kwl_list_copy copy;
 	struct kwl_import *import;
 
 	/* Each written image, once, in the order of the list of host images. */
@@ -408,18 +413,14 @@ kwl_host_images_take(
 		if (!import->written)
 			continue;
 
-		/* The frame copies its written rows (joined with any taken and not yet copied); a later write marks it for the next frame. */
-		kwl_list_add_copy(list, import);
+		/* The frame copies the rows written since the last take; a later write marks it for the next frame. */
+		copy.staging = import->staging;
+		copy.image = import->image;
+		copy.width = import->width;
+		copy.first = import->dirty_first;
+		copy.last = import->dirty_last;
+		kwl_list_add_copy(list, &copy);
 		import->written = 0U;
-		if (import->copy_first >= import->copy_last) {
-			import->copy_first = import->dirty_first;
-			import->copy_last = import->dirty_last;
-		} else {
-			if (import->dirty_first < import->copy_first)
-				import->copy_first = import->dirty_first;
-			if (import->dirty_last > import->copy_last)
-				import->copy_last = import->dirty_last;
-		}
 		import->dirty_first = 0U;
 		import->dirty_last = 0U;
 	}
@@ -439,7 +440,7 @@ kwl_host_images_record(
 
 	/* Each image the list took, in its order. */
 	for (index = 0U; index < list->copy_count; index++)
-		image_copy_record(command, list->copies[index]);
+		image_copy_record(command, &list->copies[index]);
 
 	/* The number of copies recorded. */
 	return list->copy_count;
@@ -700,7 +701,7 @@ surface_upload(
 		result = image_create(server->compose, shm->width, shm->height, server->compose->sampler, image);
 		if (result != VK_SUCCESS) {
 			printf("KWL VULKAN_ERROR operation=shm_image result=%d\n", (int)result);
-			image_release(server->compose, image);
+			kwl_host_image_release(server->compose, image);
 			free(image);
 			return EIO;
 		}
@@ -914,8 +915,6 @@ image_create(
 	import->version = 1U;
 	import->dirty_first = 0U;
 	import->dirty_last = height;
-	import->copy_first = 0U;
-	import->copy_last = 0U;
 	import->host_next = compose->host_images;
 	compose->host_images = import;
 
@@ -1071,37 +1070,12 @@ image_unlink(
 	}
 }
 
-/* Destroys a let go host image and frees its record, once nothing given before uses it (kwl_compose_bury). */
-static void
-image_bury(
-	struct kwl_compose *compose,
-	struct kwl_import *import)
-{
-	/* Its objects, then the record. */
-	image_release(compose, import);
-	free(import);
-}
-
 /* Destroys what image_create made, whatever part of it was made. */
 static void
 image_release(
 	struct kwl_compose *compose,
 	struct kwl_import *import)
 {
-	struct kwl_import **position;
-
-	/* Its move to its layout has run on the GPU (a task given or being recorded names it). */
-	kwl_compose_task_wait(compose, import->task);
-
-	/* The image leaves the list the frames copy from. */
-	for (position = &compose->host_images; *position != NULL; position = &(*position)->host_next) {
-		/* Unlinks this exact record. */
-		if (*position == import) {
-			*position = import->host_next;
-			break;
-		}
-	}
-
 	/* Each object, in the reverse order of its making. */
 	if (import->set != VK_NULL_HANDLE)
 		kwl_compose_set_put(compose, import->set);
@@ -1154,14 +1128,14 @@ kwl_row_sum(
 	return sum;
 }
 
-/* Records one host image's whole copy from its staging into its sampled image, between the frames' reads. */
+/* Records one host image's copy from its staging into its sampled image (the rows taken), between the frames' reads. */
 static void
 image_copy_record(
 	VkCommandBuffer command,
-	struct kwl_import *import)
+	const struct kwl_list_copy *copy)
 {
 	VkImageMemoryBarrier barriers[2];
-	VkImageCopy copy;
+	VkImageCopy region;
 
 	/* The host's writes reach the copy, and earlier frames' sampling ends before it overwrites. */
 	memset(barriers, 0, sizeof(barriers));
@@ -1172,31 +1146,29 @@ image_copy_record(
 	barriers[0].newLayout = VK_IMAGE_LAYOUT_GENERAL;
 	barriers[0].srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
 	barriers[0].dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
-	barriers[0].image = import->staging;
+	barriers[0].image = copy->staging;
 	barriers[0].subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
 	barriers[0].subresourceRange.levelCount = 1U;
 	barriers[0].subresourceRange.layerCount = 1U;
 	barriers[1] = barriers[0];
 	barriers[1].srcAccessMask = VK_ACCESS_SHADER_READ_BIT;
 	barriers[1].dstAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
-	barriers[1].image = import->image;
+	barriers[1].image = copy->image;
 	vkCmdPipelineBarrier(command, VK_PIPELINE_STAGE_HOST_BIT | VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT, VK_PIPELINE_STAGE_TRANSFER_BIT, 0U, 0U, NULL, 0U, NULL, 2U, barriers);
 
 	/* The rows taken, staging to sampled (the whole image when every row was written, q1534). */
-	if (import->copy_first < import->copy_last) {
-		memset(&copy, 0, sizeof(copy));
-		copy.srcSubresource.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
-		copy.srcSubresource.layerCount = 1U;
-		copy.dstSubresource = copy.srcSubresource;
-		copy.srcOffset.y = (int32_t)import->copy_first;
-		copy.dstOffset.y = (int32_t)import->copy_first;
-		copy.extent.width = import->width;
-		copy.extent.height = import->copy_last - import->copy_first;
-		copy.extent.depth = 1U;
-		vkCmdCopyImage(command, import->staging, VK_IMAGE_LAYOUT_GENERAL, import->image, VK_IMAGE_LAYOUT_GENERAL, 1U, &copy);
+	if (copy->first < copy->last) {
+		memset(&region, 0, sizeof(region));
+		region.srcSubresource.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+		region.srcSubresource.layerCount = 1U;
+		region.dstSubresource = region.srcSubresource;
+		region.srcOffset.y = (int32_t)copy->first;
+		region.dstOffset.y = (int32_t)copy->first;
+		region.extent.width = copy->width;
+		region.extent.height = copy->last - copy->first;
+		region.extent.depth = 1U;
+		vkCmdCopyImage(command, copy->staging, VK_IMAGE_LAYOUT_GENERAL, copy->image, VK_IMAGE_LAYOUT_GENERAL, 1U, &region);
 	}
-	import->copy_first = 0U;
-	import->copy_last = 0U;
 
 	/* The copy reaches the fragment shader of this frame and the next ones. */
 	barriers[1].srcAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;

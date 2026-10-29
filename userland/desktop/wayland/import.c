@@ -24,6 +24,7 @@
 
 static VkResult import_image(struct kwl_compose *compose, VkFormat format, struct kwl_import *import);
 static VkResult import_layout(struct kwl_compose *compose, struct kwl_import *import);
+static void import_let_go(struct kwl_compose *compose, struct kwl_import *import);
 static void import_release(struct kwl_compose *compose, struct kwl_import *import);
 
 /*
@@ -71,7 +72,7 @@ kwl_import_adopt(
 	/* The view and descriptor sets that sample it, and its move to the general layout. */
 	status = import_image(compose, format, import);
 	if (status != VK_SUCCESS) {
-		import_release(compose, import);
+		import_let_go(compose, import);
 		free(import);
 		return status;
 	}
@@ -107,7 +108,8 @@ kwl_import_set_alpha(
 }
 
 /*
- * Releases a buffer's Vulkan image; the caller guarantees that no frame in flight still samples it (the frame holds the buffer until it completes).
+ * Releases a buffer's Vulkan image: now when nothing given before may
+ * still sample it, otherwise once that has completed, with no wait.
  */
 void
 kwl_import_destroy(
@@ -137,9 +139,9 @@ kwl_import_destroy_with(
 	if (buffer->import == NULL)
 		return;
 
-	/* The Vulkan objects, then the record. */
+	/* The Vulkan objects let go, then the record. */
 	if (compose != NULL)
-		import_release(compose, buffer->import);
+		import_let_go(compose, buffer->import);
 
 	/* Retires the buffer-owned record after its Vulkan objects are released. */
 	free(buffer->import);
@@ -386,16 +388,17 @@ import_layout(
 	return VK_SUCCESS;
 }
 
-/* Destroys what an import made, whatever part of it was made. */
+/*
+ * Lets go of an import: it waits for no layout from now on, and its
+ * objects go now when nothing given before may still use them, otherwise
+ * once that has completed (kwl_compose_bury).  The record is cleared.
+ */
 static void
-import_release(
+import_let_go(
 	struct kwl_compose *compose,
 	struct kwl_import *import)
 {
 	unsigned index;
-
-	/* A task that moves it to its layout has run on the GPU. */
-	kwl_compose_task_wait(compose, import->task);
 
 	/* An image still waiting for its layout is no longer waited for. */
 	if (import->layout_pending) {
@@ -415,6 +418,16 @@ import_release(
 		import->layout_pending = 0U;
 	}
 
+	/* Its objects, once nothing given uses them. */
+	kwl_compose_bury(compose, import, import_release);
+}
+
+/* Destroys what an import made, whatever part of it was made. */
+static void
+import_release(
+	struct kwl_compose *compose,
+	struct kwl_import *import)
+{
 	/* Each object, in the reverse order of its making. */
 	if (import->set != VK_NULL_HANDLE)
 		kwl_compose_set_put(compose, import->set);
@@ -438,6 +451,6 @@ import_release(
 	/* Clears the record so partial cleanup remains harmless. */
 	memset(import, 0, sizeof(*import));
 
-	/* Succeeded: the import retains no layout queue entry or Vulkan object. */
+	/* Succeeded: the import retains no Vulkan object. */
 	return;
 }

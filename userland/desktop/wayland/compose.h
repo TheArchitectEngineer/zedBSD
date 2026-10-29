@@ -114,14 +114,12 @@ struct kwl_import {
 	/* Counts the staging's writes (kwl_host_image_written), so that a copy of it can tell it is stale. */
 	uint32_t version;
 	/*
-	 * The staging's rows written since the last take (dirty, last
-	 * excluded), and the rows taken but not yet copied (copy): a frame
-	 * copies only those rows (q1534).  Empty when first equals last.
+	 * The staging's rows written since the last take (last excluded): the
+	 * frame that takes the image copies only those rows (q1534).  Empty
+	 * when first equals last.
 	 */
 	uint32_t dirty_first;
 	uint32_t dirty_last;
-	uint32_t copy_first;
-	uint32_t copy_last;
 	struct kwl_import *host_next;
 	/* A client's image waiting for its move to the general layout in the next frame (ws099-p016). */
 	unsigned layout_pending;
@@ -146,20 +144,21 @@ struct kwl_glass;
 
 struct kwl_compose;
 
-/* Destroys a record let go (kwl_compose_bury) and frees it, once nothing given before uses it. */
+/* Releases the objects of a record let go (kwl_compose_bury), once nothing given before uses them, and clears it. */
 typedef void kwl_grave_destroy_fn(struct kwl_compose *compose, struct kwl_import *import);
 
 /*
  * An image let go while a drawing or a task given before may still use it
- * (compose.c): the record, which nothing else refers to from now on, how
- * many drawings had been given then (drawings) and how to destroy it.  It
- * is destroyed once that many drawings have completed and its own task
- * (the record's task) has.
+ * (compose.c): a copy of its record (the record's own place is cleared and
+ * may be used again at once; nothing reads a record from another thread,
+ * the lists' copies hold their own values), how many drawings had been
+ * given then (drawings) and how to release its objects.  They are released
+ * once that many drawings have completed and the record's own task has.
  */
 struct kwl_grave {
 	struct kwl_grave *next;
 	uint64_t drawings;
-	struct kwl_import *import;
+	struct kwl_import record;
 	kwl_grave_destroy_fn *destroy;
 };
 
@@ -797,10 +796,13 @@ struct kwl_compose {
 	/*
 	 * The drawings (frames and layers' pictures) given to the render thread
 	 * and those whose completion was applied (they complete in their order),
-	 * and the images let go meanwhile (kwl_compose_bury), oldest first.
+	 * whether one is being written into the list (from its begin to its
+	 * giving, or to its failure), and the images let
+	 * go meanwhile (kwl_compose_bury), oldest first.
 	 */
 	uint64_t drawings_given;
 	uint64_t drawings_done;
+	unsigned drawing_open;
 	struct kwl_grave *graves;
 	/*
 	 * The backdrop (backdrop.c); the framebuffer of the frame being
@@ -957,7 +959,6 @@ uint64_t kwl_compose_task_current(struct kwl_compose *compose);
 void kwl_compose_task_flush(struct kwl_compose *compose);
 int kwl_compose_task_ready(struct kwl_compose *compose, const struct kwl_import *import);
 int kwl_compose_tasks_busy(struct kwl_compose *compose);
-void kwl_compose_task_wait(struct kwl_compose *compose, uint64_t number);
 void kwl_compose_bury(struct kwl_compose *compose, struct kwl_import *import, kwl_grave_destroy_fn *destroy);
 void kwl_queue_lock(struct kwl_compose *compose);
 void kwl_queue_unlock(struct kwl_compose *compose);
