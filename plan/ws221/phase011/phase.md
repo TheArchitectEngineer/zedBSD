@@ -1,7 +1,7 @@
 <!-- awesome-plan project=zedbsd record=ws221-p011 -->
 # ws221-p011: IPv6 の TCP の試験と直し
 
-Status: in-progress（2026-10-29 P3 q1664-i05）
+Status: cleared（2026-10-29 P3 q1664-i05: 0342c9d89 まで。IPv6 の TCP の 4 つの不具合を直し、VF2 実機で IPv6 の受け 936.3（理論 936.3）・送り 894〜932・jumbo 988.5/985.3・PTB の追従、QEMU inet,inet6 PASS、tcp-model PASS、5 platform の build warning 0。未実施は下の「未実施」）
 Parent: [WS221](../ws.md)
 Queue: q1664 / q1664-i05（P3）
 依存: p002〜p009
@@ -49,7 +49,11 @@ Queue: q1664 / q1664-i05（P3）
 | QEMU（`qemu-tcp.sh IMAGE 20 inet,inet6`） | e662e0abc の image | PASS（inet 送り 52.2・受け 49.3、inet6 送り 64.7・受け 47.1、emulator の値） |
 | tcp-model | e662e0abc | PASS（shim に IPv6 の stub 2 つを足した） |
 
-終わりに VF2 en0・5330 enx6c1ff706148a とも 1500 を読み戻した（vf2-tcp.sh・vf2-jumbo.sh の restore）。
+| 最後の tree の確かめ | 0342c9d89 | IPv6: 送り 901.0、受け 936.3、serve-send 930.9。IPv4: 送り 930.3（再送 1）、受け 949.3 |
+| QEMU（最後） | 26b5d7785 の image（0342c9d89 は書き方だけの差） | PASS（inet 送り 66.3・受け 50.7、inet6 送り 63.5・受け 50.3） |
+| build | 53080d387（amd64・pcat・rpi4・rpi5・zybo の vmunix・bin/net・bin/networkd）、0342c9d89（vf2・amd64 の vmunix） | 全部 rc=0・warning 0 |
+
+終わりに VF2 en0・5330 enx6c1ff706148a とも 1500 を読み戻した（vf2-tcp.sh・vf2-jumbo.sh の restore）。VF2 の /boot/boot0/vmunix は 0342c9d89 の tree（sha256 の先頭 e10a1f3300a98ffb）、vmunix.old は 53080d387 の tree。5330 に置いた物は vf2-tcp.sh が run ごとに作る `/tmp/vf2-tcp.XXXXXX`（summary の「peer's files」の行、Q1 が消す）。
 
 ## 未実施・制限・Future Work の候補
 
