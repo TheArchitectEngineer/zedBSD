@@ -6,7 +6,7 @@
  */
 
 /*
- * IPv6 (ws130-p002; plan/ws130/phase001 section 3; RFC 8200).
+ * IPv6 (RFC 8200).
  *
  * Every network device has an IPv6 record, made when the timer or the
  * input first sees the device: whether IPv6 is on (it is by default),
@@ -21,9 +21,9 @@
  *
  * Input checks the header, keeps a packet for one of the interface's
  * addresses (or, round the loopback device, any of the host's) or for a
- * group it listens to, walks the extension headers (a fragment is
- * dropped: no reassembly, decision H6) and hands the payload to ICMPv6 or
- * a registered next header.  Output takes the route, the source address
+ * group it listens to, walks the extension headers (a fragment goes to
+ * the reassembly, ipv6-frag.c) and hands the payload to ICMPv6 or a
+ * registered next header.  Output takes the route, the source address
  * (RFC 6724) and the link MTU, builds the header and gives the packet to
  * neighbor discovery, to the loopback device, or to the group's Ethernet
  * address.  No packet is forwarded.
@@ -128,7 +128,7 @@ static const struct in6_addr ipv6_loopback = { { { 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
 
 static int ipv6_input(struct packet_buf *packet);
 static int ipv6_accepts(struct net_device *device, const struct in6_addr *destination);
-static int ipv6_extensions(struct packet_buf *packet, uint8_t *next_header, size_t *offset, size_t *field);
+static int ipv6_extensions(struct packet_buf **walked, uint8_t *next_header, size_t *offset, size_t *field);
 static int ipv6_options(struct packet_buf *packet, size_t start, size_t length, const struct in6_addr *destination);
 static int ipv6_deliver(struct packet_buf *packet, uint8_t next_header, size_t field, const struct in6_addr *source, const struct in6_addr *destination);
 static int ipv6_next_hop(struct net_device **device, const struct in6_addr *destination, struct in6_addr *next_hop);
@@ -159,8 +159,9 @@ ipv6_init(
 	kern_memset(ipv6_protocols, 0, sizeof(ipv6_protocols));
 	ipv6_protocol_count = 0U;
 
-	/* ICMPv6's path MTUs, and neighbor discovery's cache. */
+	/* ICMPv6's path MTUs, the fragments' records, and neighbor discovery's cache. */
 	icmp6_init();
+	ipv6_fragment_init();
 	error = nd6_init();
 	if (error != 0)
 		return error;
@@ -430,7 +431,7 @@ ipv6_route_way(
 
 /*
  * Finds what ipv6_output would send a packet to a destination with (the
- * transports, ws130-p003, need the source for their checksums before the
+ * transports need the source for their checksums before the
  * packet is built): the source address (RFC 6724; the destination itself
  * for one of the host's), and the path MTU when mtu is not NULL.  device
  * (may be NULL, but not for a group) is the interface asked for.
@@ -1217,9 +1218,10 @@ ipv6_timer_run(
 	if (expired_count != 0U || told != 0U)
 		route_changed();
 
-	/* The work, then the neighbors. */
+	/* The work, then the neighbors and the fragments' records. */
 	ipv6_work_do(work, count);
 	nd6_timer_run(now);
+	ipv6_fragment_timer_run(now);
 }
 
 /*
@@ -1267,8 +1269,11 @@ ipv6_timer_next_deadline(
 
 	spin_unlock_irqrestore(&ipv6_lock, irq);
 
-	/* The neighbors', and the carrier's look. */
+	/* The neighbors', the fragments' records', and the carrier's look. */
 	candidate = nd6_timer_next_deadline();
+	if (candidate != 0U && (deadline == 0U || candidate < deadline))
+		deadline = candidate;
+	candidate = ipv6_fragment_deadline();
 	if (candidate != 0U && (deadline == 0U || candidate < deadline))
 		deadline = candidate;
 	candidate = now + IPV6_CARRIER_POLL_MS;
@@ -1312,9 +1317,10 @@ ipv6_purge_device(
 
 	spin_unlock_irqrestore(&ipv6_lock, irq);
 
-	/* What senders kept is looked up again; the neighbors, and the record's reference, go. */
+	/* What senders kept is looked up again; the neighbors, the fragments, and the record's reference, go. */
 	route_changed();
 	nd6_purge_device(device);
+	ipv6_fragment_purge_device(device);
 	if (release != NULL)
 		net_device_release(release);
 }
@@ -1395,7 +1401,7 @@ ipv6_input(
 	next_header = header->next_header;
 	offset = IPV6_HEADER_LENGTH;
 	field = 6U;
-	error = ipv6_extensions(packet, &next_header, &offset, &field);
+	error = ipv6_extensions(&packet, &next_header, &offset, &field);
 	if (error != 0)
 		return 0;
 
@@ -1483,40 +1489,58 @@ ipv6_accepts(
 /*
  * Walks the extension headers from offset (RFC 8200 section 4): the
  * hop-by-hop options (first only) and the destination options are
- * checked, a routing header with segments left is refused, a fragment is
- * dropped.  Sets the upper layer's next header, its offset, and the
- * offset of the field that named it (for a Parameter Problem).  Returns 0,
- * or an errno value when the packet was consumed.
+ * checked, a routing header with segments left is refused, a fragment
+ * goes to the reassembly (a second fragment header is dropped), and
+ * neighbor discovery that came in fragments is dropped (RFC 6980 section
+ * 5).  Sets *walked to the packet the walk ended with (a reassembled
+ * datagram in place of its last fragment), the upper layer's next header,
+ * its offset, and the offset of the field that named it (for a Parameter
+ * Problem).  Returns 0, or an errno value when the packet was consumed.
  */
 static int
 ipv6_extensions(
-	struct packet_buf *packet,
+	struct packet_buf **walked,
 	uint8_t *next_header,
 	size_t *offset,
 	size_t *field)
 {
 	const struct ipv6_extension_wire *extension;
 	const struct ipv6_wire *header;
+	struct packet_buf *packet;
 	struct in6_addr destination;
 	size_t length;
 	unsigned count;
+	unsigned type;
+	int fragmented;
 	int error;
 
 	/* The destination, for the options' errors. */
+	packet = *walked;
 	header = (const struct ipv6_wire *)packet->data;
 	kern_memcpy(destination.s6_addr, header->destination, 16U);
 
-	/* Each extension header in turn. */
+	/* Each extension header in turn, until an upper layer. */
+	fragmented = 0;
 	for (count = 0U;; count++) {
 		/* An upper layer: the walk ends. */
 		if (*next_header != IPV6_NEXT_HOPOPTS && *next_header != IPV6_NEXT_ROUTING &&
 		    *next_header != IPV6_NEXT_FRAGMENT && *next_header != IPV6_NEXT_DSTOPTS)
-			return 0;
+			break;
 
-		/* A fragment, or hop-by-hop options after the first header: dropped. */
-		if (*next_header == IPV6_NEXT_FRAGMENT) {
+		/* A second fragment header in one packet: dropped. */
+		if (*next_header == IPV6_NEXT_FRAGMENT && fragmented) {
 			packet_buf_free(packet);
 			return EINVAL;
+		}
+
+		/* A fragment: walked on past it, or with its reassembled datagram, unless it was kept or dropped. */
+		if (*next_header == IPV6_NEXT_FRAGMENT) {
+			error = ipv6_fragment_input(walked, next_header, offset, field);
+			if (error != 0)
+				return error;
+			packet = *walked;
+			fragmented = 1;
+			continue;
 		}
 
 		/* Hop-by-hop options come only first. */
@@ -1556,6 +1580,20 @@ ipv6_extensions(
 		*field = *offset;
 		*offset += length;
 	}
+
+	/* Neighbor discovery never comes in fragments: such a message is dropped. */
+	if (fragmented &&
+	    *next_header == IPV6_NEXT_ICMPV6 &&
+	    *offset < packet->length) {
+		type = packet->data[*offset];
+		if (type >= ICMP6_ROUTER_SOLICITATION && type <= ICMP6_REDIRECT) {
+			packet_buf_free(packet);
+			return EINVAL;
+		}
+	}
+
+	/* Succeeded: the upper layer's header. */
+	return 0;
 }
 
 /*

@@ -84,7 +84,7 @@ struct ipv6_extension_wire {
 	uint8_t length;
 } __attribute__((packed));
 
-/* The fragment header (only recognised, to be dropped). */
+/* The fragment header: the next header, the offset in 8-byte units with the more-fragments bit, and the identification. */
 struct ipv6_fragment_wire {
 	uint8_t next_header;
 	uint8_t reserved;
