@@ -105,6 +105,9 @@
  */
 #define GSP_PROGRESS_POINTS		4U
 
+/* How long the init runs before a test run gives it up on purpose (nvrtx.fail=gsp-init). */
+#define GSP_FAIL_INIT_US		200000U
+
 /* The highest user address the resource manager is told of (the 47-bit user half). */
 #define GSP_USER_ADDRESS_LIMIT		0x00007ffffffff000ULL
 
@@ -1018,6 +1021,7 @@ gsp_region_set(
 	uint32_t low;
 	uint32_t high;
 	uint32_t result;
+	bool fail;
 	int error;
 
 	/* A region left by an earlier boot cannot be set up again: stop without writing. */
@@ -1051,9 +1055,18 @@ gsp_region_set(
 		return EIO;
 	}
 
-	/* Succeeded: the region is set up. */
+	/* The region is set up. */
 	gpu->state = NVRTX_GSP_REGION_SET;
 	nvrtx_stage_mark("frts ok: region %08x-%08x", (unsigned)low, (unsigned)high);
+
+	/* A test run gives up here as if FWSEC had not halted. */
+	fail = nvrtx_stage_fail_wanted("frts");
+	if (fail) {
+		gsp_hold(gpu, NVRTX_GSP_HOLD_FWSEC, "frts fail on purpose (nvrtx.fail=frts)");
+		return ETIMEDOUT;
+	}
+
+	/* Succeeded: FWSEC-FRTS made the region. */
 	return 0;
 }
 
@@ -1309,6 +1322,7 @@ gsp_boot_riscv(
 	uint64_t record;
 	uint32_t status;
 	bool running;
+	bool fail;
 	int error;
 
 	nvrtx_stage_mark("booter begin: booter_load");
@@ -1361,6 +1375,13 @@ gsp_boot_riscv(
 		return error;
 	}
 
+	/* A test run gives up here as if booter_load had not halted. */
+	fail = nvrtx_stage_fail_wanted("booter");
+	if (fail) {
+		gsp_hold(gpu, NVRTX_GSP_HOLD_BOOTER, "booter fail on purpose (nvrtx.fail=booter)");
+		return ETIMEDOUT;
+	}
+
 	/* Tells the GSP the bootloader's version and checks that its RISC-V core runs. */
 	nvrtx_wr32(gpu, GSP_REG_APP_VERSION, gpu->bootloader_desc.app_version);
 	running = nvrtx_falcon_riscv_running(gpu, &gpu->gsp_falcon, &status);
@@ -1399,11 +1420,23 @@ gsp_init_done(
 	uint32_t slice;
 	size_t length;
 	unsigned point;
+	bool fail;
 	int error;
 
 	/* Waits for the event up to each point in turn, showing the progress at each. */
 	nvrtx_stage_mark("gsp-init begin: waiting for init done");
 	start = nvrtx_now_us();
+
+	/* A test run gives the init up 200 ms in, as if the event had not come. */
+	fail = nvrtx_stage_fail_wanted("gsp-init");
+	if (fail) {
+		(void)nvrtx_rpc_wait(gpu, NVRTX_EVENT_INIT_DONE, 0U, GSP_FAIL_INIT_US, &length);
+		gsp_progress(gpu, GSP_FAIL_INIT_US / 1000U);
+		nvrtx_stage_mark("gsp-init fail on purpose (nvrtx.fail=gsp-init)");
+		gsp_hold(gpu, NVRTX_GSP_HOLD_INIT, "gsp-init fail");
+		return ETIMEDOUT;
+	}
+
 	error = ETIMEDOUT;
 	for (point = 0U; point < GSP_PROGRESS_POINTS; point++) {
 		elapsed = nvrtx_now_us() - start;

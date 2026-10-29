@@ -505,6 +505,14 @@ nvrtx_stage_allowed(
 	const char *stage);
 
 /*
+ * Reports whether the boot asks the GSP boot to give up at a point on purpose
+ * (nvrtx.fail=<point>, a test of the way back to the firmware's picture).
+ */
+bool
+nvrtx_stage_fail_wanted(
+	const char *point);
+
+/*
  * Writes one stage-mark line to the console and the kernel log.
  */
 void
