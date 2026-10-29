@@ -103,3 +103,40 @@
   新しい worktree なら `make ZEDBSD_CONFIG=plan/ws291/tests/config.mk BUILD=build/ws291/k build/ws291/k/vmunix` で作り直し、plan/tmp/guest/id_ed25519 は chmod 600）。
   見る物: mview の MVIEW SPIN（copies 1・5000、shading=pixel）、shot-1・shot-5000 の PNG（深度の前後と texture）、kernel の `nvrtx: vk` の行と MMU の fault。
   block linear（depth・tiled の texture）の PTE の kind は pitch のままなので、壊れた画や fault が出れば kind を見る。
+
+## q1670-i03（P2、worktree p2-ws291o、2026-10-29）
+
+### 実機の 1 回目（09:11〜09:16、vmunix-p010a1 = dadd28a8d、cksum 2422632154）
+
+- `sh plan/ws291/tests/rtx-mview-check.sh build/ws291/rtx/m1 build/ws291/vmunix-p010a1`: mview copies 1 は最初の vkQueueSubmit で
+  `result=-4 errno=5`（device lost）、kernel は `channel-stop channel error: eng 1 chid 4 type 69`（GR の class error）。以後の work は全部失敗。
+- 診断: rpc.c に、type 69 の時に GR の trapped の register（0x400100・0x400704・0x400708・0x400110・0x404200）を読む行を足した（759123d87 に含む）。
+  vmunix-p010a2（cksum 435740828）で `gr refused: status 00100000 subc 0 method 17e0` `data 00000858 code 0000009c class c597`。
+  method 0x17e0 は DRAW_INDEX_BUFFER（count 2136）、code 0x9c は open-gpu-doc gv100 dev_graphics.ref.txt の
+  NV_PGRAPH_CLASS_ERROR_CODE_ERROR_ZETA_REQUIRES_BLOCK_LINEAR0: zeta を使う draw は colour target 0 が block linear でなければならない。
+  swapchain の image（1 level）は pitch linear。PTE の kind の問題ではなかった。
+
+### 直し（759123d87）
+
+- vk-execute.c: depth を持つ pass の colour target が pitch linear なら、executor の block linear の影の surface（GOB の行・GOB の高さ、
+  足りない時は前の work の後に作り直す）に描き、pass の終わりに render area を quad で target へ写す（LOAD の pass は始めに target から影へ写す）。
+  quad は cull と depth test を切る（pass の draw の状態が残るため）。手本は NVK の linear の image の tiled の影（nvk_linear_render_copy）。
+- 確かめ（host）: amd64 vmunix rc 0・warning 0（vmunix check PASS）、nvrtx-vk-host-test.sh PASS 86 checks。nvrtx-sm75-host-test は未実施（compiler は触っていない）。
+- rtx-mview-check.sh の kernel の行の grep に `gr refused` を足した。
+
+### 実機の 2 回目（09:28〜09:46、10.0.10.3、DP）
+
+| run | kernel | 結果 |
+| --- | --- | --- |
+| m3（rtx-mview-check） | vmunix-p010a3（759123d87、cksum 3281438578） | one 451.18 fps、many（5000）42.02 fps、pixel 401.65 fps、GPU の error・fault 無し。shot-1・shot-5000 は mview の window が写らず desktop だけ |
+| m4（shot 1 だけ） | 実験: 影を使わず depth を外す | model と texture が出る（深度の前後は無い） |
+| m5（shot 1 だけ） | 実験: 影＋copy、zeta 無し | m4 と同じく出る |
+| m6（shot 1 だけ） | 実験: 影＋copy、zeta を bind して clear、depth test・write を切る | 出る |
+
+- 実験の kernel は source に残していない（build/ws291/vmunix-nodepth・vmunix-shadow-noz・vmunix-z-notest）。
+- 分かった事: 影の surface（block linear の描画）、tiled の sampling、写しの quad、zeta の bind と clear は動く。depth test を入れると、
+  背景の clear も含めて window が透けて desktop が見える（画の全体が消える）。原因は未確定（ZCULL の設定・viewport の z・depth の clear の値を見る）。
+- 撮れた PNG: build/ws291/rtx/m3/shot-1/shot.png（desktop だけ）、build/ws291/rtx/m4/shot-1/shot.png、build/ws291/rtx/m5/shot-1/shot.png、
+  build/ws291/rtx/m6/shot-1/shot.png（縮小は各 shot-small.png）。
+- 返却: 09:46 Debian、RTX は vfio-pci、BootOrder 0002,0000、NVMe の kernel は vmunix-va1（cksum 1463007375、sha256 6a06e796…）。lock は free。
+- 5000 copies の 42.02 fps は depth test が効いていない状態（画が出ていない）の値なので p011 の起点にしない。
