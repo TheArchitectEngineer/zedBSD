@@ -20,6 +20,8 @@ kernel=${2:?the kernel}
 wl=${3:?the compositor}
 restore=${4:?the kernel to put back}
 export GPU_PERF_MACHINE=rtx
+# The Linux reference of the 1-copy view (measure.sh shot), SHOT_REFERENCE/linux-shot-1.png.
+export SHOT_REFERENCE=${SHOT_REFERENCE:-build/ws309/ref}
 M="sh plan/tools/gpu-perf/measure.sh"
 KEY=${KEY:-plan/tmp/guest/id_ed25519}
 SSHOPT="-o BatchMode=yes -o ConnectTimeout=8 -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR"
