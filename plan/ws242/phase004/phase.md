@@ -68,4 +68,4 @@ Queue: q1678-i01（P2）
 
 | 道具 | 何を確かめるか | 流し方 |
 | --- | --- | --- |
-| [nvrtx/nvrtx-qmd-host-test.sh](tools/nvrtx/nvrtx-qmd-host-test.sh)・[qmd-fields-gen.py](tools/nvrtx/qmd-fields-gen.py)・`qmd-fields.h` | compute の launch の QMD（Turing 2.2、Ampere・Ada 3.0）を open-gpu-doc から機械的に抜いた field の位置で全 field と field の外の 0 を、Turing の出力が旧名と byte で同じこと、launch の push（class、PCAS_B／PCAS2_B） | `sh plan/tools/nvrtx/nvrtx-qmd-host-test.sh`、`PASS nvrtx qmd: N checks`。表の作り直しは `python3 -I plan/tools/nvrtx/qmd-fields-gen.py <open-gpu-doc> > plan/tools/nvrtx/qmd-fields.h` |
+| `nvrtx/nvrtx-qmd-host-test.sh`・`qmd-fields-gen.py`・`qmd-fields.h` | compute の launch の QMD（Turing 2.2、Ampere・Ada 3.0）を open-gpu-doc から機械的に抜いた field の位置で全 field と field の外の 0 を、Turing の出力が旧名と byte で同じこと、launch の push（class、PCAS_B／PCAS2_B） | `sh plan/tools/nvrtx/nvrtx-qmd-host-test.sh`、`PASS nvrtx qmd: N checks`。表の作り直しは `python3 -I plan/tools/nvrtx/qmd-fields-gen.py <open-gpu-doc> > plan/tools/nvrtx/qmd-fields.h` |

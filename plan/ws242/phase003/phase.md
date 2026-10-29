@@ -55,10 +55,10 @@ Queue: q1678-i01（P2）
 
 未実施: 実機（RTX 2070 は p008）、QEMU。
 
-## plan/tools.md の登録の案（Q1 が merge の時に。2026-10-29 Q1 の依頼）
+## plan/tools.md の登録の案（Q1 が merge の時に。2026-10-29 Q1 の依頼。path は plan/tools/ からの相対）
 
 | 道具 | 何を確かめるか | 流し方 |
 | --- | --- | --- |
-| [nvrtx/nvrtx-identify-host-test.sh](tools/nvrtx/nvrtx-identify-host-test.sh) | nvrtx の chip の identity の解読、TU/GA/AD の family の record の全欄、製品の表（整列・重複・chip・laptop の数）、attach の起動の判断（family × firmware の画面 × `nvrtx.gsp`）、device info の reset bit | `sh plan/tools/nvrtx/nvrtx-identify-host-test.sh`、`PASS nvrtx identify: … boot choices` |
-| [nvrtx/nvrtx-gsp-host-test.sh](tools/nvrtx/nvrtx-gsp-host-test.sh) | GSP の起動の hardware に触らない部分（wire・layout と scrub 済みの末尾・radix3・queue・VBIOS と FWSEC v2/v3・record・MMU・work・display の push・heap・object・GR・cursor・hold の表）と、実 firmware（`dc85cced…-tu-ga-ad` の cache、worktree では main の checkout の物を読む）の 4 family の image・booter・bootloader | `sh plan/tools/nvrtx/nvrtx-gsp-host-test.sh [FIRMWARE-DIR]`、`PASS nvrtx gsp: N checks, SKIPPED 0`（SKIPPED が 0 でなければ実 file の項が飛んだ） |
-| [nvrtx/nvrtx-vk-d3-host-test.sh](tools/nvrtx/nvrtx-vk-d3-host-test.sh) | nvrtx の Vulkan の executor の object（memory・view・pipeline・submit）を libvulkan の wire と codec で通す。submit を SM75・SM86・SM89 で流し、各世代の 3D class を bind する | `sh plan/tools/nvrtx/nvrtx-vk-d3-host-test.sh`（glslc が要る）、`PASS nvrtx vk d3: N checks, 0 failures` |
+| `nvrtx/nvrtx-identify-host-test.sh` | nvrtx の chip の identity の解読、TU/GA/AD の family の record の全欄、製品の表（整列・重複・chip・laptop の数）、attach の起動の判断（family × firmware の画面 × `nvrtx.gsp`）、device info の reset bit | `sh plan/tools/nvrtx/nvrtx-identify-host-test.sh`、`PASS nvrtx identify: … boot choices` |
+| `nvrtx/nvrtx-gsp-host-test.sh` | GSP の起動の hardware に触らない部分（wire・layout と scrub 済みの末尾・radix3・queue・VBIOS と FWSEC v2/v3・record・MMU・work・display の push・heap・object・GR・cursor・hold の表）と、実 firmware（`dc85cced…-tu-ga-ad` の cache、worktree では main の checkout の物を読む）の 4 family の image・booter・bootloader | `sh plan/tools/nvrtx/nvrtx-gsp-host-test.sh [FIRMWARE-DIR]`、`PASS nvrtx gsp: N checks, SKIPPED 0`（SKIPPED が 0 でなければ実 file の項が飛んだ） |
+| `nvrtx/nvrtx-vk-d3-host-test.sh` | nvrtx の Vulkan の executor の object（memory・view・pipeline・submit）を libvulkan の wire と codec で通す。submit を SM75・SM86・SM89 で流し、各世代の 3D class を bind する | `sh plan/tools/nvrtx/nvrtx-vk-d3-host-test.sh`（glslc が要る）、`PASS nvrtx vk d3: N checks, 0 failures` |
