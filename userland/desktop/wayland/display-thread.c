@@ -33,8 +33,8 @@
  * A change running when such a caller comes ends first (kwl_display_settle).
  *
  * The game mode's question whether the display could show a window
- * straight (kl_backend_scanout_possible, which opens the GPU device) is the
- * display thread's too.
+ * straight (kl_backend_scanout_possible, which opens the GPU device) and
+ * the heads' swapchains (kwl_display_heads) are the display thread's too.
  */
 
 #include "compose.h"
@@ -62,7 +62,9 @@ enum display_kind {
 	/* The display taken, the output's swapchain made, and the cursor plane's. */
 	DISPLAY_OPEN,
 	/* Whether the display could show a window straight (the game mode). */
-	DISPLAY_SCANOUT_QUERY
+	DISPLAY_SCANOUT_QUERY,
+	/* Heads' swapchains destroyed (their displays given back) and made. */
+	DISPLAY_HEADS
 };
 
 /*
@@ -76,7 +78,9 @@ enum display_kind {
  * output (DISPLAY_CLOSE), plane whether a cursor plane is to be made and
  * cursor, plane_extent and plane_index the one made (DISPLAY_OPEN);
  * readback and scene_supported what the swapchain's images allow; width
- * and height the game mode's size (DISPLAY_SCANOUT_QUERY); error the
+ * and height the game mode's size (DISPLAY_SCANOUT_QUERY); rests and opens
+ * (rest_count and open_count of them, the caller's until its then) the
+ * heads' swapchains to destroy and to make (DISPLAY_HEADS); error the
  * result.  spare says the job is display_spare (no memory for one).
  */
 struct display_job {
@@ -98,6 +102,10 @@ struct display_job {
 	unsigned scene_supported;
 	uint32_t width;
 	uint32_t height;
+	struct kwl_head_rest *rests;
+	unsigned rest_count;
+	struct kwl_head_opening *opens;
+	unsigned open_count;
 	int error;
 	unsigned spare;
 };
@@ -114,6 +122,7 @@ static void display_submit(struct kwl_server *server, struct display_job *job);
 static void display_run(struct kwl_lane_job *lane);
 static void display_done(void *context, struct kwl_lane_job *lane);
 static void display_drop(struct kwl_lane_job *lane);
+static void display_done_step(struct kwl_server *server, struct display_job *job);
 static void display_open_run(struct display_job *job);
 static struct display_change *display_change_new(kwl_display_fn *then, void *context);
 static void display_change_end(struct kwl_server *server, struct display_change *change, int error);
@@ -228,9 +237,9 @@ kwl_display_settle(
 	unsigned taken;
 	unsigned busy;
 
-	/* Nothing runs. */
+	/* Nothing runs, or this is a step of it (which cannot wait for its own end). */
 	compose = server->compose;
-	if (compose == NULL || !compose->display_busy)
+	if (compose == NULL || !compose->display_busy || compose->display_in_step != 0U)
 		return;
 
 	/* Until it ends. */
@@ -302,8 +311,10 @@ kwl_display_begin(
 	if (compose->render_started && !compose->display_inline && compose->park_depth == 0U)
 		message = calloc(1, sizeof(*message));
 	if (message == NULL) {
+		compose->display_in_step++;
 		kwl_compose_park(server);
 		parked(server, 0, context);
+		compose->display_in_step--;
 		return 0;
 	}
 
@@ -341,7 +352,9 @@ kwl_display_parked(
 	compose->display_context = NULL;
 
 	/* The change's next step. */
+	compose->display_in_step++;
 	step(server, 0, context);
+	compose->display_in_step--;
 }
 
 /*
@@ -449,6 +462,40 @@ kwl_display_open(
 	job->output = compose->output;
 	job->display = compose->display;
 	job->plane = server->threads_prepared;
+	display_submit(server, job);
+}
+
+/*
+ * Destroys heads' swapchains and surfaces and gives their displays back
+ * (rests, once the device is idle), then makes heads' swapchains (opens,
+ * each with its result), on the display thread, a step of a change of the
+ * display (the render thread parked and drained);
+ * then(server, 0, context) is called after.
+ */
+void
+kwl_display_heads(
+	struct kwl_server *server,
+	struct kwl_head_rest *rests,
+	unsigned rest_count,
+	struct kwl_head_opening *opens,
+	unsigned open_count,
+	kwl_display_fn *then,
+	void *context)
+{
+	struct display_job *job;
+
+	/* Nothing to do. */
+	if (rest_count == 0U && open_count == 0U) {
+		then(server, 0, context);
+		return;
+	}
+
+	/* The job. */
+	job = display_job_new(server, DISPLAY_HEADS, then, context);
+	job->rests = rests;
+	job->rest_count = rest_count;
+	job->opens = opens;
+	job->open_count = open_count;
 	display_submit(server, job);
 }
 
@@ -653,6 +700,7 @@ display_run(
 {
 	struct display_job *job;
 	struct kwl_compose *compose;
+	unsigned index;
 
 	/* By its kind. */
 	job = (struct display_job *)lane;
@@ -679,6 +727,16 @@ display_run(
 	case DISPLAY_SCANOUT_QUERY:
 		job->error = kl_backend_scanout_possible(job->server->backend, job->width, job->height);
 		break;
+	case DISPLAY_HEADS:
+		/* No present of the heads let go may still run, then they go; then the new ones. */
+		if (job->rest_count > 0U) {
+			kwl_device_wait_idle(compose);
+			kwl_heads_rest_destroy(job->server, job->rests, job->rest_count);
+		}
+		for (index = 0U; index < job->open_count; index++)
+			kwl_heads_make(job->server, &job->opens[index]);
+		job->error = 0;
+		break;
 	default:
 		job->error = EINVAL;
 		break;
@@ -691,10 +749,25 @@ display_done(
 	void *context,
 	struct kwl_lane_job *lane)
 {
-	struct kwl_cursor_thread *cursor;
 	struct kwl_server *server;
 	struct kwl_compose *compose;
-	struct display_job *job;
+
+	/* What goes on with it, kept before the job goes; the change's next step runs as a step. */
+	server = context;
+	compose = server->compose;
+	compose->display_in_step++;
+	display_done_step(server, (struct display_job *)lane);
+	compose->display_in_step--;
+}
+
+/* Takes a job's result (display_done), a step of its change. */
+static void
+display_done_step(
+	struct kwl_server *server,
+	struct display_job *job)
+{
+	struct kwl_cursor_thread *cursor;
+	struct kwl_compose *compose;
 	kwl_display_fn *then;
 	VkExtent2D plane_extent;
 	uint32_t plane_index;
@@ -705,9 +778,7 @@ display_done(
 	int error;
 
 	/* What goes on with it, kept before the job goes. */
-	server = context;
 	compose = server->compose;
-	job = (struct display_job *)lane;
 	then = job->then;
 	then_context = job->context;
 	error = job->error;

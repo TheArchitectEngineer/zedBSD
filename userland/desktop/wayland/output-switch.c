@@ -96,6 +96,7 @@ static int output_internal(const struct kwl_compose *compose, unsigned index);
 static int output_index(const struct kwl_compose *compose, VkDisplayKHR display);
 static void output_hotplug_register(struct kwl_server *server);
 static void output_recover(struct kwl_server *server);
+static void output_heads_sync(struct kwl_server *server);
 static int output_fail_back(struct kwl_server *server);
 static void output_failed_back(struct kwl_server *server, int error, void *context);
 static void output_recover_rest(struct kwl_server *server);
@@ -149,7 +150,7 @@ kwl_output_tick(
 	if (compose->hotplug == VK_NULL_HANDLE) {
 		output_hotplug_register(server);
 		output_enumerate(server);
-		kwl_heads_sync(server);
+		output_heads_sync(server);
 		kwl_displays_anchor_follow(server);
 		return;
 	}
@@ -211,10 +212,27 @@ kwl_output_tick(
 		return;
 	if (!signalled)
 		(void)output_enumerate(server);
-	kwl_heads_sync(server);
+	output_heads_sync(server);
 
 	/* An anchor turned off by the user gives the desktop to a display on (ws113-p014). */
 	kwl_displays_anchor_follow(server);
+}
+
+/*
+ * Brings the heads in line in a change of the display while the passes go
+ * on (their swapchains made and destroyed by the display thread); one that
+ * cannot begin now is tried again at a later look.
+ */
+static void
+output_heads_sync(
+	struct kwl_server *server)
+{
+	int error;
+
+	/* The change, or a later look. */
+	error = kwl_heads_sync_later(server);
+	if (error != 0)
+		server->compose->heads_stale = 1U;
 }
 
 /*

@@ -128,13 +128,28 @@ struct heads_pointer_shift {
 	unsigned leave;
 };
 
-static int heads_open(struct kwl_server *server, struct kwl_head *head, VkDisplayKHR display, const char *name);
+/*
+ * A bringing in line of the heads (kwl_heads_sync): what is left of the
+ * heads let go (rests, rest_count of them), the displays that get a head
+ * (opens, open_count of them, each with the head chosen), whether the
+ * heads changed, and whether it is a step of another change of the
+ * display (nested: that change ends it).
+ */
+struct heads_sync {
+	struct kwl_head_rest rests[KWL_HEADS];
+	unsigned rest_count;
+	struct kwl_head_opening opens[KWL_HEADS];
+	unsigned open_count;
+	unsigned changed;
+	unsigned nested;
+};
+
+static int heads_take(struct kwl_server *server, struct kwl_head *head, struct kwl_head_opening *opening);
 static void heads_close(struct kwl_server *server, struct kwl_head *head);
 static void heads_let_go(struct kwl_server *server, struct kwl_head *head, struct kwl_head_rest *rest);
 static VkResult heads_targets(struct kwl_compose *compose, struct kwl_head *head);
 static void heads_targets_destroy(struct kwl_compose *compose, struct kwl_head *head);
 static struct kwl_head *heads_find(struct kwl_compose *compose, VkDisplayKHR display);
-static struct kwl_head *heads_free(struct kwl_compose *compose);
 static void heads_place(struct kwl_server *server, struct kwl_head *head);
 static unsigned heads_rects(struct kwl_server *server, const struct kwl_head *skip, struct kwl_display_rect *rects, unsigned room);
 static int heads_needs_frame(struct kwl_server *server, const struct kwl_head *head);
@@ -152,7 +167,8 @@ static void heads_file_drop(struct kwl_lane_job *job);
 static void heads_mkdir(char *folder);
 static void heads_changed(struct kwl_server *server);
 static void heads_evacuate(struct kwl_server *server, unsigned slot);
-static void heads_sync_parked(struct kwl_server *server);
+static void heads_sync_parked(struct kwl_server *server, int error, void *context);
+static void heads_sync_made(struct kwl_server *server, int error, void *context);
 static void heads_windows_follow(struct kwl_server *server, const struct kwl_plane_rect *before, unsigned leave);
 static void heads_pointer_evacuate(const void *context, const struct kwl_plane_rect *outputs, int32_t *x, int32_t *y, unsigned *output);
 static void heads_pointer_follow(const void *context, const struct kwl_plane_rect *outputs, int32_t *x, int32_t *y, unsigned *output);
@@ -310,40 +326,93 @@ kwl_heads_config_load(
  * Brings the heads in line with the displays of the last enumeration:
  * a head for each display connected but the output's, the one kept off,
  * the ones the user turned off (ws113-p014) and the ones refused since the
- * last hotplug; no head for a display gone or lost.
+ * last hotplug; no head for a display gone or lost.  Waits for it: the
+ * steps run here (where the caller needs the heads on return: Settings'
+ * choice applied, a display turned on or off).
  */
 void
 kwl_heads_sync(
 	struct kwl_server *server)
 {
-	/* The render thread parked, as the heads' swapchains change (ws213-p004). */
-	if (server->compose == NULL)
-		return;
-	kwl_compose_park(server);
-	heads_sync_parked(server);
-	kwl_compose_unpark(server);
-}
-
-/* Brings the heads in line with the displays, the render thread parked (kwl_heads_sync). */
-static void
-heads_sync_parked(
-	struct kwl_server *server)
-{
 	struct kwl_compose *compose;
-	struct kwl_head *head;
-	unsigned index;
-	unsigned changed;
-	int listed;
-	int off;
-	int error;
+	struct heads_sync *sync;
 
-	/* Only window mode's open output has heads. */
+	/* Only with the device. */
 	compose = server->compose;
 	if (compose == NULL)
 		return;
 
+	/* A change running ends first, unless this is a step of it (the render thread is parked then). */
+	kwl_display_settle(server);
+	sync = calloc(1, sizeof(*sync));
+	if (sync == NULL) {
+		printf("KWL OUTPUT heads errno=%d\n", ENOMEM);
+		return;
+	}
+	compose->display_inline++;
+	if (compose->display_busy) {
+		sync->nested = 1U;
+		heads_sync_parked(server, 0, sync);
+	} else if (kwl_display_begin(server, heads_sync_parked, sync) != 0) {
+		free(sync);
+	}
+	compose->display_inline--;
+}
+
+/*
+ * Brings the heads in line as kwl_heads_sync does, in a change of the
+ * display while the passes go on: the heads' swapchains are destroyed and
+ * made by the display thread.  Returns 0, or EBUSY while another change
+ * runs (a later look tries again: heads_stale stays).
+ */
+int
+kwl_heads_sync_later(
+	struct kwl_server *server)
+{
+	struct heads_sync *sync;
+	int error;
+
+	/* Only with the device. */
+	if (server->compose == NULL)
+		return 0;
+
+	/* The change. */
+	sync = calloc(1, sizeof(*sync));
+	if (sync == NULL)
+		return ENOMEM;
+	error = kwl_display_begin(server, heads_sync_parked, sync);
+	if (error != 0)
+		free(sync);
+	return error;
+}
+
+/*
+ * Brings the heads in line, the render thread parked and drained: the
+ * heads of displays gone, lost, turned off or now the output's are let go,
+ * and a head is chosen for each display that may have one; the display
+ * thread destroys the old swapchains and makes the new ones
+ * (heads_sync_made goes on).
+ */
+static void
+heads_sync_parked(
+	struct kwl_server *server,
+	int error,
+	void *context)
+{
+	struct kwl_head_opening *opening;
+	struct kwl_compose *compose;
+	struct heads_sync *sync;
+	struct kwl_head *head;
+	unsigned taken;
+	unsigned index;
+	unsigned slot;
+	int listed;
+	int off;
+
 	/* The heads of displays gone, lost, or now the output's go. */
-	changed = 0U;
+	(void)error;
+	sync = context;
+	compose = server->compose;
 	for (index = 0U; index < KWL_HEADS; index++) {
 		head = &compose->heads[index];
 		if (!head->open)
@@ -364,54 +433,96 @@ heads_sync_parked(
 		}
 
 		/* Its display is gone, lost, turned off (ws113-p014), or the output's now. */
-		heads_close(server, head);
-		changed = 1U;
+		heads_let_go(server, head, &sync->rests[sync->rest_count]);
+		sync->rest_count++;
+		sync->changed = 1U;
 	}
 
 	/* Without the output, no head opens (the output is closed for a hand-over, or lost). */
 	compose->heads_stale = 0U;
-	if (!compose->output_open || compose->output_lost) {
-		if (changed)
-			heads_changed(server);
-		return;
+	taken = 0U;
+	if (compose->output_open && !compose->output_lost) {
+		/* Each display connected that has no head and may have one. */
+		for (index = 0U; index < compose->display_count; index++) {
+			/* Not the output's, not one kept off, not one refused since the last hotplug, not one shown already. */
+			if (compose->displays[index] == compose->display)
+				continue;
+			if (compose->displays[index] == compose->kept_off)
+				continue;
+			if ((compose->limited & ((uint32_t)1U << index)) != 0U)
+				continue;
+			off = heads_off(compose, index);
+			if (off)
+				continue;
+			head = heads_find(compose, compose->displays[index]);
+			if (head != NULL)
+				continue;
+
+			/* A head free for it (one not chosen for another display of this look). */
+			for (slot = 0U; slot < KWL_HEADS; slot++) {
+				if (!compose->heads[slot].open && (taken & (1U << slot)) == 0U)
+					break;
+			}
+			if (slot == KWL_HEADS)
+				break;
+			taken |= 1U << slot;
+			opening = &sync->opens[sync->open_count];
+			opening->slot = slot;
+			opening->index = index;
+			opening->display = compose->displays[index];
+			(void)snprintf(opening->name, sizeof(opening->name), "%s", compose->display_names[index]);
+			sync->open_count++;
+		}
 	}
 
-	/* Each display connected that has no head and may have one. */
-	for (index = 0U; index < compose->display_count; index++) {
-		/* Not the output's, not one kept off, not one refused since the last hotplug, not one shown already. */
-		if (compose->displays[index] == compose->display)
-			continue;
-		if (compose->displays[index] == compose->kept_off)
-			continue;
-		if ((compose->limited & ((uint32_t)1U << index)) != 0U)
-			continue;
-		off = heads_off(compose, index);
-		if (off)
-			continue;
-		head = heads_find(compose, compose->displays[index]);
-		if (head != NULL)
-			continue;
+	/* The display thread's part, then heads_sync_made. */
+	kwl_display_heads(server, sync->rests, sync->rest_count, sync->opens, sync->open_count, heads_sync_made, sync);
+}
 
-		/* A head free for it. */
-		head = heads_free(compose);
-		if (head == NULL)
-			break;
+/*
+ * Takes in what the display thread did for the heads: the heads closed
+ * are told, each head made is taken in (its targets, its place, a global),
+ * a display that refused its swapchain is tried again after the next
+ * hotplug; the clients learn of the change, and the change of the display
+ * ends (unless the heads were brought in line as a step of another).
+ */
+static void
+heads_sync_made(
+	struct kwl_server *server,
+	int error,
+	void *context)
+{
+	struct kwl_head_opening *opening;
+	struct kwl_compose *compose;
+	struct heads_sync *sync;
+	unsigned index;
 
-		/* Its swapchain; a display that refuses it is tried again after the next hotplug. */
-		error = heads_open(server, head, compose->displays[index], compose->display_names[index]);
-		if (error != 0) {
-			compose->limited |= (uint32_t)1U << index;
-			printf("KWL OUTPUT head refused name=%s errno=%d\n", compose->display_names[index], error);
+	/* The heads closed. */
+	(void)error;
+	sync = context;
+	compose = server->compose;
+	for (index = 0U; index < sync->rest_count; index++)
+		printf("KWL OUTPUT head closed name=%s\n", sync->rests[index].name);
+
+	/* Each head made, or refused. */
+	for (index = 0U; index < sync->open_count; index++) {
+		opening = &sync->opens[index];
+		if (opening->error == 0)
+			opening->error = heads_take(server, &compose->heads[opening->slot], opening);
+		if (opening->error != 0) {
+			compose->limited |= (uint32_t)1U << opening->index;
+			printf("KWL OUTPUT head refused name=%s errno=%d\n", opening->name, opening->error);
 			continue;
 		}
-
-		/* A head more. */
-		changed = 1U;
+		sync->changed = 1U;
 	}
 
-	/* The clients learn of the change. */
-	if (changed)
+	/* The clients learn of the change, and the change ends. */
+	if (sync->changed)
 		heads_changed(server);
+	if (!sync->nested)
+		kwl_display_end(server);
+	free(sync);
 }
 
 /* Closes the head of a display, before the output moves to it. */
@@ -970,65 +1081,101 @@ kwl_output_head_globals(
 }
 
 /*
- * Opens a head on a display: its surface at the display's native mode, the
- * display acquired, its swapchain (a copy's destination too, for the
- * mirror), its targets, its place and its wl_output global.  Returns 0,
- * ENXIO for a display not connected now, ENOTSUP for one whose format is
- * not the output's, or EIO (the swapchain refused: the limit of the
- * displays shown at once); nothing is kept then.
+ * Makes a head's swapchain on a display (opening's), on the display
+ * thread: the display's size, refresh and name now, its surface at its
+ * native mode in the output's format (the pass and pipelines are the
+ * output's), the display acquired, its FIFO swapchain (a copy's
+ * destination too, for the mirror).  It touches no field of the
+ * compositor's.  opening's error is 0, ENXIO for a display not connected
+ * now, ENOTSUP for one whose format is not the output's, or EIO (the
+ * swapchain refused: the limit of the displays shown at once); nothing is
+ * kept then.
  */
-static int
-heads_open(
+void
+kwl_heads_make(
 	struct kwl_server *server,
-	struct kwl_head *head,
-	VkDisplayKHR display,
-	const char *name)
+	struct kwl_head_opening *opening)
 {
 	struct kwl_compose *compose;
-	VkSemaphoreCreateInfo semaphore;
 	char read_name[KWL_COMPOSE_NAME];
 	VkResult result;
 
 	/* The display's size, refresh and name now. */
 	compose = server->compose;
-	memset(head, 0, sizeof(*head));
-	result = kwl_compose_display_read(server, display, &head->width, &head->height, &head->refresh, read_name, sizeof(read_name));
-	if (result != VK_SUCCESS)
-		return ENXIO;
-	head->display = display;
-	(void)snprintf(head->name, sizeof(head->name), "%s", name);
-
-	/* Its plane's surface at its native mode, in the output's format (the pass and pipelines are the output's). */
-	result = vkdemo_display_open_on(compose->instance, compose->physical, display, head->width, head->height, &head->output);
-	if (result == VK_SUCCESS)
-		result = vkdemo_display_choose_format(compose->physical, &head->output);
+	memset(&opening->output, 0, sizeof(opening->output));
+	result = kwl_compose_display_read(server, opening->display, &opening->width, &opening->height, &opening->refresh, read_name, sizeof(read_name));
 	if (result != VK_SUCCESS) {
-		vkdemo_display_close(compose->instance, compose->device, &head->output);
-		return EIO;
+		opening->error = ENXIO;
+		return;
+	}
+
+	/* Its plane's surface at its native mode, in the output's format. */
+	result = vkdemo_display_open_on(compose->instance, compose->physical, opening->display, opening->width, opening->height, &opening->output);
+	if (result == VK_SUCCESS)
+		result = vkdemo_display_choose_format(compose->physical, &opening->output);
+	if (result != VK_SUCCESS) {
+		vkdemo_display_close(compose->instance, compose->device, &opening->output);
+		opening->error = EIO;
+		return;
 	}
 
 	/* A format other than the output's cannot take the output's pass. */
-	if (head->output.format != compose->format) {
-		vkdemo_display_close(compose->instance, compose->device, &head->output);
-		return ENOTSUP;
+	if (opening->output.format != compose->format) {
+		vkdemo_display_close(compose->instance, compose->device, &opening->output);
+		opening->error = ENOTSUP;
+		return;
 	}
 
 	/* The display's permission for its swapchain. */
-	result = kwl_os_display_acquire(server, compose->physical, display);
+	result = kwl_os_display_acquire(server, compose->physical, opening->display);
 	if (result != VK_SUCCESS) {
-		vkdemo_display_close(compose->instance, compose->device, &head->output);
-		return EIO;
+		vkdemo_display_close(compose->instance, compose->device, &opening->output);
+		opening->error = EIO;
+		return;
 	}
 
 	/* Its FIFO swapchain, drawn into and copied into. */
-	result = vkdemo_display_create_swapchain_usage(compose->physical, compose->device, compose->family, &head->output, VK_IMAGE_USAGE_TRANSFER_DST_BIT);
+	result = vkdemo_display_create_swapchain_usage(compose->physical, compose->device, compose->family, &opening->output, VK_IMAGE_USAGE_TRANSFER_DST_BIT);
 	if (result != VK_SUCCESS ||
-	    head->output.image_count > KWL_SWAPCHAIN_MAX ||
-	    head->output.format != compose->format) {
-		vkdemo_display_close(compose->instance, compose->device, &head->output);
-		kwl_os_display_release(server, compose->physical, display);
-		return EIO;
+	    opening->output.image_count > KWL_SWAPCHAIN_MAX ||
+	    opening->output.format != compose->format) {
+		vkdemo_display_close(compose->instance, compose->device, &opening->output);
+		kwl_os_display_release(server, compose->physical, opening->display);
+		opening->error = EIO;
+		return;
 	}
+
+	/* Succeeded: the swapchain for the main thread to take in. */
+	opening->error = 0;
+}
+
+/*
+ * Takes a head's swapchain the display thread made into a head, on the
+ * main thread: a view, a framebuffer and a present semaphore for each
+ * image and the acquire's semaphore, its place and its wl_output global.
+ * Returns 0, or EIO when they could not be made (nothing is kept: the
+ * swapchain is destroyed and the display given back here, a failure's
+ * path).
+ */
+static int
+heads_take(
+	struct kwl_server *server,
+	struct kwl_head *head,
+	struct kwl_head_opening *opening)
+{
+	struct kwl_compose *compose;
+	VkSemaphoreCreateInfo semaphore;
+	VkResult result;
+
+	/* The display and its swapchain. */
+	compose = server->compose;
+	memset(head, 0, sizeof(*head));
+	head->display = opening->display;
+	head->width = opening->width;
+	head->height = opening->height;
+	head->refresh = opening->refresh;
+	head->output = opening->output;
+	(void)snprintf(head->name, sizeof(head->name), "%s", opening->name);
 
 	/* A view, a framebuffer and a present semaphore for each image, and the acquire's semaphore. */
 	result = heads_targets(compose, head);
@@ -1042,7 +1189,8 @@ heads_open(
 	if (result != VK_SUCCESS) {
 		heads_targets_destroy(compose, head);
 		vkdemo_display_close(compose->instance, compose->device, &head->output);
-		kwl_os_display_release(server, compose->physical, display);
+		kwl_os_display_release(server, compose->physical, head->display);
+		memset(head, 0, sizeof(*head));
 		return EIO;
 	}
 
@@ -1236,23 +1384,6 @@ heads_find(
 	}
 
 	/* No head shows it. */
-	return NULL;
-}
-
-/* Finds a head that is not open, or NULL. */
-static struct kwl_head *
-heads_free(
-	struct kwl_compose *compose)
-{
-	unsigned index;
-
-	/* The first one closed. */
-	for (index = 0U; index < KWL_HEADS; index++) {
-		if (!compose->heads[index].open)
-			return &compose->heads[index];
-	}
-
-	/* Every head is open. */
 	return NULL;
 }
 

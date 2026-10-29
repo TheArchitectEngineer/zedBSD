@@ -1228,8 +1228,8 @@ kwl_compose_want_layer(
  * frame in flight, whose completion is applied here.  Parks nest; the
  * thread goes on when the outermost ends.  A thread that does not park in
  * time ends the compositor, as no Vulkan call is safe under it.  A change
- * of the display whose park is asked and not answered yet ends first
- * (display-thread.c): its park is the thread's.
+ * of the display running ends first (display-thread.c), unless this park
+ * is one of its steps'.
  */
 void
 kwl_compose_park(
@@ -1242,7 +1242,7 @@ kwl_compose_park(
 	compose = server->compose;
 	if (compose == NULL || !compose->render_started)
 		return;
-	if (compose->display_parking)
+	if (compose->display_parking || (compose->display_busy && compose->display_in_step == 0U))
 		kwl_display_settle(server);
 	compose->park_depth++;
 	if (compose->park_depth > 1U)

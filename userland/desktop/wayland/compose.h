@@ -409,6 +409,25 @@ struct kwl_head_rest {
 };
 
 /*
+ * A head to be made on a display (heads.c): the head chosen for it
+ * (slot), the display's place in the last enumeration (index), the
+ * display and its name; and what the display thread made: the display's
+ * size and refresh, the swapchain's record, and 0 or the errno of making
+ * it (kwl_heads_make).
+ */
+struct kwl_head_opening {
+	unsigned slot;
+	unsigned index;
+	VkDisplayKHR display;
+	char name[KWL_COMPOSE_NAME];
+	uint32_t width;
+	uint32_t height;
+	uint32_t refresh;
+	struct vkdemo_display output;
+	int error;
+};
+
+/*
  * A cursor plane taken off its output for its close (cursor-plane.c): the
  * cursor thread's record, the plane's copies the thread reads until it has
  * stopped, and whether the plane showed the cursor.
@@ -810,7 +829,10 @@ struct kwl_compose {
 	 * when it is (the render thread parked and drained).  display_inline
 	 * counts the callers that run the changes' steps on the event loop's
 	 * thread and wait (the end, the hand-over, the seat's pause), as they do
-	 * without the thread.  display_began_ms is when the change began.
+	 * without the thread.  display_in_step counts the steps of a change
+ * running on the event loop's thread now (a caller then is part of the
+ * change; any other waits for the change's end first).  display_began_ms
+ * is when the change began.
 	 */
 	struct kwl_lane display_lane;
 	unsigned display_started;
@@ -819,6 +841,7 @@ struct kwl_compose {
 	kwl_display_fn *display_step;
 	void *display_context;
 	unsigned display_inline;
+	unsigned display_in_step;
 	uint64_t display_began_ms;
 	uint64_t walk_cycles;
 	uint64_t frame_number;
@@ -1004,6 +1027,7 @@ int kwl_display_begin(struct kwl_server *server, kwl_display_fn *parked, void *c
 void kwl_display_end(struct kwl_server *server);
 void kwl_display_close(struct kwl_server *server, kwl_display_fn *then, void *context);
 void kwl_display_open(struct kwl_server *server, kwl_display_fn *then, void *context);
+void kwl_display_heads(struct kwl_server *server, struct kwl_head_rest *rests, unsigned rest_count, struct kwl_head_opening *opens, unsigned open_count, kwl_display_fn *then, void *context);
 int kwl_display_scanout_query(struct kwl_server *server, uint32_t width, uint32_t height, kwl_display_fn *then, void *context);
 int kwl_display_output_open(struct kwl_server *server, kwl_display_fn *then, void *context);
 void kwl_compose_unpark(struct kwl_server *server);
@@ -1113,6 +1137,8 @@ void kwl_heads_sync(struct kwl_server *server);
 void kwl_heads_close_display(struct kwl_server *server, VkDisplayKHR display);
 void kwl_heads_close_all(struct kwl_server *server, struct kwl_head_rest *rests, unsigned *count);
 void kwl_heads_rest_destroy(struct kwl_server *server, struct kwl_head_rest *rests, unsigned count);
+void kwl_heads_make(struct kwl_server *server, struct kwl_head_opening *opening);
+int kwl_heads_sync_later(struct kwl_server *server);
 int kwl_heads_lost(struct kwl_server *server);
 unsigned kwl_heads_wanted(struct kwl_server *server, unsigned *slots, unsigned room);
 unsigned kwl_heads_take(struct kwl_server *server, const struct kwl_render_held *held);
