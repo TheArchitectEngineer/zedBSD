@@ -62,10 +62,15 @@
   `plan/ws131/tests/host-seat-freebsd.sh`（ASan+UBSan）18/18（disable で何も閉じない → let-go で input → paused_done で primary と disable_seat）。
 - `git diff --check` PASS。`makefile-sync.sh`・`keiland-os-boundary/check.sh` の FAIL は preview・installer・powervr・libbrowser の既存の物だけ（この差分の file は無い）。
 
-## 止めている確認（ユーザーの判断待ち、2026-10-30 Q1）
+## guest の試験（2026-10-30、ユーザーの許可「決めの事項は、許可します。」で guest の道具の自分の build/ の一時 file の削除が §4 の例外になった）
 
-- Linux の gdm の guest（`plan/ws309/tests/seat-linux/seat-guest.sh`: logind の session、uinput の keyboard の出入り（`uinput-key.c`）、SwitchTo と chvt の pause・resume、
-  `KWL SEAT paused_done`、compositor の pid が同じ）と FreeBSD の guest（`backend-test.sh`: native の build の warning 0 と host-seat-freebsd）。
-  道具（`plan/tools/keiland-linux/build-guest.sh`・`guest.py`、`plan/tools/keiland-freebsd/build-guest.sh`）が自分の build/ の一時 file を host で消すため、
-  AGENTS §4 の削除の規則の例外にするかを Q1 がユーザーに聞いている。答えが来るまで guest の道具を使わない。guest の image の build は始めた分だけ走らせたまま
-  （`build/ws309/linux/guest-gdm`、`build/ws309/freebsd/guest`）。
+- Linux（Debian 13 の gdm の guest、`plan/tools/keiland-linux/build-guest.sh build/ws309/linux/guest-gdm gdm`、port 2327）:
+  `plan/ws309/tests/seat-linux/seat-guest.sh build/ws309/linux/seat2 build/ws309/linux/guest-gdm build/ws309/linux/stage build/ws309/linux/uinput-key`
+  **seat-guest: PASS**（`KWL SEAT logind session=…`、起動の時の入力 4 個は TakeDevice の答えを bus から受けて `KWL INPUT`、uinput の keyboard の差し込みで 5 個目、
+  抜くと `KWL SEAT pause … type=gone`、SwitchTo と chvt の 2 回とも `KWL SEAT paused` → `KWL SEAT paused_done` → `KWL SEAT resumed`、compositor の pid 1380 が同じ、
+  KWL FAILED 無し）。PNG: `build/ws309/linux/seat2/{session,vt,back,back2}.png`（back2 は chvt の往復の後に desktop と Settings の窓が戻った画面）。
+  1 回目（seat1）は試験の script の誤り（uinput の keyboard に KEY_Z が無く compositor が keyboard と見なさない、VT の番号の読み違い）で FAIL、直して 2 回目。
+- 観測できなかった所: この guest では kernel の revoke（ENODEV）が logind の signal より先に input thread に届き、全ての callback が `later=0` を返した。
+  let-go まで閉じるのを待つ経路（`later=1`）は host 試験（seat-answer・host-seat-freebsd）だけで確かめた。
+- FreeBSD: `plan/tools/keiland-freebsd/build-guest.sh` が 2 回とも FreeBSD の mirror の `llvm19-19.1.7_4` の「fetch size does not match expected package size」で
+  pkg install に失敗（`build/ws309/freebsd/guest/pkg-install.txt`、00:1x と 00:3x）。Q1 の指示で 1 時間以上あけて p018 の前にもう 1 度試す。
