@@ -465,8 +465,9 @@ static int tcp_route(struct tcp_endpoint *endpoint, struct net_device **device, 
 static int tcp_route_cached(struct tcp_endpoint *endpoint, struct net_device **device, uint32_t *source, uint32_t *next_hop);
 static void tcp_route_remember(struct tcp_endpoint *endpoint, struct net_device *device, uint32_t source, unsigned long generation);
 static int tcp_send_segment_at(struct tcp_endpoint *endpoint, uint32_t sequence, uint8_t flags, const void *data, size_t length);
+static int tcp_send_segment_news(struct tcp_endpoint *endpoint, uint32_t sequence, uint8_t flags, const void *data, size_t length, int news_only);
 static int tcp_send_segment_cut(struct tcp_endpoint *endpoint, uint32_t sequence, uint8_t flags, const void *data, size_t length);
-static int tcp_output_segment(struct tcp_endpoint *endpoint, uint32_t sequence, uint8_t flags, const void *data, size_t length, struct packet_buf *carrier);
+static int tcp_output_segment(struct tcp_endpoint *endpoint, uint32_t sequence, uint8_t flags, const void *data, size_t length, struct packet_buf *carrier, int news_only);
 static int tcp_send_segment_carried(struct tcp_endpoint *endpoint, uint32_t sequence, uint8_t flags, struct packet_buf *carrier);
 static void tcp_stats_fill_locked(const struct tcp_endpoint *endpoint, uint64_t now, int superuser, struct tcp_stats_entry *entry);
 static int tcp_allocate_port(struct tcp_endpoint *endpoint);
@@ -484,6 +485,7 @@ static void tcp_output_retry(struct tcp_endpoint *endpoint, uint8_t *payload, ui
 static void tcp_send_unsent(struct tcp_endpoint *endpoint, uint8_t *payload);
 static void tcp_send_ack_pending(struct tcp_endpoint *endpoint);
 static int tcp_send_ack(struct tcp_endpoint *endpoint, int duplicate);
+static int tcp_send_ack_news(struct tcp_endpoint *endpoint, int duplicate, int news_only);
 static int tcp_sequence_before(uint32_t left, uint32_t right);
 static int tcp_sequence_at_or_before(uint32_t left, uint32_t right);
 static uint32_t tcp_initial_sequence(uint32_t chosen);
@@ -2349,11 +2351,33 @@ tcp_send_segment_at(
 	const void *data,
 	size_t length)
 {
+	/* Sent whatever it tells. */
+	return tcp_send_segment_news(endpoint, sequence, flags, data, length, 0);
+}
+
+/*
+ * Transmits one segment as tcp_send_segment_at does; with news_only, a pure
+ * acknowledgement that would repeat the last segment's acknowledgement and
+ * window is not sent (EALREADY) and not counted.
+ */
+static int
+tcp_send_segment_news(
+	struct tcp_endpoint *endpoint,
+	uint32_t sequence,
+	uint8_t flags,
+	const void *data,
+	size_t length,
+	int news_only)
+{
 	unsigned long irq;
 	int error;
 
 	/* Builds and hands the segment to the device. */
-	error = tcp_output_segment(endpoint, sequence, flags, data, length, NULL);
+	error = tcp_output_segment(endpoint, sequence, flags, data, length, NULL, news_only);
+
+	/* One that would have told nothing new did not go. */
+	if (error == EALREADY)
+		return error;
 
 	/* Counts the segment and, when it went, a closed window it told of. */
 	irq = spin_lock_irqsave(&endpoint->tcp.inet.socket.lock);
@@ -2455,7 +2479,7 @@ tcp_send_segment_carried(
 	int error;
 
 	/* Builds the segment around the payload and hands it to the device. */
-	error = tcp_output_segment(endpoint, sequence, flags, NULL, 0, carrier);
+	error = tcp_output_segment(endpoint, sequence, flags, NULL, 0, carrier, 0);
 
 	/* Counts the segment as tcp_send_segment_at does. */
 	irq = spin_lock_irqsave(&endpoint->tcp.inet.socket.lock);
@@ -2655,12 +2679,12 @@ tcp_output_segment(
 	uint8_t flags,
 	const void *data,
 	size_t length,
-	struct packet_buf *carrier)
+	struct packet_buf *carrier,
+	int news_only)
 {
 	struct net_device *device;
 	struct packet_buf *packet;
 	struct tcp_wire *tcp;
-	unsigned long irq;
 	uint32_t acknowledgement;
 	struct in6_addr source6;
 	struct ipv6_way way6;
@@ -2814,14 +2838,12 @@ tcp_output_segment(
 	}
 
 	/*
-	 * The acknowledgement and the window, from one hold of the socket
-	 * lock, under which receive_next and the receive queue move together:
-	 * a segment never tells of an old receive_next with a window the data
-	 * after it already narrowed (to the peer a duplicate acknowledgement),
-	 * and two threads sending at once do not interleave the edge.
+	 * The acknowledgement, read once for its field and the edge, without
+	 * the socket lock: receive_next moves with the receive queue under that
+	 * lock (socket_enqueue_stream_advance), and taking the lock for every
+	 * segment slowed the receive path.  What it would spare is rare: an
+	 * acknowledgement a moment old with the window already narrowed.
 	 */
-	irq = spin_lock_irqsave(&endpoint->tcp.inet.socket.lock);
-
 	acknowledgement = endpoint->tcp.receive_next;
 
 	/*
@@ -2852,11 +2874,26 @@ tcp_output_segment(
 	if ((window >> shift) > 0xffffU)
 		window = 0xffffU << shift;
 	field = (uint16_t)(window >> shift);
+
+	/*
+	 * A window update that would repeat the last segment's acknowledgement
+	 * and window does not go: an acknowledgement sent meanwhile told the
+	 * peer of the room already, and the same one again is a duplicate
+	 * acknowledgement to it, which its fast retransmit counts.
+	 */
+	if (news_only && endpoint->tcp.receive_edge_set != 0 &&
+	    acknowledgement + endpoint->tcp.advertised_window == endpoint->tcp.receive_edge &&
+	    ((uint32_t)field << shift) == endpoint->tcp.advertised_window) {
+		packet_buf_free(packet);
+		if (device != NULL)
+			net_device_release(device);
+		return EALREADY;
+	}
+
+	/* What the peer is now told: the window and its right edge. */
 	endpoint->tcp.advertised_window = (uint32_t)field << shift;
 	endpoint->tcp.receive_edge = acknowledgement + endpoint->tcp.advertised_window;
 	endpoint->tcp.receive_edge_set = 1;
-
-	spin_unlock_irqrestore(&endpoint->tcp.inet.socket.lock, irq);
 
 	/* Both in their fields. */
 	wire_put32(tcp->acknowledgement, acknowledgement);
@@ -6005,6 +6042,21 @@ tcp_send_ack(
 	struct tcp_endpoint *endpoint,
 	int duplicate)
 {
+	/* Sent whatever it tells. */
+	return tcp_send_ack_news(endpoint, duplicate, 0);
+}
+
+/*
+ * Sends a pure acknowledgement as tcp_send_ack does; with news_only (a
+ * reader's window update), not when it would repeat the last segment's
+ * acknowledgement and window (EALREADY, nothing kept to send again).
+ */
+static int
+tcp_send_ack_news(
+	struct tcp_endpoint *endpoint,
+	int duplicate,
+	int news_only)
+{
 	struct socket *socket;
 	unsigned long irq;
 	uint32_t sequence;
@@ -6023,8 +6075,10 @@ tcp_send_ack(
 
 	spin_unlock_irqrestore(&socket->lock, irq);
 
-	/* Hands it to the device. */
-	error = tcp_send_segment_at(endpoint, sequence, TCP_ACK, NULL, 0);
+	/* Hands it to the device, unless it would tell nothing new. */
+	error = tcp_send_segment_news(endpoint, sequence, TCP_ACK, NULL, 0, news_only);
+	if (error == EALREADY)
+		return error;
 	refusal = tcp_refusal_of(error);
 	retries = tcp_refusal_retries(refusal);
 
@@ -6921,9 +6975,13 @@ tcp_recvfrom(
 	    (endpoint->tcp.state == TCP_ESTABLISHED ||
 	     endpoint->tcp.state == TCP_FIN_WAIT_1 ||
 	     endpoint->tcp.state == TCP_FIN_WAIT_2)) {
-		sent = tcp_send_ack(endpoint, 0);
+		sent = tcp_send_ack_news(endpoint, 0, 1);
 
-		/* An update that went is counted for net.tcpstats (a refused one is sent again later). */
+		/*
+		 * An update that went is counted for net.tcpstats (a refused one is
+		 * sent again later; one an acknowledgement sent meanwhile made
+		 * the same as the last did not go).
+		 */
 		if (sent == 0) {
 			irq = spin_lock_irqsave(&socket->lock);
 
@@ -6992,10 +7050,10 @@ tcp_receive_sws_step(
  * each packet left, which every packet but the last holds at least.  A connection that offered segments larger than a standard packet
  * holds also promises no more than TCP_RECEIVE_JUMBO_MAX jumbo packets,
  * those its queue holds counted, for the pool has few of them.  A peer
- * that keeps within it is never refused.  A segment's output reads it
- * under the socket lock, with the receive_next it goes with; a reader
- * deciding whether to tell the peer of room reads it without, a value a
- * moment old.  It is in bytes; the segment's field scales it.
+ * that keeps within it is never refused.  It is read without
+ * the socket lock, because segments are also sent with that lock held; a
+ * value a moment old is what any peer sees anyway.  It is in bytes; the
+ * segment's field scales it.
  */
 static uint32_t
 tcp_receive_window(
