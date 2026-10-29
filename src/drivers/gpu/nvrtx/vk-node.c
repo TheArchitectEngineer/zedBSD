@@ -37,6 +37,7 @@
 #include <uapi/errno.h>
 
 #include "drivers/gpu/nvrtx/nvrtx-node.h"
+#include "drivers/gpu/nvrtx/nvrtx-nvdec.h"
 #include "drivers/gpu/nvrtx/vk/nvrtx-vk.h"
 
 /* How long each wait past a run's time lasts while the recovery looks for what holds the GPU up. */
@@ -1002,4 +1003,101 @@ vk_node_backing_drop(
 
 	/* The record. */
 	kern_free(backing);
+}
+
+/*
+ * Reports whether the node's GPU decodes video: its decoder takes
+ * pictures and the driver's work channel has the copy object its pictures
+ * are read out with (the sessions' channels are made the same way).
+ */
+bool
+nvrtx_node_video_available(
+	struct nvrtx_node *node)
+{
+	bool ready;
+
+	/* The decoder's channel runs. */
+	ready = nvrtx_nvdec_ready(node->gpu);
+	if (!ready)
+		return false;
+
+	/* The copy object reads the pictures out. */
+	if (node->gpu->work.driver.copy_made == 0)
+		return false;
+
+	/* Succeeded: the GPU decodes video. */
+	return true;
+}
+
+/*
+ * Reports whether the session decodes video: the node's GPU does
+ * (nvrtx_node_video_available()), and the channel its runs go to has the
+ * copy object too, once it has one.
+ */
+bool
+nvrtx_vk_video_available(
+	void *owner)
+{
+	struct nvrtx_work_channel *channel;
+	struct nvrtx_session *session;
+	bool available;
+
+	session = owner;
+
+	/* The node's answer. */
+	available = nvrtx_node_video_available(session->node);
+	if (!available)
+		return false;
+
+	/* The session's own channel reads the pictures out with its own copy object. */
+	channel = __atomic_load_n(&session->channel, __ATOMIC_ACQUIRE);
+	if (channel != NULL && channel->copy_made == 0)
+		return false;
+
+	/* Succeeded: the GPU decodes video. */
+	return true;
+}
+
+/*
+ * Runs a decoder push buffer for a session and waits for it.  The node's
+ * lock, which the executor holds, is let go while the decoder runs, as
+ * for the waits of nvrtx_vk_gpu_wait(), so other sessions' frames go on.
+ * A session whose runs are lost decodes nothing; a decoder that does not
+ * finish loses the session's runs (and is taken out of use by the
+ * decoder's channel).  Returns EIO for both.
+ */
+int
+nvrtx_vk_video_decode(
+	void *owner,
+	uint64_t va,
+	uint32_t bytes)
+{
+	struct nvrtx_session *session;
+	struct nvrtx_node *node;
+	bool lost;
+	int held;
+	int error;
+
+	session = owner;
+	node = session->node;
+
+	/* A session whose runs are lost (or whose channel the recovery lost) puts nothing more on the GPU. */
+	lost = vk_node_lost(session);
+	if (lost)
+		return EIO;
+
+	/* The decoder runs the push buffer and is waited for, without the node's lock. */
+	held = mutex_owned(&node->lock);
+	if (held != 0)
+		mutex_unlock(&node->lock);
+	error = nvrtx_nvdec_run(node->gpu, va, bytes, NVRTX_NODE_DECODE_US);
+	if (held != 0)
+		mutex_lock(&node->lock);
+	if (error == ETIMEDOUT)
+		__atomic_store_n(&session->run_lost, 1, __ATOMIC_RELEASE);
+	if (error != 0)
+		return EIO;
+
+	/* Succeeded: the decoder has finished the picture. */
+	return 0;
 }

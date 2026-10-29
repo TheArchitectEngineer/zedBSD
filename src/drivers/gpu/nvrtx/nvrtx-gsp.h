@@ -831,6 +831,12 @@ struct nvrtx_engine_pick {
 	uint32_t engine;
 	uint32_t runlist;
 	uint32_t graphics_runlist;
+	/* A copy engine on the graphics runlist (0xffffffff: none), which a graphics channel's copy object runs on. */
+	uint32_t graphics_copy;
+	/* Whether the first video decoder is in the table, its runlist and its engine descriptor. */
+	uint32_t nvdec_found;
+	uint32_t nvdec_runlist;
+	uint32_t nvdec_descriptor;
 };
 
 /* Where a channel's pieces are, for its allocation. */

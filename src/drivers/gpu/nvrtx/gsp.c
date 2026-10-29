@@ -46,6 +46,7 @@
 #include <uapi/errno.h>
 
 #include "drivers/gpu/nvrtx/nvrtx-gpu.h"
+#include "drivers/gpu/nvrtx/nvrtx-nvdec.h"
 
 /* The largest small file read whole. */
 #define GSP_SMALL_FILE_MAX		0x40000U
@@ -357,6 +358,17 @@ nvrtx_gsp_start(
 		}
 	}
 
+	/* Makes the video decoder's channel when the boot asks (nvrtx.video=1); without it the GPU decodes no video. */
+	wanted = nvrtx_stage_video_wanted();
+	allowed = nvrtx_stage_allowed("nvdec-channel");
+	if (wanted && !allowed)
+		nvrtx_stage_mark("nvdec-channel skipped (nvrtx.stop=nvdec-channel)");
+	if (wanted && allowed && gpu->work.ready != 0) {
+		error = nvrtx_nvdec_start(gpu);
+		if (error != 0)
+			nvrtx_stage_mark("nvdec-channel: no video decoder (%d); the boot goes on", error);
+	}
+
 	/* Stops before display when the boot asks. */
 	allowed = nvrtx_stage_allowed("display");
 	if (!allowed) {
@@ -487,6 +499,7 @@ nvrtx_gsp_release(
 	nvrtx_channel_release(gpu);
 	nvrtx_gr_release(gpu);
 	nvrtx_compute_release(gpu);
+	nvrtx_nvdec_release(gpu);
 	nvrtx_work_release(gpu);
 	nvrtx_scanout_release(gpu);
 	nvrtx_memory_release(gpu);
@@ -1148,6 +1161,7 @@ gsp_teardown(
 	 * a scheduled channel left.
 	 */
 	if (gpu->state == NVRTX_GSP_RUNNING) {
+		nvrtx_nvdec_stop(gpu);
 		nvrtx_work_stop(gpu);
 		nvrtx_compute_stop(gpu);
 		nvrtx_display_stop(gpu);

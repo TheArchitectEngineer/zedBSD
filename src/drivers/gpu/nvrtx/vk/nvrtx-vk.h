@@ -216,6 +216,17 @@ void nvrtx_vk_gpu_copied(void *owner, uint64_t bytes);
 void nvrtx_vk_gpu_drawn(void *owner, uint32_t draws, uint32_t quads);
 
 /*
+ * The GPU's video decoder, provided by the node (the caller holds the
+ * node's lock).  nvrtx_vk_video_available() tells whether the device has
+ * a decoder that takes pictures and the copy engine its pictures are read
+ * out with; nvrtx_vk_video_decode() runs a decoder push buffer of bytes
+ * at va (in the executor's memory) and waits for it, returning EIO when
+ * the decoder is not there or did not finish.
+ */
+bool nvrtx_vk_video_available(void *owner);
+int nvrtx_vk_video_decode(void *owner, uint64_t va, uint32_t bytes);
+
+/*
  * Copies a command stream of length bytes out of a blob's bytes in the
  * CPU's window, counting the copy and its time (provided by the node).
  */

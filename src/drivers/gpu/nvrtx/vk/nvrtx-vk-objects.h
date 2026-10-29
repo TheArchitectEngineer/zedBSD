@@ -86,6 +86,14 @@ struct nvrtx_vk_buffer {
 #define NVRTX_VK_GOB_BYTES		512U
 
 /*
+ * The two-plane 4:2:0 format of the video decoder's pictures, and the
+ * boundary a video image starts on in its memory (whole blocks of its
+ * block-linear planes).
+ */
+#define NVRTX_VK_FORMAT_NV12		VK_FORMAT_G8_B8R8_2PLANE_420_UNORM
+#define NVRTX_VK_VIDEO_ALIGN		4096U
+
+/*
  * A VkImage: a 2D image of levels levels, one layer and one sample, bytes
  * long; level n starts level_offset[n] bytes in, its rows level_pitch[n]
  * bytes apart (level 0's is pitch).  A colour image of one level is pitch
@@ -93,7 +101,12 @@ struct nvrtx_vk_buffer {
  * level a block-linear surface of its own after the one before (the
  * texture header's mipmapped layout for blocks one GOB high).  A depth
  * image (D32_SFLOAT, one level) is block linear in one-GOB blocks too.
- * Once bound, the memory object it holds and its offset in that memory.
+ * A video image (NV12, one level) has two block-linear planes in blocks
+ * two GOBs high, each pitch bytes a row, plane n at plane_offset[n] and
+ * plane_rows[n] rows tall: the luma bytes, then the chroma pairs at half
+ * the height; only the video decoder writes it and only the copy engine
+ * reads it out.  Once bound, the memory object it holds and its offset in
+ * that memory.
  */
 struct nvrtx_vk_image {
 	uint32_t format;
@@ -105,6 +118,9 @@ struct nvrtx_vk_image {
 	uint32_t levels;
 	bool depth;
 	bool tiled;
+	bool video;
+	uint64_t plane_offset[2];
+	uint32_t plane_rows[2];
 	uint64_t level_offset[NVRTX_VK_LEVELS_MAX];
 	uint32_t level_pitch[NVRTX_VK_LEVELS_MAX];
 	struct nvrtx_vk_object *memory;
@@ -382,6 +398,12 @@ int nvrtx_vk_record_route(struct nvrtx_vk_session *session, uint32_t opcode, uin
 void nvrtx_vk_command_reset(struct nvrtx_vk_command_buffer *command);
 int nvrtx_vk_queue_route(struct nvrtx_vk_session *session, uint32_t opcode, uint32_t requested, struct i915_wire_reader *reader, struct i915_wire_writer *reply, int *handled);
 int nvrtx_vk_execute(struct nvrtx_vk_session *session, struct nvrtx_vk_command_buffer *command);
+
+int nvrtx_vk_video_route(struct nvrtx_vk_session *session, uint32_t opcode, uint32_t requested, struct i915_wire_reader *reader, struct i915_wire_writer *reply, int *handled);
+bool nvrtx_vk_video_recorded(uint32_t opcode);
+int nvrtx_vk_video_record(struct nvrtx_vk_session *session, struct nvrtx_vk_command_buffer *command, uint32_t opcode, struct i915_wire_reader *reader, struct nvrtx_vk_record *record);
+void nvrtx_vk_video_drop(struct nvrtx_vk_record *record);
+int nvrtx_vk_video_run(struct nvrtx_vk_session *session, const struct nvrtx_vk_record *record);
 
 uint32_t nvrtx_vk_result(int error);
 uint64_t nvrtx_vk_create_tail(struct i915_wire_reader *reader);

@@ -113,12 +113,16 @@ nvrtx_vk_command_reset(
 	struct nvrtx_vk_record *record;
 	uint32_t index;
 	uint32_t object;
+	bool video;
 
-	/* Each record's objects and runs. */
+	/* Each record's objects and runs (a video or query command's structure with what it holds). */
 	for (index = 0U; index < command->record_count; index++) {
 		record = &command->records[index];
 		for (object = 0U; object < record->object_count; object++)
 			(void)nvrtx_vk_object_release(record->objects[object]);
+		video = nvrtx_vk_video_recorded(record->opcode);
+		if (video)
+			nvrtx_vk_video_drop(record);
 		if (record->regions != NULL)
 			kern_free(record->regions);
 		if (record->push != NULL)

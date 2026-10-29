@@ -28,6 +28,7 @@
 #include <uapi/gpu-op.h>
 
 #include "drivers/gpu/nvrtx/vk/nvrtx-vk-objects.h"
+#include "drivers/gpu/nvrtx/vk/nvrtx-video.h"
 
 #include "drivers/gpu/i915/vk/vk-codec.inc"
 
@@ -179,6 +180,7 @@ resource_create_image(
 	VkImageCreateInfo info;
 	struct nvrtx_vk_image *image;
 	uint64_t identity;
+	bool video;
 	int supported;
 	int error;
 
@@ -191,9 +193,14 @@ resource_create_image(
 	if (reader->error != 0)
 		return EINVAL;
 
-	/* Refuses by name an image the executor does not lay out. */
+	/* Refuses by name an image the executor does not lay out (a video image only with the video decoder). */
 	error = 0;
 	supported = resource_image_supported(&info);
+	if (supported == 2) {
+		video = nvrtx_vk_video_available(session->owner);
+		if (!video)
+			supported = 0;
+	}
 	if (supported == 0) {
 		kern_logf("nvrtx: vk: vkCreateImage refused: type %u format %u %ux%ux%u levels %u layers %u samples %u\n",
 			  (unsigned)info.imageType,
@@ -243,11 +250,27 @@ static void
 resource_image_layout(
 	struct nvrtx_vk_image *image)
 {
+	struct nvrtx_video_layout video;
 	uint64_t at;
 	uint32_t level;
 	uint32_t width;
 	uint32_t height;
 	uint32_t row;
+
+	/* A video image: two block-linear planes in blocks two GOBs high. */
+	if (image->format == NVRTX_VK_FORMAT_NV12) {
+		nvrtx_video_layout(image->width, image->height, &video);
+		image->video = true;
+		image->pitch = video.pitch;
+		image->plane_offset[0] = video.plane_offset[0];
+		image->plane_offset[1] = video.plane_offset[1];
+		image->plane_rows[0] = video.plane_rows[0];
+		image->plane_rows[1] = video.plane_rows[1];
+		image->bytes = video.bytes;
+		image->level_offset[0] = 0U;
+		image->level_pitch[0] = image->pitch;
+		return;
+	}
 
 	/* A depth image: GOB rows and GOB heights. */
 	if (image->format == VK_FORMAT_D32_SFLOAT) {
@@ -332,7 +355,8 @@ nvrtx_vk_image_level(
  * Reports whether an image is one the executor lays out: 2D, one layer,
  * one sample, within the largest side; a colour format of any number of
  * levels, or D32_SFLOAT of one level as a depth attachment (sampled or
- * copied it is not).
+ * copied it is not); 2 for an NV12 video picture, which only a device
+ * with the video decoder lays out.
  */
 static int
 resource_image_supported(
@@ -359,6 +383,21 @@ resource_image_supported(
 		return 0;
 	if (info->extent.height == 0U || info->extent.height > NVRTX_VK_IMAGE_SIDE_MAX)
 		return 0;
+
+	/*
+	 * A video picture of one level and even sides, decoded into, a
+	 * reference and read out by a copy, nothing else (2: the caller asks
+	 * whether the device decodes video).
+	 */
+	if (info->format == NVRTX_VK_FORMAT_NV12) {
+		if (info->mipLevels != 1U || info->tiling != VK_IMAGE_TILING_OPTIMAL)
+			return 0;
+		if ((info->extent.width & 1U) != 0U || (info->extent.height & 1U) != 0U)
+			return 0;
+		if ((info->usage & ~(uint32_t)(VK_IMAGE_USAGE_VIDEO_DECODE_DST_BIT_KHR | VK_IMAGE_USAGE_VIDEO_DECODE_DPB_BIT_KHR | VK_IMAGE_USAGE_TRANSFER_SRC_BIT)) != 0U)
+			return 0;
+		return 2;
+	}
 
 	/* A depth attachment of one level, nothing else done with it. */
 	if (info->format == VK_FORMAT_D32_SFLOAT) {
@@ -428,7 +467,7 @@ resource_layout(
 	/* Level 0 of layer 0 of a pitch-linear image: where it starts, its rows pitch bytes apart. */
 	kern_memset(&layout, 0, sizeof(layout));
 	image = nvrtx_vk_payload(session, I915_VK_OBJ_IMAGE, identity);
-	if (image != NULL && !image->depth && !image->tiled && subresource.mipLevel == 0U && subresource.arrayLayer == 0U) {
+	if (image != NULL && !image->depth && !image->tiled && !image->video && subresource.mipLevel == 0U && subresource.arrayLayer == 0U) {
 		nvrtx_vk_image_level(image, subresource.mipLevel, &offset, &width, &height, &pitch);
 		layout.offset = offset;
 		layout.size = (uint64_t)pitch * height;
@@ -491,6 +530,9 @@ resource_create_view(
 		error = EINVAL;
 	} else if (picture->depth) {
 		if (info.format != VK_FORMAT_D32_SFLOAT)
+			error = ENOTSUP;
+	} else if (picture->video) {
+		if (info.format != NVRTX_VK_FORMAT_NV12)
 			error = ENOTSUP;
 	} else if (!colour) {
 		error = ENOTSUP;

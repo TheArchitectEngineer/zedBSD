@@ -76,8 +76,19 @@
 #define NVRTX_WORK_SUBCHANNEL_THREED	0U
 #define NVRTX_WORK_SUBCHANNEL_COMPUTE	1U
 
+/*
+ * The subchannel of the copy object the channel has with the video
+ * decoder: the copy engine that shares the graphics runlist, which the
+ * executor's copies out of block-linear video images run on.
+ *
+ * Value referenced: Mesa 25.3.6 src/nouveau/headers/nv_push.h
+ * (SUBC_NV90B5).
+ */
+#define NVRTX_WORK_SUBCHANNEL_COPY	4U
+
 bool nvrtx_work_fence_passed(uint32_t seen, uint32_t value);
 size_t nvrtx_work_push_objects(uint8_t *push, uint32_t threed_class, uint32_t compute_class);
+size_t nvrtx_work_push_copy_object(uint8_t *push, uint32_t copy_class);
 
 /*
  * The states of a channel of the work space (struct nvrtx_work_channel):

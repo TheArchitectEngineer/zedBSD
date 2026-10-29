@@ -366,6 +366,23 @@ nvrtx_vk_gpu_idle(void *owner)
 	return 0;
 }
 
+/* The node decodes no video here. */
+bool
+nvrtx_vk_video_available(void *owner)
+{
+	(void)owner;
+	return false;
+}
+
+int
+nvrtx_vk_video_decode(void *owner, uint64_t va, uint32_t bytes)
+{
+	(void)owner;
+	(void)va;
+	(void)bytes;
+	return EIO;
+}
+
 /* Reports the cpu of a GPU address the fakes handed out. */
 static uint8_t *
 gpu_cpu(uint64_t va)
