@@ -71,8 +71,11 @@ normal formatting still requires identity revalidation and BLKRESERVE.
 `ufs_format_native_validate_size`, `ufs_format_native_write` and
 `ufs_format_native_verify` provide the dedicated-root initializer. The initial
 namespace contains only root `.` and `..`, with no `.zovl*` files or marker.
-The existing journal/snapshot persistence tail remains outside filesystem
-allocation. Total fragments and free-space summaries use 64-bit arithmetic.
+The journal/snapshot persistence tail remains reserved outside filesystem
+allocation but is left zero: a native volume names no tail journal and no
+snapshot, so the kernel journals it with the batched journal file whose size
+the superblock requests (made at the first writable mount), as it does the
+image roots, instead of writing every change through the tail journal. Total fragments and free-space summaries use 64-bit arithmetic.
 Geometry checks account for the caller's off_t, inode-number capacity,
 per-group bitmaps and the final group's metadata room. Native metadata is
 flushed before primary publication; formatting is not crash-atomic.
