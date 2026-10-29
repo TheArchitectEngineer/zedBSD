@@ -47,11 +47,13 @@
 /*
  * The device's capabilities: storage, VRAM blobs, transfers, CPU mappings,
  * sharing of blobs (as images, and as plain allocations such as a decoded
- * picture another open samples), and the display with its events and its
- * control.
+ * picture another open samples), the display with its events and its
+ * control, and blobs only the CPU touches in cached RAM (a transport's
+ * streams and replies, which the executor reads and writes).
  */
 #define NODE_CAPABILITIES		(GPU_CAP_RESOURCE | GPU_CAP_BLOB | GPU_CAP_TRANSFER | GPU_CAP_MAPPING | GPU_CAP_SHARE | \
-					 GPU_CAP_ALLOCATION_SHARE | GPU_CAP_DISPLAY | GPU_CAP_DISPLAY_EVENTS | GPU_CAP_DISPLAY_CONTROL)
+					 GPU_CAP_ALLOCATION_SHARE | GPU_CAP_DISPLAY | GPU_CAP_DISPLAY_EVENTS | GPU_CAP_DISPLAY_CONTROL | \
+					 GPU_CAP_HOST_BLOB)
 
 /* The largest resource, and how many one session may hold. */
 #define NODE_MAX_RESOURCE_BYTES		(64ULL << 20)
@@ -91,6 +93,7 @@ static int node_resource_create(void *private_data, void *session, const struct 
 static void node_resource_destroy(void *private_data, void *session, void *object);
 static void node_blob_unlisted(struct nvrtx_node *node, struct nvrtx_resource *resource);
 static int node_blob_create(void *private_data, void *session, const struct gpu_blob_create *request, void **object, uint32_t *resource_id);
+static int node_host_blob(struct nvrtx_node *node, struct nvrtx_session *session, uint64_t bytes, void **object, uint32_t *resource_id);
 static int node_resource_read(void *private_data, void *session, void *object, uint64_t offset, void *buffer, uint32_t bytes);
 static int node_resource_write(void *private_data, void *session, void *object, uint64_t offset, const void *buffer, uint32_t bytes);
 static int node_resource_map(void *private_data, void *session, void *object, struct drv_gpu_mapping *mapping);
@@ -420,6 +423,13 @@ nvrtx_vk_blob(
 	if (resource == NULL)
 		return ENOENT;
 
+	/* A blob only the CPU touches is read in its RAM, through the CPU's cache. */
+	if (resource->kind == NVRTX_RESOURCE_STORAGE) {
+		*cpu = resource->cpu;
+		*bytes = resource->bytes;
+		return 0;
+	}
+
 	/* The blob in the CPU's window (taken now if it has no place yet). */
 	error = nvrtx_node_backing_cpu(session->node, resource->backing, &view);
 	if (error != 0)
@@ -650,8 +660,9 @@ node_resource_destroy(
 	node = private_data;
 	resource = object;
 
-	/* Storage: its RAM goes back. */
+	/* Storage (a blob only the CPU touches leaves its session's list first): its RAM goes back. */
 	if (resource->kind == NVRTX_RESOURCE_STORAGE) {
+		node_blob_unlisted(node, resource);
 		(void)kern_pmem_free(&resource->ram);
 		kern_free(resource);
 		return;
@@ -693,6 +704,20 @@ node_blob_create(
 	/* The core bounded the size. */
 	if (request->bytes == 0U || request->bytes > NODE_MAX_RESOURCE_BYTES)
 		return EINVAL;
+
+	/*
+	 * A blob only the CPU touches, not a VkDeviceMemory's storage, is cached
+	 * RAM: the executor reads a stream there through the CPU's cache, not
+	 * word by word through the uncached window.
+	 */
+	if ((request->flags & GPU_BLOB_HOST) != 0U && request->blob_id == 0U) {
+		error = node_host_blob(node, session, request->bytes, object, resource_id);
+		if (error != 0)
+			return error;
+
+		/* Succeeded: the blob is the session's, in RAM. */
+		return 0;
+	}
 
 	/* Allocates the record. */
 	resource = kern_calloc(1U, sizeof(*resource));
@@ -756,6 +781,58 @@ node_blob_create(
 			return error;
 		}
 	}
+
+	/* Succeeded: the blob is the session's, numbered for the protocol and listed. */
+	*resource_id = nvrtx_node_resource_id(node);
+	nvrtx_node_blob_listed(node, session, resource, *resource_id);
+	*object = resource;
+	return 0;
+}
+
+/*
+ * Creates a blob only the CPU touches: cleared, contiguous RAM the process
+ * maps cached and the executor reads directly, numbered and listed in the
+ * session as a blob is.  Returns 0, ENOMEM or EIO.
+ */
+static int
+node_host_blob(
+	struct nvrtx_node *node,
+	struct nvrtx_session *session,
+	uint64_t bytes,
+	void **object,
+	uint32_t *resource_id)
+{
+	struct nvrtx_resource *resource;
+	uint64_t size;
+	int error;
+
+	/* The run is whole pages. */
+	size = (bytes + NODE_PAGE_BYTES - 1U) & ~((uint64_t)NODE_PAGE_BYTES - 1U);
+
+	/* The record. */
+	resource = kern_calloc(1U, sizeof(*resource));
+	if (resource == NULL)
+		return ENOMEM;
+
+	/* The RAM. */
+	error = kern_pmem_alloc((size_t)size, NODE_PAGE_BYTES, &resource->ram);
+	if (error != 0) {
+		kern_free(resource);
+		return ENOMEM;
+	}
+
+	/* Its view through the direct map. */
+	resource->cpu = kern_pmem_to_kernel(resource->ram.paddr);
+	if (resource->cpu == NULL) {
+		(void)kern_pmem_free(&resource->ram);
+		kern_free(resource);
+		return EIO;
+	}
+
+	/* Cleared, and described as storage. */
+	kern_memset(resource->cpu, 0, (size_t)size);
+	resource->kind = NVRTX_RESOURCE_STORAGE;
+	resource->bytes = bytes;
 
 	/* Succeeded: the blob is the session's, numbered for the protocol and listed. */
 	*resource_id = nvrtx_node_resource_id(node);
