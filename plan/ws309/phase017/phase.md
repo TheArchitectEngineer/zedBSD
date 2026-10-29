@@ -3,7 +3,7 @@
 # ws309-p017 QEMU の回帰と遅さの注入の host 試験
 
 - 親: [WS309](../ws.md)、設計 [design.md](../design.md) §10（試験）。Queue: q1662-i10（P1）。
-- 状態: in-progress（2026-10-30 q1662-i10 P1）。
+- 状態: cleared（2026-10-30 q1662-i10 P1。C9 の p052・p076 は WS309 の前の image でも同じ load で FAIL（下）。load の低い時の再試行と実機は未実施）。
 - 依存: p003〜p014（cleared）、p016（同じ branch の source で流す）。
 
 ## 手順
@@ -38,5 +38,14 @@
   user に直した（b72cd7847）: `plan/ws035/tests/zdesktop-p126.sh`・`zdesktop-p101.sh`・`zdesktop-p102.sh`・`zdesktop-p104.sh`・`zdesktop-p095.sh`・`demo-walk.sh`・
   `p120-kei-mkdir.sh`・`build-demo-venus-image.sh`（comment）・`plan/tools/accounts/user-commands-guest.sh`。実機の image（beta2 の kei）の試験
   （`plan/ws099/tests/resize-hw.sh`・`c5-hw.sh`・`plan/tools/hw5330/*`）と mail の偽の account は変えていない。
-  C9 p052（fullscreen の画面が窓の大きさのまま）・p076（popup の reposition と move）FAIL: WS309 の前の main（69741cc20）の image
-  （`build/tmp/ws309-base/build/crit-base`）と同じ load で並べて比べる（`plan/ws309/tests/zdesktop-compare.sh`）。
+  直した p126 を `plan/ws309/tests/p126-probe.sh build/ws309/p126b build/ws309/crit17/hdd-image.img 1` で流して PASS（AUTH ok user=user、HANDOFF go 2 回）。
+  C9 の p052（fullscreen の画面が窓の大きさのまま）・p076（popup の reposition と move）・p138（窓の位置）は criteria の中で FAIL、p134・p137・cursor-owner は PASS。
+- WS309 の前の image との比べ（WS309 の前の main 69741cc20 の tree を `build/tmp/ws309-base` に展開し、自分の worktree の sysroot を写して
+  `build-criteria-image.sh build/crit-base`。各試験は自分の runtime の guest で old と new を続けて、`plan/ws309/tests/zdesktop-compare.sh`）:
+  p052 は old も new も FAIL（old は windows.png の時に既に fullscreen、new は 2 つの client の map の順が入れ替わり b が中央、どちらも時間の競争）。
+  p076 は old も new も FAIL（`request: invalid initial count ()`、guest の command の答えが空）。p138 は old FAIL・new PASS。
+  load 15〜23 の下で old にも出るので WS309 の退行とは見ない。
+- p018 の後の compositor（`build/ws309/wayland-p018`）を img16 に入れて grave・resize・scanout・rotate・forge PASS、hand は 1 回目 FAIL（3 画の答えが stale で捨てられた、
+  pass_max 2.2 s）・再試行 PASS。
+- design §10 の thread の検査（`KWL_THREAD_CHECKS`）は作っていない: compositor の全体を host で link する試験が無く、Linux の build では main の thread の open（seat の
+  scan、起動）が正しい使い方として残るため、assert の対象を分けられない。代わりに遅さの注入（slow・io-file・input-find・daemon-link）で main の側の時間を測った。

@@ -3,7 +3,7 @@
 # ws309-p016 Linux・FreeBSD の seat 経由の入力の open（J4）と、seat の callback の detach の ack を wake で受ける形
 
 - 親: [WS309](../ws.md)、設計 [design.md](../design.md) §4.5（T6、レビュー 4 の close と fd の番号）・§9 の J4。Queue: q1662-i10（P1）。
-- 状態: in-progress（2026-10-30 q1662-i10 P1: 実装と build・host 試験まで（WIP e3acf2530）。Linux・FreeBSD の guest の試験は**ユーザーの判断待ち**（下の「止めている確認」）。）
+- 状態: cleared（2026-10-30 q1662-i10 P1。Linux の guest PASS、FreeBSD の native の build と host-seat-freebsd PASS。let-go を待つ経路（`later=1`）は host 試験だけ。実機は未実施）
 - 依存: p003（cleared）。
 
 ## 今の待ちの点（main 868318312）
@@ -17,7 +17,7 @@
 - callback の契約（keiland-backend.h の seat の節）: `input_paused`・`input_gone` は「戻った後に seat が descriptor を閉じる／返す」。だから compositor は戻る前に input thread が
   その fd を読まない事を確かめている（ack の同期の待ち）。ack の前に閉じると fd の番号の再利用で input thread が別の file を読む（レビュー 4）。
 
-## 手順（次の起動はここから）
+## 手順（2026-10-29 の計画、下の「実装」で行った）
 
 1. **detach の ack を wake で**（全 OS の compositor と backend の共通の口）:
    - backend の契約を変える: `input_paused`・`input_gone`・`session_paused` の後、seat は input の descriptor を閉じず（logind の `PauseDeviceComplete`・seatd の
@@ -72,5 +72,10 @@
   1 回目（seat1）は試験の script の誤り（uinput の keyboard に KEY_Z が無く compositor が keyboard と見なさない、VT の番号の読み違い）で FAIL、直して 2 回目。
 - 観測できなかった所: この guest では kernel の revoke（ENODEV）が logind の signal より先に input thread に届き、全ての callback が `later=0` を返した。
   let-go まで閉じるのを待つ経路（`later=1`）は host 試験（seat-answer・host-seat-freebsd）だけで確かめた。
-- FreeBSD: `plan/tools/keiland-freebsd/build-guest.sh` が 2 回とも FreeBSD の mirror の `llvm19-19.1.7_4` の「fetch size does not match expected package size」で
-  pkg install に失敗（`build/ws309/freebsd/guest/pkg-install.txt`、00:1x と 00:3x）。Q1 の指示で 1 時間以上あけて p018 の前にもう 1 度試す。
+- FreeBSD: `plan/tools/keiland-freebsd/build-guest.sh` は 1・2 回目が mirror の `llvm19-19.1.7_4` の「fetch size does not match expected package size」、
+  3 回目は自分の 45 分の timeout（load で最後の package の展開が遅い）、4 回目（上限 100 分）は pkg install まで済み、最後の `guest stop` が load で
+  「QEMU is still alive」を返して止まった。QEMU が消えたのを確かめ、`guest.qcow2.new` を `guest.qcow2` に改名して（削除ではない）
+  `GUEST_DIR=build/ws309/freebsd/guest GUEST_RUN=build/ws309/freebsd/run SSH_PORT=2337 plan/tools/keiland-freebsd/backend-test.sh build/ws309/freebsd/backend-test`
+  （tree 325a9feaa、FreeBSD 15.1-RELEASE-p6）: build PASS・build-warnings 0・install・audit PASS、**host-seat-freebsd 18/18 PASS**、sync-rejected・dmabuf-export-rejected PASS。
+  host-session・host-power は FAIL（`kl_backend_notify_poll_done` などが undefined: `plan/ws131/tests/host-session.sh`・`host-power.sh` の source の一覧に
+  notify-unsupported.c が無い。この差分の前からの link の誤りで、WS131 の試験。host-seat-freebsd.sh は同じ誤りをこの Phase で直した）。

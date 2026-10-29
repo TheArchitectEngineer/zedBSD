@@ -3,7 +3,7 @@
 # ws309-p018 規約の全文の見直し
 
 - 親: [WS309](../ws.md)。Queue: q1662-i10（P1、見直しは P1 が起動した conformance-reviewer）。
-- 状態: in-progress（2026-10-30）。
+- 状態: cleared（2026-10-30 q1662-i10 P1）。
 - 依存: p001〜p016（p015 は判断待ちで、その source は無い）。
 
 ## 範囲と方法
@@ -22,3 +22,10 @@
   top の判定は 2 つの if に）、成功の return を最後に（bluetooth-zedbsd.c・display-thread.c・glass.c・output-switch.c）、1 行 1 引数、公開の関数の頭の comment。
 - P1 の点検: glass.c の `else if (!glass->worker_running && !writable)` の分け方は連鎖の最後の枝で同じ意味、`blur_done` の hold、scanout の 2 つの if、
   `wallpaper_target` の `*renewed` は前と同じ動作であることを diff で確かめた。
+
+## 確かめた事
+
+- zedBSD `make ZEDBSD_CONFIG=plan/ws309/tests/config-amd64-p1.mk build/amd64/bin/wayland` exit 0・`warning:` 0（P1 が見直しの後に作り直した）。Linux の -Werror の build と
+  host 試験（lane・input-find・daemon-link・render-task・hand-pool・clip-write・tr-read・print-file・seat-answer・slow・host-seat-freebsd）は見直しの担当の報告で PASS。
+  io-file の不安定は見直しの前の lane.c でも同じ率で出た（p017 で直した）。FreeBSD の native の build（tree 325a9feaa）warning 0。
+- QEMU: 見直しの後の compositor で grave・resize・scanout・rotate・forge・hand PASS（[p017](../phase017/phase.md) の「結果」）。
