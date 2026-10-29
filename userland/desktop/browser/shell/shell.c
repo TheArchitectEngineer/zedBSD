@@ -95,6 +95,11 @@
  * failure_location the start page it stands for (the options' string):
  * while the page is shown the titlebar shows that location, and reload
  * tries it again.
+ *
+ * The view's wake runs on the library's network thread: wake_app is the
+ * application it posts to (NULL until the window is up; written and read
+ * with atomic operations), and wake_missed is set when a wake could not
+ * be posted (the main loop then runs the view without waiting).
  */
 struct shell_state {
 	struct browser_view *view;
@@ -114,6 +119,8 @@ struct shell_state {
 	char load_failure[SHELL_FAILURE_MAX];
 	char *failure_page;
 	const char *failure_location;
+	struct kl_app *wake_app;
+	int wake_missed;
 };
 
 /*
@@ -149,6 +156,7 @@ static void shell_committed(void *context, struct browser_view *view);
 static void shell_load(void *context, struct browser_view *view, enum browser_load_state state, const char *url, int error, const char *reason);
 static enum browser_policy shell_link(void *context, struct browser_view *view, const char *href);
 static void shell_console(void *context, struct browser_view *view, int level, const char *text, size_t length);
+static void shell_wake(void *context);
 static void shell_script_error(void *context, struct browser_view *view, int error);
 static void shell_touch_round(struct shell_state *state);
 static void shell_touch_pointer(struct shell_state *state, const struct shell_touch_pointer *made);
@@ -171,14 +179,13 @@ shell_run(
 	struct shell_state state;
 	struct browser_callbacks callbacks;
 	struct browser_view_options view_options;
-	struct pollfd net_fds[SHELL_NET_FDS];
 	struct shell_event event;
 	struct shell_titlebar_event titlebar_event;
-	size_t net_count;
 	int changed;
 	int timeout;
 	int network;
 	int mail_due;
+	int missed;
 	int status;
 	int taken;
 	int error;
@@ -208,6 +215,8 @@ shell_run(
 	view_options.stack_base = __builtin_frame_address(0);
 	view_options.width = options->width;
 	view_options.height = options->height;
+	view_options.wake = shell_wake;
+	view_options.wake_context = &state;
 	error = browser_view_create(&view_options, &state.view);
 	if (error != 0) {
 		fprintf(stderr, "browser: cannot start the network: %s\n", strerror(error));
@@ -251,6 +260,10 @@ shell_run(
 
 	/* The arrivals of mail with their sign-in codes (a compositor without them leaves the browser without codes). */
 	shell_mail_open(&state.mail, state.window.app);
+
+	/* The view's wakes go to the application from now on; what came before is taken at once. */
+	__atomic_store_n(&state.wake_app, state.window.app, __ATOMIC_RELEASE);
+	browser_view_process(state.view);
 
 	/* The Vulkan presenter in the window. */
 	result = shell_present_open(&state.present, &state.window, state.view);
@@ -301,7 +314,7 @@ shell_run(
 			state.dirty = 0;
 		}
 
-		/* Waits for the compositor, the view's descriptors, the view's next work or the end of a code's offer (a held key's repeat waits less, within the dispatch). */
+		/* Waits for the compositor, the view's wake, the view's next timer or the end of a code's offer (a held key's repeat waits less, within the dispatch). */
 		timeout = -1;
 		network = browser_view_timeout(state.view);
 		if (network >= 0 && (timeout < 0 || network < timeout))
@@ -311,8 +324,14 @@ shell_run(
 		mail_due = shell_mail_timeout(&state.mail, shell_clock());
 		if (mail_due >= 0 && (timeout < 0 || mail_due < timeout))
 			timeout = mail_due;
-		net_count = browser_view_poll_fds(state.view, net_fds, SHELL_NET_FDS);
-		status = shell_window_dispatch(&state.window, timeout, net_fds, net_count);
+
+		/* A wake that could not be posted is not waited for. */
+		missed = __atomic_exchange_n(&state.wake_missed, 0, __ATOMIC_ACQ_REL);
+		if (missed)
+			timeout = 0;
+
+		/* The wait. */
+		status = shell_window_dispatch(&state.window, timeout);
 		if (status != 0) {
 			fprintf(stderr, "browser: the connection to the compositor was lost\n");
 			break;
@@ -343,7 +362,7 @@ shell_run(
 			shell_show_state(&state);
 
 		/* The view's work: the network, the page's timers, and the layout they changed. */
-		browser_view_process(state.view, net_fds, net_count);
+		browser_view_process(state.view);
 	}
 
 	/* Closes everything. */
@@ -815,7 +834,7 @@ shell_frame(
 	return 0;
 }
 
-/* Releases the presenter, the titlebar, the window and the view, in that order. */
+/* Releases the presenter, the titlebar, the view and the window, in that order. */
 static void
 shell_release(
 	struct shell_state *state)
@@ -830,14 +849,14 @@ shell_release(
 	if (state->window.app != NULL)
 		shell_mail_close(&state->mail, &state->titlebar);
 
-	/* The window. */
-	if (state->window.app != NULL)
-		shell_window_close(&state->window);
-
-	/* The view, with its page, its history and its network, and the fingers that moved it. */
+	/* The view, with its page, its history and its network (whose thread posts to the application), and the fingers that moved it. */
 	browser_view_destroy(state->view);
 	state->view = NULL;
 	shell_touch_close(&state->touch);
+
+	/* The window, once nothing posts to its application. */
+	if (state->window.app != NULL)
+		shell_window_close(&state->window);
 
 	/* The URL of the page that said why the start page did not open, which no view shows any more. */
 	free(state->failure_page);
@@ -951,6 +970,34 @@ shell_console(
 	UNUSED_PARAMETER(view);
 	printf("ZBROWSER CONSOLE level=%d %.*s\n", level, (int)length, text);
 	fflush(stdout);
+}
+
+/*
+ * The view's wake, on the library's network thread: posts an event to the
+ * application, which ends the main loop's wait (the loop runs the view
+ * after each dispatch).  Before the window is up, or when the post fails,
+ * the main loop is told to run the view without waiting.
+ */
+static void
+shell_wake(
+	void *context)
+{
+	struct shell_state *state;
+	struct kl_app *app;
+	int error;
+
+	/* The application, once the window is up. */
+	state = context;
+	app = __atomic_load_n(&state->wake_app, __ATOMIC_ACQUIRE);
+	if (app == NULL) {
+		__atomic_store_n(&state->wake_missed, 1, __ATOMIC_RELEASE);
+		return;
+	}
+
+	/* The post that wakes the main loop. */
+	error = kl_app_post(app, SHELL_POST_VIEW, NULL);
+	if (error != 0)
+		__atomic_store_n(&state->wake_missed, 1, __ATOMIC_RELEASE);
 }
 
 /* The view's callback: a timer's script failed. */

@@ -19,21 +19,14 @@
 /* The Wayland platform's parts of Vulkan (the instance's surface extension), declared before anything includes vulkan.h. */
 #define VK_USE_PLATFORM_WAYLAND_KHR 1
 #include <vulkan/vulkan.h>
-#include <poll.h>
 
 #include "shell/shell.h"
 #include "shell/touch.h"
 
 #include <keiland/keiland.h>
 
-/*
- * How many descriptors of the network the main loop polls at most besides
- * the compositor's (ws177-p019: more than the application watches, the
- * rest polled by the shell itself), and how many of them the application
- * watches at most (libkeiland's own limit).
- */
-#define SHELL_NET_FDS		256U
-#define SHELL_WATCHED_MAX	KL_APP_FDS_MAX
+/* The code of the event the view's wake posts to the application (KL_APP_POST): the view has work. */
+#define SHELL_POST_VIEW		1U
 
 /* How many inputs wait for the main loop at most. */
 #define SHELL_WINDOW_EVENTS	256U
@@ -110,9 +103,8 @@ struct shell_titlebar;
 /*
  * The window: libkeiland's application and its one window (shown with
  * KL_PRESENT_NONE; the presenter draws on its surface), the size the
- * compositor gave it, the network's descriptors the application watches,
- * and the input waiting for the main loop.  What is done with the titlebar
- * goes to the titlebar's queue (titlebar.c).
+ * compositor gave it, and the input waiting for the main loop.  What is
+ * done with the titlebar goes to the titlebar's queue (titlebar.c).
  *
  * One lives for the whole run.
  */
@@ -133,15 +125,6 @@ struct shell_window {
 	uint32_t modifiers;
 	int pointer_x;
 	int pointer_y;
-
-	/*
-	 * The network's descriptors the application watches now, and how many
-	 * of the last round's it could not watch (polled by the shell itself;
-	 * the log tells when that number changes).
-	 */
-	int watched[SHELL_WATCHED_MAX];
-	unsigned watched_count;
-	size_t unwatched_count;
 
 	/* The titlebar that hears its controls' inputs (NULL until it opens). */
 	struct shell_titlebar *titlebar;
@@ -262,7 +245,7 @@ struct shell_mail {
 
 /* The window (window.c). */
 int shell_window_open(struct shell_window *window, const char *display, uint32_t width, uint32_t height, const char *title);
-int shell_window_dispatch(struct shell_window *window, int timeout, struct pollfd *extra, size_t extra_count);
+int shell_window_dispatch(struct shell_window *window, int timeout);
 int shell_window_take(struct shell_window *window, struct shell_event *event);
 void shell_window_title(struct shell_window *window, const char *title);
 void shell_window_close(struct shell_window *window);

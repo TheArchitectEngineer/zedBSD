@@ -46,7 +46,6 @@
 #include <errno.h>
 #include <math.h>
 #include <limits.h>
-#include <poll.h>
 #include <stdlib.h>
 #include <string.h>
 #include <time.h>
@@ -60,9 +59,6 @@
 
 /* The longest a timer is waited for at once, in milliseconds. */
 #define VIEW_WAIT_MAX		60000.0
-
-/* How many of the loader's descriptors a headless settle polls at most. */
-#define VIEW_POLL_MAX		64U
 
 /* The most layout/checkpoint passes used to drain work released by initial font settlement. */
 #define VIEW_SETTLE_ROUNDS 32U
@@ -377,8 +373,8 @@ browser_view_create(
 		return 0;
 	}
 
-	/* The loader of the http and https pages and images. */
-	error = page_net_create(&made->loader);
+	/* The loader of the http and https pages and images, which wakes the program when it has news. */
+	error = page_net_create(options->wake, options->wake_context, &made->loader);
 	if (error != 0) {
 		free(made);
 		return error;
@@ -632,27 +628,11 @@ browser_view_document_height(
 	return (double)layout_to_px(view->page->layout.document_height);
 }
 
-/* Lists the descriptors the view waits on and the events it waits for; returns how many. */
-size_t
-browser_view_poll_fds(
-	const struct browser_view *view,
-	struct pollfd *fds,
-	size_t capacity)
-{
-	size_t count;
-
-	/* The loader's (none without one). */
-	count = 0;
-	if (view->loader != NULL)
-		count = page_net_poll_fds(view->loader, fds, capacity);
-
-	/* The page's media engines' wakes after them (ws121-p004). */
-	if (view->page != NULL && count < capacity)
-		count += page_media_poll_fds(view->page, fds + count, capacity - count);
-	return count;
-}
-
-/* Reports how long the caller may wait before calling browser_view_process (-1: until a descriptor is ready). */
+/*
+ * Reports how long the caller may wait before calling browser_view_process
+ * for the page's own clock: its timers and a playing media's pictures (-1:
+ * until the view's wake).  The network keeps its own time.
+ */
 int
 browser_view_timeout(
 	const struct browser_view *view)
@@ -664,10 +644,8 @@ browser_view_timeout(
 	int media;
 	int found;
 
-	/* The network's earliest time out (none without a loader). */
+	/* No page, nothing timed. */
 	timeout = -1;
-	if (view->loader != NULL)
-		timeout = page_net_timeout(view->loader);
 	if (view->page == NULL)
 		return timeout;
 
@@ -694,22 +672,21 @@ browser_view_timeout(
 }
 
 /*
- * Does the work due after the caller's poll: the network (pages and
- * images that arrived), the page's timers, and the redraw and the new
- * title when its scripts or its images changed it.
+ * Does the work due after the view's wake or its timeout: the network
+ * (pages and images that arrived), the page's timers, the media's
+ * engines, and the redraw and the new title when its scripts or its
+ * images changed it.
  */
 void
 browser_view_process(
-	struct browser_view *view,
-	const struct pollfd *fds,
-	size_t count)
+	struct browser_view *view)
 {
 	int changed;
 	int error;
 
-	/* The loader's work: requests that moved on, their callbacks. */
+	/* The loader's news: the callbacks of the requests that ended. */
 	if (view->loader != NULL)
-		page_net_process(view->loader, fds, count);
+		page_net_process(view->loader);
 	if (view->page == NULL)
 		return;
 
@@ -2699,37 +2676,29 @@ view_update(
 }
 
 /*
- * Runs the loader until it has no request left (the headless modes): polls
- * its descriptors until one is ready or its earliest time out, then lets
- * it work.
+ * Runs the loader until it has no request left (the headless modes): waits
+ * for its news (its network thread times its requests out), then runs the
+ * callbacks of the requests that ended, which may start others.
  */
 static void
 view_settle_network(
 	struct browser_view *view)
 {
-	struct pollfd fds[VIEW_POLL_MAX];
-	size_t count;
-	int timeout;
-	int ready;
+	size_t pending;
 
 	/* A view without a loader read everything at once. */
 	if (view->loader == NULL)
 		return;
 
-	/* Each round, while a request runs (the loader has no time out when it has none). */
+	/* Each round, while a request runs. */
 	for (;;) {
-		timeout = page_net_timeout(view->loader);
-		if (timeout < 0)
+		pending = page_net_pending(view->loader);
+		if (pending == 0)
 			break;
 
-		/* The descriptors, waited for. */
-		count = page_net_poll_fds(view->loader, fds, VIEW_POLL_MAX);
-		ready = poll(fds, (nfds_t)count, timeout);
-		if (ready < 0 && errno != EINTR)
-			break;
-
-		/* The loader's work, and the callbacks of the requests that ended. */
-		page_net_process(view->loader, fds, count);
+		/* The news, waited for, then the callbacks. */
+		page_net_wait(view->loader, -1);
+		page_net_process(view->loader);
 	}
 }
 

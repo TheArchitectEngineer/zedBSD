@@ -12,7 +12,6 @@
 #include "net/net.h"
 
 #include <errno.h>
-#include <poll.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -58,7 +57,7 @@ main(
 	page = NULL;
 	loader = NULL;
 	load_stack_base = __builtin_frame_address(0);
-	error = net_loader_create(&loader);
+	error = net_loader_create(NULL, NULL, &loader);
 	if (error != 0)
 		goto cleanup;
 
@@ -238,28 +237,22 @@ load_assert(
 	return 0;
 }
 
-/* Processes actual loader descriptors and then the Page's outer native task checkpoint. */
+/* Processes the actual loader's news and then the Page's outer native task checkpoint. */
 static int
 load_poll(
 	struct page *page,
 	struct net_loader *loader,
 	unsigned rounds)
 {
-	struct pollfd fds[64];
-	size_t used;
 	unsigned index;
 	int error;
-	int polled;
 
-	/* A fixed number of short real polls bounds the fixture independently of engine success. */
+	/* A fixed number of short real waits bounds the fixture independently of engine success. */
 	for (index = 0; index < rounds; index++) {
-		used = net_loader_poll_fds(loader, fds, 64U);
-		polled = poll(fds, (nfds_t)used, 10);
-		if (polled < 0)
-			return errno;
-		net_loader_process(loader, fds, used);
+		net_loader_wait(loader, 10);
+		net_loader_dispatch(loader);
 
-		/* No JavaScript executes inside net_loader_process's borrowed response callback. */
+		/* No JavaScript executes inside net_loader_dispatch's borrowed response callback. */
 		if (page != NULL) {
 			error = page_set_time(page, page->now + 10);
 			if (error != 0)

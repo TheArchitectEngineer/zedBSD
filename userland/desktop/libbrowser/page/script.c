@@ -21,7 +21,6 @@
 #include "net/net.h"
 
 #include <errno.h>
-#include <poll.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -424,19 +423,16 @@ page_start_scripts(
 	return 0;
 }
 
-/* Polls one bounded actual loader step while recording monotonic elapsed waiting time. */
+/* Waits one bounded actual loader step while recording monotonic elapsed waiting time. */
 static int
 script_settle_network(
 	struct page *page,
 	double wait,
 	double *elapsed)
 {
-	struct pollfd fds[64];
 	struct timespec before;
 	struct timespec after;
-	size_t count;
 	int timeout;
-	int ready;
 	int status;
 
 	/* Headless network integration uses the same supported monotonic clock as the native view and loader. */
@@ -445,28 +441,20 @@ script_settle_network(
 	if (status != 0)
 		return errno;
 
-	/* Actual requests supply their own earliest timeout; a missing loader cannot make request progress. */
+	/* The loader's network thread times its requests out itself; a missing loader cannot make request progress. */
 	if (page->loader == NULL)
 		return ENOTSUP;
-	timeout = net_loader_timeout(page->loader);
-	if (timeout < 0)
-		timeout = 0;
-	if (timeout > wait) {
-		/* Poll uses whole milliseconds; rounding upward prevents submillisecond busy waits. */
-		timeout = (int)wait;
-		if ((double)timeout < wait)
-			timeout++;
-	}
 
-	/* Poll the actual descriptor snapshot without advancing any virtual timer first. */
-	count = net_loader_poll_fds(page->loader, fds, 64U);
-	ready = poll(fds, (nfds_t)count, timeout);
-	if (ready < 0 && errno != EINTR)
-		return errno;
+	/* The wait in whole milliseconds; rounding upward prevents submillisecond busy waits. */
+	timeout = (int)wait;
+	if ((double)timeout < wait)
+		timeout++;
+
+	/* The loader's news, waited for without advancing any virtual timer first. */
+	net_loader_wait(page->loader, timeout);
 
 	/* A borrowed completion callback copies C metadata; outer Page timing drains child scripts and events later. */
-	if (ready >= 0)
-		net_loader_process(page->loader, fds, count);
+	net_loader_dispatch(page->loader);
 	status = clock_gettime(CLOCK_MONOTONIC, &after);
 	if (status != 0)
 		return errno;
@@ -1274,7 +1262,7 @@ page_settle(
 			if (page->now >= budget || network_waited >= 30000)
 				return ETIMEDOUT;
 
-			/* A short poll yields to due timers, including source replacement or cancellation. */
+			/* A short wait yields to due timers, including source replacement or cancellation. */
 			wait = budget - page->now;
 			if (wait > 10)
 				wait = 10;

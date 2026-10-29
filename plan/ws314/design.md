@@ -335,6 +335,9 @@ void browser_view_process(struct browser_view *view);		/* pollfd の引数を外
   「解除済み」を待ってから close する（fd の番号の再利用を避ける）。
 - 同期の取得（`net_http_fetch`）と headless の `view_settle_network` は libbrowser の中に留まる。settle は wake の代わりに条件変数で待つ。
 - shell（`shell/shell.c`・`shell/window.c`）: `net_fds`・`window_watch`・`window_ready`・`window_poll_unwatched` と 10 ms の上限を外す。
+- 実装（p007、[phase007](phase007/phase.md)）での形: 命令の list は「incoming の list と request の cancel の印（loader の lock の下）＋制御の pipe」、
+  完了の list と `notified`（0 → 1 で wake）。TLS の誤りの理由は thread ごと（`pthread_key`、`__thread` は zedBSD の共有 library で link できない）と
+  request ごと。headless の待ちは `net_loader_wait`（条件変数）。shell は view を窓（app）より先に閉じる。
 
 ## 8. platform の当て
 

@@ -129,10 +129,18 @@ struct net_http_framing {
 /* A request of the asynchronous loader, and the loader. */
 struct net_loader;
 struct net_request;
-struct pollfd;
 
-/* A request's callback: called once when it ends (net_request_error tells how). */
+/* A request's callback: called once when it ends (net_request_error tells how), from net_loader_dispatch. */
 typedef void (*net_request_done)(void *context, struct net_request *request);
+
+/*
+ * The loader's notify: called from the loader's network thread when there
+ * is news for net_loader_dispatch (once, until the caller has run it).
+ */
+typedef void (*net_loader_notify)(void *context);
+
+/* The longest reason of a TLS failure kept (with its NUL). */
+#define NET_TLS_REASON_MAX	256U
 
 /* URLs (url.c). */
 int net_url_parse(const char *input, size_t length, const struct net_url *base, struct net_url *url);
@@ -181,10 +189,11 @@ int net_tls_write(struct net_tls *tls, const unsigned char *bytes, size_t length
 int net_tls_pending(const struct net_tls *tls);
 void net_tls_close(struct net_tls *tls);
 void net_tls_clear_error(void);
+void net_tls_set_error(const char *reason);
 const char *net_tls_error(void);
 
 /* The asynchronous loader (loader.c). */
-int net_loader_create(struct net_loader **loader);
+int net_loader_create(net_loader_notify notify, void *context, struct net_loader **loader);
 void net_loader_destroy(struct net_loader *loader);
 int net_loader_fetch(struct net_loader *loader, const char *url, net_request_done done, void *context, struct net_request **request);
 int net_loader_fetch_kind(struct net_loader *loader, const char *url, int kind, net_request_done done, void *context, struct net_request **request);
@@ -192,9 +201,11 @@ int net_loader_send(struct net_loader *loader, const char *url, int kind, const 
 void net_request_cancel(struct net_request *request);
 int net_request_error(const struct net_request *request);
 const struct net_response *net_request_response(const struct net_request *request);
-size_t net_loader_poll_fds(const struct net_loader *loader, struct pollfd *fds, size_t capacity);
-int net_loader_timeout(const struct net_loader *loader);
-void net_loader_process(struct net_loader *loader, const struct pollfd *fds, size_t count);
+size_t net_loader_pending(const struct net_loader *loader);
+void net_loader_wait(struct net_loader *loader, int timeout);
+void net_loader_dispatch(struct net_loader *loader);
+int net_loader_watch(struct net_loader *loader, int descriptor);
+void net_loader_unwatch(struct net_loader *loader, int descriptor);
 int net_loader_takes(const char *location);
 
 /* Cookies (cookie.c). */

@@ -23,15 +23,13 @@
 #include "net/net.h"
 
 #include <errno.h>
-#include <poll.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <time.h>
 
-/* How many URLs the driver takes, and how many descriptors it waits on. */
+/* How many URLs the driver takes. */
 #define LOADER_URLS	64
-#define LOADER_FDS	128
 
 /* What the driver knows of each URL: its index and whether it ended. */
 struct fetch {
@@ -100,7 +98,7 @@ main(
 	count = argc - first - 1;
 
 	/* The loader. */
-	error = net_loader_create(&loader);
+	error = net_loader_create(NULL, NULL, &loader);
 	if (error != 0) {
 		fprintf(stderr, "host-loader: no loader (%d)\n", error);
 		return 1;
@@ -200,10 +198,7 @@ run(
 	struct fetch *fetches,
 	int count)
 {
-	struct pollfd fds[LOADER_FDS];
-	size_t used;
 	int waiting;
-	int timeout;
 	int index;
 	time_t deadline;
 	time_t now;
@@ -218,15 +213,11 @@ run(
 				waiting = 1;
 		}
 
-		/* All ended, or a wait for the loader's descriptors (at most a second). */
+		/* All ended, or a wait for the loader's news (at most a second), then its callbacks. */
 		if (!waiting)
 			return 0;
-		used = net_loader_poll_fds(loader, fds, LOADER_FDS);
-		timeout = net_loader_timeout(loader);
-		if (timeout < 0 || timeout > 1000)
-			timeout = 1000;
-		poll(fds, (nfds_t)used, timeout);
-		net_loader_process(loader, fds, used);
+		net_loader_wait(loader, 1000);
+		net_loader_dispatch(loader);
 		now = time(NULL);
 	}
 
