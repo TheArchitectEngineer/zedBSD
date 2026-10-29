@@ -170,8 +170,10 @@ show_name(
 		return 0;
 	}
 
-	/* Boot selectors and the congestion control's name are strings; the
-	 * match count retains numeric rendering. */
+	/*
+	 * Boot selectors and the congestion control's name are strings; the
+	 * match count retains numeric rendering.
+	 */
 	if (strcmp(name, "kern.boot.firmware_partition") == 0 ||
 	    strcmp(name, "kern.boot.config_partition") == 0 ||
 	    strcmp(name, "kern.boot.login") == 0 ||
@@ -355,11 +357,14 @@ set_name(
 	const char *equal)
 {
 	int function_result;
+	int compare;
+	int error;
 	char name[NAME_MAX];
 	char *end;
 	unsigned long long parsed;
 	uint64_t value;
 	size_t name_length;
+	size_t text_length;
 
 	name_length = (size_t)(equal - argument);
 
@@ -372,12 +377,23 @@ set_name(
 		return set_writeback(equal + 1);
 
 	/* The congestion control new sockets start with is set by its name. */
-	if (strcmp(name, "net.tcp.congestion") == 0) {
-		if (sysctlbyname(name, NULL, NULL, equal + 1, strlen(equal + 1)) != 0)
+	compare = strcmp(name, "net.tcp.congestion");
+	if (compare == 0) {
+		/* Sets the name, without a NUL. */
+		text_length = strlen(equal + 1);
+		error = sysctlbyname(name, NULL, NULL, equal + 1, text_length);
+		if (error != 0)
 			return errno;
-		function_result = show_name(name) == 0 ? 0 : errno;
-		return function_result;
+
+		/* Shows the name now in force. */
+		error = show_name(name);
+		if (error != 0)
+			return errno;
+
+		/* Succeeded: the name is set and shown. */
+		return 0;
 	}
+
 	errno = 0;
 	parsed = strtoull(equal + 1, &end, 10);
 

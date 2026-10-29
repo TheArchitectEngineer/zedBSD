@@ -1072,6 +1072,8 @@ sysctl_tcp_congestion(
 		error = tcp_cc_lookup(newp, newlen, &cc);
 		if (error != 0)
 			return error;
+
+		/* Has new sockets start with it. */
 		tcp_cc_set_default(cc);
 	}
 

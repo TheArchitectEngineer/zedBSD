@@ -21,8 +21,9 @@
  * second's rate; the last line is "TCP-PERF DIRECTION seconds=S bytes=N
  * mbps=RATE" over the whole transfer.  --cc NAME sets the connection's
  * congestion control (TCP_CONGESTION, "reno" or "cubic"; on serve the
- * listener's, which the accepted connection takes) before it connects.  It exits 0, 1 when the transfer
- * failed, or 2 for a bad command line.  The source also builds on Linux.
+ * listener's, which the accepted connection takes) before it connects.
+ * It exits 0, 1 when the transfer failed, or 2 for a bad command line.
+ * The source also builds on Linux.
  *
  * serve is the other end, so that this machine's accepted connections are
  * measured too: it listens on ADDRESS (:: or 0.0.0.0 for any) and PORT,
@@ -124,9 +125,13 @@ main(
 	int sending;
 	int mode;
 	int error;
+	int compare;
 
 	/* The congestion control, when --cc comes first. */
-	if (argc >= 3 && strcmp(argv[1], "--cc") == 0) {
+	compare = 1;
+	if (argc >= 3)
+		compare = strcmp(argv[1], "--cc");
+	if (compare == 0) {
 		perf_cc = argv[2];
 		argc -= 2;
 		argv += 2;

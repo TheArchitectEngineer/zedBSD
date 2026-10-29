@@ -633,6 +633,8 @@ tcp_socket_create(
 
 	/* The system's congestion control, net.tcp.congestion. */
 	endpoint->tcp.cc = tcp_cc_default();
+
+	/* Puts the socket in the registry of sockets. */
 	irq = spin_lock_irqsave(&tcp_registry_lock);
 
 	endpoint->next = tcp_sockets;
@@ -1560,32 +1562,50 @@ tcp_cc_lookup(
 	size_t index;
 	unsigned candidate;
 	int same;
+	int error;
 
-	/* The bytes before a NUL, within the longest name. */
+	/* Counts the bytes before a NUL, within the longest name. */
 	used = 0;
-	while (used < length && used < TCP_CA_NAME_MAX - 1U && name[used] != '\0')
+	while (used < length &&
+	       used < TCP_CA_NAME_MAX - 1U &&
+	       name[used] != '\0')
 		used++;
+
+	/* An empty name names nothing. */
 	if (used == 0)
 		return EINVAL;
 
-	/* Each congestion control's name, the same bytes and no more. */
-	for (candidate = 0; candidate < TCP_CC_COUNT; candidate++) {
+	/* Looks for the congestion control whose name is the same bytes and no more. */
+	error = ESRCH;
+	for (candidate = 0;
+	     candidate < TCP_CC_COUNT;
+	     candidate++) {
 		known = tcp_cc_names[candidate];
+
+		/* Compares the bytes given with this name's. */
 		same = 1;
 		for (index = 0; index < used; index++) {
+			/* A byte that differs makes it another name. */
 			if (known[index] != name[index]) {
 				same = 0;
 				break;
 			}
 		}
+
+		/* The whole name matches only when this one ends where the given one does. */
 		if (same && known[used] == '\0') {
 			*cc = candidate;
-			return 0;
+			error = 0;
+			break;
 		}
 	}
 
-	/* No such congestion control. */
-	return ESRCH;
+	/* Reports that no congestion control has the name. */
+	if (error != 0)
+		return error;
+
+	/* Succeeded: the congestion control is found. */
+	return 0;
 }
 
 /* Gives the congestion control a new socket starts with (TCP_CC_*). */
@@ -1693,14 +1713,21 @@ tcp_setsockopt(
 	 * afresh.
 	 */
 	if (option == TCP_CONGESTION) {
+		/* Only a TCP socket has a congestion control. */
 		endpoint = tcp_endpoint(socket);
 		if (endpoint == NULL)
 			return ENOPROTOOPT;
+
+		/* A name has to be given. */
 		if (value == NULL)
 			return EINVAL;
+
+		/* Finds the congestion control the name names. */
 		error = tcp_cc_lookup(value, length, &cc);
 		if (error != 0)
 			return error;
+
+		/* Has the connection use it. */
 		irq = spin_lock_irqsave(&socket->lock);
 
 		tcp_cc_set_locked(endpoint, cc);
@@ -1802,16 +1829,23 @@ tcp_getsockopt(
 
 	/* TCP_CONGESTION: the name and its NUL, cut to the length given (as FreeBSD gives it). */
 	if (option == TCP_CONGESTION) {
+		/* Only a TCP socket has a congestion control. */
 		endpoint = tcp_endpoint(socket);
 		if (endpoint == NULL)
 			return ENOPROTOOPT;
+
+		/* A place to put the name has to be given. */
 		if (value == NULL || length == NULL)
 			return EINVAL;
+
+		/* Samples the congestion control the connection uses. */
 		irq = spin_lock_irqsave(&socket->lock);
 
 		cc = endpoint->tcp.cc;
 
 		spin_unlock_irqrestore(&socket->lock, irq);
+
+		/* Copies its name, no more of it than the length given. */
 		name = tcp_cc_name(cc);
 		name_length = kern_strlen(name) + 1U;
 		if (name_length > *length)
@@ -2534,10 +2568,16 @@ tcp_stats_fill_locked(
 		entry->cubic_w_max_kb = tcp->cubic_w_max / 1024U;
 		entry->cubic_k_ms = tcp->cubic_k_ms;
 	}
+
+	/* A queued segment the window held back in this round. */
 	if (tcp->cwnd_blocked != 0)
 		entry->cwnd_state |= TCP_STATS_CWND_BLOCKED;
+
+	/* A CUBIC epoch runs. */
 	if (tcp->cubic_epoch_started != 0)
 		entry->cwnd_state |= TCP_STATS_CWND_EPOCH;
+
+	/* CUBIC finds the window after a timeout at the next epoch's start. */
 	if (tcp->cubic_after_timeout != 0)
 		entry->cwnd_state |= TCP_STATS_CWND_AFTER_TIMEOUT;
 
@@ -3682,6 +3722,8 @@ tcp_start_sending(
 	endpoint->tcp.cwnd = window;
 	endpoint->tcp.ssthresh = UINT32_MAX;
 	endpoint->tcp.cwnd_acked = 0;
+
+	/* The window's use is measured from the start of the sending. */
 	tcp_cwnd_round_reset_locked(endpoint);
 
 	spin_unlock_irqrestore(&endpoint->tcp.inet.socket.lock, irq);
@@ -4098,12 +4140,15 @@ tcp_cwnd_grow_locked(
 	mss = tcp_segment_size_locked(endpoint);
 
 	/*
-	 * Not a window the sending leaves unused; CUBIC's epoch notes from
-	 * when, so that the time does not count in it (RFC 9438 section 4.2).
+	 * A window the sending leaves unused does not grow.  CUBIC's epoch
+	 * notes from when, so that the time does not count in it (RFC 9438
+	 * section 4.2).
 	 */
 	limited = tcp_cwnd_limited_locked(endpoint, mss);
 	if (!limited) {
-		if (endpoint->tcp.cc == TCP_CC_CUBIC && endpoint->tcp.cubic_epoch_started != 0 &&
+		/* Notes the start of the unused time once, in a running CUBIC epoch. */
+		if (endpoint->tcp.cc == TCP_CC_CUBIC &&
+		    endpoint->tcp.cubic_epoch_started != 0 &&
 		    endpoint->tcp.cubic_limited_since_ms == 0)
 			endpoint->tcp.cubic_limited_since_ms = tcp_cc_now_ms();
 		return;
@@ -4262,8 +4307,11 @@ tcp_cwnd_limited_locked(
 
 	/* Slow start: less than twice that. */
 	if (endpoint->tcp.cwnd < endpoint->tcp.ssthresh) {
+		/* The window is less than twice the most in flight: it is in use. */
 		if ((uint64_t)endpoint->tcp.cwnd < 2ULL * flight)
 			return 1;
+
+		/* The window is twice that or more: it is not in use. */
 		return 0;
 	}
 
@@ -4343,9 +4391,11 @@ tcp_cubic_grow_locked(
 	uint32_t cwnd;
 	uint32_t w_cubic;
 
-	/* The epoch, when none runs. */
+	/* Reads the time and the window the epoch is measured from. */
 	now = tcp_cc_now_ms();
 	cwnd = endpoint->tcp.cwnd;
+
+	/* Starts the epoch, when none runs. */
 	if (endpoint->tcp.cubic_epoch_started == 0) {
 		endpoint->tcp.cubic_epoch_started = 1;
 		endpoint->tcp.cubic_epoch_ms = now;
@@ -4354,10 +4404,14 @@ tcp_cubic_grow_locked(
 		endpoint->tcp.cubic_est_rem = 0;
 		endpoint->tcp.cubic_grow_rem = 0;
 		endpoint->tcp.cwnd_acked = 0;
+
+		/* K and the origin: the window found after a timeout, or the window before the last loss. */
 		if (endpoint->tcp.cubic_after_timeout != 0) {
 			endpoint->tcp.cubic_k_ms = 0;
 			endpoint->tcp.cubic_origin = cwnd;
 			endpoint->tcp.cubic_w_max = cwnd;
+
+			/* The timeout's mark ends once no recovery runs. */
 			if (endpoint->tcp.recovery == 0)
 				endpoint->tcp.cubic_after_timeout = 0;
 		} else if (cwnd < endpoint->tcp.cubic_w_max) {
@@ -4371,15 +4425,18 @@ tcp_cubic_grow_locked(
 
 	/* The time the window went unused does not count in the epoch (section 4.2). */
 	if (endpoint->tcp.cubic_limited_since_ms != 0) {
+		/* Moves the epoch on by the time since, unless the clock is behind it. */
 		if (now > endpoint->tcp.cubic_limited_since_ms)
 			endpoint->tcp.cubic_epoch_ms += now - endpoint->tcp.cubic_limited_since_ms;
 		endpoint->tcp.cubic_limited_since_ms = 0;
 	}
 
-	/* The time into the epoch, and the round trip (none before a sample). */
+	/* The time into the epoch, none when the clock is behind its start. */
 	elapsed = 0;
 	if (now > endpoint->tcp.cubic_epoch_ms)
 		elapsed = now - endpoint->tcp.cubic_epoch_ms;
+
+	/* The round trip, none before a sample. */
 	rtt_ms = 0;
 	if (endpoint->tcp.rtt_samples != 0)
 		rtt_ms = endpoint->tcp.srtt_us / 1000U;
@@ -4404,6 +4461,8 @@ tcp_cubic_grow_locked(
 	/* The segments of growth that came. */
 	while (endpoint->tcp.cwnd_acked >= mss) {
 		endpoint->tcp.cwnd_acked -= mss;
+
+		/* A segment is added unless the window would pass its largest. */
 		if (endpoint->tcp.cwnd <= TCP_CWND_MAX - mss)
 			endpoint->tcp.cwnd += mss;
 	}
@@ -4422,6 +4481,8 @@ tcp_cubic_grow_locked(
 	estimate = share * acked * mss + endpoint->tcp.cubic_est_rem;
 	endpoint->tcp.cubic_w_est += (uint32_t)(estimate / (1000ULL * cwnd));
 	endpoint->tcp.cubic_est_rem = (uint32_t)(estimate % (1000ULL * cwnd));
+
+	/* W_est stays within the largest window. */
 	if (endpoint->tcp.cubic_w_est > TCP_CWND_MAX)
 		endpoint->tcp.cubic_w_est = TCP_CWND_MAX;
 
@@ -4450,13 +4511,15 @@ tcp_cubic_loss_locked(
 	uint32_t mss;
 	uint32_t cwnd;
 
+	/* The segment size and the window the loss finds. */
+	mss = tcp_segment_size_locked(endpoint);
+	cwnd = endpoint->tcp.cwnd;
+
 	/*
 	 * Value referenced:
 	 * RFC 9438 section 4.7: below the last W_max, W_max = cwnd (1 + beta)
 	 * / 2, 17 / 20 with beta = 0.7.
 	 */
-	mss = tcp_segment_size_locked(endpoint);
-	cwnd = endpoint->tcp.cwnd;
 	if (cwnd < endpoint->tcp.cubic_w_max)
 		endpoint->tcp.cubic_w_max = (uint32_t)((uint64_t)cwnd * 17U / 20U);
 	else
@@ -4481,6 +4544,8 @@ tcp_cubic_loss_locked(
 		endpoint->tcp.cwnd = (uint32_t)threshold;
 		endpoint->tcp.cubic_after_timeout = 0;
 	}
+
+	/* The growth carried and the epoch's measures start over. */
 	endpoint->tcp.cwnd_acked = 0;
 	endpoint->tcp.cubic_epoch_started = 0;
 	endpoint->tcp.cubic_limited_since_ms = 0;
@@ -4507,6 +4572,8 @@ tcp_cc_set_locked(
 	endpoint->tcp.cubic_w_max = 0;
 	endpoint->tcp.cubic_cwnd_prior = 0;
 	endpoint->tcp.cubic_after_timeout = 0;
+
+	/* The window's use is measured afresh for it. */
 	tcp_cwnd_round_reset_locked(endpoint);
 }
 
@@ -4794,6 +4861,8 @@ tcp_retire_acknowledged(
 		if (endpoint->tcp.cwnd > endpoint->tcp.ssthresh)
 			endpoint->tcp.cwnd = endpoint->tcp.ssthresh;
 		endpoint->tcp.cwnd_acked = 0;
+
+		/* The window's use is measured afresh after the recovery. */
 		tcp_cwnd_round_reset_locked(endpoint);
 	} else if (going_back || (!recovering && endpoint->tcp.recovery == 0)) {
 		tcp_cwnd_grow_locked(endpoint, acked);

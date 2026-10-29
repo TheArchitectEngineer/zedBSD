@@ -23,8 +23,9 @@
  * really implements, and only those: TCP_MAXUNACKTIME (FreeBSD's name and
  * number) drops a connection that has made no progress for that many
  * seconds, and TCP_CONGESTION (FreeBSD's too) names its congestion
- * control, of at most TCP_CA_NAME_MAX - 1 bytes.  A name a program can detect but not use would make it take a
- * path that fails at run time, so no other vendor name appears.
+ * control, of at most TCP_CA_NAME_MAX - 1 bytes.  A name a program can
+ * detect but not use would make it take a path that fails at run time, so
+ * no other vendor name appears.
  */
 
 #include <uapi/netinet.h>

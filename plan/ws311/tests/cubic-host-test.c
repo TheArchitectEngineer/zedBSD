@@ -29,6 +29,7 @@ int
 main(
 	void)
 {
+	const char *verdict;
 	unsigned misses;
 	unsigned points;
 	unsigned size_index;
@@ -41,43 +42,76 @@ main(
 	uint32_t window;
 	uint64_t t_ms;
 	uint64_t value;
+	uint64_t cube;
+	uint64_t next_cube;
 	uint32_t root;
 	double k_ref;
 	double w_ref;
 	double t;
+	double k_error;
+	double w_error;
 
 	misses = 0;
 	points = 0;
 
-	/* The cube root at small values and at the top of 64 bits. */
+	/* Checks the cube root at small values: the cube of the root is no more, the next cube more. */
 	for (value = 0; value < 100000U; value++) {
 		root = tcp_cubic_root(value);
-		if ((uint64_t)root * root * root > value || (uint64_t)(root + 1U) * (root + 1U) * (root + 1U) <= value)
+		cube = (uint64_t)root * root * root;
+		next_cube = (uint64_t)(root + 1U) * (root + 1U) * (root + 1U);
+		if (cube > value)
+			misses++;
+		else if (next_cube <= value)
 			misses++;
 	}
+
+	/* Checks the cube root at the top of 64 bits. */
 	root = tcp_cubic_root(UINT64_MAX);
 	if (root != 2642245U)
 		misses++;
 
-	/* Each point of the grid. */
-	for (size_index = 0; size_index < sizeof(sizes) / sizeof(sizes[0]); size_index++) {
+	/* Checks each segment size of the grid. */
+	for (size_index = 0;
+	     size_index < sizeof(sizes) / sizeof(sizes[0]);
+	     size_index++) {
 		mss = sizes[size_index];
-		for (window_index = 0; window_index < sizeof(windows) / sizeof(windows[0]); window_index++) {
+
+		/* Checks each window before the loss, in segments. */
+		for (window_index = 0;
+		     window_index < sizeof(windows) / sizeof(windows[0]);
+		     window_index++) {
 			w_max = windows[window_index] * mss;
+
+			/* Checks each current window, as a share of the window before the loss. */
 			for (share = 50U; share <= 110U; share += 5U) {
 				cwnd = (uint32_t)((uint64_t)w_max * share / 100U);
 				k_ms = tcp_cubic_k_ms(w_max, cwnd, mss);
+
+				/* The double's K: the cube root of the shortfall in segments over C, in milliseconds. */
 				k_ref = 0.0;
 				if (cwnd < w_max)
 					k_ref = cbrt(((double)(w_max - cwnd) / mss) / 0.4) * 1000.0;
-				if (fabs((double)k_ms - k_ref) > 1.0) {
-					if (misses < 10U)
-						printf("miss: K mss=%u w_max=%u cwnd=%u: %u ms, double %.3f\n", mss, w_max, cwnd, k_ms,
+
+				/* Counts a K more than a millisecond from the double's. */
+				k_error = fabs((double)k_ms - k_ref);
+				if (k_error > 1.0) {
+					/* Prints only the first misses. */
+					if (misses < 10U) {
+						printf("miss: K mss=%u w_max=%u cwnd=%u: %u ms, double %.3f\n",
+						    mss,
+						    w_max,
+						    cwnd,
+						    k_ms,
 						    k_ref);
+					}
 					misses++;
 				}
+
+				/* Checks the window at each time of the grid. */
 				for (t_ms = 0; t_ms <= 200000U; t_ms += 997U) {
 					window = tcp_cubic_window(w_max, k_ms, t_ms, mss);
+
+					/* The double's window, within the same bounds. */
 					t = (double)t_ms / 1000.0 - (double)k_ms / 1000.0;
 					w_ref = 0.4 * t * t * t * mss + w_max;
 					if (w_ref < 0.0)
@@ -85,10 +119,20 @@ main(
 					if (w_ref > (double)TCP_CUBIC_WINDOW_MAX)
 						w_ref = (double)TCP_CUBIC_WINDOW_MAX;
 					points++;
-					if (fabs((double)window - w_ref) > (double)mss) {
-						if (misses < 10U)
-							printf("miss: W mss=%u w_max=%u K=%u t=%llu: %u, double %.1f\n", mss, w_max,
-							    k_ms, (unsigned long long)t_ms, window, w_ref);
+
+					/* Counts a window more than a segment from the double's. */
+					w_error = fabs((double)window - w_ref);
+					if (w_error > (double)mss) {
+						/* Prints only the first misses. */
+						if (misses < 10U) {
+							printf("miss: W mss=%u w_max=%u K=%u t=%llu: %u, double %.1f\n",
+							    mss,
+							    w_max,
+							    k_ms,
+							    (unsigned long long)t_ms,
+							    window,
+							    w_ref);
+						}
 						misses++;
 					}
 				}
@@ -96,9 +140,16 @@ main(
 		}
 	}
 
-	/* The result. */
-	printf("cubic-host-test: %u points, %u misses: %s\n", points, misses, misses == 0 ? "PASS" : "FAIL");
+	/* Prints the result. */
+	verdict = "PASS";
+	if (misses != 0)
+		verdict = "FAIL";
+	printf("cubic-host-test: %u points, %u misses: %s\n", points, misses, verdict);
+
+	/* Exits nonzero when a point missed. */
 	if (misses != 0)
 		return 1;
+
+	/* Succeeded: every point agreed. */
 	return 0;
 }

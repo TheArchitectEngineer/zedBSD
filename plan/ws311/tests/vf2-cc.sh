@@ -4,7 +4,7 @@
 # data takes (its acknowledgements come back straight).  The board runs the kernel already on it (put it there with
 # plan/ws221/tests/vf2-tcp.sh --kernel); this copies tcp-perf to its /tmp and runs ROUNDS rounds of reno then cubic
 # (tcp-perf --cc), each SECONDS long, against plan/ws221/tests/perf-peer.py on the 5330.  Judged from the programs' own
-# lines over SSH, never the console.
+# lines over SSH, never the console; the board's net.tcpstats halfway through each run must name the control asked for.
 #   plan/ws311/tests/vf2-cc.sh [--bin DIR] [--seconds N] [--rounds N] [--netem "ARGS"] NAME
 # --netem ARGS: the netem qdisc's arguments on the 5330's ifb device (for example "delay 80ms rate 35mbit loss 0.004%
 # limit 240"); with it the 5330's adapter's GRO is off for the run.  Before, the 5330 must have no ingress qdisc and no
@@ -98,9 +98,13 @@ while [ $round -le "$rounds" ]; do
 		    > "$out/peer-$cc-$round.log" &
 		job=$!
 		sleep 1
+		( sleep $((seconds / 2 + 1)); T=20 board "/tmp/sysctl net.tcpstats" > "$out/tcpstats-$cc-$round.txt" ) &
+		sampler=$!
 		T=$((seconds + 40)) board "/tmp/tcp-perf --cc $cc send $server_ip $port $seconds; echo exit=\$?" > "$out/client-$cc-$round.txt"
 		wait "$job"
-		T=20 board "/tmp/sysctl net.tcpstats" > "$out/tcpstats-$cc-$round.txt"
+		wait "$sampler"
+		used=$(grep ":$port " "$out/tcpstats-$cc-$round.txt" | sed -n 's/.* cc=\([a-z]*\).*/\1/p' | head -1)
+		[ "$used" = "$cc" ] || { say "round $round $cc: the connection's net.tcpstats says cc=${used:-none}"; status=1; }
 		client=$(grep '^TCP-PERF' "$out/client-$cc-$round.txt")
 		mbps=$(echo "$client" | sed -n 's/.* mbps=\([0-9.]*\).*/\1/p')
 		echo "$cc $mbps" >> "$out/rates.txt"

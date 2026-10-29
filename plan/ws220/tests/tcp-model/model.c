@@ -540,6 +540,8 @@ main(
 	int option_value;
 	char cc_name[TCP_CA_NAME_MAX];
 	socklen_t cc_length;
+	int compare;
+	int same;
 	double closed_s;
 	int b_state;
 	struct tcp_socket *a;
@@ -624,7 +626,15 @@ main(
 		/* Read back as FreeBSD gives it: the name and its NUL. */
 		cc_length = sizeof(cc_name);
 		error = sender->ops->getsockopt(sender, IPPROTO_TCP, TCP_CONGESTION, cc_name, &cc_length);
-		if (error != 0 || cc_length != strlen(settings.cc) + 1U || strcmp(cc_name, settings.cc) != 0) {
+
+		/* Reads back the name, no other length, no other bytes. */
+		same = 0;
+		if (error == 0 && cc_length == strlen(settings.cc) + 1U) {
+			compare = strcmp(cc_name, settings.cc);
+			if (compare == 0)
+				same = 1;
+		}
+		if (!same) {
 			printf("check: FAIL: TCP_CONGESTION reads back %d (%u bytes), not %s\n", error, (unsigned)cc_length,
 			    settings.cc);
 			return 1;
@@ -733,6 +743,8 @@ main(
 					interval_second_up[interval_count] = 1;
 				interval_count++;
 			}
+
+			/* Moves the marks on to the next interval. */
 			last_second_received = second.received;
 			last_received = received;
 			next_report_ns += settings.interval_ns;
@@ -1848,22 +1860,37 @@ run_second_flow(
 	ssize_t got;
 	int option_value;
 	int error;
+	int sender_state;
+	uint8_t stream_value;
 
-	/* Not asked for, or not yet its time. */
-	if (!settings.second_flow || transfer_start_ns == 0 || now_ns < transfer_start_ns + settings.second_flow_at_ns)
+	/* Does nothing unless a second connection is asked for. */
+	if (!settings.second_flow)
+		return;
+
+	/* Does nothing before the transfer has started. */
+	if (transfer_start_ns == 0)
+		return;
+
+	/* Does nothing before the second connection's time. */
+	if (now_ns < transfer_start_ns + settings.second_flow_at_ns)
 		return;
 
 	/* A's connect, once. */
 	if (second.sender == NULL) {
+		/* Makes A's socket. */
 		error = socket_create(AF_INET, SOCK_STREAM, 0, &second.sender);
 		if (error != 0) {
 			transfer_error = error;
 			return;
 		}
+
+		/* B's address. */
 		memset(&address, 0, sizeof(address));
 		address.sin_family = AF_INET;
 		address.sin_port = model_ntohs(MODEL_PORT);
 		address.sin_addr.s_addr = model_ntohl(MODEL_ADDRESS_B);
+
+		/* Gives the socket its own congestion control, when the scenario names one. */
 		if (settings.second_cc != NULL) {
 			error = second.sender->ops->setsockopt(second.sender, IPPROTO_TCP, TCP_CONGESTION, settings.second_cc,
 			    (socklen_t)strlen(settings.second_cc));
@@ -1872,6 +1899,8 @@ run_second_flow(
 				return;
 			}
 		}
+
+		/* Starts the connect, which a non-blocking socket leaves under way. */
 		error = second.sender->ops->connect(second.sender, (struct sockaddr *)&address, sizeof(address),
 		    SOCKET_IO_NONBLOCK);
 		if (error != EINPROGRESS) {
@@ -1885,8 +1914,12 @@ run_second_flow(
 	/* B's accept, with its receive buffer when the scenario sets one. */
 	if (second.receiver == NULL) {
 		(void)listener->ops->accept(listener, &second.receiver, NULL, NULL, SOCKET_IO_NONBLOCK);
+
+		/* Nothing to accept yet. */
 		if (second.receiver == NULL)
 			return;
+
+		/* Sets the receive buffer the scenario names. */
 		if (settings.receive_buffer != 0) {
 			option_value = (int)settings.receive_buffer;
 			(void)socket_setsockopt_common(second.receiver, SOL_SOCKET, SO_RCVBUF, &option_value,
@@ -1896,7 +1929,9 @@ run_second_flow(
 
 	/* Up once A's end is established. */
 	if (second.connecting) {
-		if (tcp_of(second.sender)->state != TCP_ESTABLISHED)
+		/* Still in the handshake. */
+		sender_state = tcp_of(second.sender)->state;
+		if (sender_state != TCP_ESTABLISHED)
 			return;
 		second.connecting = 0;
 		second.up_ns = now_ns;
@@ -1904,9 +1939,14 @@ run_second_flow(
 
 	/* The writer: each piece the stack takes now. */
 	for (;;) {
-		for (index = 0; index < settings.write_bytes && index < sizeof(chunk); index++)
-			chunk[index] = stream_byte(second.written + index);
+		/* Fills one piece with the stream's next bytes. */
+		for (index = 0; index < settings.write_bytes && index < sizeof(chunk); index++) {
+			stream_value = stream_byte(second.written + index);
+			chunk[index] = stream_value;
+		}
 		written = second.sender->ops->sendto(second.sender, chunk, (size_t)index, MSG_DONTWAIT, NULL, 0);
+
+		/* Stops when the stack takes no more, or fails. */
 		if (written <= 0) {
 			if (written != -EAGAIN)
 				transfer_error = (int)-written;
@@ -1918,13 +1958,18 @@ run_second_flow(
 	/* The reader: everything that has arrived, each byte checked against the stream. */
 	for (;;) {
 		got = second.receiver->ops->recvfrom(second.receiver, buffer, sizeof(buffer), MSG_DONTWAIT, NULL, NULL);
+
+		/* Stops when nothing more has arrived, or on a failure. */
 		if (got <= 0) {
 			if (got < 0 && got != -EAGAIN)
 				transfer_error = (int)-got;
 			break;
 		}
+
+		/* Counts each byte that is not the stream's. */
 		for (index = 0; index < (uint64_t)got; index++) {
-			if (buffer[index] != stream_byte(second.received + index))
+			stream_value = stream_byte(second.received + index);
+			if (buffer[index] != stream_value)
 				second.corrupt++;
 		}
 		second.received += (uint64_t)got;
@@ -2107,6 +2152,7 @@ connect_hosts(
 	struct sockaddr_in address;
 	uint64_t limit_ns;
 	int option_value;
+	int sender_state;
 	int error;
 
 	/* B's listener on its port, every address. */
@@ -2149,7 +2195,8 @@ connect_hosts(
 	}
 
 	/* The handshake did not finish. */
-	if (receiver == NULL || tcp_of(sender)->state != TCP_ESTABLISHED)
+	sender_state = tcp_of(sender)->state;
+	if (receiver == NULL || sender_state != TCP_ESTABLISHED)
 		return ETIMEDOUT;
 
 	/* B's receive buffer, when the scenario sets one. */
@@ -2263,6 +2310,8 @@ step(
 	 */
 	if (a->rto_backoff > backoff_last) {
 		timeouts += a->rto_backoff - backoff_last;
+
+		/* A timeout repeated before a sample, and whether it moved the threshold. */
 		if (backoff_last != 0) {
 			repeated_timeouts++;
 			if (a->ssthresh != ssthresh_after_timeout)
@@ -2378,8 +2427,10 @@ check_tcpstats(
 		if (entry->local_port == MODEL_PORT && entry->state == TCP_ESTABLISHED)
 			taken += entry->data_bytes_in;
 	}
-	if (header->version != TCP_STATS_VERSION || header->count != sockets ||
-	    needed != sizeof(*header) + sockets * sizeof(*entry) || sent != send_offset + second.written ||
+	if (header->version != TCP_STATS_VERSION ||
+	    header->count != sockets ||
+	    needed != sizeof(*header) + sockets * sizeof(*entry) ||
+	    sent != send_offset + second.written ||
 	    taken != received + second.received) {
 		printf("tcpstats: FAIL: version %u count %u sent %llu (wrote %llu) taken %llu (read %llu)\n", header->version,
 		    header->count, (unsigned long long)sent, (unsigned long long)(send_offset + second.written),
@@ -2400,7 +2451,8 @@ check_tcpstats(
 			printf("tcpstats: FAIL: entry %u has no congestion control\n", index);
 			return 1;
 		}
-		if (entry->local_port == sender_tcp->inet.local_port && entry->state == TCP_ESTABLISHED &&
+		if (entry->local_port == sender_tcp->inet.local_port &&
+		    entry->state == TCP_ESTABLISHED &&
 		    entry->cc != sender_tcp->cc) {
 			printf("tcpstats: FAIL: A's congestion control %u (socket %u)\n", entry->cc, sender_tcp->cc);
 			return 1;
@@ -2413,8 +2465,10 @@ check_tcpstats(
 		}
 
 		/* A's entry (of its first connection) gives A's estimate and a timeout. */
-		if (entry->local_port == sender_tcp->inet.local_port && entry->state == TCP_ESTABLISHED &&
-		    (entry->srtt_us != sender_tcp->srtt_us || entry->rto_ms == 0)) {
+		if (entry->local_port == sender_tcp->inet.local_port &&
+		    entry->state == TCP_ESTABLISHED &&
+		    (entry->srtt_us != sender_tcp->srtt_us ||
+		     entry->rto_ms == 0)) {
 			printf("tcpstats: FAIL: A's srtt_us %u (socket %u), rto_ms %u\n", entry->srtt_us, sender_tcp->srtt_us,
 			    entry->rto_ms);
 			return 1;
@@ -2483,11 +2537,17 @@ watch_cc(
 	int open;
 
 	/* Only A's connection while it sends. */
-	if (sender == NULL || transfer_start_ns == 0)
+	if (sender == NULL)
+		return;
+	if (transfer_start_ns == 0)
 		return;
 	a = tcp_of(sender);
-	if (a->cwnd == 0 || a->state != TCP_ESTABLISHED)
+	if (a->cwnd == 0)
 		return;
+	if (a->state != TCP_ESTABLISHED)
+		return;
+
+	/* The time since the last step. */
 	elapsed_ns = 0;
 	if (cc.last_ns != 0)
 		elapsed_ns = now_ns - cc.last_ns;
@@ -2506,8 +2566,12 @@ watch_cc(
 	if (window == 0)
 		window = mss;
 	limited = 0;
-	if (a->cwnd < window && (uint64_t)flight + mss >= a->cwnd)
-		limited = 1;
+	if (a->cwnd < window) {
+		if ((uint64_t)flight + mss >= a->cwnd)
+			limited = 1;
+	}
+
+	/* Counts the step's time, and as limited when it was. */
 	cc.measured_ns += elapsed_ns;
 	if (limited)
 		cc.limited_ns += elapsed_ns;
@@ -2526,13 +2590,18 @@ watch_cc(
 		cc.double_from = a->cwnd;
 		cc.double_since_ns = now_ns;
 	} else {
+		/* The first step of a slow start the window limits. */
 		if (cc.double_from == 0) {
 			cc.double_from = a->cwnd;
 			cc.double_since_ns = now_ns;
 		}
+
+		/* Keeps the longest time since a doubling. */
 		rtts = (double)(now_ns - cc.double_since_ns) / (double)rtt_ns;
 		if (rtts > cc.double_rtts_max)
 			cc.double_rtts_max = rtts;
+
+		/* A doubling begins the next count. */
 		if ((uint64_t)a->cwnd >= 2ULL * cc.double_from) {
 			cc.doublings++;
 			cc.double_from = a->cwnd;
@@ -2542,7 +2611,9 @@ watch_cc(
 
 	/* Congestion avoidance, outside a recovery, after a loss set the threshold. */
 	open = 0;
-	if (a->ssthresh != UINT32_MAX && a->cwnd >= a->ssthresh && a->recovery == 0)
+	if (a->ssthresh != UINT32_MAX &&
+	    a->cwnd >= a->ssthresh &&
+	    a->recovery == 0)
 		open = 1;
 	watch_cc_span(a, open, limited, elapsed_ns);
 }
@@ -2565,13 +2636,17 @@ watch_cc_span(
 	uint64_t rtt_ns;
 	uint32_t mss;
 	double growth;
+	int long_enough;
 
 	/* A loss in the span (a new threshold) closes it as the end of the span does. */
-	if (cc.span_open && open && tcp->ssthresh != cc.span_ssthresh)
-		open = 0;
+	if (cc.span_open && open) {
+		if (tcp->ssthresh != cc.span_ssthresh)
+			open = 0;
+	}
 
 	/* Still open: the time the window limited A, and the window it has reached. */
 	if (cc.span_open && open) {
+		/* Counts the step's time when the window limited A. */
 		if (limited)
 			cc.span_limited_ns += elapsed_ns;
 		cc.span_cwnd_last = tcp->cwnd;
@@ -2582,15 +2657,26 @@ watch_cc_span(
 	if (cc.span_open) {
 		cc.span_open = 0;
 		duration_ns = now_ns - cc.span_start_ns;
+
+		/* The round trip, A's estimate or the link's when it has none. */
 		rtt_ns = (uint64_t)tcp->srtt_us * 1000U;
 		if (rtt_ns == 0)
 			rtt_ns = 2U * settings.delay_ns + 1000000U;
 		mss = tcp->send_mss;
 		if (mss == 0)
 			mss = 1460U;
-		if (duration_ns >= 8U * rtt_ns && (double)cc.span_limited_ns >= 0.8 * (double)duration_ns) {
+
+		/* A span of eight round trips or more, the window limiting A for 80 % of it. */
+		long_enough = 0;
+		if (duration_ns >= 8U * rtt_ns) {
+			if ((double)cc.span_limited_ns >= 0.8 * (double)duration_ns)
+				long_enough = 1;
+		}
+		if (long_enough) {
 			growth = ((double)cc.span_cwnd_last - (double)cc.span_cwnd) / (double)mss /
 			    ((double)duration_ns / (double)rtt_ns);
+
+			/* Keeps the least growth. */
 			if (cc.spans == 0 || growth < cc.span_growth_min)
 				cc.span_growth_min = growth;
 			cc.spans++;
@@ -2598,7 +2684,10 @@ watch_cc_span(
 	}
 
 	/* A new span from where the window stands. */
-	if (open && tcp->ssthresh != UINT32_MAX && tcp->cwnd >= tcp->ssthresh && tcp->recovery == 0) {
+	if (open &&
+	    tcp->ssthresh != UINT32_MAX &&
+	    tcp->cwnd >= tcp->ssthresh &&
+	    tcp->recovery == 0) {
 		cc.span_open = 1;
 		cc.span_start_ns = now_ns;
 		cc.span_cwnd = tcp->cwnd;
@@ -2611,9 +2700,9 @@ watch_cc_span(
 /*
  * Prints the "cc:" line and checks A's congestion window: always within
  * twice the most sent and not acknowledged and two segments, or the
- * initial window (a window that grows while it is not used is not), and what the scenario asks of
- * its share as the limit, its slow start and its congestion avoidance.
- * Reports 0 when every check passes.
+ * initial window (a window that grows while it is not used is not), and
+ * what the scenario asks of its share as the limit, its slow start and its
+ * congestion avoidance.  Reports 0 when every check passes.
  */
 static int
 check_cc(
@@ -2671,7 +2760,9 @@ check_cc(
 	/* A timeout repeated before a sample holds the threshold (RFC 5681 section 3.1). */
 	printf("timeouts: repeated=%llu ssthresh_moved=%llu\n", (unsigned long long)repeated_timeouts,
 	    (unsigned long long)ssthresh_moved);
-	if (settings.expect_ssthresh_held && (repeated_timeouts == 0 || ssthresh_moved != 0)) {
+	if (settings.expect_ssthresh_held &&
+	    (repeated_timeouts == 0 ||
+	     ssthresh_moved != 0)) {
 		printf("check: FAIL: %llu repeated timeouts, %llu of them moved the threshold\n",
 		    (unsigned long long)repeated_timeouts, (unsigned long long)ssthresh_moved);
 		failed = 1;
@@ -2682,14 +2773,18 @@ check_cc(
 	 * for it (one, and the round trip a filling queue adds before A's
 	 * estimate follows; a window that stops growing takes many).
 	 */
-	if (settings.expect_slow_start && (cc.doublings == 0 || cc.double_rtts_max > 3.0)) {
+	if (settings.expect_slow_start &&
+	    (cc.doublings == 0 ||
+	     cc.double_rtts_max > 3.0)) {
 		printf("check: FAIL: the slow start doubled %u times, the slowest in %.2f round trips (more than 3)\n",
 		    cc.doublings, cc.double_rtts_max);
 		failed = 1;
 	}
 
 	/* Congestion avoidance that grew. */
-	if (settings.expect_ca_growth > 0.0 && (cc.spans == 0 || cc.span_growth_min < settings.expect_ca_growth)) {
+	if (settings.expect_ca_growth > 0.0 &&
+	    (cc.spans == 0 ||
+	     cc.span_growth_min < settings.expect_ca_growth)) {
 		printf("check: FAIL: %u spans of congestion avoidance, the slowest growing %.2f segments a round trip "
 		    "(less than %.2f)\n", cc.spans, cc.span_growth_min, settings.expect_ca_growth);
 		failed = 1;
@@ -2721,6 +2816,9 @@ check_fair(
 	double total;
 	double first_share;
 	double second_share;
+	double jain_mean;
+	double interval_total;
+	double interval_squares;
 	unsigned counted;
 	unsigned index;
 
@@ -2740,9 +2838,13 @@ check_fair(
 		second_sum += interval_second[index];
 		first_rate = (double)interval_first[index];
 		second_rate = (double)interval_second[index];
-		if (first_rate + second_rate > 0.0)
-			jain_sum += (first_rate + second_rate) * (first_rate + second_rate) /
-			    (2.0 * (first_rate * first_rate + second_rate * second_rate));
+
+		/* Jain's index of this interval's two rates. */
+		if (first_rate + second_rate > 0.0) {
+			interval_total = first_rate + second_rate;
+			interval_squares = first_rate * first_rate + second_rate * second_rate;
+			jain_sum += interval_total * interval_total / (2.0 * interval_squares);
+		}
 		counted++;
 	}
 
@@ -2756,9 +2858,11 @@ check_fair(
 		second_share = (double)second_sum / total;
 		jain = total * total / (2.0 * ((double)first_sum * (double)first_sum + (double)second_sum * (double)second_sum));
 	}
+	jain_mean = 0.0;
+	if (counted != 0)
+		jain_mean = jain_sum / counted;
 	printf("fair: intervals=%u first_share=%.3f second_share=%.3f jain=%.3f jain_mean=%.3f second_corrupt=%llu\n",
-	    counted, first_share, second_share, jain, counted != 0 ? jain_sum / counted : 0.0,
-	    (unsigned long long)second.corrupt);
+	    counted, first_share, second_share, jain, jain_mean, (unsigned long long)second.corrupt);
 
 	/* Nothing to judge from, or a second stream that did not arrive as written. */
 	if (counted == 0 || second.corrupt != 0) {
