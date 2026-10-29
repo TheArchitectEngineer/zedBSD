@@ -39,10 +39,10 @@
 #define UVC_PROCESSING_UNIT_ID		3U
 
 /*
- * The host's limit of an isochronous endpoint: full or high speed, one
- * transaction an interval, a packet of at most 1024 bytes and a
- * bInterval of 1 to 16.  It is the condition the xHCI driver's endpoint
- * encoder accepts.
+ * The host's limit of an isochronous endpoint: full speed with one
+ * transaction an interval or high speed with up to three, a packet of at
+ * most 1024 bytes and a bInterval of 1 to 16.  It is the condition the
+ * xHCI driver's endpoint encoder accepts.
  */
 #define UVC_HOST_PACKET_MAX		1024U
 #define UVC_HOST_INTERVAL_MAX		16U
@@ -51,7 +51,8 @@
 #define UVC_PACKET_SIZE_MASK		0x07ffU
 #define UVC_PACKET_EXTRA_SHIFT		11U
 #define UVC_PACKET_EXTRA_MASK		0x0003U
-#define UVC_PACKET_RESERVED_MASK	0xf800U
+#define UVC_PACKET_EXTRA_RESERVED	3U
+#define UVC_PACKET_RESERVED_MASK	0xe000U
 
 /* The payload header a payload carries at least, added to an estimated payload. */
 #define UVC_PAYLOAD_HEADER_ESTIMATE	12U
@@ -637,8 +638,9 @@ uvc_probe_fixup(
  * At high speed bits 12:11 of wMaxPacketSize count the extra
  * transactions an interval; at SuperSpeed the companion's
  * wBytesPerInterval is the capacity.  The host takes an endpoint at full
- * or high speed with one transaction an interval, a packet of at most
- * 1024 bytes and a bInterval of 1 to 16.
+ * speed with one transaction an interval or at high speed with up to
+ * three (an extra count of 3 is reserved), a packet of at most 1024
+ * bytes and a bInterval of 1 to 16.
  *
  * Value(s) referenced: USB 2.0 §9.6.6 (wMaxPacketSize bits 10:0 and
  * 12:11) and USB 3.2 §9.6.7 (wBytesPerInterval).
@@ -681,6 +683,10 @@ uvc_alternate_describe(
 	if (speed != UVC_SPEED_FULL && speed != UVC_SPEED_HIGH)
 		return;
 	if ((max_packet_field & UVC_PACKET_RESERVED_MASK) != 0U)
+		return;
+	if (speed == UVC_SPEED_FULL && ((max_packet_field >> UVC_PACKET_EXTRA_SHIFT) & UVC_PACKET_EXTRA_MASK) != 0U)
+		return;
+	if (extra == UVC_PACKET_EXTRA_RESERVED)
 		return;
 	if (alternate->packet_bytes == 0U || alternate->packet_bytes > UVC_HOST_PACKET_MAX)
 		return;

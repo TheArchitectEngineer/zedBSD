@@ -33,11 +33,13 @@
 struct thread;
 
 /*
- * The transfers of a stream: four isochronous transfers of 32 packets,
- * or one bulk transfer.
+ * The transfers of a stream: four isochronous transfers of up to 32
+ * packets (an interval's payload each, at most 64 KiB a transfer), or
+ * one bulk transfer.
  */
 #define UVC_ISOCH_URBS			4U
 #define UVC_ISOCH_PACKETS		32U
+#define UVC_ISOCH_TRANSFER_MAX		(64U * 1024U)
 #define UVC_BULK_URBS			1U
 #define UVC_URBS_MAX			UVC_ISOCH_URBS
 

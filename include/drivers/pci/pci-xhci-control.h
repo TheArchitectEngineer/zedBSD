@@ -154,17 +154,30 @@ drv_xhci_endpoint_context_encode(enum drv_usb_speed speed, unsigned type,
 		return 1;
 	}
 	/*
-	 * Isochronous (ws197-p007a1, design 2.1a X7): full speed and high
-	 * speed with one transaction an interval only.  No error retries
-	 * (CErr 0); the interval is 2^(bInterval - 1) frames at full speed
+	 * Isochronous: full speed and high speed.  No error retries (CErr
+	 * 0); the interval is 2^(bInterval - 1) frames at full speed
 	 * (bInterval + 2 as microframes' exponent) and 2^(bInterval - 1)
-	 * microframes at high speed; the most an interval carries is one
-	 * packet.  SuperSpeed and high-bandwidth endpoints are refused.
+	 * microframes at high speed.  A high-speed endpoint may be high
+	 * bandwidth: the extra transactions a microframe in wMaxPacketSize
+	 * bits 12:11 (USB 2.0 9.6.6; 3 is reserved) go to Max Burst Size,
+	 * and an interval carries Max Packet Size x (Max Burst Size + 1)
+	 * bytes (Value(s) referenced: xHCI 1.2 4.14.2.1.1, 6.2.3 and
+	 * 6.2.3.8).  Full speed has no extra transactions; SuperSpeed is
+	 * refused.
 	 */
 	if (type == 1U || type == 5U) {
+		unsigned payload;
+
 		if (speed >= DRV_USB_SPEED_SUPER || speed < DRV_USB_SPEED_FULL)
 			return 0;
-		if ((maximum_packet_size & 0xf800U) != 0 || packet == 0)
+		maximum_burst = (maximum_packet_size >> 11) & 3U;
+		if ((maximum_packet_size & 0xe000U) != 0 || packet == 0 ||
+		    maximum_burst == 3U)
+			return 0;
+		if (speed == DRV_USB_SPEED_FULL && maximum_burst != 0)
+			return 0;
+		if (speed == DRV_USB_SPEED_HIGH && maximum_burst != 0 &&
+		    packet > 1024U)
 			return 0;
 		if (descriptor_interval == 0 || descriptor_interval > 16U)
 			return 0;
@@ -173,9 +186,11 @@ drv_xhci_endpoint_context_encode(enum drv_usb_speed speed, unsigned type,
 			interval = descriptor_interval + 2U;
 		if (interval > 15U)
 			return 0;
+		payload = packet * (maximum_burst + 1U);
 		encoded.word0 = (uint32_t)interval << 16;
-		encoded.word1 = ((type & 7U) << 3) | ((packet & 0xffffU) << 16);
-		encoded.word4 = ((uint32_t)packet << 16) | packet;
+		encoded.word1 = ((type & 7U) << 3) | (maximum_burst << 8) |
+		    ((packet & 0xffffU) << 16);
+		encoded.word4 = ((uint32_t)payload << 16) | payload;
 		*context = encoded;
 		return 1;
 	}

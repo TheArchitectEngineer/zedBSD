@@ -302,9 +302,12 @@ uvc_stream_start(
 
 		/* The endpoint the alternate enabled and its packets. */
 		uvc->endpoint = drv_usb_interface_find_endpoint(uvc->stream_interface, DRV_USB_TRANSFER_ISOCHRONOUS, DRV_USB_DIR_IN, NULL);
+		/* A packet is an interval's payload: the transactions an interval times their size. */
 		uvc->urb_count = UVC_ISOCH_URBS;
+		uvc->packet_bytes = uvc->alternates[position].capacity;
 		uvc->packet_count = UVC_ISOCH_PACKETS;
-		uvc->packet_bytes = uvc->alternates[position].packet_bytes;
+		if ((size_t)uvc->packet_count * uvc->packet_bytes > UVC_ISOCH_TRANSFER_MAX)
+			uvc->packet_count = (unsigned)(UVC_ISOCH_TRANSFER_MAX / uvc->packet_bytes);
 		uvc->urb_bytes = (size_t)uvc->packet_count * uvc->packet_bytes;
 	} else {
 		/* A bulk stream: one transfer of the payload, in whole packets, at most 64 KiB. */

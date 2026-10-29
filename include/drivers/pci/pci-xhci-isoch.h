@@ -125,6 +125,36 @@ struct drv_xhci_isoch {
 	uint32_t strays;
 };
 
+/*
+ * The Isoch TRB's Transfer Burst Count (bits 8:7) and Transfer Last Burst
+ * Packet Count (bits 19:16) for one TD of length bytes on an endpoint of
+ * packet bytes and maximum_burst extra transactions, as control bits.
+ * TDPC counts a partial or zero-length packet as one; TBC is
+ * roundup(TDPC / (Max Burst Size + 1)) - 1 and TLBPC the last burst's
+ * packets less one (Value(s) referenced: xHCI 1.2 4.11.2.3, 4.14.1 and
+ * Table 6-34).  A controller older than 1.0 (version, HCIVERSION) has
+ * neither field; 0 there.
+ */
+static inline uint32_t
+drv_xhci_isoch_burst_bits(unsigned version, unsigned packet,
+	unsigned maximum_burst, uint32_t length)
+{
+	uint32_t packets;
+	uint32_t burst;
+	uint32_t count;
+	uint32_t residue;
+	uint32_t last;
+
+	if (version < 0x100U || packet == 0)
+		return 0;
+	packets = length == 0 ? 1U : (length + packet - 1U) / packet;
+	burst = maximum_burst + 1U;
+	count = (packets + burst - 1U) / burst - 1U;
+	residue = packets % burst;
+	last = residue == 0 ? maximum_burst : residue - 1U;
+	return ((count & 3U) << 7) | ((last & 15U) << 16);
+}
+
 void drv_xhci_isoch_init(struct drv_xhci_isoch *isoch, unsigned slots);
 unsigned drv_xhci_isoch_room(const struct drv_xhci_isoch *isoch);
 int drv_xhci_isoch_enqueue(struct drv_xhci_isoch *isoch, uintptr_t tag, unsigned count, const uint32_t *lengths, unsigned *first);

@@ -439,12 +439,12 @@ case_probe(
 	printf("probe: PASS\n");
 }
 
-/* Checks the alternates: the host's mark, the smallest that fits, and ENOSPC. */
+/* Checks the alternates: the host's mark, the smallest that fits, high bandwidth, and ENOSPC. */
 static void
 case_alternates(
 	void)
 {
-	struct uvc_alternate alternates[4];
+	struct uvc_alternate alternates[5];
 	unsigned position;
 	int error;
 
@@ -452,27 +452,37 @@ case_alternates(
 	uvc_alternate_describe(&alternates[1], 2U, 0x81U, 1024U, 1U, UVC_SPEED_HIGH, 0U);
 	uvc_alternate_describe(&alternates[2], 3U, 0x81U, 512U, 1U, UVC_SPEED_HIGH, 0U);
 	uvc_alternate_describe(&alternates[3], 4U, 0x81U, (uint16_t)(0x1000U | 1024U), 1U, UVC_SPEED_HIGH, 0U);
+	uvc_alternate_describe(&alternates[4], 5U, 0x81U, (uint16_t)(0x1800U | 1024U), 1U, UVC_SPEED_HIGH, 0U);
 	assert(alternates[0].accepted && alternates[1].accepted && alternates[2].accepted);
-	assert(!alternates[3].accepted);
+	assert(alternates[3].accepted && alternates[3].transactions == 3U);
 	assert(alternates[3].capacity == 3072U);
-	assert(uvc_alternate_host_max(alternates, 4U) == 1024U);
-	assert(uvc_alternate_device_max(alternates, 4U) == 3072U);
+	assert(!alternates[4].accepted);
+	assert(uvc_alternate_host_max(alternates, 5U) == 3072U);
+	assert(uvc_alternate_device_max(alternates, 5U) == 4096U);
 
 	/* The smallest that holds the payload. */
-	error = uvc_alternate_choose(alternates, 4U, 300U, &position);
+	error = uvc_alternate_choose(alternates, 5U, 300U, &position);
 	assert(error == 0 && position == 2U);
-	error = uvc_alternate_choose(alternates, 4U, 1024U, &position);
+	error = uvc_alternate_choose(alternates, 5U, 1024U, &position);
 	assert(error == 0 && position == 1U);
 
-	/* None the host takes holds a high-bandwidth payload. */
-	error = uvc_alternate_choose(alternates, 4U, 2048U, &position);
+	/* A high-bandwidth payload takes the three-transaction alternate. */
+	error = uvc_alternate_choose(alternates, 5U, 2048U, &position);
+	assert(error == 0 && position == 3U);
+
+	/* None the host takes holds more than three transactions of 1024. */
+	error = uvc_alternate_choose(alternates, 5U, 3073U, &position);
 	assert(error == ENOSPC);
 
-	/* SuperSpeed is not taken; full speed is. */
+	/* SuperSpeed is not taken; full speed is, but not with extra transactions; a packet over 1024 is not. */
 	uvc_alternate_describe(&alternates[0], 1U, 0x81U, 1024U, 1U, UVC_SPEED_SUPER, 49152U);
 	assert(!alternates[0].accepted && alternates[0].capacity == 49152U);
 	uvc_alternate_describe(&alternates[0], 1U, 0x81U, 1023U, 1U, UVC_SPEED_FULL, 0U);
 	assert(alternates[0].accepted);
+	uvc_alternate_describe(&alternates[0], 1U, 0x81U, (uint16_t)(0x0800U | 512U), 1U, UVC_SPEED_FULL, 0U);
+	assert(!alternates[0].accepted);
+	uvc_alternate_describe(&alternates[0], 1U, 0x81U, 1100U, 1U, UVC_SPEED_HIGH, 0U);
+	assert(!alternates[0].accepted);
 	printf("alternates: PASS\n");
 }
 
