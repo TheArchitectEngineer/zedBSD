@@ -316,30 +316,38 @@ packet_buf_free(
 	packet->control = NULL;
 	packet->control_release = NULL;
 
-	/* Puts a standard packet's slot, found from the packet's address, back on its stack. */
+	/*
+	 * Puts a standard packet's slot, found from the packet's address, back
+	 * on its stack.  A class whose array was never allocated (no jumbo
+	 * packets on a 32-bit board, or memory short) has no range to look in.
+	 */
 	address = (uintptr_t)packet;
-	first = (uintptr_t)&packet_pool[0];
-	end = (uintptr_t)&packet_pool[packet_count];
-	if (address >= first && address < end) {
-		index = (address - first) / sizeof(packet_pool[0]);
-		if (&packet_pool[index].packet == packet && packet_pool[index].used != 0) {
-			packet_pool[index].used = 0;
-			packet_free_stack[packet_free_count] = (uint16_t)index;
-			packet_free_count++;
-			packet_used--;
+	if (packet_pool != NULL) {
+		first = (uintptr_t)&packet_pool[0];
+		end = (uintptr_t)&packet_pool[packet_count];
+		if (address >= first && address < end) {
+			index = (address - first) / sizeof(packet_pool[0]);
+			if (&packet_pool[index].packet == packet && packet_pool[index].used != 0) {
+				packet_pool[index].used = 0;
+				packet_free_stack[packet_free_count] = (uint16_t)index;
+				packet_free_count++;
+				packet_used--;
+			}
 		}
 	}
 
 	/* The same for a jumbo packet. */
-	first = (uintptr_t)&packet_jumbo_pool[0];
-	end = (uintptr_t)&packet_jumbo_pool[packet_jumbo_count];
-	if (address >= first && address < end) {
-		index = (address - first) / sizeof(packet_jumbo_pool[0]);
-		if (&packet_jumbo_pool[index].packet == packet && packet_jumbo_pool[index].used != 0) {
-			packet_jumbo_pool[index].used = 0;
-			packet_jumbo_free_stack[packet_jumbo_free_count] = (uint16_t)index;
-			packet_jumbo_free_count++;
-			packet_jumbo_used--;
+	if (packet_jumbo_pool != NULL) {
+		first = (uintptr_t)&packet_jumbo_pool[0];
+		end = (uintptr_t)&packet_jumbo_pool[packet_jumbo_count];
+		if (address >= first && address < end) {
+			index = (address - first) / sizeof(packet_jumbo_pool[0]);
+			if (&packet_jumbo_pool[index].packet == packet && packet_jumbo_pool[index].used != 0) {
+				packet_jumbo_pool[index].used = 0;
+				packet_jumbo_free_stack[packet_jumbo_free_count] = (uint16_t)index;
+				packet_jumbo_free_count++;
+				packet_jumbo_used--;
+			}
 		}
 	}
 
@@ -836,21 +844,25 @@ packet_buf_physical(
 	uintptr_t first;
 	uintptr_t end;
 
-	/* A standard packet's data, by its distance from the array's start. */
+	/* A standard packet's data, by its distance from the array's start (an array never allocated has no address). */
 	address = (uintptr_t)packet->data;
-	first = (uintptr_t)packet_pool;
-	end = (uintptr_t)&packet_pool[packet_count];
-	if (packet_pool_physical != 0 && address >= first && address < end) {
-		*physical = (uint64_t)packet_pool_physical + (address - first);
-		return 0;
+	if (packet_pool != NULL && packet_pool_physical != 0) {
+		first = (uintptr_t)packet_pool;
+		end = (uintptr_t)&packet_pool[packet_count];
+		if (address >= first && address < end) {
+			*physical = (uint64_t)packet_pool_physical + (address - first);
+			return 0;
+		}
 	}
 
 	/* The same for a jumbo packet. */
-	first = (uintptr_t)packet_jumbo_pool;
-	end = (uintptr_t)&packet_jumbo_pool[packet_jumbo_count];
-	if (packet_jumbo_pool_physical != 0 && address >= first && address < end) {
-		*physical = (uint64_t)packet_jumbo_pool_physical + (address - first);
-		return 0;
+	if (packet_jumbo_pool != NULL && packet_jumbo_pool_physical != 0) {
+		first = (uintptr_t)packet_jumbo_pool;
+		end = (uintptr_t)&packet_jumbo_pool[packet_jumbo_count];
+		if (address >= first && address < end) {
+			*physical = (uint64_t)packet_jumbo_pool_physical + (address - first);
+			return 0;
+		}
 	}
 
 	/* Not known. */

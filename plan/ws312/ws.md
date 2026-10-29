@@ -2,9 +2,9 @@
 
 # WS312: IPv6 の fragment の受け取りと再組立て
 
-Status: planning
+Status: incomplete
 Primary Milestone: MG005
-Resume point: p001（調べと設計）。担当は P6（q1672）。
+Resume point: 全 Phase cleared（2026-10-29）。WS の受け入れの確かめと完了の判定は Q1。担当は P6（q1672）。
 
 ## ユーザーの指示（原文、2026-10-29）
 
@@ -20,11 +20,11 @@ Resume point: p001（調べと設計）。担当は P6（q1672）。
 - 試験: host の単体の試験（順・逆順・重なり・欠け・時間切れ・上限）と QEMU の guest で大きい UDP・ping6 の fragment の受け取り（相手は host の Linux）。
 - P6 の通常の「実装だけ・merge しない」とは違い、この WS はユーザーの今回の指示で、試験まで行い merge する（Q1 の解釈。2026-10-29）。
 
-## Phase（案、p001 で確定）
+## Phase
 
 | Phase | 目的 | 状態 | 依存 |
 | --- | --- | --- | --- |
-| p001 | 調べと設計（RFC 8200・5722・6946、今の ipv6.c の extension の walk、資源の上限、時間切れの timer の口） | planning | — |
-| p002 | 再組立ての実装と host の単体の試験 | planning | p001 |
-| p003 | QEMU の試験（大きい UDP・ping6 の fragment） | planning | p002 |
-| p004 | 規約の全文の見直し | planning | p002 |
+| [p001](phase001/phase.md) | 調べと設計（RFC 8200・5722・6946、今の ipv6.c の extension の walk、資源の上限、時間切れの timer の口） | cleared | — |
+| [p002](phase002/phase.md) | 再組立ての実装と host の単体の試験 | cleared | p001 |
+| [p003](phase003/phase.md) | QEMU の試験（大きい UDP・ping6 の fragment、手で作る fragment と walk との結合） | cleared | p002 |
+| [p004](phase004/phase.md) | 規約の全文の見直し | cleared | p002・p003 |

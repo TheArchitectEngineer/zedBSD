@@ -6,9 +6,9 @@
  */
 
 /*
- * IPv6 inside the network stack (ws130-p002; plan/ws130/phase001 section
- * 3): the layer (ipv6.c: the interfaces' addresses and link values, the
- * routes, input and output, the timers), ICMPv6 (icmp6.c), neighbor
+ * IPv6 inside the network stack: the layer (ipv6.c: the interfaces'
+ * addresses and link values, the routes, input and output, the timers),
+ * the reassembly of fragments (ipv6-frag.c), ICMPv6 (icmp6.c), neighbor
  * discovery (nd6.c) and multicast listener reports (mld6.c).  The tables'
  * pure parts are in in6.h.
  */
@@ -63,6 +63,7 @@ struct packet_buf;
 #define ICMP6_PARAMETER_HEADER		0U
 #define ICMP6_PARAMETER_NEXT_HEADER	1U
 #define ICMP6_PARAMETER_OPTION		2U
+#define ICMP6_PARAMETER_FIRST_FRAGMENT	3U
 
 /* The neighbor discovery options (RFC 4861 section 4.6). */
 #define ND6_OPTION_SOURCE_LINK		1U
@@ -84,7 +85,7 @@ struct packet_buf;
 #define IPV6_REDIRECT_MS		600000U
 #define IPV6_PATH_MTU_MS		600000U
 
-/* The input function of a next header (the transports, from ws130-p003). */
+/* The input function of a next header (a transport). */
 typedef int (*ipv6_input_fn)(struct packet_buf *packet, const struct in6_addr *source, const struct in6_addr *destination);
 
 /*
@@ -142,6 +143,13 @@ uint64_t ipv6_timer_next_deadline(void);
 void ipv6_purge_device(struct net_device *device);
 uint64_t ipv6_now_ms(void);
 
+/* ipv6-frag.c (ipv6_fragment_input consumes the packet unless it returns 0) */
+void ipv6_fragment_init(void);
+int ipv6_fragment_input(struct packet_buf **packet, uint8_t *next_header, size_t *offset, size_t *field);
+void ipv6_fragment_timer_run(uint64_t now_ms);
+uint64_t ipv6_fragment_deadline(void);
+void ipv6_fragment_purge_device(struct net_device *device);
+
 /* icmp6.c (icmp6_error consumes the packet; its l3_offset is the invoking packet's header) */
 void icmp6_init(void);
 int icmp6_input(struct packet_buf *packet, const struct in6_addr *source, const struct in6_addr *destination);
@@ -150,7 +158,7 @@ void icmp6_error(struct packet_buf *packet, uint8_t type, uint8_t code, uint32_t
 unsigned icmp6_path_mtu(const struct in6_addr *destination, unsigned link_mtu);
 void icmp6_path_mtu_purge(void);
 
-/* icmp.c: the raw ICMPv6 sockets (ws130-p003), given a copy of every message (packet->data its first byte) */
+/* icmp.c: the raw ICMPv6 sockets, given a copy of every message (packet->data its first byte) */
 void icmp6_raw_deliver(struct packet_buf *packet, const struct in6_addr *source, const struct in6_addr *destination);
 
 /* udp.c, tcp.c: an ICMPv6 error about a datagram or segment this host sent (its addresses and ports as sent) */
