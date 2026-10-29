@@ -159,10 +159,16 @@ kwl_layers_tick(
 	int ready;
 	int home_due;
 	int maps_due;
+	int busy;
 
 	/* Only with the pictures, the output, no frame in flight, in the glass look, with nothing else on the screen. */
 	compose = server->compose;
 	if (compose == NULL || !compose->output_open || compose->output_lost || compose->in_flight)
+		return 0;
+
+	/* Nor a task: the picture's drawing writes host images' staging, which a move to its layout may still be reading. */
+	busy = kwl_compose_tasks_busy(compose);
+	if (busy)
 		return 0;
 	layers = &compose->layers;
 	if (!layers->ready)

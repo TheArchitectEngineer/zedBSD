@@ -1099,6 +1099,9 @@ event_loop(
 		/* The input thread computes the motions from now on with the settings and outputs as they are. */
 		kwl_input_sync(server);
 
+		/* The images' moves to their layout recorded in this pass go to the render thread before the loop waits. */
+		kwl_compose_give_tasks(server);
+
 		/* Poll sees sockets only; typed image fds are consumed immediately during import. */
 		mark = kwl_cycles();
 		ready = poll(descriptors, count, timeout);

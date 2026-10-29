@@ -60,6 +60,7 @@ static void plane_copies_destroy(struct kwl_compose *compose, struct kwl_cursor_
 static int plane_fixed(const struct kwl_server *server, const struct kwl_import *image);
 static const struct kwl_import *plane_copy(struct kwl_server *server, struct kwl_cursor_plane *plane, const struct kwl_import *image);
 static void plane_publish(struct kwl_server *server, struct kwl_cursor_plane *plane, const struct kwl_import *image, int32_t hotspot_x, int32_t hotspot_y, unsigned show);
+static int plane_ready(struct kwl_server *server, const struct kwl_cursor_plane *plane, const struct kwl_import *image);
 static uint64_t plane_period_us(const struct kwl_server *server);
 static uint64_t plane_hold_us(const struct kwl_server *server);
 
@@ -294,6 +295,7 @@ kwl_cursor_plane_update(
 	unsigned failed;
 	unsigned shown;
 	int fixed;
+	int ready;
 	int state;
 
 	/* An output without the plane composes the cursor. */
@@ -347,6 +349,16 @@ kwl_cursor_plane_update(
 		plane_publish(server, plane, NULL, 0, 0, 1U);
 		return;
 	}
+
+	/*
+	 * An image whose move to its layout has not completed yet is not given
+	 * to the cursor thread, which reads it apart from the render thread's
+	 * order (nor are the copies written before theirs has): the box keeps
+	 * what it shows until a later pass.
+	 */
+	ready = plane_ready(server, plane, image);
+	if (!ready)
+		return;
 
 	/* A shape or the arrow as it is; a client's cursor through a copy, unless both are in use now. */
 	shown_image = image;
@@ -760,6 +772,32 @@ plane_copy(
 
 	/* Succeeded: the copy holds the image now. */
 	return copy;
+}
+
+/* Tells whether an image and the plane's copies have completed their moves to their layout, so the cursor thread may read them; 1 when they have. */
+static int
+plane_ready(
+	struct kwl_server *server,
+	const struct kwl_cursor_plane *plane,
+	const struct kwl_import *image)
+{
+	unsigned index;
+	int ready;
+
+	/* The image itself. */
+	ready = kwl_compose_task_ready(server->compose, image);
+	if (!ready)
+		return 0;
+
+	/* Each copy a client's cursor goes through. */
+	for (index = 0; index < KWL_CURSOR_COPIES; index++) {
+		ready = kwl_compose_task_ready(server->compose, plane->copies[index]);
+		if (!ready)
+			return 0;
+	}
+
+	/* Succeeded: every one is in its layout. */
+	return 1;
 }
 
 /* Writes what the plane shows to the box when it changed, and wakes the cursor thread. */
