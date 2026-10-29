@@ -27,7 +27,7 @@
 | [p006](phase006/phase.md) | `camcheck` と `pattern.html`（D11）で画素の試験、HDMI capture の YUYV と 1080p の受け入れ、drop の測定、stop/start 100 回の leak、2 つ目の open、device の quirk、bulk の device があれば実地（3〜4 LW） | p004b（高い mode は p005） | in-progress（実装済み・試験未実施、agent/p6-ws282d） |
 | [p007](phase007/phase.md) | Linux の xHCI の quirk の表 → Pi 5・Pi 4・VF2 の確認（T1）、IRQ の中の staging の複写の時間（1.5〜2.5 LW） | p006 | in-progress（表と試験の config だけ、3 板の確認と複写の時間は未実施、agent/p6-ws282d） |
 | [p008](phase008/phase.md) | `CAM_MEMORY_IMPORT`（GPU core と bcm2711 の share の差分は WS282 の担当が書き Q1 が merge、D9）、`camvk`（4〜5 LW） | p004b、p007（Pi 5）、WS279 の V3D | in-progress（実装済み・試験未実施、agent/p6-ws282d） |
-| p009 | `docs/reference/camera.md`、`KERN_SYSTEM_EVENT_CAMERA` と sessiond の seat（Q1 に依頼）、`camcap`・`camcheck` を Tools に（1〜2 LW） | p006 | planned |
+| [p009](phase009/phase.md) | `docs/reference/camera.md`、`KERN_SYSTEM_EVENT_CAMERA` と sessiond の seat（Q1 に依頼）、`camcap`・`camcheck` を Tools に（1〜2 LW） | p006 | in-progress（文書は済み、system.h・seat.c・cam.c の差分は Q1 への patch の案で未適用、agent/p6-ws282d） |
 | p010 | control（UVC の processing unit、id 32 以降。ユーザー「最初は無し」なので後で、2〜3 LW） | p004b | planning |
 | p011 | 規約の全文の見直しと license の監査（2 LW） | p008・p009 | planned |
 | p012 | SuperSpeed の isochronous（TD の分割、FIFO の定数、WS197 の source）。USB 3 の device を買ってから（見積もり未定） | p005、device | planning |
