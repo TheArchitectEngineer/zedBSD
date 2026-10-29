@@ -15,7 +15,8 @@
 # tcp-perf serve on the port and the peer connects with tcp-perf built there from the same source (/tmp/tcp-perf-linux),
 # to the board's own address (over IPv6 its stable global one when ADDRESS is IPv6).  The output is build/ws221-vf2/NAME (plan/tools/fresh-out.sh): summary.txt, the client's and the
 # peer's lines, the samples.  The last line is "vf2-tcp: PASS" when every run moved bytes in both ends' count.
-# --peer USER@HOST,ADDRESS runs the peer on another Linux machine over SSH (its python3, /tmp/perf-peer.py) at ADDRESS
+# --address ADDRESS: the address of this host the peer listens on (default the source of the route to the board; an
+# IPv6 one measures IPv6).  --peer USER@HOST,ADDRESS runs the peer on another Linux machine over SSH (its python3, /tmp/perf-peer.py) at ADDRESS
 # instead of this host (2026-10-29: the 5330's Debian on the board's own switch; the path from the board to this host
 # reorders frames).  --peer-if IF with --mtu sets that peer's adapter IF to the same MTU (sudo ip link, nothing
 # kept); at the end the board's adapter and the peer's go back to 1500.  --ptb AT,MTU[/AT,MTU...] (with --peer, an IPv6
@@ -33,6 +34,7 @@ runs=send,recv
 chunk=131072
 mtu=
 ptb=
+address=
 peer_remote=
 peer_if=
 while [ $# -gt 1 ]; do
@@ -46,6 +48,7 @@ while [ $# -gt 1 ]; do
 	--peer) peer_remote=$2 ;;
 	--peer-if) peer_if=$2 ;;
 	--ptb) ptb=$2 ;;
+	--address) address=$2 ;;
 	*) echo "vf2-tcp: unknown option $1"; exit 2 ;;
 	esac
 	shift 2
@@ -56,6 +59,7 @@ board_ip=${host#*@}
 plug=${VF2_PLUG:-14C19FA80F86}
 export SSHPASS="${VF2_PASSWORD:-kei}"
 server_ip=$(ip route get "$board_ip" | sed -n 's/.* src \([0-9.]*\).*/\1/p' | head -1)
+[ -n "$address" ] && server_ip=$address
 peer_host=
 if [ -n "$peer_remote" ]; then
 	peer_host=${peer_remote%,*}
