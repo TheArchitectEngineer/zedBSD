@@ -2018,17 +2018,19 @@ drv_pci_device_disestablish_irq_checked(
 		 * vector goes; the others keep MSI-X on.
 		 */
 		if (cookie->device->msix_established <= 1U) {
-			/* Checks the drv pci device config write16 result. */
-			if (drv_pci_device_config_write16(
-				    cookie->device,
-				    cookie->capability + PCI_MSIX_CONTROL,
-				    cookie->device->msix_control_original) != 0) {
-				/* Failed. */
+			status = drv_pci_device_config_write16(
+				cookie->device,
+				cookie->capability + PCI_MSIX_CONTROL,
+				cookie->device->msix_control_original);
+			if (status != 0)
 				return EIO;
-			}
 		}
+
+		/* Counts the vector as gone; the count never goes below zero. */
 		if (cookie->device->msix_established != 0U)
 			cookie->device->msix_established--;
+
+		/* Restores the entry's saved vector control. */
 		entry_local1[3] = cookie->msix_entry_saved[3];
 		kern_io_barrier();
 		cookie->msix_state_saved = 0;
