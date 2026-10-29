@@ -36,7 +36,9 @@
     Linux `keiland-linux.mk`（-Werror、glibc の addclosefrom_np）exit 0・0。
   - host `plan/ws309/tests/clip-write/run.sh`（ASan+UBSan）PASS: 60 KiB を 4 KiB の pipe へ、offer は待たず、pass で全て届く、読まない相手は 2 s で一部、lock の clear で閉じる。
   - QEMU（libc）`plan/ws309/tests/spawn-closefrom/run.sh build/ws309/p014w …` PASS（静的に link した試験: 負の fd は EBADF、dup2 で 4 を残して 5 から閉じる）。
-    同じ条件の 2 回（p014u・p014v）は guest の SSH が 240 s で答えず（guest の起動の揺れ、test の中身の前）。
+    同じ条件の 2 回（p014u・p014v）は guest の SSH が 240 s で答えず（test の中身の前。`zdesktop-guest.sh start` は QEMU を起こした（start.log に pid と ssh の port）、
+    `guest.py wait` が「no answer on SSH within 240s」）。image は `build/ws309/img/hdd-image.img`（2026-10-29 14:16 の build、snapshot で起動）、前後の p014t・p014w・p014z は
+    同じ image で答えた。その時の host には他の担当の QEMU（p2-ws068、CPU 84%）が動いていた。原因は未解析（gdbstub・QMP で見ていない、Q1 の指示: 再び出たら gdbstub・QMP で見る）。
   - QEMU（compositor）`plan/ws309/tests/spawn-guest.sh build/ws309/p014z … build/amd64/dynamic/libc.so` PASS: `KWL DESKTOP start pid=122 …`、program は
     3〜20 の fd を何も持たない（`closed-ok`）、`KWL THREADS … io-file …`、KWL FAILED 無し。
 - 注意: この後の compositor は新しい libc の `posix_spawn_file_actions_addclosefrom_np` を要る。古い image に /bin/wayland だけを入れる試験は
