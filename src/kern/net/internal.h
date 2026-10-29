@@ -49,6 +49,13 @@ net_checksum_pseudo(
 	size_t);
 
 uint16_t
+net_checksum_pseudo_partial(
+	uint32_t source,
+	uint32_t destination,
+	uint8_t protocol,
+	size_t length);
+
+uint16_t
 net_checksum_pseudo6(
 	const uint8_t source[16],
 	const uint8_t destination[16],

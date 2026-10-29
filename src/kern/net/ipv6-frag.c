@@ -1119,7 +1119,8 @@ ipv6_fragment_assemble(
 	packet->l3_offset = (uint16_t)(packet->data - packet->storage);
 	packet->l3_length = (uint16_t)total;
 	packet->protocol = first->protocol;
-	packet->flags = first->flags;
+	/* A device checks no transport checksum of a fragment: the whole one is checked above. */
+	packet->flags = first->flags & ~PACKET_BUF_RX_CSUM_L4;
 	packet->device = first->device;
 
 	/* The reassembled packet holds a reference to the device of its own. */

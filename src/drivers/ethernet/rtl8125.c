@@ -420,6 +420,30 @@
 #define RTL_RX_LENGTH_MASK		0x00003fffU
 
 /*
+ * The checksum bits of a descriptor's extended word: on transmit, the
+ * IPv4 header's and the TCP checksum for the controller to compute (the
+ * TCP one only together with the IPv4 one); on receive, what kind of
+ * frame the controller checked and the checksums it found wrong.
+ *
+ * Values referenced: FreeBSD sys/dev/rge/if_rgereg.h, main
+ * 8fa55fdcae4ecbd2ec13ef91cc9d172095e21189 (RGE_TDEXTSTS_IPCSUM,
+ * RGE_TDEXTSTS_TCPCSUM, RGE_RDEXTSTS_TCPCSUMERR, RGE_RDEXTSTS_UDPCSUMERR,
+ * RGE_RDEXTSTS_IPCSUMERR, RGE_RDEXTSTS_TCPPKT, RGE_RDEXTSTS_UDPPKT,
+ * RGE_RDEXTSTS_IPV4, RGE_RDEXTSTS_IPV6); sys/dev/rge/if_rge.c, the same
+ * commit (rge_encap: the TCP checksum takes effect only with the IPv4 one;
+ * rge_rxeof: the checksum flags).
+ */
+#define RTL_TX_CHECKSUM_IPV4		0x20000000U
+#define RTL_TX_CHECKSUM_TCP		0x40000000U
+#define RTL_RX_TCP_CHECKSUM_ERROR	0x01000000U
+#define RTL_RX_UDP_CHECKSUM_ERROR	0x02000000U
+#define RTL_RX_IPV4_CHECKSUM_ERROR	0x04000000U
+#define RTL_RX_TCP			0x10000000U
+#define RTL_RX_UDP			0x20000000U
+#define RTL_RX_IPV4			0x40000000U
+#define RTL_RX_IPV6			0x80000000U
+
+/*
  * The rings: descriptors per ring, the bytes of a receive buffer and of a
  * transmit bounce buffer, which hold a whole frame, and the alignments.
  * The receive ring holds about 1.2 ms of full-size frames at 10 Gbit/s,
@@ -1842,6 +1866,7 @@ static unsigned reclaim_tx(struct rtl_device *device);
 static struct packet_buf *take_tx_done_locked(struct rtl_device *device);
 static void free_tx_done(struct packet_buf *list);
 static unsigned receive_frames(struct net_device *net, unsigned budget);
+static uint32_t rx_checksum_flags(uint32_t extended);
 static void report_tx_errors(struct net_device *net, unsigned errors);
 static void set8(struct rtl_device *device, uint32_t offset, uint8_t bits);
 static void clear8(struct rtl_device *device, uint32_t offset, uint8_t bits);
@@ -2902,6 +2927,7 @@ publish_interface(
 	device->net->hwaddr_len = 6U;
 	kern_memcpy(device->net->hwaddr, device->mac, 6U);
 	device->net->flags = NET_DEVICE_BROADCAST | NET_DEVICE_MULTICAST;
+	device->net->capabilities = NET_DEVICE_CAP_TX_CSUM_IPV4_TCP;
 	device->net->ops = &rtl_operations;
 	device->net->driver_data = device;
 
@@ -3052,6 +3078,7 @@ rtl_transmit(
 	uint64_t started;
 	unsigned long irq;
 	uint32_t command;
+	uint32_t extended;
 	unsigned errors;
 	unsigned slot;
 	size_t length;
@@ -3071,6 +3098,18 @@ rtl_transmit(
 	if (length < RTL_HEADER_BYTES || length > RTL_FRAME_MAX) {
 		packet_buf_free(packet);
 		return EMSGSIZE;
+	}
+
+	/*
+	 * The controller computes the checksums the stack left to it, but not
+	 * those of a short frame, which is padded: they are computed here.
+	 */
+	extended = 0U;
+	if ((packet->flags & PACKET_BUF_TX_CSUM_TCP) != 0) {
+		if (length >= RTL_MIN_FRAME)
+			extended = RTL_TX_CHECKSUM_IPV4 | RTL_TX_CHECKSUM_TCP;
+		else
+			packet_buf_checksum_finish(packet);
 	}
 
 	/*
@@ -3133,7 +3172,7 @@ rtl_transmit(
 		descriptor = &device->tx_ring[slot];
 		descriptor->address_low = (uint32_t)address;
 		descriptor->address_high = (uint32_t)(address >> 32);
-		descriptor->extended = 0U;
+		descriptor->extended = extended;
 		command = RTL_DESCRIPTOR_OWN | RTL_TX_FIRST | RTL_TX_LAST | (uint32_t)length;
 
 		/* Marks the last descriptor of the ring. */
@@ -3661,9 +3700,10 @@ configure_receiver(
 {
 	uint32_t filter;
 
-	/* Leaves VLAN tags and checksums to the stack. */
+	/* Leaves VLAN tags to the stack, and checks the checksums of what it receives. */
 	clear32(device, RTL_REG_RX_CONFIG, RTL_RX_CONFIG_VLAN_STRIP);
-	clear16(device, RTL_REG_CPLUS_COMMAND, RTL_CPLUS_RX_CHECKSUM);
+	write16(device, RTL_REG_CPLUS_COMMAND,
+		(uint16_t)(read16(device, RTL_REG_CPLUS_COMMAND) | RTL_CPLUS_RX_CHECKSUM));
 	(void)read16(device, RTL_REG_CPLUS_COMMAND);
 
 	/* Takes no frame longer than one receive buffer. */
@@ -3804,6 +3844,38 @@ free_tx_done(
 }
 
 /*
+ * Tells which checksums of a received frame the controller checked and
+ * found right, from its descriptor's extended word, as packet flags
+ * (PACKET_BUF_RX_CSUM_*): the IPv4 header's, and the TCP or UDP one over
+ * IPv4 or IPv6.
+ *
+ * Procedure referenced: FreeBSD sys/dev/rge/if_rge.c, main
+ * 8fa55fdcae4ecbd2ec13ef91cc9d172095e21189 (rge_rxeof, the checksum flags).
+ */
+static uint32_t
+rx_checksum_flags(
+	uint32_t extended)
+{
+	uint32_t flags;
+
+	/* The IPv4 header's. */
+	flags = 0U;
+	if ((extended & RTL_RX_IPV4) != 0 && (extended & RTL_RX_IPV4_CHECKSUM_ERROR) == 0)
+		flags |= PACKET_BUF_RX_CSUM_IPV4;
+
+	/* The transport's, over either version. */
+	if ((extended & (RTL_RX_IPV4 | RTL_RX_IPV6)) != 0) {
+		if ((extended & RTL_RX_TCP) != 0 && (extended & RTL_RX_TCP_CHECKSUM_ERROR) == 0)
+			flags |= PACKET_BUF_RX_CSUM_L4;
+		if ((extended & RTL_RX_UDP) != 0 && (extended & RTL_RX_UDP_CHECKSUM_ERROR) == 0)
+			flags |= PACKET_BUF_RX_CSUM_L4;
+	}
+
+	/* Reports the checksums found right. */
+	return flags;
+}
+
+/*
  * Copies up to the budget's received frames into packets, gives their
  * descriptors back, and passes the packets to the stack.
  *
@@ -3870,6 +3942,7 @@ receive_frames(
 					kern_memcpy(payload,
 						    (uint8_t *)device->rx_buffers.address + slot * RTL_BUFFER_BYTES,
 						    length);
+					packet->flags |= rx_checksum_flags(descriptor->extended);
 					valid = 1;
 				}
 			} else {
