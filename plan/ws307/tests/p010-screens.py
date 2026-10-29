@@ -42,8 +42,8 @@ def disks(run: Run):
 	blank(other, 14)
 	gpt(other, 512, (1, 300, ESP, "EFI system partition"), (301, 4096, BASIC, "Basic data partition"))
 	fat(other, 1, 300, "OTHERESP", {"/EFI/BOOT/BOOTX64.EFI": b"MZ another system's loader\n"})
-	return (f"-drive file={run.out}/nvme.img,if=none,id=p10n,format=raw -device nvme,serial=p010n,drive=p10n "
-		f"-device ahci,id=p10ahci -drive file={other},if=none,id=p10s,format=raw -device ide-hd,drive=p10s,bus=p10ahci.0")
+	return (f"-drive file={run.out}/nvme.img,if=none,id=p10n,format=raw,cache=unsafe -device nvme,serial=p010n,drive=p10n "
+		f"-device ahci,id=p10ahci -drive file={other},if=none,id=p10s,format=raw,cache=unsafe -device ide-hd,drive=p10s,bus=p10ahci.0")
 
 
 LIVE_USER = "user"
