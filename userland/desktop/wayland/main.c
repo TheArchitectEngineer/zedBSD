@@ -31,8 +31,6 @@
 #include <time.h>
 #include <unistd.h>
 
-/* How long a login session goes without input before it locks, unless --lock-idle says. */
-#define MAIN_LOCK_IDLE_MS	(10U * 60U * 1000U)
 #include <errno.h>
 #include <stdarg.h>
 #include <stddef.h>
@@ -152,9 +150,11 @@ main(
 	/* The desktop's size until the display is known: the size asked for, unrotated. */
 	kwl_output_size_set(&server, server.size_width, server.size_height, KWL_ROTATE_0);
 
-	/* A login session locks after ten minutes without input unless told otherwise. */
-	if (server.session && !server.lock_idle_given)
-		server.lock_idle_ms = MAIN_LOCK_IDLE_MS;
+	/*
+	 * A login session locks after the time without input its settings
+	 * give (settings.c, power.lock: never unless chosen), or the time
+	 * --lock-idle gave; the time counts from now.
+	 */
 	server.lock_input_ms = kwl_milliseconds();
 
 	/* The times without input before a sleep until the settings say others (the login screen keeps them, N9). */

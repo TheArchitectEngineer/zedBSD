@@ -38,6 +38,7 @@ static int file_has(const char *line);
 static void test_keys(void);
 static void test_read(void);
 static void test_set(void);
+static void test_lock(void);
 static void test_merge(void);
 static void test_hand_edit(void);
 static void test_two_stores(void);
@@ -68,6 +69,7 @@ main(
 	test_keys();
 	test_read();
 	test_set();
+	test_lock();
 	test_merge();
 	test_hand_edit();
 	test_two_stores();
@@ -239,6 +241,31 @@ test_set(void)
 	check(entry != NULL && strcmp(entry->value, "26") == 0 && entry->chosen, "set: 26 is in effect");
 	error = kwl_settings_store_reset(&store, "mouse.speed");
 	check(error == 0 && entry != NULL && strcmp(entry->value, "150") == 0 && !entry->chosen, "set: reset gives the default 150");
+	kwl_settings_store_close(&store);
+}
+
+/* The screen lock's minutes: never without a value in the file, and a user's own value kept. */
+static void
+test_lock(void)
+{
+	struct kwl_settings_store store;
+	struct kwl_settings_entry *entry;
+
+	/* No value in the file: never (0), not chosen. */
+	put_file("mouse.speed=50\n");
+	(void)kwl_settings_store_open(&store, test_home);
+	(void)kwl_settings_store_load(&store);
+	entry = kwl_settings_store_find(&store, "power.lock");
+	check(entry != NULL && strcmp(entry->value, "0") == 0 && !entry->chosen, "lock: without a value the lock is never (%s)", entry != NULL ? entry->value : "-");
+	check(kwl_settings_store_choose(&store, "power.lock", "241") == EINVAL, "lock: 241 minutes is refused");
+	kwl_settings_store_close(&store);
+
+	/* A value the user chose stays. */
+	put_file("power.lock=10\n");
+	(void)kwl_settings_store_open(&store, test_home);
+	(void)kwl_settings_store_load(&store);
+	entry = kwl_settings_store_find(&store, "power.lock");
+	check(entry != NULL && strcmp(entry->value, "10") == 0 && entry->chosen, "lock: the file's 10 minutes stays (%s)", entry != NULL ? entry->value : "-");
 	kwl_settings_store_close(&store);
 }
 
