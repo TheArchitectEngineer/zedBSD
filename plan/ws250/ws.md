@@ -3,11 +3,11 @@
 # WS250: nvrtx の終わらない GPU の仕事の取り消しと復帰（system は動き続ける）
 
 <!-- awesome-plan-current:start -->
-Status: incomplete（すぐ取り組む物。2026-10-27 ユーザー「すぐ取り組むものの一つです。」）。旧: incomplete・保留（2026-10-27 P3 の精査 q1608、ユーザー「…masterとWSを修正して、completedやcanceledにしてください。」: 2026-10-15 夜 ユーザーの即時中断で止めた（ws250/ws.md）、「nvrtx の取り消しと復帰（WS250）は止めたまま」（de…
+Status: incomplete（すぐ取り組む物。2026-10-27 ユーザー「すぐ取り組むものの一つです。」。2026-10-29 から試験なしで実装を進めている: q1676-i01 P5）
 Primary Milestone: MG006
 Parent: [Master](../master.md)
-Related: [WS037](../ws037/ws.md)（nvrtx）、[WS241](../ws241/ws.md)（RTX の描画の速さ、work channel を触る）、`src/drivers/gpu/gpu.c`（共通の GPU の層の監視と drv_gpu_recovery_ops）、`src/drivers/gpu/i915/reset.c`（isolate・reset を持つ手本）
-Resume point: 2026-10-15 夜 ユーザーの即時中断で止めた。design.md の草稿は main（64f05b2c7）にあり、止めた時の未 commit の書き足し（+288/-243 行）は worktree p4 の plan/ws250/temp/design-partial-20261015.patch（git に入れない、64f05b2c7 に当たる）。同じ worktree の未追跡の plan/ws250/design-review.md（止める前に design-reviewer が書いた物）も残っている。再開はユーザーの指示で。以前: q1206（P4）で p001。design.md を書いた（2026-10-15）。design-reviewer の review（design-review.md）を受けて blocker・major を直し、Phase の表（p002〜p006）を確定する。
+Related: [WS037](../ws037/ws.md)（nvrtx）、[WS291 p011](../ws291/phase011/phase.md)（非同期の submit、この WS はその上に作る）、[WS242](../ws242/ws.md)（Ampere/Ada、chid の管理）、`src/drivers/gpu/gpu.c`（共通の GPU の層の監視と drv_gpu_recovery_ops）、`src/drivers/gpu/i915/reset.c`（isolate の手本）
+Resume point: 2026-10-29 P5（q1676-i01、worktree p5-ws250）。design.md 第 6 版（review 1 回: design-review-v5.md、指摘は第 6 版で直した）。p002 の実装を進めている（phase002/phase.md の「実装」）。次は p002 の残り（host 試験）→ p003 → p005 → p004 → p007。実機の試験は p005 の後にまとめて Q1 の割当で。
 <!-- awesome-plan-current:end -->
 
 ## ユーザーの指示（原文、2026-10-15）
@@ -39,11 +39,16 @@ Resume point: 2026-10-15 夜 ユーザーの即時中断で止めた。design.md
 - 期限を過ぎた仕事を GPU の上で取り消す（channel の停止・作り直し、GSP の RM の口を使う）。
 - 取り消しの後に GPU を使える状態に戻す（共通の層の `isolate`（その session だけ隔離）と、必要なら `reset`（device の作り直し）を実装する）。
 - compositor の仕事が app の詰まった仕事の後ろで待たされない形（session ごとの channel か、取り消しで後ろの仕事を流し直す）を設計で決める。
-- 試験: host 試験（期限・状態機械）と、RTX 機（10.0.30.5）の実機で「無限 loop の compute shader を出す試験の app → その app だけ DEVICE_LOST、desktop は動き続け、別の app が描ける」。
+- 試験: host 試験（chid・犯人の判定の scheduler の model・状態機械）と、RTX 2070 を差した 10.0.10.3（RDNA と差し替えた素の起動、`plan/tools/gpu-perf/machines/rtx.conf`）の実機で「終わらない fragment shader を描く vkhang → その app だけ DEVICE_LOST、desktop と mview は動き続け、別の app が描ける」（design.md 6.3 の S0〜S6）。
 
-## Phase（案、p001 で確定）
+## Phase（p001 で確定、2026-10-29 design.md 第 6 版の 7 節。必須 34 LW、LW は ±50%）
 
-| Phase | 内容 | 状態 |
-| --- | --- | --- |
-| [p001](phase001/phase.md) | 設計: GSP の RM の channel の停止・作り直しの口の調べ、session ごとの channel か共有の channel の作り直しか、isolate・reset の実装の形、期限の値、compositor の扱い、試験の道。design-reviewer を通す | in-progress（2026-10-18 Q1: phase.md に合わせた。旧: planned） |
-| p002〜 | 実装（p001 で分割） | planned |
+| Phase | 内容 | 状態 | 依存 |
+| --- | --- | --- | --- |
+| [p001](phase001/phase.md) | 設計（design.md 第 6 版、design-reviewer 1 回） | cleared（2026-10-29 P5。第 6 版の直しは再 review を受けていない） | — |
+| [p002](phase002/phase.md) | session ごとの channel、`rpc_lock` と drain の turn、chid の next-fit と host 試験 | in-progress（実装中・試験未実施） | p001 |
+| [p003](phase003/phase.md) | 犯人の手がかり（GR の照合・始まりの印）、reaper の見張りと取り消し、RC の event、ops（stop_poll・isolate）、host 試験（scheduler の model） | planned | p002 |
+| [p004](phase004/phase.md) | 実機の scenario の script（rtx-hang-check.sh、S0〜S6） | planned | p002 |
+| [p005](phase005/phase.md) | session ごとの lane（番号ごとの thread の pool）と executor の待ちの一部の lock の外出し | planned | p003 |
+| p006 | 選択肢: `reset`（GSP の再起動）。既定は作らない（ユーザーの判断） | planned（選択肢） | — |
+| [p007](phase007/phase.md) | 規約の全文と出典の監査、ws.md を完了の形に | planned | 全部 |

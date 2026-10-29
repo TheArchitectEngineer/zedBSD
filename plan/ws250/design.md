@@ -2,7 +2,7 @@
 
 # WS250 設計: nvrtx の終わらない GPU の仕事の取り消しと復帰（system は動き続ける）
 
-第 5 版（2026-10-29 P5、q1676-i01）。WS291 p011（P2）が main に入れた非同期の submit（`vk-node.c` の submit・wait の分離、
+第 6 版（2026-10-29 P5、q1676-i01。第 5 版を design-reviewer の [design-review-v5.md](design-review-v5.md)（blocker 2・major 7・minor 12）で直した。対応は 12 節）。第 5 版はWS291 p011（P2）が main に入れた非同期の submit（`vk-node.c` の submit・wait の分離、
 `runtime.c` の completer、`work.c` の `nvrtx_work_passed`）の上に作る形に、第 1 版〜第 4 版（P4・P5、2026-10-15・10-29）を一本に書き直した。
 第 1〜4 版の本文・改訂の表（R1〜R12・T1〜T13・W1〜W5）と design-reviewer の指摘（[design-review.md](design-review.md) の B1・B2・M1〜M13）は
 この版の該当の節に溶かした（対応は 12 節）。前の版の全文は git の履歴にある。code は書かない。読んだ code は main `69c15ae94`。
@@ -23,15 +23,15 @@ session ごとの channel（案 A）と session ごとの worker を必須に含
 | # | 決めたこと | 節 |
 | --- | --- | --- |
 | 1 | **session ごとの channel**（`struct nvrtx_work_channel`）を session の最初の frame で遅延して作る。vaspace（page table）は今の 1 本を共有し、channel ごとに user の heap から 2 MiB の VA の区画を取って ring・semaphore・fence の push・own の context buffer を置く。作れなければ（RM の拒否・32 個の上限）その session は今の共有の work channel（chid 4）を使う（今と同じ振る舞いへの退避） | 4.1、4.2 |
-| 2 | **run の始まりの印**: 全ての submit の segment の前に、待たない semaphore の release（GPU の timer つき、今の timed の start stamp と同じ形）を置く。「始まったが終わらない run」と、その始まりの GPU の時刻が分かる | 4.3 |
-| 3 | **犯人の判定**: 期限（submit から 2 s）を過ぎた run は、自分が始まって 2 s 以上走っていればその session の喪失。始まっていなければ（他の channel の run が GR を占めて待たされている被害者）、始まって 2 s 以上走っている他の channel を犯人として取り消しを頼み、自分の期限を「取り消しの終わり + 2 s」まで延ばす。延長は合わせて 3 回まで | 4.4 |
-| 4 | **回復の thread**（node に 1 本、`reaper`）: 250 ms ごとに全 channel を見る見張り（待つ者がいない run も見つける）と、取り消しの実行。取り消しは STOP_CHANNEL（bImmediate=1）→ 失敗なら RC の event を 500 ms 待つ → 来なければ RESET_CHANNEL → 証拠があれば SCHEDULE off・object の FREE・channel の FREE。RPC の timeout は今の 5 s と `rpc_unanswered` のまま | 4.5 |
+| 2 | **犯人の手がかり**: 主は GR に今載っている context（FECS の current context の register と channel の instance block の照合、4.3）。読めない時の代わりに、全ての submit の segment の前に置く待たない release（start stamp）で「始まったが終わらない run」とその始まりの時刻を見て、**最後に始まった channel** を犯人にする（WFI の preempt で GR を取った者が最後に始まる） | 4.3 |
+| 3 | **判定は reaper だけ**: 待つ側（executor・completer）は期限（submit か最後の取り消しの終わりから 2 s）で reaper を起こし、自分の channel が READY の間は待ち続ける（上限は submit から 8 s、越えたら自分を喪失）。reaper が「期限を過ぎた run がある」時に犯人を 1 つ選んで取り消す。判定は hardware に触らない関数（`recover.c`、host 試験に scheduler の model） | 4.4 |
+| 4 | **回復の thread**（node に 1 本、`reaper`、node の寿命の間）: 250 ms ごとの見張りと、取り消しの唯一の実行者。取り消しは STOP_CHANNEL（bImmediate=1）→ 失敗なら RC の event を 500 ms 待つ → 来なければ RESET_CHANNEL → 証拠があれば SCHEDULE off・object の FREE・channel の FREE。RPC の timeout は今の 5 s と `rpc_unanswered` のまま。共有の channel（退避）の犯人は共有の channel ごと取り消し、共有の session を全部喪失にする | 4.5 |
 | 5 | **RC の event**（`NVRTX_EVENT_CHANNEL_ERROR`）を chid で channel に結ぶ: その channel の session を喪失にし（`run_lost`）、rc の印を立て、reaper を起こす。handler は queue_lock だけで動く。type 79（bus から落ちた）は device の fault | 4.6 |
 | 6 | **`rpc_lock`**: runtime の RM の call（channel の open・close・kill）と drain の turn を直列にする mutex。drain は 20 ms の turn ごとに手放し、待つ者がいれば 1 tick 寝て譲る | 4.7 |
-| 7 | **共通の層の ops**: `stop_begin` は今のまま（kill を頼まない）、`stop_poll` は channel に終わらない run があるか取り消しの途中なら EAGAIN、`isolate` は「GPU がもうその channel を走らせない証拠」（STOP が 0、その chid の RC、RESET が 0）がある時に quarantine して 0（無ければその場で同期の取り消しを 1 回試す）、`reset` は作らない | 4.8 |
-| 8 | **session ごとの lane**（worker と completer の対、Q250-5）: 今の node の 1 本の worker・completer を session ごとにする。加えて executor の GPU の待ち（slot の再利用、CPU の copy の前、idle）は `node->lock` を手放して待つ（session の executor は session の `exec_lock` で守る）。他の session の frame は詰まった session の待ちの後ろに並ばない | 4.9 |
+| 7 | **共通の層の ops**: `stop_begin` は今のまま（kill を頼まない）、`stop_poll` は channel に終わらない run があるか取り消しの途中なら EAGAIN、`isolate` は今の state だけで答える（FREED・STOPPED・NONE・終わらない run の無い channel は quarantine して 0、他は EIO で device の fault。取り消しはしない: 実行者は reaper だけ）、`reset` は作らない | 4.8 |
+| 8 | **session ごとの lane**（worker と completer の対、Q250-5）: channel の番号ごとに 1 組の thread を node の寿命の間持ち（最初に使う時に作り、終わらせない: thread の終わりを待つ API が無い）、その番号の channel を持つ session の frame・marker を扱う。共有の session は今の node の worker・completer。executor の待ちのうち slot の再利用と CPU の copy の前の待ちだけ `node->lock` を手放す（destructor の中の idle は手放さない）。session の executor は `exec_lock` で守る | 4.9 |
 | 9 | UAPI・`include/drivers/gpu/gpu.h`・HAL・libvulkan・`vk/nvrtx-vk.h` の口は変えない（host 試験 `nvrtx-vk-host-test.sh` の stub はそのまま通る） | 5 |
-| 10 | Phase: p002 channel（7 LW）、p003 検出と取り消し（9 LW）、p004 実機の scenario の script（2 LW）、p005 lane（9 LW）、p006 reset（選択肢、作らない）、p007 規約の全文と出典の監査（2 LW）。必須 29 LW | 7 |
+| 10 | Phase: p002 channel（8 LW）、p003 検出と取り消し（12 LW）、p004 実機の scenario の script（2 LW）、p005 lane（10 LW）、p006 reset（選択肢、作らない）、p007 規約の全文と出典の監査（2 LW）。必須 34 LW | 7 |
 
 ## 1. 今の振る舞い（main 69c15ae94 の code の事実）
 
@@ -80,6 +80,7 @@ Mesa 25.3.6（MIT）。実装では block ごとに「Value(s) referenced:」「
 | F9 | preemption は既定 WFI: 長い draw の途中で GR は channel を切り替えない。無限 loop の draw の間、同じ runlist の他の channel は GR に載らない（取り消しが要る理由）。GFXP・CILP は追加の buffer が要り nouveau も使わない | `ctrl2080gr.h` 805〜833 行、`kernel_graphics.c` 155〜159 行 |
 | F10 | GPU の timer: PTIMER の TIME_0 0x9400（下位）・TIME_1 0x9410（上位）、上位・下位・上位の順に読み、上位が変わったら読み直す。semaphore の release の timestamp と同じ ns の時計 | nouveau `nvkm/subdev/timer/nv04.c`（`nv04_timer_read`）、`regsnv04.h` |
 | F11 | Ampere 以降は runlist ごとの chid。この WS は Turing（RTX 2070）だけを受け入れの対象にする（WS242 に連絡済み） | ogkm `kernel_fifo_init.c` 139〜194 行 |
+| F12 | FECS の current context: register 0x409b00 の下位 28 bit が GR に載っている context の instance block の address >> 12（nouveau は GR の割り込みでこれから channel を引く） | nouveau `nvkm/engine/gr/gf100.c`（`gf100_gr_intr`、`gf100_gr_ctxsw_inst`） |
 
 ## 4. 設計
 
@@ -102,8 +103,9 @@ gpu
 - 案 A（session ごとの channel）の効き目: 詰まった run の後ろに他の session の run が ring で並ばない。取り消しの後、他の channel はそのまま進む
   （共有の channel では後ろの run も全部失った: 1 節の実機の事実）。GR の上は WFI なので、取り消しまでの約 2 s は他の channel も GR に載らない（F9）。
   この 2 s の停滞は session ごとの worker でも消えない（GPU の側の制限）。消すには GFXP の preemption（Future Work）。
-- 退避: session の channel が作れなかった session は driver の channel（chid 4）を共有で使う。その session の取り消しはしない（今の振る舞い: 期限で喪失、
-  後ろの run も失う）。boot の語 `nvrtx.channels=0` で全 session を退避にできる（実機で A/B を比べるため。既定は 1）。
+- 退避: session の channel が作れなかった（RM が拒んだ、32 個が尽きた）session は driver の channel（chid 4）を共有で使う。その session が犯人の時は
+  reaper が共有の channel ごと取り消し、共有の全 session を喪失にする（review v5 の M1。今は誰も取り消さず GR が止まったまま）。取り消した後の
+  新しい session は共有に入れない（channel を作れなければ EIO）。boot の語 `nvrtx.channels=0` で全 session を退避にできる（実機で A/B を比べる。既定は 1）。
 
 ### 4.2 session の channel（p002）
 
@@ -122,51 +124,58 @@ gpu
   3. instance block（共有の table の root）、channel の allocate（chid、USERD の index と page は chid から、F7）、promote に **VA の配列**を渡す
      （`nvrtx_gr_promote(gpu, handle, physical, va, golden)`。driver の channel は `gr->virtual_address`、session の channel は区画の VA。global の buffer は
      どちらも golden の VA、F8）、3D・compute の object、bind、schedule。
-  4. first submission（class の bind）と fence を 2 s 待つ。
-  失敗は途中まで作った物を close と同じ順で戻し、session を退避（4.1）にする。log `channel %u: session channel on runlist %u` と失敗の段。
+  4. first submission（class の bind）。**fence を待たない**（review v5 M2 a: GR が他の channel に詰まっている間は first fence が来ず、待つと
+     その session を一生退避にしてしまう）。後の run はこの submission の後ろに並ぶので、class の bind が先に済む。
+  RM の失敗（status）だけを open の失敗にし、途中まで作った物を close と同じ順で戻して退避（4.1）にする。RM が通しても GPU の側で働かない
+  channel（U3）は、その session の run が期限で喪失になる形で現れる（その時の逃げ道は `nvrtx.channels=0`）。
+  log `channel %u: session channel on runlist %u` と失敗の段。
+- 大きさ: VA の区画と arena の大きさは own の buffer の `page_shift` の揃えを含めて計算し、2 MiB に入らなければ ENOSPC で退避（review v5 m5）。
+- 不変条件: session の channel は最初に決めた物（自分の物か共有か）から変わらない。作るのは `node->channel_lock` の下で 1 度だけ（worker と
+  `runtime_command` の thread が同時に来ても 1 つ）。`session->channel` と `channels[]` は RM の call が終わってから `queue_lock` の下で公開する。
 - chid: 16〜47 の 32 個を bitmap で、**直前に使った次から**探す（next-fit。遅れた RC の event が新しい channel に当たらないよう、すぐ再利用しない）。
   RM の handle は channel 0xf1f00010+n、3D 0x97000010+n、compute 0xc5c00010+n（n = chid − 16）。
 - 作る時: lane の worker（または `runtime_command` の thread）が frame を executor に渡す前、`node->lock` の外で（RM の call を `node->lock` の下で
   しない）。faulted・stopping の session は作らない。
-- close（`node_close`）: READY なら SCHEDULE off → object・channel の FREE（`rpc_lock`）→ 区画の PTE を外す → VRAM・buffer・chid を返す。
+- close（`node_close`）の順: lane の queue が空（drain 済み）→ executor の close（detach・free は channel の semaphore を読む）→ channel の close
+  （review v5 m7）。channel の close は READY なら SCHEDULE off → object・channel の FREE → 区画の PTE を外す → VRAM・buffer・chid を返す。
   FREED（取り消し済み）なら RM の call は無く資源を返す。STOPPED・STUCK（4.10）は返さない（GSP の停止まで device の物）。
 - 範囲の明記: vaspace を共有するので、壊れた shader が他の session の memory を壊すことは防がない（今の 1 本の channel と同じ。分割は別の課題）。
 
-### 4.3 run の始まりの印（p003）
+### 4.3 犯人の手がかり（p003）
 
-- 全ての submit を「start stamp（待たない release、timer つき）→ segment →（timed なら end stamp）→ fence」にする（ring の entry は 3、timed で 4）。
-  今の timed の record（semaphore の page の `WORK_RUNS_AT`、64 個）をそのまま使う。
-- `nvrtx_work_channel_started(channel, fence, &gpu_ns)`: record の start の値が fence なら始まった（と、その GPU の時刻）。
-  record は 64 run 後に上書きされるが、終わらない run の後ろの run は始まらないので、終わらない run の record は残る。
-- channel の「最も古い終わらない run」= semaphore の値 + 1（fence は channel の通し番号、0 を飛ばす）。それが newest を越えていなければ未完がある。
-- GPU の今の時刻は PTIMER を読む（F10、`nvrtx_gpu_timer_ns`）。読めない（0 や戻る）時は CPU の時刻で「始まりを最初に見た時」を代わりに使う（4.4）。
+- **GR に今載っている context**（主）: FECS の current context の register（0x409b00、下位 28 bit が instance block の address >> 12、nouveau の
+  `gf100_gr_intr` が channel を引くのに使う形、F12）を reaper が読み、channel の instance block と照合する。WFI の GR では、終わらない draw を持つ
+  channel が GR に載ったまま離れないので、これが犯人。GSP の下で CPU から読めるかは未確認（U7）: 読めない（0・全 bit 1・どの channel とも合わない）時は代わりへ。
+- **始まりの印**（代わり）: 全ての submit を「start stamp（待たない release、timer つき）→ segment →（timed なら end stamp）→ fence」にする
+  （ring の entry は 3、timed で 4。今の timed の record、semaphore の page の 64 個をそのまま使う）。channel の「最も古い終わらない run」
+  （semaphore の値 + 1。待っている fence ではなく channel の最も古い物、review v5 m4）の start の値が fence なら始まった、その GPU の時刻も分かる。
+  「始まった」は「GR に載った」ではない（PBDMA が読んだだけ、WFI の preempt で draw の境に GR を取られうる、review v5 B2）。そこで代わりの規則は
+  「始まって終わらない run を持つ channel のうち、**最後に始まった**物が犯人」: GR を後から取った者が最後に始まり、取られた側はそれより前に始まっている。
+- GPU の今の時刻は PTIMER（F10、`nvrtx_gpu_timer_ns`）。読めない時は start の時刻の比較だけを使い、経過は CPU の時刻で見る。
 
 ### 4.4 期限と犯人の判定（p003）
 
-判定は hardware に触らない純粋な関数 `nvrtx_recover_judge`（新 `recover.c`、host 試験の対象）にする。入力: 自分の run が始まったか・始まってからの時間、
-他の channel のうち「始まって `RUN_US` 以上終わらない run」を持つ物の有無、取り消しの途中か・最後の取り消しの終わりの時刻、今までの延長の回数。出力: 
-`LOST`（自分が犯人）、`EXTEND`（新しい期限）、`BLAME`（他の channel を犯人にして EXTEND）。
-
-| 状況（期限 = submit から 2 s を過ぎた時） | 判定 |
-| --- | --- |
-| 自分の run が始まって 2 s 以上 | LOST（その session の喪失、channel の取り消しを頼む） |
-| 自分の run が始まっているが 2 s 未満（他の犯人の取り消しの後に始まった） | EXTEND（始まり + 2 s） |
-| 自分の run が始まっていない、他の channel に始まって 2 s 以上の run | BLAME（その channel の session を喪失にし取り消しを頼む）、自分は EXTEND（取り消しの終わり + 2 s。終わるまでは延ばし続ける） |
-| 自分の run が始まっていない、取り消しの途中か、終わって 2 s 未満 | EXTEND |
-| 自分の run が始まっていない、犯人も取り消しも無い | LOST（GPU が別の所で止まっている。今と同じ結末） |
-| 延長が 3 回を越えた | LOST |
-| 退避の session（共有の channel） | 今のまま LOST |
-
-- 判定を呼ぶ所: `vk_node_wait` の期限（lane の completer、executor の待ち）と reaper の見張り（4.5、待つ者がいない run）。
-- LOST にする時は channel の state を READY → LOST に 1 回だけ（最初の理由: ETIMEDOUT・RC・BLAME）、session の `run_lost` を立てる（今の EIO の道に乗る）。
-- 被害者の待ちの最長: 2 s（犯人の期限）＋取り消し（4.5、通常 数十 ms〜1 s、最悪 STOP・RESET の 5 s ずつ）＋自分の run。延長 3 回で頭打ち。
+- **待つ側**（`vk_node_wait`: executor の待ちと lane の completer）: 期限は `max(submit, 最後の取り消しの終わり) + 2 s`。期限で reaper を起こし、
+  自分の channel が READY の間は待ち続ける。上限は submit から 8 s（`VK_NODE_RUN_US` の 4 倍。共通の層の stop の期限 10 s の内）: 越えたら自分を喪失
+  （今と同じ EIO、`run_lost`）。channel が LOST 以後になったら即 EIO。共有の channel の待ちも同じ。
+- **reaper の判定**（`nvrtx_recover_culprit`、`recover.c`、hardware に触らない）: 入力は channel ごとの view（終わらない run があるか、その最も古い物の
+  submit の時刻、始まったか・始まりの時刻、GR に載っているか（照合が働いた時だけ））、今の時刻、最後の取り消しの終わり、`RUN_US`。
+  1. 期限を過ぎた run（`now − max(submit, kill_end) ≥ RUN_US`）を持つ channel が無ければ何もしない。
+  2. GR に載っている channel があり、終わらない run を持つ → それが犯人。
+  3. 始まって終わらない run を持つ channel があれば、最後に始まった物が犯人。
+  4. どれも始まっていない → 期限を過ぎた run の submit が最も古い channel（今と同じ結末に近い: GPU が別の所で止まっている）。
+  取り消しは 1 度に 1 つ。取り消しの後は `kill_end` から 2 s の猶予があるので、次の犯人（S4 の 2 つ目）は次の判定で選ばれる。
+- 被害者の待ちの最長: 犯人の期限（2 s）＋見張りの周期（≤ 250 ms）＋取り消し（通常 数十 ms〜1 s、最悪 STOP・RESET の 5 s ずつ）＋自分の run。
+  8 s の上限を越えた時だけ被害者も喪失。
+- 退避の共有の channel が犯人なら、共有の channel ごと取り消す（4.1）。
 
 ### 4.5 reaper と取り消し（p003）
 
-- reaper は node に 1 本の kthread。250 ms ごと（または起こされた時）に:
-  1. 見張り: `channels[]` を queue_lock の下で見て、READY で「最も古い終わらない run が始まって 2 s 以上」の channel を LOST にする（待つ者がいない場合の検出。
-     close の途中の session（S5）もこれで見つかる）。
-  2. LOST の channel を 1 つずつ取り消す（`rpc_lock` を取る。`node->lock` は取らない: executor の待ちが取り消しを待つので）。
+- reaper は node に 1 本の kthread（node の寿命の間、終わらない。reboot の stop は印を立てて止める）。250 ms ごと（または起こされた時）に:
+  1. 見張り: `channels[]` と共有の channel の view を queue_lock の下で集め、4.4 の判定で犯人を 1 つ選び LOST にする（待つ者がいない run も
+     見つかる。close の途中の session（S5）も）。RC の event で LOST になった channel もここで拾う。
+  2. LOST の channel を 1 つずつ取り消す（`rpc_lock` は call ごと。`node->lock` は取らない: executor の待ちが取り消しを待つので）。
+     **取り消しの実行者は reaper だけ**（isolate はしない、review v5 M3）。`nvrtx.kill=0` の時は LOST と log だけで取り消さない。
   3. LOST にした session を共通の層に `drv_gpu_report_session_error(device, session, EIO)` で公開する（spinlock の外。session は reaper が使っている間
      close が待つ: `node->reaping` と waitq）。
 - 取り消しの手順（`nvrtx_work_channel_kill`、R1・R2 の判定を一本にした物）:
@@ -187,6 +196,7 @@ gpu
 - handler: chid が session の範囲なら `channels[]` を引き、READY・LOST・KILLING の channel に rc の印（type）を立て、READY なら LOST・`run_lost`、
   reaper を起こす。driver の chid（1〜8）は今のまま log だけ。type 79 は `runtime_fault` に繋ぐ（device の fault、報告は reaper から）。
 - 遅れた event: next-fit の chid（4.2）と、FREED の後に `channels[]` から外すこと（close の時）で、新しい channel に当たる機会を減らす。
+- reboot の stop（`nvrtx_node_stop`）の後の shutdown の RPC で handler が呼ばれても、印を立てて reaper の waitq を起こすだけなので安全（reaper は止まっている）。
 
 ### 4.7 rpc_lock と drain（p002）
 
@@ -196,7 +206,8 @@ gpu
 - drain: turn を 1 s から 20 ms にし、turn ごとに `rpc_lock` を取って手放す。手放した後 `rpc_wanted` が 0 でなければ 1 tick 寝る（kernel の mutex は
   待つ者に渡さない: review M4）。refresh の sample と perf の行は今の 1 s ごとのまま（時刻で間引く）。
 - reboot の stop（`nvrtx_node_stop`）は今のまま drain を止めてから RM を呼ぶ。stop の前に reaper も止める（4.10）。
-- lock の順: `exec_lock` → `node->lock` → `rpc_lock` → `channel->lock` → `window_lock`。`queue_lock`（spin）は最後で、中で sleep・RM をしない。
+- lock の順: `exec_lock` → `channel_lock`（session の channel の作成・close、`node->lock` と同時に持たない）→ `node->lock` → `rpc_lock` →
+  `work->lock`（space の heap と PTE）・`channel->lock`（ring）→ `window_lock`。`queue_lock`（spin）は最後で、中で sleep・RM をしない。
   reaper の取り消しは `node->lock` を取らない（`rpc_lock` から）。
 
 ### 4.8 共通の層の ops（p003）
@@ -205,26 +216,29 @@ gpu
 | --- | --- |
 | `stop_begin` | 今のまま（`stopping` だけ。kill を頼まない: 共通の層は正常な close のたびに呼ぶ、review B1） |
 | `stop_poll` | 今の pending の判定に加えて、channel が READY で終わらない run を持つ（正常な close の最後の run が走っている）か、LOST・KILLING なら EAGAIN。FREED・STOPPED・NONE と、終わらない run の無い READY は 0。STUCK も EAGAIN（期限で isolate に進む） |
-| `isolate` | quarantine を立てる（`session->quarantined`、以後その session の資源の destroy・close は hardware に触らず資源を返さない）。証拠（STOP 0・その chid の RC・RESET 0、または channel が NONE・退避）があれば 0。無ければ（READY・LOST・STUCK）その thread で同期に取り消しを 1 回（`rpc_lock`）し、証拠が出れば 0、出なければ EIO（device の fault）。i915 の `i915_isolate` と同じ形（quarantine を立ててから回復し、成功で 0） |
+| `isolate` | 今の state だけで答える（取り消しはしない、review v5 M3）。FREED・STOPPED（GPU はもう走らせない証拠がある）、NONE（channel が無い）、終わらない run の無い READY・共有 → quarantine を立てて（`session->quarantined`、以後その session の destroy・close は hardware に触らず資源を返さない）0。LOST・KILLING・STUCK・終わらない run のある READY・共有 → EIO（device の fault）。isolate が呼ばれるのは stop の期限 10 s の後で、reaper はそれまでに取り消している（4.4 の上限 8 s） |
 | `fault` | 今のまま |
 | `reset` | NULL のまま（作らない: reboot に任せる。p006 は選択肢） |
 
 - quarantine の session の close: `nvrtx_vk_gpu_free`・`nvrtx_vk_memory_detach` は今も「session の run が済まなければ map と memory を残す」
   （`vk-node.c` 152〜157・344〜349 行）ので、喪失した session は自然に残す側に入る。blob の backing も quarantine なら返さない（`kept` と同じ扱い）。
-- FREED の session（GPU はもう読まない）の close: run は済まなくても安全に返せる（`vk_node_quiet`: idle か FREED）。
+- FREED の session（GPU はもう読まない）の close: run は済まなくても安全に返せる（`vk_node_quiet`: idle か FREED）。ただし isolate で
+  quarantine になった session は FREED でも返さない（quarantine が優先、review v5 m8）。
 
 ### 4.9 session ごとの lane（p005）
 
-- 今の node の worker・completer の loop を session ごとにする: `struct nvrtx_lane`（queue の head・tail、parked の head・tail、2 つの waitq、
-  2 つの thread、終わりの印）。queue の entry・marker の slot・`queued`・`pending` の意味は今のまま（marker の順は session の中で保つ。他の session の
-  marker を待たない）。thread は session の最初の submit か reserve で作り（`kthread_create` は spinlock の外）、close で drain の後に終わらせて
-  終わりを待つ（`thread_exit`）。作れなければ submit・reserve は ENOMEM。
-- executor の GPU の待ちを `node->lock` の外へ: session の executor は `exec_lock`（session ごとの mutex）で 1 度に 1 frame。`runtime_execute`・
-  `runtime_command` は `exec_lock` → `node->lock` の順に取り、`vk_node_wait` は待つ間 `node->lock` を手放して取り直す（その間も `exec_lock` で
-  自分の executor は守られる。他の session の frame は進む）。待ちの後に取り直した `node->lock` の下で触る物（blob の list・backing の refs）は、
-  待つ前の pointer を使わない（今の `nvrtx_vk_memory_detach` は待ちの後に unmap・drop するだけで、record が hold した backing は消えない）。
-- 効き目: 詰まった session の executor の待ち（slot の再利用・idle・vkQueueWaitIdle）と park の marker の待ちが、他の session の frame と marker を止めない。
-  GR の上の停滞（4.1、約 2 s）は残る。
+- **lane の pool**: channel の番号（0〜31）ごとに 1 組（worker と completer）の thread と queue（head・tail、parked の head・tail、waitq）を node に持つ。
+  thread はその番号を最初に使う時に作り、node の寿命の間終わらせない（kernel に thread の終わりを待つ口が無い: `thread_wait` は zombie でなければ
+  EBUSY を返すだけ、review v5 M5）。その番号の channel を持つ session の frame と marker を扱い、session の close の後は空で寝て次の session を待つ。
+  共有の session と channel を持つ前の session（最初の frame）は今の node の worker・completer。lane の thread を作れなければ node の worker に退く。
+- queue の entry・marker の slot・`queued`・`pending` の意味は今のまま。marker の順は session の中で保ち、他の session の marker を待たない。
+- **executor の待ちと `node->lock`**（review v5 M4）: 手放すのは executor の frame の中の待ちのうち、slot の再利用と CPU の copy の前の待ちだけ
+  （vk 層が呼ぶ `nvrtx_vk_gpu_wait`。手放す前に `mutex_owned` で持っていることを確かめる。completer は持たずに呼ぶ）。destructor の中の待ち
+  （memory の detach・run の free の `nvrtx_vk_gpu_idle`）と vkQueueWaitIdle は手放さない。session の executor は `exec_lock`（session ごとの mutex）で
+  守り、`exec_lock` を取るのは frame（`runtime_execute`・`runtime_command`）、blob の attach（`nvrtx_vk_node_blob_attach`）、close の executor の close。
+  順は `exec_lock` → `node->lock`。p005 の最初に vk 層の待ちの呼び出し元を全部数え、手放してよい所を表にする（手放す前後で保たれる不変条件を書く）。
+- 効き目: 詰まった session の slot の再利用・CPU の copy の前の待ちと park の marker の待ちが、他の session の frame と marker を止めない。
+  GR の上の停滞（4.1、約 2 s）と destructor の中の待ちは残る。
 - perf の行（`blocked`・`parked` 等）は node の数のまま。
 
 ### 4.10 状態遷移と寿命
@@ -290,10 +304,10 @@ void nvrtx_rpc_lock(struct nvrtx_gpu *); void nvrtx_rpc_unlock(struct nvrtx_gpu 
 uint64_t nvrtx_gpu_timer_ns(struct nvrtx_gpu *);
 
 /* recover.c (no hardware; host-tested) */
-enum { NVRTX_JUDGE_LOST, NVRTX_JUDGE_EXTEND, NVRTX_JUDGE_BLAME };
-struct nvrtx_judge_input { int started; uint64_t running_ns; int culprit_elsewhere; int killing; uint64_t since_kill_us; uint32_t extensions; };
-int nvrtx_recover_judge(const struct nvrtx_judge_input *, uint32_t run_us, uint64_t *extend_us);
-int nvrtx_recover_chid_next(uint32_t bitmap, uint32_t last, uint32_t count);	/* next-fit */
+struct nvrtx_recover_view { int busy; uint64_t oldest_submit_us; int started; uint64_t start_ns; int resident; };
+int nvrtx_recover_culprit(const struct nvrtx_recover_view *views, uint32_t count, uint64_t now_us, uint64_t kill_end_us, uint32_t run_us);	/* index or -1 */
+uint32_t nvrtx_recover_kill_state(int stop_ok, int rc_seen, int reset_ok, int free_ok);
+int nvrtx_recover_chid_next(uint32_t used, uint32_t last, uint32_t count);	/* next-fit */
 
 /* nvrtx-node.h */
 struct nvrtx_session { ... struct nvrtx_work_channel *channel; int shared; int quarantined;
@@ -312,10 +326,14 @@ struct nvrtx_node { ... struct nvrtx_session *channels[32]; uint32_t chid_bitmap
 ### 6.1 host 試験（p002〜p005、実機なし）
 
 - 既存の `plan/tools/nvrtx/nvrtx-vk-host-test.sh` を壊さない（`vk/` の口を変えないので stub はそのまま。各 Phase の終わりに流す）。
-- 新 `plan/ws250/tests/nvrtx-recover-host-test.sh`（`recover.c` だけを host の cc で）: 4.4 の表の全行、延長の上限、chid の next-fit（尽きる・回る・
-  直前を避ける）、fence の wrap の前後の「最も古い終わらない run」、RESET・STOP の param の byte の layout（関数を `recover.c` に置く）、
-  state の遷移の表（`nvrtx_recover_state_after_kill(stop, rc, reset, free)` → FREED・STOPPED・STUCK、`stop_poll`・`isolate` の返す値の表）。
-- build: `make BUILD=build/ws250/k build/ws250/k/vmunix`（amd64、nvrtx=y の既定の config）と `plan/tools/nvrtx/config-amd64-nvrtx.mk` で warning 0。
+- 新 `plan/ws250/tests/nvrtx-recover-host-test.sh`（`recover.c` だけを host の cc で）:
+  - chid の next-fit（尽きる・回る・直前を避ける）。
+  - **scheduler の model**（review v5 M7）: GR に 1 つの context、timeslice で draw の境ごとに切り替え、終わらない draw は境に来ない、という小さな
+    simulator の上で、犯人 1 つ・2 つ（S4）、被害者が先に submit・後に submit、被害者が始まってから GR を取られる（B2 の形）、GR の照合あり・なし、
+    共有の channel の犯人、の各場合に `nvrtx_recover_culprit` が毎回犯人だけを選び、被害者を選ばないことを確かめる。
+  - state の遷移の表（`nvrtx_recover_kill_state(stop, rc, reset, free)` → FREED・STOPPED・STUCK）と `stop_poll`・`isolate` の返す値の表。
+  - RESET・STOP の param の byte の layout（組み立ての関数を `recover.c` に置く）。
+- build: `make ZEDBSD_CONFIG=config/ci/config-amd64.mk BUILD=build/ws250/k build/ws250/k/vmunix`（amd64、nvrtx=y）で warning 0。
 
 ### 6.2 QEMU
 
@@ -328,7 +346,7 @@ script `plan/ws250/tests/rtx-hang-check.sh OUT VMUNIX`（p004）: `measure.sh de
 | scenario | 手順 | 合格 |
 | --- | --- | --- |
 | S0 対照 | `measure.sh mview` を 12 s（scene-5000）、vkhang --loops | fps が p011 の値（49 前後）から −5% 以内、`VKHANG ok`、dmesg に `session channel` の行 |
-| S1 probe（`nvrtx.kill=0`） | vkhang（無限）、10 s 待つ | 観測だけ: RC の event が来るか・何秒か・type、mview（別 session）の frame が進むか |
+| S1 probe（`nvrtx.kill=0`） | mview（12 s）を起動し、その中で vkhang（無限）、10 s 待つ。最後に STOP だけを 1 回送る probe（`nvrtx.kill=probe`）で STOP の返る時間を測る。GSP が RC しなければ GR は詰まったままなので終わりは reboot | 観測だけ: RC の event が来るか・何秒か・type、mview の frame が進むか、0x409b00 の値と照合の結果、STOP の時間（5 s の RPC の timeout との差、review v5 m10） |
 | S2 取り消し | vkhang（無限）と同時に mview（12 s） | vkhang は `VKHANG lost`（≤ 3 s）、dmesg に `lost: run` と `stopped and freed`、mview は止まらず完走（fps の落ち込みは 2〜3 s の 1 回）、その後 `vkhang --loops` が ok、desktop の shot が新しい frame |
 | S3 繰り返し | S2 を 5 回 | 5 回とも合格、chid が回る（16, 17, …）、VRAM の残り（perf の行）が戻る |
 | S4 同時 | vkhang 2 つと mview | 2 つとも lost、mview 完走 |
@@ -337,18 +355,20 @@ script `plan/ws250/tests/rtx-hang-check.sh OUT VMUNIX`（p004）: `measure.sh de
 
 実機の証拠と QEMU の証拠は分けて書く。
 
-## 7. Phase（必須 29 LW、LW は ±50%）
+## 7. Phase（必須 34 LW、LW は ±50%）
 
 | Phase | 内容 | 受け入れ | 依存 | LW |
 | --- | --- | --- | --- | --- |
-| p002 | session の channel（4.2、chid、VA の区画、promote の VA の配列、退避、`nvrtx.channels`）、`rpc_lock` と drain の turn（4.7）、`recover.c` の chid の部分と host 試験 | build warning 0、host 試験 PASS。実機: S0（first fence、fps） | なし（WS291 p011 は main） | 7 |
-| p003 | 始まりの印（4.3）、判定（4.4）、reaper と取り消し（4.5）、RC の event（4.6）、ops（4.8）、`nvrtx.kill`、host 試験の判定・状態の表 | build、host 試験。実機: S1〜S6 | p002 | 9 |
+| p002 | session の channel（4.2、chid、VA の区画、promote の VA の配列、退避、`nvrtx.channels`、first fence を待たない）、`rpc_lock` と drain の turn（4.7）、`recover.c` の chid の部分と host 試験 | build warning 0、host 試験 PASS。実機: S0（first fence、fps） | なし（WS291 p011 は main） | 8 |
+| p003 | 犯人の手がかり（4.3: GR の照合と始まりの印）、判定（4.4）、reaper と取り消し（4.5）、RC の event（4.6）、ops（4.8）、`nvrtx.kill`、host 試験（scheduler の model・状態の表） | build、host 試験。実機: S1〜S6 | p002 | 12 |
 | p004 | `plan/ws250/tests/rtx-hang-check.sh`（6.3 の S0〜S6、measure.sh の関数を使う） | `sh -n`、Q1 の割当の実機で流す | p002（script は並行に書ける） | 2 |
-| p005 | session ごとの lane と executor の待ちの lock の外出し（4.9） | build、host 試験。実機: S2 で mview の停滞が GR の分（約 2 s）だけ | p003 | 9 |
+| p005 | lane の pool と executor の待ちの一部の lock の外出し（4.9） | build、host 試験。実機: S2 で mview の停滞が GR の分（約 2 s）だけ | p003 | 10 |
 | p006 | 選択肢: `reset`（GSP の再起動） | ユーザーの判断（既定は作らない） | — | 12 |
 | p007 | 規約の全文と出典の監査、ws.md を完了の形に | 指摘 0 | 全部 | 2 |
 
 試験なしの実装（2026-10-29 の指示）: p002〜p005 は build と host 試験までで「実装済み・試験未実施」と記録し、cleared にしない。実機は後で Q1 が割り当てる。
+p003 を p005 より先に入れる間（review v5 M6）: executor の待ちは `node->lock` の中のまま延長に入るので、詰まった時の desktop の停滞は今の 2 s より
+長くなりうる（犯人の期限 2 s＋見張り＋取り消し。上限 8 s）。p003 と p005 は同じ branch で続けて実装し、実機の試験は p005 の後にまとめる。
 
 ## 8. 決めた事と判断の点
 
@@ -359,7 +379,7 @@ script `plan/ws250/tests/rtx-hang-check.sh OUT VMUNIX`（p004）: `measure.sh de
 | D3 | session ごとの worker | 含める（Q250-5） | ユーザーの回答。ただし非同期の submit（WS291 p011）の後は、効き目は「詰まった session の CPU の側の待ちが他を止めない」に縮む（GR の上の約 2 s は残る、4.1）。Q1 に連絡した |
 | D4 | `reset` | 作らない | reboot と同じ結果に近い（display の作り直しが絡む） |
 | D5 | RC の event で喪失 | する（Q250-1 の back-up） | MMU fault・GR exception は期限を待つ理由が無い |
-| D6 | 犯人の判定に始まりの印 | する（P5 の推し、この版で足した） | 被害者の run が犯人より先に期限を迎えうる（session ごとの channel で、犯人の channel が timeslice の中で次の run に進んだ時）。始まりの印が無いと compositor を誤って喪失にしうる |
+| D6 | 犯人の判定に GR の照合と始まりの印 | する（P5 の推し、第 5・6 版で足した） | 被害者の run が犯人より先に期限を迎えうる（session ごとの channel で、犯人の channel が timeslice の中で次の run に進んだ時）。期限だけでは compositor を誤って喪失にしうる |
 | D7 | 退避（共有の channel） | する（P5 の推し） | session の channel の RM の受け入れ（USERD・promote の VA）は実機でしか確かめられない。拒まれても desktop は今のまま動く |
 
 ## 9. 危険と未確認
@@ -371,6 +391,7 @@ script `plan/ws250/tests/rtx-hang-check.sh OUT VMUNIX`（p004）: `measure.sh de
    出てしまう（PBDMA が先に進む）なら、始まりの印は「GR が載った」ではなく「PBDMA が読んだ」になり、被害者の判定が LOST に寄る。その時は判定の入力を
    GR の current context の register（nouveau の gf100 の 0x409b00）に替える案（p003 の再試行で）。
 5. **U5** PTIMER を CPU から読めるか（GSP の下）。読めなければ CPU の時刻の代わり（4.3）。
+5b. **U7** FECS の current context（0x409b00）を GSP の下で CPU から読めるか。読めなければ始まりの印の「最後に始まった」規則（4.3）。S1 で値を記録する。
 6. **U6** GSP の ctxsw の timeout の RC（約 4.3 s、F6）が 2 s の取り消しより先に来ないか。来ても RC の道（4.6）で同じ結末。
 7. drain の turn を 20 ms にする費用: `nvrtx_rpc_wait` の step は 10 µs、turn の切り替えの mutex は軽い。refresh と perf は 1 s のまま。
 8. display の runtime の RM の call: `display/scanout.c` は channel を allocate・free する（1195〜1352 行）。node の start の後に呼ばれるなら drain と
@@ -412,3 +433,18 @@ script `plan/ws250/tests/rtx-hang-check.sh OUT VMUNIX`（p004）: `measure.sh de
 | M12（重ねた版の矛盾） | この版で一本に書き直した |
 | M13（全 open に channel） | 最初の frame で遅延して作る（4.2） |
 | R1〜R12・T1〜T13・W1〜W5 | F1〜F11 と 4 節に入れた。T1（案 B）は Q250-4 で取り消し済み |
+
+第 5 版の review（[design-review-v5.md](design-review-v5.md)）の行き先:
+
+| 指摘 | 第 6 版 |
+| --- | --- |
+| B1（被害者が先に期限で LOST） | 判定を reaper だけにし、待つ側は自分の channel が READY の間待つ（上限 8 s）（4.4） |
+| B2（始まった ≠ GR に載っている） | 主を GR の current context の照合に、代わりを「最後に始まった channel」に（4.3） |
+| M1（共有の犯人を誰も取り消さない） | 共有の channel ごと取り消す（4.1・4.4・4.5） |
+| M2（遅延の作成） | first fence を待たない、`channel_lock` で 1 度だけ、不変条件、公開の順（4.2） |
+| M3（二重の取り消し） | 実行者は reaper だけ、isolate は state だけで答える（4.5・4.8） |
+| M4（lock を手放す） | 手放すのは slot の再利用と CPU の copy の前だけ、`exec_lock` を取る所の一覧、p005 の最初に呼び出し元の表（4.9） |
+| M5（thread の終わり） | lane は番号ごとの pool で終わらせない、reaper も終わらせない（4.5・4.9） |
+| M6（p003 の後の停滞） | 7 節の注（同じ branch で続けて実装、試験は p005 の後） |
+| M7（試験の計画） | scheduler の model の host 試験（6.1） |
+| m1〜m12 | 行の番号は実装の Phase で今の tree に合わせる（m1）。m2: space の lock（`work->lock`、heap と PTE）と channel の lock を分けた（p002 の実装）、map は driver の channel の ready を見る。m3: 呼び出し元は p002 で全部替えた。m4・m5・m7・m8・m9・m10 は本文。m6: `node->lock` → `rpc_lock` の順（display の control）と、open の公開は RM の後。m11: ws.md を同じ commit で直した。m12: RC の handler は reaper の waitq を起こすだけで、reboot の stop の後に呼ばれても安全（4.6） |
