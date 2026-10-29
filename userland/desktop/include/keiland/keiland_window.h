@@ -37,7 +37,8 @@ struct kl_theme;
  * microseconds), a new size and the request to close.  An application posts
  * its own inputs heard through other objects during a dispatch (a System
  * Menu's shortcut, a titlebar's control) with kl_window_post, so that they
- * keep their place among the keys (typed text, then Ctrl+S).  Input on the
+ * keep their place among the keys (typed text, then Ctrl+S); the program's
+ * other threads post to a window of a kl_app the same way.  Input on the
  * program's other surfaces (a file chooser's window) is not the window's and
  * never queued.
  *
@@ -152,7 +153,8 @@ struct kl_window_options {
  * text, the composed text's cursor, and the bytes to delete around the caret;
  * for a pen tablet's (KL_VERSION 44), its tool (KL_TABLET_*), its barrel
  * buttons held (KL_TABLET_BUTTON_*), its pressure (0 to 1, -1 for a tool
- * without it) and its tilt (degrees).
+ * without it) and its tilt (degrees); for KL_WINDOW_POST, the code and the
+ * data posted (data from KL_VERSION 97).
  */
 struct kl_window_event {
 	unsigned kind;
@@ -179,13 +181,25 @@ struct kl_window_event {
 	double pressure;
 	double tilt_x;
 	double tilt_y;
+	void *data;
 };
 
 struct kl_window *kl_window_open(const struct kl_window_options *options);
 void kl_window_close(struct kl_window *window);
 int kl_window_dispatch(struct kl_window *window, int timeout_ms);
 int kl_window_take(struct kl_window *window, struct kl_window_event *event);
-void kl_window_post(struct kl_window *window, uint32_t code);
+/*
+ * KL_VERSION 97: posts an input of the program's own (KL_WINDOW_POST with
+ * code and data) to a window.  For a window of an application it may be
+ * called from any thread and arrives as the application's KL_APP_WINDOW
+ * event: the application's thread queues it at once among the window's
+ * inputs, another thread's post wakes kl_app_dispatch and is queued there.
+ * A post that finds the window closed arrives as KL_APP_POST (window NULL)
+ * with the same code and data.  For a window of its own (kl_window_open)
+ * only the window's thread calls it.  Returns 0, EINVAL, or ENOMEM (ENOSPC
+ * for a window of its own whose queue is full).
+ */
+int kl_window_post(struct kl_window *window, uint32_t code, void *data);
 int kl_window_repeat(struct kl_window *window, uint64_t now_us);
 int kl_window_repeat_wait(const struct kl_window *window, uint64_t now_us);
 void kl_window_set_title(struct kl_window *window, const char *title);

@@ -7,8 +7,8 @@
 
 /*
  * The installer's program: one window of libkeiland's widgets, its words
- * in the desktop's language (domain installer), the helper's pipes among
- * the application's descriptors, and the log the tests read on standard
+ * in the desktop's language (domain installer), the helper's processes
+ * among the application's events, and the log the tests read on standard
  * error (the session's log): "INSTALLER READY", each screen shown, and
  * the place of every control of a screen when it changes.
  *
@@ -87,14 +87,11 @@ main(
 		return 2;
 	}
 
-	/* A helper that ended does not end the installer with its pipe. */
+	/* A write to a closed pipe or socket does not end the installer. */
 	(void)signal(SIGPIPE, SIG_IGN);
 
 	/* The font; without it the window shows no words. */
 	app = &main_app;
-	app->helper.probe_fd = -1;
-	app->helper.session_in = -1;
-	app->helper.session_out = -1;
 	app->pending_item = -1;
 	error = kl_text_open(&app->text, MAIN_FONT, MAIN_FALLBACK_FONT);
 	if (error != 0)
@@ -335,7 +332,7 @@ main_loop(
 		if (app->language != NULL)
 			(void)kl_settings_dispatch(app->language);
 
-		/* Every event: the window's inputs, the helper's pipes, the theme. */
+		/* Every event: the window's inputs, the helper's processes, the theme. */
 		for (;;) {
 			taken = kl_app_take(app->app, &event);
 			if (!taken)
@@ -345,9 +342,9 @@ main_loop(
 				continue;
 			}
 
-			/* A helper's pipe became readable or hung up. */
-			if (event.kind == KL_APP_FD) {
-				inst_helper_ready(app, event.fd, event.ready);
+			/* A helper's process told its lines or its end. */
+			if (event.kind == KL_APP_PROCESS) {
+				inst_helper_ready(app, event.process, event.ready);
 				continue;
 			}
 

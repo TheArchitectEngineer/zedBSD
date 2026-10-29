@@ -1,0 +1,1074 @@
+/*
+ * zedBSD
+ * Copyright (C) 2026 Awe Morris
+ *
+ * SPDX-License-Identifier: Zlib
+ */
+
+/*
+ * The processes' side of the system on zedBSD, Linux and FreeBSD (POSIX).
+ *
+ * Everything a child needs -- the program's path found in PATH, its
+ * arguments and its environment -- is made before it is started, so that
+ * a child of a forked thread does nothing but what is safe between fork and
+ * exec.  A child with pipes is started by posix_spawn; one with a terminal
+ * by forkpty, which makes the terminal its controlling one at its size.
+ * Either starts with every signal's default action and none blocked.
+ *
+ * Two threads serve a process:
+ *   kl-process-io    (one per process that uses a stream) waits in poll for
+ *                    its output, its error, its input's room and its control
+ *                    pipe, and moves the bytes between them and the streams;
+ *   kl-process-wait  (one per process) waits for its end with waitid
+ *                    (WNOWAIT), notes it under the lock and reaps it there,
+ *                    so that a signal is never sent to a process ID reused.
+ * After the end, the reading thread reads what the pipes still hold (a
+ * terminal: until it reports its end, at most PROCESS_DRAIN_MS) and then
+ * tells the end, after the output.
+ */
+
+#include "userland/desktop/libkeiland/process.h"
+
+#include <errno.h>
+#include <fcntl.h>
+#include <poll.h>
+#include <signal.h>
+#include <spawn.h>
+#include <stdint.h>
+#include <stdlib.h>
+#include <string.h>
+#include <sys/ioctl.h>
+#include <sys/types.h>
+#include <sys/wait.h>
+#include <termios.h>
+#include <time.h>
+#include <unistd.h>
+
+#if defined(__FreeBSD__)
+#include <libutil.h>
+#else
+#include <pty.h>
+#endif
+
+/* How long a terminal's last output is read after its process ended, in milliseconds. */
+#define PROCESS_DRAIN_MS	100
+
+/* The most bytes moved at once between a descriptor and a stream. */
+#define PROCESS_CHUNK		16384U
+
+/* The PATH a program is looked for in when the environment has none. */
+#define PROCESS_PATH_DEFAULT	"/bin:/usr/bin"
+
+/* The environment the application runs with. */
+extern char **environ;
+
+/* What a child is started with, made before it is started (freed after). */
+struct process_launch {
+	char *path;
+	char **argv;
+	char **envp;
+};
+
+static int process_find(const char *name, char **path);
+static int process_environment(const char *const *changes, char ***envp);
+static int process_arguments(const char *const *argv, char ***copy);
+static void process_launch_free(struct process_launch *launch);
+static int process_spawn(struct kl_process *process, const struct process_launch *launch, const char *directory);
+static int process_spawn_terminal(struct kl_process *process, const struct process_launch *launch, const char *directory, unsigned columns, unsigned rows);
+static void process_child_terminal(const struct process_launch *launch, const char *directory);
+static int process_pipe(int ends[2]);
+static void process_close(int *descriptor);
+static void *process_wait_run(void *argument);
+static void *process_io_run(void *argument);
+static int process_io_read(struct kl_process *process, int *descriptor, struct keiui_stream *stream);
+static void process_io_write(struct kl_process *process, int *descriptor);
+static void process_io_finish(struct kl_process *process);
+static uint64_t process_now_ms(void);
+
+/*
+ * Starts a process's child and its threads.  Returns 0, or an errno value:
+ * then no child runs, the process no longer reaches the application, and
+ * the program's reference is the caller's to release (a waiting thread
+ * that runs holds its own).
+ */
+int
+keiui_child_start(
+	struct kl_process *process,
+	const struct kl_process_options *options)
+{
+	struct process_launch launch;
+	int error;
+
+	/* The path, the arguments and the environment, made now. */
+	memset(&launch, 0, sizeof(launch));
+	error = process_find(options->argv[0], &launch.path);
+	if (error == 0)
+		error = process_arguments(options->argv, &launch.argv);
+	if (error == 0)
+		error = process_environment(options->environment, &launch.envp);
+	if (error == 0)
+		error = process_pipe(process->child.control);
+	if (error == 0) {
+		(void)fcntl(process->child.control[0], F_SETFL, O_NONBLOCK);
+		(void)fcntl(process->child.control[1], F_SETFL, O_NONBLOCK);
+	}
+	if (error != 0) {
+		process_launch_free(&launch);
+		process_close(&process->child.control[0]);
+		process_close(&process->child.control[1]);
+		return error;
+	}
+
+	/* The child, on a terminal or with pipes. */
+	if ((options->streams & KL_PROCESS_TERMINAL) != 0U)
+		error = process_spawn_terminal(process, &launch, options->directory, options->columns, options->rows);
+	else
+		error = process_spawn(process, &launch, options->directory);
+	process_launch_free(&launch);
+	if (error != 0) {
+		process_close(&process->child.control[0]);
+		process_close(&process->child.control[1]);
+		return error;
+	}
+
+	/* The thread that waits for the end, with its reference; without it the child is ended and reaped here. */
+	process->references++;
+	error = keiui_thread_start(process_wait_run, process);
+	if (error != 0) {
+		process->references--;
+		(void)kill((pid_t)process->child.pid, SIGKILL);
+		(void)waitpid((pid_t)process->child.pid, NULL, 0);
+		process_io_finish(process);
+		process->app = NULL;
+		return error;
+	}
+
+	/* The thread that moves the bytes; without it the child is ended (the waiting thread reaps it). */
+	if (options->streams != 0U) {
+		process->references++;
+		error = keiui_thread_start(process_io_run, process);
+		if (error != 0) {
+			process->references--;
+			keiui_lock_take(&process->lock);
+
+			process->closed = 1;
+			process->app = NULL;
+			(void)kill((pid_t)process->child.pid, SIGKILL);
+
+			keiui_lock_give(&process->lock);
+			process_io_finish(process);
+			return error;
+		}
+	}
+
+	/* Succeeded: it runs and is served. */
+	return 0;
+}
+
+/*
+ * Wakes a process's reading thread to look at its streams again.
+ */
+void
+keiui_child_poke(
+	struct kl_process *process)
+{
+	const char byte = 1;
+	ssize_t written;
+
+	/* A byte; a full pipe wakes it already. */
+	do {
+		written = write(process->child.control[1], &byte, 1);
+	} while (written < 0 && errno == EINTR);
+}
+
+/*
+ * Sends a process the signal for a way to end, unless it was reaped
+ * (under the lock, so that the ID is still its).
+ */
+int
+keiui_child_signal(
+	struct kl_process *process,
+	unsigned how)
+{
+	int signal_number;
+	int status;
+	int error;
+
+	/* The signal. */
+	signal_number = SIGTERM;
+	if (how == KL_PROCESS_KILL)
+		signal_number = SIGKILL;
+	else if (how == KL_PROCESS_HANGUP && process->child.terminal >= 0)
+		signal_number = SIGHUP;
+
+	/* Sent while the process is not reaped; a terminal hangs up too. */
+	keiui_lock_take(&process->lock);
+
+	error = 0;
+	if (!process->reaped) {
+		if (how == KL_PROCESS_HANGUP && (process->streams & KL_PROCESS_TERMINAL) != 0U)
+			process->child.hang_up = 1;
+		status = kill((pid_t)process->child.pid, signal_number);
+		if (status != 0 && errno != ESRCH)
+			error = errno;
+	}
+
+	keiui_lock_give(&process->lock);
+	keiui_child_poke(process);
+
+	/* Refused. */
+	if (error != 0)
+		return error;
+
+	/* Succeeded: asked. */
+	return 0;
+}
+
+/*
+ * Tells a process's terminal its size.
+ */
+int
+keiui_child_resize(
+	struct kl_process *process,
+	unsigned columns,
+	unsigned rows)
+{
+	struct winsize size;
+	int status;
+	int error;
+
+	/* The size in characters (no pixels). */
+	memset(&size, 0, sizeof(size));
+	size.ws_col = (unsigned short)columns;
+	size.ws_row = (unsigned short)rows;
+
+	/* Told while the terminal is open (its thread closes it under the lock). */
+	keiui_lock_take(&process->lock);
+
+	error = 0;
+	if (process->child.terminal >= 0) {
+		status = ioctl(process->child.terminal, TIOCSWINSZ, &size);
+		if (status != 0)
+			error = errno;
+	}
+
+	keiui_lock_give(&process->lock);
+
+	/* Refused. */
+	if (error != 0)
+		return error;
+
+	/* Succeeded (a terminal that hung up has no size to tell). */
+	return 0;
+}
+
+/*
+ * Reports the echo and the line editing a process set on its terminal.
+ */
+int
+keiui_child_mode(
+	struct kl_process *process,
+	unsigned *mode)
+{
+	struct termios attributes;
+	int status;
+	int error;
+
+	/* The terminal's attributes, while it is open. */
+	keiui_lock_take(&process->lock);
+
+	error = EIO;
+	if (process->child.terminal >= 0) {
+		status = tcgetattr(process->child.terminal, &attributes);
+		error = 0;
+		if (status != 0)
+			error = errno;
+	}
+
+	keiui_lock_give(&process->lock);
+	if (error != 0)
+		return error;
+
+	/* The modes. */
+	*mode = 0;
+	if ((attributes.c_lflag & ECHO) != 0U)
+		*mode |= KL_PROCESS_TERMINAL_ECHO;
+	if ((attributes.c_lflag & ICANON) != 0U)
+		*mode |= KL_PROCESS_TERMINAL_LINES;
+
+	/* Succeeded. */
+	return 0;
+}
+
+/*
+ * Closes what is left of a process's side when its last reference goes:
+ * its control pipe (the threads closed the rest).
+ */
+void
+keiui_child_end(
+	struct kl_process *process)
+{
+	/* The control pipe. */
+	process_close(&process->child.control[0]);
+	process_close(&process->child.control[1]);
+}
+
+/*
+ * Finds a program: a name with a '/' is its path, any other is looked for
+ * in PATH.  Returns 0 with the path allocated, ENOENT, EACCES or ENOMEM.
+ */
+static int
+process_find(
+	const char *name,
+	char **path)
+{
+	const char *search;
+	const char *start;
+	const char *end;
+	size_t length;
+	size_t name_length;
+	char *candidate;
+	int status;
+	int error;
+
+	/* A path. */
+	*path = NULL;
+	if (strchr(name, '/') != NULL) {
+		status = access(name, X_OK);
+		if (status != 0)
+			return errno;
+		*path = strdup(name);
+		if (*path == NULL)
+			return ENOMEM;
+		return 0;
+	}
+
+	/* The directories of PATH. */
+	search = getenv("PATH");
+	if (search == NULL || search[0] == '\0')
+		search = PROCESS_PATH_DEFAULT;
+	name_length = strlen(name);
+	error = ENOENT;
+
+	/* Each directory, until the program is found there (an empty one is the current directory). */
+	for (start = search; ; start = end + 1) {
+		end = strchr(start, ':');
+		if (end == NULL)
+			end = start + strlen(start);
+		length = (size_t)(end - start);
+		candidate = malloc(length + name_length + 3U);
+		if (candidate == NULL)
+			return ENOMEM;
+		if (length == 0U)
+			candidate[0] = '.';
+		else
+			memcpy(candidate, start, length);
+		if (length == 0U)
+			length = 1U;
+		candidate[length] = '/';
+		memcpy(candidate + length + 1U, name, name_length + 1U);
+		status = access(candidate, X_OK);
+		if (status == 0) {
+			*path = candidate;
+			return 0;
+		}
+		if (errno == EACCES)
+			error = EACCES;
+		free(candidate);
+		if (*end == '\0')
+			break;
+	}
+
+	/* Not found (or found and not to be run). */
+	return error;
+}
+
+/*
+ * Copies the arguments into an array of the child's own.  Returns 0 or
+ * ENOMEM.
+ */
+static int
+process_arguments(
+	const char *const *argv,
+	char ***copy)
+{
+	size_t count;
+	size_t index;
+	char **made;
+
+	/* How many. */
+	for (count = 0; argv[count] != NULL; count++)
+		continue;
+
+	/* The array and each argument. */
+	made = calloc(count + 1U, sizeof(*made));
+	if (made == NULL)
+		return ENOMEM;
+	for (index = 0; index < count; index++) {
+		made[index] = strdup(argv[index]);
+		if (made[index] == NULL) {
+			*copy = made;
+			return ENOMEM;
+		}
+	}
+
+	/* Succeeded. */
+	*copy = made;
+	return 0;
+}
+
+/*
+ * Makes the child's environment: the application's, without the variables
+ * a change names, then the changes that set one.  Returns 0 or ENOMEM.
+ */
+static int
+process_environment(
+	const char *const *changes,
+	char ***envp)
+{
+	const char *equals;
+	size_t inherited;
+	size_t added;
+	size_t length;
+	size_t index;
+	size_t change;
+	size_t used;
+	char **made;
+	int replaced;
+
+	/* How many there may be. */
+	for (inherited = 0; environ != NULL && environ[inherited] != NULL; inherited++)
+		continue;
+	for (added = 0; changes != NULL && changes[added] != NULL; added++)
+		continue;
+	made = calloc(inherited + added + 1U, sizeof(*made));
+	if (made == NULL)
+		return ENOMEM;
+
+	/* Each inherited variable that no change names. */
+	used = 0;
+	for (index = 0; index < inherited; index++) {
+		replaced = 0;
+		for (change = 0; change < added; change++) {
+			equals = strchr(changes[change], '=');
+			length = strlen(changes[change]);
+			if (equals != NULL)
+				length = (size_t)(equals - changes[change]);
+			if (strncmp(environ[index], changes[change], length) == 0 && environ[index][length] == '=') {
+				replaced = 1;
+				break;
+			}
+		}
+		if (replaced)
+			continue;
+		made[used] = strdup(environ[index]);
+		if (made[used] == NULL) {
+			*envp = made;
+			return ENOMEM;
+		}
+		used++;
+	}
+
+	/* Each change that sets a variable. */
+	for (change = 0; change < added; change++) {
+		equals = strchr(changes[change], '=');
+		if (equals == NULL)
+			continue;
+		made[used] = strdup(changes[change]);
+		if (made[used] == NULL) {
+			*envp = made;
+			return ENOMEM;
+		}
+		used++;
+	}
+
+	/* Succeeded. */
+	*envp = made;
+	return 0;
+}
+
+/* Frees what a child was started with. */
+static void
+process_launch_free(
+	struct process_launch *launch)
+{
+	size_t index;
+
+	/* The arguments, the environment and the path. */
+	for (index = 0; launch->argv != NULL && launch->argv[index] != NULL; index++)
+		free(launch->argv[index]);
+	free(launch->argv);
+	for (index = 0; launch->envp != NULL && launch->envp[index] != NULL; index++)
+		free(launch->envp[index]);
+	free(launch->envp);
+	free(launch->path);
+}
+
+/*
+ * Starts a child with pipes for the streams the program uses (an input it
+ * does not use is the null device), by posix_spawn.  Returns 0 or an errno
+ * value.
+ */
+static int
+process_spawn(
+	struct kl_process *process,
+	const struct process_launch *launch,
+	const char *directory)
+{
+	posix_spawn_file_actions_t actions;
+	posix_spawnattr_t attributes;
+	sigset_t defaults;
+	sigset_t none;
+	int input[2];
+	int output[2];
+	int error_pipe[2];
+	pid_t pid;
+	int error;
+
+	/* The pipes of the streams used. */
+	input[0] = input[1] = -1;
+	output[0] = output[1] = -1;
+	error_pipe[0] = error_pipe[1] = -1;
+	error = 0;
+	if ((process->streams & KL_PROCESS_INPUT) != 0U)
+		error = process_pipe(input);
+	if (error == 0 && (process->streams & KL_PROCESS_OUTPUT) != 0U)
+		error = process_pipe(output);
+	if (error == 0 && (process->streams & KL_PROCESS_ERROR) != 0U)
+		error = process_pipe(error_pipe);
+	if (error != 0)
+		goto fail;
+
+	/* The child's descriptors: the pipes' ends, the null device, nothing else. */
+	error = posix_spawn_file_actions_init(&actions);
+	if (error != 0)
+		goto fail;
+	if (input[0] >= 0)
+		error = posix_spawn_file_actions_adddup2(&actions, input[0], STDIN_FILENO);
+	else
+		error = posix_spawn_file_actions_addopen(&actions, STDIN_FILENO, "/dev/null", O_RDONLY, 0);
+	if (error == 0 && output[1] >= 0)
+		error = posix_spawn_file_actions_adddup2(&actions, output[1], STDOUT_FILENO);
+	if (error == 0 && error_pipe[1] >= 0)
+		error = posix_spawn_file_actions_adddup2(&actions, error_pipe[1], STDERR_FILENO);
+	if (error == 0 && directory != NULL)
+		error = posix_spawn_file_actions_addchdir_np(&actions, directory);
+	if (error == 0)
+		error = posix_spawn_file_actions_addclosefrom_np(&actions, STDERR_FILENO + 1);
+
+	/* Every signal's default action, none blocked. */
+	if (error == 0)
+		error = posix_spawnattr_init(&attributes);
+	if (error != 0) {
+		(void)posix_spawn_file_actions_destroy(&actions);
+		goto fail;
+	}
+	(void)sigfillset(&defaults);
+	(void)sigdelset(&defaults, SIGKILL);
+	(void)sigdelset(&defaults, SIGSTOP);
+	(void)sigemptyset(&none);
+	error = posix_spawnattr_setsigdefault(&attributes, &defaults);
+	if (error == 0)
+		error = posix_spawnattr_setsigmask(&attributes, &none);
+	if (error == 0)
+		error = posix_spawnattr_setflags(&attributes, POSIX_SPAWN_SETSIGDEF | POSIX_SPAWN_SETSIGMASK);
+
+	/* The child. */
+	if (error == 0)
+		error = posix_spawn(&pid, launch->path, &actions, &attributes, launch->argv, launch->envp);
+	(void)posix_spawnattr_destroy(&attributes);
+	(void)posix_spawn_file_actions_destroy(&actions);
+	if (error != 0)
+		goto fail;
+
+	/* The child's ends close here; the application's do not block. */
+	process_close(&input[0]);
+	process_close(&output[1]);
+	process_close(&error_pipe[1]);
+	process->child.pid = (long)pid;
+	process->child.input = input[1];
+	process->child.output = output[0];
+	process->child.error = error_pipe[0];
+	if (input[1] >= 0)
+		(void)fcntl(input[1], F_SETFL, O_NONBLOCK);
+	if (output[0] >= 0)
+		(void)fcntl(output[0], F_SETFL, O_NONBLOCK);
+	if (error_pipe[0] >= 0)
+		(void)fcntl(error_pipe[0], F_SETFL, O_NONBLOCK);
+
+	/* Succeeded: it runs. */
+	return 0;
+
+fail:
+	process_close(&input[0]);
+	process_close(&input[1]);
+	process_close(&output[0]);
+	process_close(&output[1]);
+	process_close(&error_pipe[0]);
+	process_close(&error_pipe[1]);
+	return error;
+}
+
+/*
+ * Starts a child on a terminal of its own at a size, by forkpty.  Returns
+ * 0 or an errno value.
+ */
+static int
+process_spawn_terminal(
+	struct kl_process *process,
+	const struct process_launch *launch,
+	const char *directory,
+	unsigned columns,
+	unsigned rows)
+{
+	struct winsize size;
+	int terminal;
+	pid_t pid;
+	int flags;
+
+	/* The terminal's size. */
+	memset(&size, 0, sizeof(size));
+	size.ws_col = (unsigned short)columns;
+	size.ws_row = (unsigned short)rows;
+
+	/* The child on the terminal; it runs nothing but the program. */
+	pid = forkpty(&terminal, NULL, NULL, &size);
+	if (pid < 0)
+		return errno;
+	if (pid == 0)
+		process_child_terminal(launch, directory);
+
+	/* The application's end: not passed on, not blocking. */
+	(void)fcntl(terminal, F_SETFD, FD_CLOEXEC);
+	flags = fcntl(terminal, F_GETFL);
+	if (flags >= 0)
+		(void)fcntl(terminal, F_SETFL, flags | O_NONBLOCK);
+	process->child.pid = (long)pid;
+	process->child.terminal = terminal;
+
+	/* Succeeded: it runs. */
+	return 0;
+}
+
+/*
+ * Runs the program in a terminal's child: only what is safe after a fork
+ * of a process with threads.
+ */
+static void
+process_child_terminal(
+	const struct process_launch *launch,
+	const char *directory)
+{
+	struct sigaction action;
+	sigset_t none;
+	int number;
+	int status;
+
+	/* Every signal's default action, none blocked. */
+	memset(&action, 0, sizeof(action));
+	action.sa_handler = SIG_DFL;
+	for (number = 1; number < NSIG; number++)
+		(void)sigaction(number, &action, NULL);
+	(void)sigemptyset(&none);
+	(void)sigprocmask(SIG_SETMASK, &none, NULL);
+
+	/* The directory, nothing but the terminal open, and the program. */
+	if (directory != NULL) {
+		status = chdir(directory);
+		if (status != 0)
+			_exit(127);
+	}
+	closefrom(STDERR_FILENO + 1);
+	(void)execve(launch->path, launch->argv, launch->envp);
+	_exit(127);
+}
+
+/* Makes a pipe whose ends are not passed on.  Returns 0 or an errno value. */
+static int
+process_pipe(
+	int ends[2])
+{
+	int status;
+
+	/* The pipe. */
+	status = pipe2(ends, O_CLOEXEC);
+	if (status != 0) {
+		ends[0] = -1;
+		ends[1] = -1;
+		return errno;
+	}
+
+	/* Succeeded. */
+	return 0;
+}
+
+/* Closes a descriptor that is open and marks it closed. */
+static void
+process_close(
+	int *descriptor)
+{
+	/* Open ones only. */
+	if (*descriptor < 0)
+		return;
+	(void)close(*descriptor);
+	*descriptor = -1;
+}
+
+/*
+ * The thread that waits for a process's end: the end noted and the process
+ * reaped under the lock, then the reading thread (or, without one, the
+ * application) told.
+ */
+static void *
+process_wait_run(
+	void *argument)
+{
+	struct kl_process *process;
+	siginfo_t information;
+	pid_t pid;
+	int status;
+
+	/* The process; its ID is read once (it never changes). */
+	keiui_thread_name("kl-process-wait");
+	process = argument;
+	pid = (pid_t)process->child.pid;
+
+	/* Its end, without reaping it yet. */
+	memset(&information, 0, sizeof(information));
+	do {
+		status = waitid(P_PID, (id_t)pid, &information, WEXITED | WNOWAIT);
+	} while (status != 0 && errno == EINTR);
+
+	/* How it ended, and reaped while nobody signals it. */
+	keiui_lock_take(&process->lock);
+
+	process->how = KL_PROCESS_EXITED;
+	process->code = 127;
+	if (status == 0 && information.si_code == CLD_EXITED)
+		process->code = information.si_status;
+	else if (status == 0) {
+		process->how = KL_PROCESS_SIGNALED;
+		process->code = information.si_status;
+	}
+	do {
+		status = waitpid(pid, NULL, 0);
+	} while (status < 0 && errno == EINTR);
+	process->reaped = 1;
+
+	/* Without a reading thread the end is told now. */
+	if (process->streams == 0U) {
+		process->ready |= KL_PROCESS_READY_EXIT;
+		keiui_process_tell(process);
+	}
+
+	keiui_lock_give(&process->lock);
+
+	/* The reading thread reads what is left, then tells the end. */
+	if (process->streams != 0U)
+		keiui_child_poke(process);
+	keiui_process_release(process);
+	return NULL;
+}
+
+/*
+ * The thread that moves a process's bytes: its output and error into
+ * their streams while they have room, its input from its stream while
+ * some waits, until the program closes the process or the process ended
+ * and its output was read.
+ */
+static void *
+process_io_run(
+	void *argument)
+{
+	struct kl_process *process;
+	struct pollfd descriptors[4];
+	struct pollfd *output;
+	struct pollfd *error;
+	struct pollfd *input;
+	uint64_t drain_until;
+	unsigned used;
+	char bytes[64];
+	int timeout;
+	int closed;
+	int reaped;
+	int full;
+	int status;
+
+	/* The process. */
+	keiui_thread_name("kl-process-io");
+	process = argument;
+	drain_until = 0;
+
+	/* Each round: what to wait for, the wait, then what became ready. */
+	for (;;) {
+		keiui_lock_take(&process->lock);
+
+		closed = process->closed;
+		reaped = process->reaped;
+		full = (process->child.output >= 0 && keiui_stream_room(&process->output) == 0U) ||
+		    (process->child.error >= 0 && keiui_stream_room(&process->error) == 0U);
+
+		/* A terminal to hang up, and an input to close once written. */
+		if (process->child.hang_up && process->child.terminal >= 0) {
+			process_close(&process->child.terminal);
+			process->output.ended = 1;
+			process->input_closed = 1;
+		}
+		if (process->input_closing && process->input.count == 0U && process->child.input >= 0) {
+			process_close(&process->child.input);
+			process->input_closed = 1;
+		}
+
+		/* The control pipe, then the streams that can move. */
+		used = 0;
+		descriptors[used].fd = process->child.control[0];
+		descriptors[used].events = POLLIN;
+		descriptors[used].revents = 0;
+		used++;
+		output = NULL;
+		error = NULL;
+		input = NULL;
+		if (process->child.terminal >= 0) {
+			output = &descriptors[used];
+			output->fd = process->child.terminal;
+			output->events = 0;
+			if (keiui_stream_room(&process->output) != 0U)
+				output->events |= POLLIN;
+			if (process->input.count != 0U)
+				output->events |= POLLOUT;
+			output->revents = 0;
+			used++;
+		}
+		if (process->child.output >= 0 && keiui_stream_room(&process->output) != 0U) {
+			output = &descriptors[used];
+			output->fd = process->child.output;
+			output->events = POLLIN;
+			output->revents = 0;
+			used++;
+		}
+		if (process->child.error >= 0 && keiui_stream_room(&process->error) != 0U) {
+			error = &descriptors[used];
+			error->fd = process->child.error;
+			error->events = POLLIN;
+			error->revents = 0;
+			used++;
+		}
+		if (process->child.input >= 0 && process->input.count != 0U) {
+			input = &descriptors[used];
+			input->fd = process->child.input;
+			input->events = POLLOUT;
+			input->revents = 0;
+			used++;
+		}
+
+		keiui_lock_give(&process->lock);
+
+		/* The program closed it: the streams close, the thread ends. */
+		if (closed)
+			break;
+
+		/*
+		 * After the end, read what is left without waiting (a terminal: a
+		 * while; a full stream: until the program reads), then tell the end.
+		 */
+		timeout = -1;
+		if (reaped && !full) {
+			if (drain_until == 0U)
+				drain_until = process_now_ms() + PROCESS_DRAIN_MS;
+			timeout = 0;
+			if (process->child.terminal >= 0 && process_now_ms() < drain_until)
+				timeout = (int)(drain_until - process_now_ms());
+			if (process->child.terminal < 0 && process->child.output < 0 && process->child.error < 0)
+				break;
+		}
+
+		/* The wait. */
+		status = poll(descriptors, (nfds_t)used, timeout);
+		if (status < 0 && errno == EINTR)
+			continue;
+		if (status < 0)
+			break;
+
+		/* Nothing more after the end: the rest is not waited for. */
+		if (status == 0 && reaped && !full)
+			break;
+
+		/* The control pipe's bytes. */
+		if ((descriptors[0].revents & POLLIN) != 0) {
+			while (read(process->child.control[0], bytes, sizeof(bytes)) > 0)
+				continue;
+		}
+
+		/* The output (a terminal's too), the error, and the input. */
+		if (output != NULL && output->fd == process->child.terminal && (output->revents & POLLOUT) != 0)
+			process_io_write(process, &process->child.terminal);
+		if (output != NULL && (output->revents & (POLLIN | POLLHUP | POLLERR)) != 0) {
+			if (output->fd == process->child.terminal)
+				(void)process_io_read(process, &process->child.terminal, &process->output);
+			else
+				(void)process_io_read(process, &process->child.output, &process->output);
+		}
+		if (error != NULL && (error->revents & (POLLIN | POLLHUP | POLLERR)) != 0)
+			(void)process_io_read(process, &process->child.error, &process->error);
+		if (input != NULL && (input->revents & (POLLOUT | POLLHUP | POLLERR)) != 0)
+			process_io_write(process, &process->child.input);
+	}
+
+	/* The streams close, the end is told, and the thread's reference goes. */
+	process_io_finish(process);
+	keiui_process_release(process);
+	return NULL;
+}
+
+/*
+ * Reads what a descriptor has into its stream (as much as there is room
+ * for), and tells the application when the stream was empty.  The end of
+ * the descriptor (a terminal: an error, once its other side closed) ends
+ * the stream.  Returns how many bytes were read.
+ */
+static int
+process_io_read(
+	struct kl_process *process,
+	int *descriptor,
+	struct keiui_stream *stream)
+{
+	unsigned char bytes[PROCESS_CHUNK];
+	size_t room;
+	ssize_t got;
+	int empty;
+
+	/* No more than there is room for. */
+	keiui_lock_take(&process->lock);
+
+	room = keiui_stream_room(stream);
+
+	keiui_lock_give(&process->lock);
+	if (room > sizeof(bytes))
+		room = sizeof(bytes);
+	if (room == 0U)
+		return 0;
+
+	/* The bytes. */
+	do {
+		got = read(*descriptor, bytes, room);
+	} while (got < 0 && errno == EINTR);
+	if (got < 0 && (errno == EAGAIN || errno == EWOULDBLOCK))
+		return 0;
+
+	/* Into the stream, or the stream's end (a terminal's end is an error). */
+	keiui_lock_take(&process->lock);
+
+	if (got > 0) {
+		empty = stream->count == 0U;
+		keiui_stream_put(stream, bytes, (size_t)got);
+		if (empty)
+			keiui_process_tell(process);
+	} else {
+		process_close(descriptor);
+		stream->ended = 1;
+		if (stream->count == 0U)
+			keiui_process_tell(process);
+	}
+
+	keiui_lock_give(&process->lock);
+
+	/* What was read. */
+	if (got < 0)
+		return 0;
+	return (int)got;
+}
+
+/*
+ * Writes what waits of the input to a descriptor, and tells the
+ * application of the room when a short write wanted it.  A broken pipe
+ * closes the input.
+ */
+static void
+process_io_write(
+	struct kl_process *process,
+	int *descriptor)
+{
+	unsigned char bytes[PROCESS_CHUNK];
+	size_t count;
+	ssize_t written;
+	size_t index;
+	size_t at;
+
+	/* A copy of what waits (taken out only once written). */
+	keiui_lock_take(&process->lock);
+
+	count = process->input.count;
+	if (count > sizeof(bytes))
+		count = sizeof(bytes);
+	for (index = 0; index < count; index++) {
+		at = (process->input.first + index) % KL_PROCESS_BUFFER;
+		bytes[index] = process->input.bytes[at];
+	}
+
+	keiui_lock_give(&process->lock);
+	if (count == 0U)
+		return;
+
+	/* The write. */
+	do {
+		written = write(*descriptor, bytes, count);
+	} while (written < 0 && errno == EINTR);
+	if (written < 0 && (errno == EAGAIN || errno == EWOULDBLOCK))
+		return;
+
+	/* What was written goes; a broken input drops the rest and refuses more. */
+	keiui_lock_take(&process->lock);
+
+	if (written > 0)
+		(void)keiui_stream_take(&process->input, NULL, (size_t)written);
+	else {
+		(void)keiui_stream_take(&process->input, NULL, process->input.count);
+		process->input_closed = 1;
+		if (descriptor == &process->child.input)
+			process_close(descriptor);
+	}
+	if (process->input_wanted && keiui_stream_room(&process->input) != 0U) {
+		process->input_wanted = 0;
+		process->ready |= KL_PROCESS_READY_INPUT;
+		keiui_process_tell(process);
+	}
+
+	keiui_lock_give(&process->lock);
+}
+
+/*
+ * Ends the reading thread's work: the descriptors close, the streams end,
+ * and the end is told when the process was reaped (after the output read).
+ */
+static void
+process_io_finish(
+	struct kl_process *process)
+{
+	/* Under the lock, so that nobody uses a descriptor being closed. */
+	keiui_lock_take(&process->lock);
+
+	process_close(&process->child.terminal);
+	process_close(&process->child.output);
+	process_close(&process->child.error);
+	process_close(&process->child.input);
+	process->output.ended = 1;
+	process->error.ended = 1;
+	process->input_closed = 1;
+	if (process->reaped && !process->closed) {
+		process->ready |= KL_PROCESS_READY_EXIT;
+		keiui_process_tell(process);
+	}
+
+	keiui_lock_give(&process->lock);
+}
+
+/* Reports a monotonic time in milliseconds. */
+static uint64_t
+process_now_ms(void)
+{
+	struct timespec now;
+
+	/* The monotonic clock. */
+	(void)clock_gettime(CLOCK_MONOTONIC, &now);
+	return (uint64_t)now.tv_sec * 1000U + (uint64_t)now.tv_nsec / 1000000U;
+}

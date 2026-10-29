@@ -86,9 +86,8 @@ struct ml_result {
 
 struct ml_sync;
 
-int ml_sync_start(const struct ml_account_config *accounts, size_t count, struct ml_sync **made);
+int ml_sync_start(const struct ml_account_config *accounts, size_t count, int (*ready)(void *context), void *context, struct ml_sync **made);
 void ml_sync_stop(struct ml_sync *sync);
-int ml_sync_fd(const struct ml_sync *sync);
 int ml_sync_queue(struct ml_sync *sync, const struct ml_job *job);
 int ml_sync_take(struct ml_sync *sync, struct ml_result *result);
 void ml_sync_release(struct ml_result *result);

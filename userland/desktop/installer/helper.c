@@ -9,29 +9,26 @@
  * The installer's helper, install-admin, as the installer sees it: a probe
  * that answers and ends (while no session runs), and a session that lives
  * from the first write until the installer ends it, its requests one at a
- * time.  The helper's lines come on a pipe the application watches; each
- * line goes to the flow (flow.c) with the request it answers, and the
- * line that ends a request ("end" of a probe, "DONE" or "FAIL" of the
- * others) frees the helper for the next.  The helper's standard error is
- * the installer's, the session's log.
+ * time.  Each runs as a process of the application (kl_process): its lines
+ * come as the process's output; each line goes to the flow (flow.c) with
+ * the request it answers, and the line that ends a request ("end" of a
+ * probe, "DONE" or "FAIL" of the others) frees the helper for the next.
+ * The helper's standard error is the installer's, the session's log.
  */
 
 #include "installer.h"
 
 #include <errno.h>
-#include <fcntl.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-#include <sys/wait.h>
-#include <unistd.h>
 
-static int helper_spawn(const char *verb, int *to_child, int *from_child, pid_t *pid);
-static void helper_read(struct inst_app *app, int fd);
+static int helper_spawn(struct inst_app *app, const char *verb, int input, struct kl_process **process);
+static void helper_read(struct inst_app *app, struct kl_process *process);
 static void helper_line(struct inst_app *app, char *line);
-static void helper_hangup(struct inst_app *app, int fd);
+static void helper_ended(struct inst_app *app, struct kl_process *process);
 static int helper_terminal(enum inst_job job, const char *line);
-static int helper_write(int fd, const char *text, size_t length);
+static int helper_write(struct kl_process *process, const char *text, size_t length);
 
 /*
  * Asks the helper what the disks are: the session's probe while a session
@@ -51,7 +48,7 @@ inst_helper_probe(
 		return EBUSY;
 
 	/* A session answers the probe itself (a second helper would find the lock taken). */
-	if (helper->session_pid > 0) {
+	if (helper->session != NULL) {
 		error = inst_helper_request(app, helper->session_disk, INST_JOB_PROBE, "probe\n");
 		if (error != 0)
 			return error;
@@ -60,17 +57,13 @@ inst_helper_probe(
 		return 0;
 	}
 
-	/* A probe of its own, its output watched. */
-	error = helper_spawn("probe", NULL, &helper->probe_fd, &helper->probe_pid);
+	/* A probe of its own. */
+	error = helper_spawn(app, "probe", 0, &helper->probe);
 	if (error != 0)
 		return error;
-	error = inst_helper_watch(app, helper->probe_fd);
-	if (error != 0)
-		inst_log("HELPER watch errno=%d", error);
 	helper->job = INST_JOB_PROBE;
-	helper->line_used = 0;
 	helper->line_long = 0;
-	inst_log("HELPER probe pid=%d", (int)helper->probe_pid);
+	inst_log("HELPER probe");
 
 	/* Succeeded: the probe runs. */
 	return 0;
@@ -97,8 +90,8 @@ inst_helper_request(
 	/* A cancellation of the installation that runs goes on the same input. */
 	helper = &app->helper;
 	length = strlen(request);
-	if (job == INST_JOB_CANCEL && helper->job == INST_JOB_INSTALL && helper->session_in >= 0) {
-		error = helper_write(helper->session_in, request, length);
+	if (job == INST_JOB_CANCEL && helper->job == INST_JOB_INSTALL && helper->session != NULL && helper->session_open) {
+		error = helper_write(helper->session, request, length);
 		if (error != 0)
 			return error;
 
@@ -109,32 +102,29 @@ inst_helper_request(
 	/* One request at a time; a session that ends is waited out. */
 	if (helper->job != INST_JOB_NONE)
 		return EBUSY;
-	if (helper->session_pid > 0 && helper->session_in < 0)
+	if (helper->session != NULL && !helper->session_open)
 		return EBUSY;
 
 	/* A session bound to another disk ends first. */
-	if (helper->session_pid > 0 && helper->session_disk != disk) {
+	if (helper->session != NULL && helper->session_disk != disk) {
 		inst_helper_end_session(app);
 		return EBUSY;
 	}
 
 	/* The session, when none runs. */
-	if (helper->session_pid <= 0) {
-		error = helper_spawn("session", &helper->session_in, &helper->session_out, &helper->session_pid);
+	if (helper->session == NULL) {
+		error = helper_spawn(app, "session", 1, &helper->session);
 		if (error != 0)
 			return error;
-		error = inst_helper_watch(app, helper->session_out);
-		if (error != 0)
-			inst_log("HELPER watch errno=%d", error);
+		helper->session_open = 1;
 		helper->session_disk = disk;
-		helper->line_used = 0;
 		helper->line_long = 0;
-		inst_log("HELPER session pid=%d disk=%u", (int)helper->session_pid, (unsigned)disk);
+		inst_log("HELPER session disk=%u", (unsigned)disk);
 	}
 
 	/* The request, whole. */
 	helper->job = job;
-	error = helper_write(helper->session_in, request, length);
+	error = helper_write(helper->session, request, length);
 	if (error != 0) {
 		helper->job = INST_JOB_NONE;
 		return error;
@@ -147,7 +137,7 @@ inst_helper_request(
 /*
  * Ends the session: its input closes, which the helper takes as the end
  * (as a cancellation between requests), and its output is read until it
- * closes too.
+ * ends too.
  */
 void
 inst_helper_end_session(
@@ -157,32 +147,31 @@ inst_helper_end_session(
 
 	/* Nothing runs. */
 	helper = &app->helper;
-	if (helper->session_pid <= 0 || helper->session_in < 0)
+	if (helper->session == NULL || !helper->session_open)
 		return;
 
 	/* The end of its input. */
-	(void)close(helper->session_in);
-	helper->session_in = -1;
-	inst_log("HELPER session-end pid=%d", (int)helper->session_pid);
+	(void)kl_process_close_input(helper->session);
+	helper->session_open = 0;
+	inst_log("HELPER session-end");
 }
 
 /*
- * Takes what a helper's pipe became: its lines while it is readable, its
- * end when it hung up.
+ * Takes what a helper's process told: its lines, then its end.
  */
 void
 inst_helper_ready(
 	struct inst_app *app,
-	int fd,
+	struct kl_process *process,
 	unsigned ready)
 {
-	/* The lines that came. */
-	if ((ready & KL_APP_FD_READ) != 0U)
-		helper_read(app, fd);
+	/* The lines that came (read to the end of the output when it ended). */
+	if ((ready & (KL_PROCESS_READY_OUTPUT | KL_PROCESS_READY_EXIT)) != 0U)
+		helper_read(app, process);
 
-	/* A pipe that closed (read to its end above when it had more). */
-	if ((ready & KL_APP_FD_HANGUP) != 0U)
-		helper_hangup(app, fd);
+	/* The process ended. */
+	if ((ready & KL_PROCESS_READY_EXIT) != 0U)
+		helper_ended(app, process);
 }
 
 /* Reports whether the helper is answering a request. */
@@ -195,154 +184,76 @@ inst_helper_busy(
 		return 1;
 
 	/* A session that ends is still busy. */
-	if (app->helper.session_pid > 0 && app->helper.session_in < 0)
+	if (app->helper.session != NULL && !app->helper.session_open)
 		return 1;
 
 	/* Free. */
 	return 0;
 }
 
-/* Watches a helper's pipe for its lines; returns kl_app_watch_fd's answer. */
-int
-inst_helper_watch(
-	struct inst_app *app,
-	int fd)
-{
-	int error;
-
-	/* Readable, and its end (always told). */
-	error = kl_app_watch_fd(app->app, fd, KL_APP_FD_READ);
-	if (error != 0)
-		return error;
-
-	/* Succeeded: its lines arrive as the application's events. */
-	return 0;
-}
-
 /*
- * Starts the helper with a verb, its output on a new pipe (non-blocking)
- * and, when asked, its input on another.  Returns 0 or an errno value.
+ * Starts the helper with a verb as a process of the application, its
+ * output read by the line and, when asked, its input written.  Returns 0
+ * or an errno value.
  */
 static int
 helper_spawn(
+	struct inst_app *app,
 	const char *verb,
-	int *to_child,
-	int *from_child,
-	pid_t *pid)
+	int input,
+	struct kl_process **process)
 {
-	char *argument[3];
-	int output[2];
-	int input[2];
-	int flags;
+	struct kl_process_options options;
+	const char *argument[3];
 	int error;
-	pid_t child;
 
-	/* The pipes. */
-	input[0] = -1;
-	input[1] = -1;
-	error = pipe(output);
+	/* The helper and its verb; the output read, the input when asked, the error the installer's. */
+	argument[0] = INST_HELPER;
+	argument[1] = verb;
+	argument[2] = NULL;
+	memset(&options, 0, sizeof(options));
+	options.argv = argument;
+	options.streams = KL_PROCESS_OUTPUT;
+	if (input)
+		options.streams |= KL_PROCESS_INPUT;
+	error = kl_process_start(app->app, &options, process);
 	if (error != 0)
-		return errno;
-	if (to_child != NULL) {
-		error = pipe(input);
-		if (error != 0) {
-			error = errno;
-			(void)close(output[0]);
-			(void)close(output[1]);
-			return error;
-		}
-	}
-
-	/* The child: the pipes as its input and output, nothing else of the installer's. */
-	child = fork();
-	if (child < 0) {
-		error = errno;
-		(void)close(output[0]);
-		(void)close(output[1]);
-		if (input[0] >= 0) {
-			(void)close(input[0]);
-			(void)close(input[1]);
-		}
-
-		/* Reports why the child could not be made. */
 		return error;
-	}
-
-	/* The child side: runs the helper in place of this process. */
-	if (child == 0) {
-		if (input[0] >= 0)
-			(void)dup2(input[0], 0);
-		(void)dup2(output[1], 1);
-		closefrom(3);
-		argument[0] = (char *)INST_HELPER;
-		argument[1] = (char *)verb;
-		argument[2] = NULL;
-		execv(INST_HELPER, argument);
-		_exit(127);
-	}
-
-	/* Keeps the installer's ends: the output read without waiting, the input written whole. */
-	(void)close(output[1]);
-	flags = fcntl(output[0], F_GETFL);
-	if (flags >= 0)
-		(void)fcntl(output[0], F_SETFL, flags | O_NONBLOCK);
-	(void)fcntl(output[0], F_SETFD, FD_CLOEXEC);
-	*from_child = output[0];
-	if (to_child != NULL) {
-		(void)close(input[0]);
-		(void)fcntl(input[1], F_SETFD, FD_CLOEXEC);
-		*to_child = input[1];
-	}
-
-	/* Tells the caller which process runs the helper. */
-	*pid = child;
 
 	/* Succeeded: the helper runs. */
 	return 0;
 }
 
-/* Reads what a pipe holds and hands each whole line on. */
+/* Reads the lines a process has and hands each whole one on (a line too long is dropped whole). */
 static void
 helper_read(
 	struct inst_app *app,
-	int fd)
+	struct kl_process *process)
 {
 	struct inst_helper *helper;
-	char buffer[4096];
-	ssize_t count;
-	ssize_t i;
+	int kind;
 
-	/* Until the pipe has nothing more for now. */
+	/* Until no whole line waits. */
 	helper = &app->helper;
 	for (;;) {
-		count = read(fd, buffer, sizeof(buffer));
-		if (count < 0 && errno == EINTR)
-			continue;
-		if (count <= 0)
+		kind = kl_process_read_line(process, KL_PROCESS_OUTPUT, helper->line, sizeof(helper->line));
+		if (kind == 0)
 			return;
 
-		/* Each byte into the line; a newline ends it (a line too long is dropped whole). */
-		for (i = 0; i < count; i++) {
-			/* A newline ends the line: gives it on unless it was too long. */
-			if (buffer[i] == '\n') {
-				helper->line[helper->line_used] = '\0';
-				if (!helper->line_long)
-					helper_line(app, helper->line);
-				helper->line_used = 0;
-				helper->line_long = 0;
-				continue;
-			}
-
-			/* A line that fills the buffer is dropped when its newline comes. */
-			if (helper->line_used + 1U >= sizeof(helper->line)) {
-				helper->line_long = 1;
-				continue;
-			}
-
-			/* Appends the byte to the line. */
-			helper->line[helper->line_used] = buffer[i];
-			helper->line_used++;
+		/* The start of a line too long: it and its rest are dropped. */
+		if (kind == KL_PROCESS_LINE_CUT) {
+			helper->line_long = 1;
+			continue;
 		}
+
+		/* The rest of a dropped line ends it. */
+		if (helper->line_long) {
+			helper->line_long = 0;
+			continue;
+		}
+
+		/* A line to the flow. */
+		helper_line(app, helper->line);
 	}
 }
 
@@ -361,60 +272,55 @@ helper_line(
 	inst_flow_line(app, job, line);
 
 	/* The end of a session's request: the next may be sent. */
-	if (ended && app->helper.session_pid > 0 && app->helper.job == job) {
+	if (ended && app->helper.session != NULL && app->helper.job == job) {
 		app->helper.job = INST_JOB_NONE;
 		inst_flow_ended(app, job, 0);
 	}
 }
 
 /*
- * Takes the end of a helper's pipe: the probe or the session has ended.
- * A request it had not answered ends with it.
+ * Takes the end of a helper's process: the probe or the session has
+ * ended.  A request it had not answered ends with it.  The status given on
+ * is the wait status the system reports (an exit code in its second byte,
+ * or the signal).
  */
 static void
-helper_hangup(
+helper_ended(
 	struct inst_app *app,
-	int fd)
+	struct kl_process *process)
 {
 	struct inst_helper *helper;
 	enum inst_job job;
-	pid_t ended;
+	unsigned how;
 	int status;
+	int code;
 
-	/* Whose pipe it was. */
+	/* How it ended, as a wait status. */
 	helper = &app->helper;
-	(void)kl_app_watch_fd(app->app, fd, 0U);
-	(void)close(fd);
-	status = -1;
+	how = kl_process_exit(process, &code);
+	status = code;
+	if (how == KL_PROCESS_EXITED)
+		status = code << 8;
 	job = helper->job;
+	kl_process_close(process);
 
-	/* The probe of its own: it has ended. */
-	if (fd == helper->probe_fd) {
-		ended = waitpid(helper->probe_pid, &status, 0);
-		if (ended != helper->probe_pid)
-			status = -1;
+	/* The probe of its own. */
+	if (process == helper->probe) {
 		inst_log("HELPER probe-end status=%d", status);
-		helper->probe_fd = -1;
-		helper->probe_pid = 0;
+		helper->probe = NULL;
 		helper->job = INST_JOB_NONE;
 		inst_flow_ended(app, job, status);
 		return;
 	}
 
-	/* Another pipe is not the helper's. */
-	if (fd != helper->session_out)
+	/* Another process is not the helper's. */
+	if (process != helper->session)
 		return;
 
 	/* The session: it has ended, with whatever it was answering. */
-	ended = waitpid(helper->session_pid, &status, 0);
-	if (ended != helper->session_pid)
-		status = -1;
 	inst_log("HELPER session-gone status=%d job=%d", status, (int)job);
-	if (helper->session_in >= 0)
-		(void)close(helper->session_in);
-	helper->session_in = -1;
-	helper->session_out = -1;
-	helper->session_pid = 0;
+	helper->session = NULL;
+	helper->session_open = 0;
 	helper->session_disk = 0;
 	helper->job = INST_JOB_NONE;
 	if (job != INST_JOB_NONE) {
@@ -456,29 +362,23 @@ helper_terminal(
 	return 0;
 }
 
-/* Writes a text whole to a descriptor; returns 0 or an errno value. */
+/* Writes a text whole to a process's input; returns 0 or an errno value. */
 static int
 helper_write(
-	int fd,
+	struct kl_process *process,
 	const char *text,
 	size_t length)
 {
-	size_t done;
-	ssize_t count;
+	size_t written;
+	int error;
 
-	/* Until every byte went. */
-	done = 0;
-	while (done < length) {
-		count = write(fd, text + done, length - done);
-		if (count < 0 && errno == EINTR)
-			continue;
-		if (count < 0)
-			return errno;
-		if (count == 0)
-			return EIO;
-		done += (size_t)count;
-	}
+	/* The text (a request is far smaller than the input's room). */
+	error = kl_process_write(process, text, length, &written);
+	if (error != 0)
+		return error;
+	if (written != length)
+		return EAGAIN;
 
-	/* Succeeded: the text was written. */
+	/* Succeeded: the text was taken whole. */
 	return 0;
 }

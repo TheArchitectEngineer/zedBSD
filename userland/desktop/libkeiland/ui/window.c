@@ -492,23 +492,70 @@ kl_window_take(
 }
 
 /*
- * Queues an input of the application's own (a code of its choosing, as a
- * KL_WINDOW_POST event) after the inputs queued so far: a choice heard
- * through another object during the dispatch keeps its place among the
- * window's keys.
+ * Posts an input of the program's own (KL_WINDOW_POST with code and data):
+ * a window of an application hands it to the application (kl_app_post's
+ * way, from any thread); a window of its own queues it at once.
  */
-void
+int
 kl_window_post(
 	struct kl_window *window,
-	uint32_t code)
+	uint32_t code,
+	void *data)
+{
+	struct kl_app_event event;
+	int error;
+
+	/* No window. */
+	if (window == NULL)
+		return EINVAL;
+
+	/* A window of its own: its thread queues it now, or a full queue refuses it. */
+	if (window->app == NULL) {
+		error = keiui_window_post_input(window, code, data);
+		if (error != 0)
+			return error;
+		return 0;
+	}
+
+	/* A window of an application: the application's event, from whichever thread. */
+	memset(&event, 0, sizeof(event));
+	event.kind = KL_APP_WINDOW;
+	event.window = window;
+	event.input.kind = KL_WINDOW_POST;
+	event.input.code = code;
+	event.input.data = data;
+	event.fd = -1;
+	error = keiui_app_post_event(window->app, &event);
+	if (error != 0)
+		return error;
+
+	/* Succeeded: posted. */
+	return 0;
+}
+
+/*
+ * Queues a KL_WINDOW_POST input with its code and data on the window's
+ * thread, after the inputs queued so far (a choice heard through another
+ * object during the dispatch keeps its place among the window's keys).
+ * Returns 0, or ENOSPC when the queue has no room.
+ */
+int
+keiui_window_post_input(
+	struct kl_window *window,
+	uint32_t code,
+	void *data)
 {
 	struct kl_window_event *event;
 
-	/* The input; a full queue drops it. */
+	/* The input, unless the queue is full. */
 	event = window_push(window, KL_WINDOW_POST);
 	if (event == NULL)
-		return;
+		return ENOSPC;
 	event->code = code;
+	event->data = data;
+
+	/* Succeeded: queued. */
+	return 0;
 }
 
 /*

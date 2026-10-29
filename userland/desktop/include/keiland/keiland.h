@@ -92,6 +92,7 @@
 #include <keiland/keiland_ui.h>
 #include <keiland/keiland_window.h>
 #include <keiland/keiland_app.h>
+#include <keiland/keiland_process.h>
 #include <keiland/keiland_widgets.h>
 #include <keiland/keiland_file_chooser.h>
 #include <keiland/keiland_media_picker.h>

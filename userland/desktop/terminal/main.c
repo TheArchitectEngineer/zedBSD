@@ -35,26 +35,12 @@
 #include "include/kern/os-name.h"
 
 #include <errno.h>
-#include <fcntl.h>
 #include <signal.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-#include <sys/ioctl.h>
 #include <sys/wait.h>
-#include <termios.h>
 #include <unistd.h>
-
-/*
- * openpty and forkpty: <libutil.h> on FreeBSD, <pty.h> elsewhere (the
- * terminal's own pseudo-terminals, an application's OS dependency outside
- * the desktop's boundary, WS131 D14).
- */
-#if defined(__FreeBSD__)
-#include <libutil.h>
-#else
-#include <pty.h>
-#endif
 
 /* The font the terminal uses unless told otherwise, and its size in pixels. */
 #define MAIN_FONT		KEILAND_DATADIR "/fonts/keiland-mono.ttf"
@@ -105,9 +91,8 @@ struct main_options {
  * something fails.
  */
 struct main_run {
-	/* The shell's process and its pseudo-terminal (-1 when not started). */
-	pid_t child;
-	int master;
+	/* The active tab's shell (NULL when none runs). */
+	struct kl_process *shell;
 
 	/* The grid's size, as last told to the shell, and the font's size in pixels. */
 	unsigned columns;
@@ -152,13 +137,13 @@ static struct terminal_touch main_touch;
 static int main_touch_due = -1;
 
 /*
- * One tab: its grid (allocated, too large for the stack), its shell's
- * process and pseudo-terminal, its ID in the titlebar and its title.
+ * One tab: its grid (allocated, too large for the stack), its shell (a
+ * process of the application on a terminal of its own), its ID in the
+ * titlebar and its title.
  */
 struct main_tab {
 	struct terminal_screen *screen;
-	pid_t child;
-	int master;
+	struct kl_process *shell;
 	uint32_t id;
 	char title[TERMINAL_TAB_TITLE];
 };
@@ -166,8 +151,8 @@ struct main_tab {
 /*
  * The tabs, in their order, how many there are, the active one (whose grid
  * is drawn and whose shell takes the keys) and the ID the next tab gets.
- * main_screen is the active tab's grid; run->child and run->master are the
- * active tab's shell.  They live as long as the terminal.
+ * main_screen is the active tab's grid; run->shell is the active tab's
+ * shell.  They live as long as the terminal.
  */
 static struct main_tab main_tabs[TERMINAL_TABS];
 static unsigned main_tab_count;
@@ -290,11 +275,11 @@ static int main_number(const char *text, unsigned maximum, unsigned *value);
 static int main_start(const struct main_options *options, struct main_run *run);
 static int main_loop(const struct main_options *options, struct main_run *run);
 static int main_resize(const struct main_options *options, struct main_run *run);
-static pid_t main_spawn(const struct main_options *options, int *master);
+static struct kl_process *main_spawn(const struct main_options *options, const struct main_run *run);
 static void main_grid(unsigned width, unsigned height, unsigned *columns, unsigned *rows);
-static void main_tell_size(int master, unsigned columns, unsigned rows);
-static int main_read_shell(int master, struct terminal_screen *screen);
-static int main_write_shell(int master);
+static void main_tell_size(struct kl_process *shell, unsigned columns, unsigned rows);
+static int main_read_shell(struct kl_process *shell, struct terminal_screen *screen, unsigned ready);
+static int main_write_shell(struct kl_process *shell);
 static int main_menu_actions(const struct main_options *options, struct main_run *run);
 static void main_menu_state(const struct main_run *run, struct terminal_menu_state *state);
 static void main_new_window(const struct main_options *options, const struct main_run *run);
@@ -334,7 +319,7 @@ static void main_scroll(void);
 static void main_view_log(const char *how);
 static void main_touch_round(void);
 static void main_text_cursor(void);
-static void main_secret_follow(int master);
+static void main_secret_follow(struct kl_process *shell);
 static void main_touch_queue(unsigned kind, const struct terminal_touch_pointer *made);
 
 /*
@@ -360,8 +345,7 @@ main(
 	/* A write to a shell that has gone must not kill the terminal. */
 	(void)signal(SIGPIPE, SIG_IGN);
 	memset(&run, 0, sizeof(run));
-	run.child = -1;
-	run.master = -1;
+	run.shell = NULL;
 	run.operation = "none";
 	run.result = VK_SUCCESS;
 	run.reason = "closed";
@@ -603,8 +587,8 @@ main_start(
 	if (status != 0)
 		return -1;
 
-	/* The first tab: a shell on a pseudo-terminal of that size. */
-	run->operation = "forkpty";
+	/* The first tab: a shell on a terminal of that size. */
+	run->operation = "kl_process_start";
 	status = main_tab_new(options, run);
 	if (status != 0)
 		return -1;
@@ -628,8 +612,8 @@ main_loop(
 	uint64_t now;
 	unsigned stale;
 	unsigned index;
-	int masters[TERMINAL_TABS];
-	int ready[TERMINAL_TABS];
+	struct kl_process *shells[TERMINAL_TABS];
+	unsigned ready[TERMINAL_TABS];
 	int status;
 	int timeout;
 	int wait;
@@ -675,11 +659,11 @@ main_loop(
 				timeout = wait;
 		}
 
-		/* Runs the compositor's events and learns which shells wrote. */
+		/* Runs the compositor's events and learns what the shells told. */
 		for (index = 0; index < main_tab_count; index++)
-			masters[index] = main_tabs[index].master;
+			shells[index] = main_tabs[index].shell;
 		run->operation = "terminal_window_dispatch";
-		status = terminal_window_dispatch(&main_window, masters, main_tab_count, timeout, ready);
+		status = terminal_window_dispatch(&main_window, shells, main_tab_count, timeout, ready);
 		if (status != 0)
 			return -1;
 
@@ -709,12 +693,12 @@ main_loop(
 
 		/* What each shell wrote goes on its grid, from the last tab so a closed one leaves the others' places; a shell's end closes its tab. */
 		for (index = main_tab_count; index > 0U; index--) {
-			/* A shell that did not write. */
-			if (index - 1U >= TERMINAL_TABS || !ready[index - 1U])
+			/* A shell that told nothing to read and has not ended. */
+			if (index - 1U >= TERMINAL_TABS || (ready[index - 1U] & (KL_PROCESS_READY_OUTPUT | KL_PROCESS_READY_EXIT)) == 0U)
 				continue;
 
 			/* Its bytes on its grid; its end closes its tab, and the last tab's ends the terminal. */
-			status = main_read_shell(main_tabs[index - 1U].master, main_tabs[index - 1U].screen);
+			status = main_read_shell(main_tabs[index - 1U].shell, main_tabs[index - 1U].screen, ready[index - 1U]);
 			if (status != 0) {
 				status = main_tab_close(options, run, index - 1U);
 				if (status != 0) {
@@ -760,14 +744,14 @@ main_loop(
 		}
 
 		/* The keys typed and the text pasted go to the shell. */
-		status = main_write_shell(run->master);
+		status = main_write_shell(run->shell);
 		if (status != 0) {
 			run->reason = "shell-exited";
 			return 0;
 		}
 
 		/* A password prompt in the active shell turns the input method off until it is answered. */
-		main_secret_follow(run->master);
+		main_secret_follow(run->shell);
 
 		/* The deadline, when one was given, ends the terminal. */
 		now = terminal_clock();
@@ -856,7 +840,7 @@ main_resize(
 	main_grid(main_renderer.extent.width, main_renderer.extent.height, &run->columns, &run->rows);
 	for (index = 0; index < main_tab_count; index++) {
 		terminal_screen_resize(main_tabs[index].screen, run->columns, run->rows);
-		main_tell_size(main_tabs[index].master, run->columns, run->rows);
+		main_tell_size(main_tabs[index].shell, run->columns, run->rows);
 	}
 
 	/* The active grid is drawn again. */
@@ -893,47 +877,46 @@ main_number(
 	return 0;
 }
 
-/* Starts the shell (or the command) on a new pseudo-terminal; returns its process, or -1. */
-static pid_t
+/*
+ * Starts the shell (or the command) as a process of the application on a
+ * terminal of its own, at the grid's size, with the terminal's type in its
+ * environment.  Returns it, or NULL with errno set.
+ */
+static struct kl_process *
 main_spawn(
 	const struct main_options *options,
-	int *master)
+	const struct main_run *run)
 {
-	char *arguments[4];
-	pid_t child;
-	int flags;
-	int status;
+	static const char *const environment[] = { "TERM=xterm", NULL };
+	struct kl_process_options process_options;
+	struct kl_process *shell;
+	const char *arguments[4];
+	int error;
 
-	/* The pseudo-terminal and the child whose controlling terminal it is. */
-	child = forkpty(master, NULL, NULL, NULL);
-	if (child < 0)
-		return -1;
-
-	/* The child becomes the shell, with the terminal's type in its environment. */
-	if (child == 0) {
-		(void)setenv("TERM", "xterm", 1);
-		arguments[0] = MAIN_SHELL;
-		arguments[1] = NULL;
-		if (options->command != NULL) {
-			arguments[1] = "-c";
-			arguments[2] = (char *)options->command;
-			arguments[3] = NULL;
-		}
-
-		/* Only a failed exec comes back. */
-		(void)execv(MAIN_SHELL, arguments);
-		_exit(127);
+	/* The shell, or the shell running the command. */
+	arguments[0] = MAIN_SHELL;
+	arguments[1] = NULL;
+	if (options->command != NULL) {
+		arguments[1] = "-c";
+		arguments[2] = options->command;
+		arguments[3] = NULL;
 	}
 
-	/* The terminal reads the shell without blocking, a burst at a time. */
-	flags = fcntl(*master, F_GETFL);
-	if (flags >= 0) {
-		status = fcntl(*master, F_SETFL, flags | O_NONBLOCK);
-		(void)status;
+	/* On a terminal of the grid's size. */
+	memset(&process_options, 0, sizeof(process_options));
+	process_options.argv = arguments;
+	process_options.environment = environment;
+	process_options.streams = KL_PROCESS_TERMINAL;
+	process_options.columns = run->columns;
+	process_options.rows = run->rows;
+	error = kl_process_start(main_window.app, &process_options, &shell);
+	if (error != 0) {
+		errno = error;
+		return NULL;
 	}
 
 	/* Succeeded: the shell runs. */
-	return child;
+	return shell;
 }
 
 /* Works out how many cells fit in the window, inside the padding. */
@@ -960,49 +943,45 @@ main_grid(
 /* Tells the shell the grid's size (it gets SIGWINCH). */
 static void
 main_tell_size(
-	int master,
+	struct kl_process *shell,
 	unsigned columns,
 	unsigned rows)
 {
-	struct winsize size;
-	int status;
+	int error;
 
-	/* The size in cells; the pixels are not given. */
-	memset(&size, 0, sizeof(size));
-	size.ws_col = (unsigned short)columns;
-	size.ws_row = (unsigned short)rows;
-	status = ioctl(master, TIOCSWINSZ, &size);
-	(void)status;
+	/* The size in cells. */
+	error = kl_process_resize(shell, columns, rows);
+	(void)error;
 }
 
-/* Reads what a shell wrote and puts it on its grid; returns nonzero once the shell has gone. */
+/*
+ * Reads what a shell wrote and puts it on its grid; returns nonzero once
+ * the shell has ended (what it wrote before its end is read first).
+ */
 static int
 main_read_shell(
-	int master,
-	struct terminal_screen *screen)
+	struct kl_process *shell,
+	struct terminal_screen *screen,
+	unsigned ready)
 {
 	unsigned char buffer[8192];
-	ssize_t count;
+	size_t count;
 	int rounds;
 
 	/* Reads bursts until nothing is left, at most a few before the grid is drawn again. */
 	for (rounds = 0; rounds < 16; rounds++) {
-		count = read(master, buffer, sizeof(buffer));
-		if (count > 0) {
-			terminal_perf_step("read", (unsigned)count);
-			terminal_screen_write(screen, buffer, (size_t)count);
-			continue;
-		}
-
-		/* Nothing more for now. */
-		if (count < 0 && (errno == EAGAIN || errno == EINTR))
-			return 0;
-
-		/* End of file, or EIO once the last user of the terminal has gone: the shell is gone. */
-		return 1;
+		count = kl_process_read(shell, KL_PROCESS_OUTPUT, buffer, sizeof(buffer));
+		if (count == 0U)
+			break;
+		terminal_perf_step("read", (unsigned)count);
+		terminal_screen_write(screen, buffer, count);
 	}
 
-	/* Succeeded: more may follow, read on the next round. */
+	/* The shell ended and all it wrote is on the grid: it is gone. */
+	if ((ready & KL_PROCESS_READY_EXIT) != 0U && count == 0U)
+		return 1;
+
+	/* More may follow (its end told again with what is left), read on the next round. */
 	return 0;
 }
 
@@ -1015,22 +994,22 @@ main_read_shell(
  */
 static void
 main_secret_follow(
-	int master)
+	struct kl_process *shell)
 {
-	struct termios modes;
+	unsigned mode;
 	int secret;
 	int error;
 
-	/* The active shell's modes; a master that cannot tell them leaves the text input as it is. */
-	if (master < 0)
+	/* The active shell's modes; a terminal that cannot tell them leaves the text input as it is. */
+	if (shell == NULL)
 		return;
-	error = tcgetattr(master, &modes);
+	error = kl_process_terminal_mode(shell, &mode);
 	if (error != 0)
 		return;
 
 	/* A secret: no echo, on a whole line. */
 	secret = 0;
-	if ((modes.c_lflag & ECHO) == 0 && (modes.c_lflag & ICANON) != 0)
+	if ((mode & KL_PROCESS_TERMINAL_ECHO) == 0U && (mode & KL_PROCESS_TERMINAL_LINES) != 0U)
 		secret = 1;
 	if (secret == main_secret)
 		return;
@@ -1045,43 +1024,41 @@ main_secret_follow(
 	fflush(stdout);
 }
 
-/* Writes the keys typed to the shell; returns nonzero once the shell has gone. */
+/*
+ * Writes the keys typed to the shell; returns nonzero once the shell has
+ * gone.  What its input has no room for stays for a later round (the
+ * shell tells when there is room).
+ */
 static int
 main_write_shell(
-	int master)
+	struct kl_process *shell)
 {
-	ssize_t count;
+	size_t count;
+	int error;
 
 	/* Text being pasted goes first, as much as the terminal takes. */
 	if (main_paste_written < main_paste_length) {
-		count = write(master, main_paste + main_paste_written, main_paste_length - main_paste_written);
-		if (count < 0 &&
-		    errno != EAGAIN &&
-		    errno != EINTR)
+		error = kl_process_write(shell, main_paste + main_paste_written, main_paste_length - main_paste_written, &count);
+		if (error != 0)
 			return 1;
 
-		/* What was written is not written again; a full terminal takes the rest later. */
-		if (count > 0)
-			main_paste_written += (size_t)count;
+		/* What was written is not written again. */
+		main_paste_written += count;
 	}
 
 	/* Nothing typed. */
 	if (main_window.input_length == 0U)
 		return 0;
 
-	/* The bytes typed, all at once; a full terminal keeps the rest for the next round. */
-	count = write(master, main_window.input, main_window.input_length);
-	if (count < 0) {
-		/* A full pseudo-terminal is tried again later; any other failure means the shell is gone. */
-		if (errno == EAGAIN || errno == EINTR)
-			return 0;
+	/* The bytes typed, as many as the input takes. */
+	error = kl_process_write(shell, main_window.input, main_window.input_length, &count);
+	if (error != 0)
 		return 1;
-	}
 
 	/* What was written leaves the buffer. */
 	terminal_perf_step("write", (unsigned)count);
-	memmove(main_window.input, main_window.input + count, main_window.input_length - (size_t)count);
-	main_window.input_length -= (size_t)count;
+	memmove(main_window.input, main_window.input + count, main_window.input_length - count);
+	main_window.input_length -= count;
 
 	/* Succeeded: the keys went to the shell. */
 	return 0;
@@ -1271,7 +1248,6 @@ main_new_window(
 	char token[64];
 	char display[128];
 	char *arguments[4];
-	unsigned index;
 	pid_t child;
 	pid_t grandchild;
 	int status;
@@ -1286,10 +1262,8 @@ main_new_window(
 		if (grandchild != 0)
 			_exit(0);
 
-		/* It keeps nothing of this terminal's: not the shells' pseudo-terminals. */
+		/* It keeps nothing of this terminal's (the shells' terminals are not passed on). */
 		(void)run;
-		for (index = 0; index < main_tab_count; index++)
-			(void)close(main_tabs[index].master);
 
 		/* The same program, its log lines named after this run's. */
 		(void)snprintf(token, sizeof(token), "--token=%s-new", options->token);
@@ -1361,7 +1335,7 @@ main_zoom(
 	main_grid(main_renderer.extent.width, main_renderer.extent.height, &run->columns, &run->rows);
 	for (index = 0; index < main_tab_count; index++) {
 		terminal_screen_resize(main_tabs[index].screen, run->columns, run->rows);
-		main_tell_size(main_tabs[index].master, run->columns, run->rows);
+		main_tell_size(main_tabs[index].shell, run->columns, run->rows);
 	}
 
 	/* The active grid is drawn again. */
@@ -1646,8 +1620,7 @@ main_tab_new(
 {
 	struct main_tab *tab;
 	struct terminal_screen *screen;
-	pid_t child;
-	int master;
+	struct kl_process *shell;
 
 	/* A full window has no new tab. */
 	if (main_tab_count == TERMINAL_TABS)
@@ -1664,21 +1637,17 @@ main_tab_new(
 	terminal_screen_init(screen, run->columns, run->rows);
 	terminal_screen_set_ambiguous_wide(screen, run->ambiguous_wide);
 
-	/* Its shell, told the grid's size. */
-	child = main_spawn(options, &master);
-	if (child < 0) {
+	/* Its shell, at the grid's size. */
+	shell = main_spawn(options, run);
+	if (shell == NULL) {
 		free(screen);
 		return -1;
 	}
 
-	/* The shell learns the size. */
-	main_tell_size(master, run->columns, run->rows);
-
 	/* The tab, at the end, with its ID and title. */
 	tab = &main_tabs[main_tab_count];
 	tab->screen = screen;
-	tab->child = child;
-	tab->master = master;
+	tab->shell = shell;
 	tab->id = main_tab_next;
 	main_tab_next++;
 	(void)snprintf(tab->title, sizeof(tab->title), "Shell %u", tab->id);
@@ -1704,8 +1673,7 @@ main_tab_switch(
 	/* The active tab's grid and shell. */
 	main_active = index;
 	main_screen = main_tabs[index].screen;
-	run->child = main_tabs[index].child;
-	run->master = main_tabs[index].master;
+	run->shell = main_tabs[index].shell;
 
 	/* The keys not yet sent belonged to the tab before; its grid is drawn, without the other tab's search. */
 	main_window.input_length = 0;
@@ -1717,7 +1685,7 @@ main_tab_switch(
 }
 
 /*
- * Closes a tab: its shell is hung up on and reaped, its grid freed, and a
+ * Closes a tab: its shell is hung up on (the library reaps it), its grid freed, and a
  * neighbour becomes active when it was.  Returns 1 when it was the last
  * tab (the terminal ends), 0 otherwise.
  */
@@ -1729,20 +1697,19 @@ main_tab_close(
 {
 	struct main_tab *tab;
 	uint32_t id;
-	int status;
+	int error;
 
 	/* Only a tab that is there. */
 	if (index >= main_tab_count)
 		return main_tab_count == 0U;
 
-	/* Its shell, hung up on and reaped, and its grid. */
+	/* Its shell, hung up on and closed. */
 	tab = &main_tabs[index];
 	id = tab->id;
-	(void)close(tab->master);
-	if (tab->child > 0) {
-		(void)kill(tab->child, SIGHUP);
-		(void)waitpid(tab->child, &status, 0);
-	}
+	error = kl_process_kill(tab->shell, KL_PROCESS_HANGUP);
+	(void)error;
+	kl_process_close(tab->shell);
+	tab->shell = NULL;
 
 	/* Its grid. */
 	free(tab->screen);
@@ -1756,8 +1723,7 @@ main_tab_close(
 	/* The last tab: the terminal ends (no shell is active). */
 	if (main_tab_count == 0U) {
 		main_screen = NULL;
-		run->child = -1;
-		run->master = -1;
+		run->shell = NULL;
 		return 1;
 	}
 

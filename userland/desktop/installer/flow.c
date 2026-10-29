@@ -342,7 +342,7 @@ inst_next(
 		break;
 	case INST_S2:
 		/* A session bound to another disk ends. */
-		if (app->helper.session_pid > 0 && disk != NULL && app->helper.session_disk != disk->registration)
+		if (app->helper.session != NULL && disk != NULL && app->helper.session_disk != disk->registration)
 			inst_helper_end_session(app);
 		inst_show(app, INST_S3);
 		break;

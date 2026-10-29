@@ -9,8 +9,8 @@
  * The installer: a wizard of one window that puts the system on a disk of
  * this computer.  It runs as the live session's user and has no rights of
  * its own; what it learns of the disks and every write it asks for go
- * through its helper, install-admin, which it starts as a child and talks
- * to over pipes, a line at a time (admin/plan.h, admin/probe.h,
+ * through its helper, install-admin, which it starts as a process and
+ * talks to through its standard input and output, a line at a time (admin/plan.h, admin/probe.h,
  * admin/session.h).  The files share this header: main.c (the window,
  * its input and the log the tests read), helper.c (the helper's
  * processes and their lines), catalog.c (the index of what can be
@@ -246,20 +246,17 @@ struct inst_tuple {
 
 /*
  * The helper's processes: a probe that answers and ends, and the session
- * that lives from the first write until the installer ends it.  Each has
- * the pipe its lines come on; the session also the pipe its requests go
- * on.  One request is answered at a time.
+ * that lives from the first write until the installer ends it (its input
+ * open until then), bound to a disk.  One request is answered at a time;
+ * the line being read, and whether the rest of a line too long is dropped.
  */
 struct inst_helper {
-	pid_t probe_pid;
-	int probe_fd;
-	pid_t session_pid;
-	int session_in;
-	int session_out;
+	struct kl_process *probe;
+	struct kl_process *session;
+	int session_open;
 	uint32_t session_disk;
 	enum inst_job job;
 	char line[INST_LINE_MAX];
-	size_t line_used;
 	int line_long;
 };
 
@@ -414,9 +411,8 @@ void inst_redraw(struct inst_app *app);
 int inst_helper_probe(struct inst_app *app);
 int inst_helper_request(struct inst_app *app, uint32_t disk, enum inst_job job, const char *request);
 void inst_helper_end_session(struct inst_app *app);
-void inst_helper_ready(struct inst_app *app, int fd, unsigned ready);
+void inst_helper_ready(struct inst_app *app, struct kl_process *process, unsigned ready);
 int inst_helper_busy(const struct inst_app *app);
-int inst_helper_watch(struct inst_app *app, int fd);
 
 /* catalog.c */
 int inst_catalog_read(struct inst_catalog *catalog);

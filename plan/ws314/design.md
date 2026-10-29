@@ -418,8 +418,9 @@ zedBSD の libc には `posix_spawn`・`POSIX_SPAWN_SETSID`・`addclosefrom_np`�
 | Phase | 変える物 | KL_VERSION | 確かめ |
 | --- | --- | --- | --- |
 | p004 | `ui/app.c`・`ui/window.c`・`ui/window.h`・`platform/`・`keiland_app.h`・`keiland_window.h`・exports、Mailer | 97 | build（3 arch・Linux）、host の試験 `tests/post-test.c`（最小の wayland server、4 thread × 5000 と自分の thread の 1000（queue の 512 を超える）、順・数・眠った dispatch の起こし、TSan の build でも）、Mailer の同期は QEMU（IMAP の相手が要る、未定） |
-| p005 | `process.c`・`platform/`・`keiland_process.h`、Installer・Terminal・Phone | 98 | host の試験（行・CUT・byte・level・入力の満ち・終了の順・kill・pty の大きさと mode・close と queue、Linux）、QEMU で Terminal と Installer の probe |
-| p005 の分割案 | (a) kl_process の核と Installer・Terminal・Phone、(b) `kl_launch` と Files・Settings・PDF Viewer・Terminal の新しい窓、(c) Preview の API | — | Q1 が番号を決める（review 23） |
+| p005 | `process.c`・`platform/`・`keiland_process.h`、Installer・Terminal・Phone（(a)） | 98 | host の試験（行・CUT・byte・level・入力の満ち・終了の順・kill・pty の大きさと mode・close と queue、Linux）、QEMU で Terminal と Installer の probe |
+| p013 | `kl_launch`（`launch.c`）と Files・Settings・PDF Viewer・Terminal の新しい窓（review 23 で p005 から分けた） | 次の版 | QEMU で Files の「開く」と Terminal の新しい窓 |
+| p014 | Preview の API から fd・pid を外す（review 23 で p005 から分けた） | — | Files・Photos の thumbnail（QEMU） |
 | p006 | `instance.c`・`keiland_instance.h`、Settings | 99 | host の試験（2 つ目の起動の引き渡し、close の順）、QEMU で Settings の 2 回目の起動 |
 | p007 | libbrowser の `net/`・`page/network.c`・`page/media.c`・`view/`・`browser.h`、shell | — | libbrowser の host の試験（headless の取得、cancel・redirect・TLS）、QEMU で Browser の https の page |
 | p008 | `kl_app_watch_fd`・`KL_APP_FD*`・`KL_APP_FDS_MAX`・`kl_app_event.fd`・`kl_instance_fd` を外す | 100 | grep で利用者 0、3 arch・Linux・FreeBSD の build（userland/tests の probe も）、exports |

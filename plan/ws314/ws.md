@@ -40,15 +40,17 @@
 | [ws314-p001](phase001/phase.md) | `keiland.h` を `keiland_*.h` に分ける（定義の移動だけ、API・ABI は変えない。KL_VERSION の履歴の comment の置き場所も）。comment から開発の管理情報を除く（決定 10） | cleared | — |
 | [ws314-p002](phase002/phase.md) | `docs/` に Keiland のプログラミングの解説（英語）: app → window → titlebar → ui と main loop → widget → menu → その他。fd の API は書かない | cleared | p001 |
 | [ws314-p003](phase003/phase.md) | 設計: post・`kl_process`・`kl_instance` の event・libbrowser の network の thread（[design.md](design.md)、design-reviewer） | cleared（判断 A〜D 待ち） | p001 |
-| ws314-p004 | `kl_app_post`・`kl_window_post` の実装と Mailer の移行 | in-progress | p003 |
-| ws314-p005 | `kl_process_*` の実装と Installer・Terminal・起動する program の移行 | planned | p003 |
+| [ws314-p004](phase004/phase.md) | `kl_app_post`・`kl_window_post` の実装と Mailer の移行 | cleared（QEMU の Mailer は未実施） | p003 |
+| [ws314-p005](phase005/phase.md) | `kl_process_*` の核と Installer・Terminal・Phone の移行（design.md §4） | in-progress（zedBSD の試験が残り） | p003・p004 |
 | ws314-p006 | `kl_instance` の event と Settings の移行 | planned | p004 |
 | ws314-p007 | libbrowser の network の thread と Browser の shell の移行 | planned | p004 |
-| ws314-p008 | `kl_app_watch_fd`・`kl_instance_fd` を公開の API から外す（KL_VERSION を上げる）、Linux・FreeBSD の build | planned | p004〜p007 |
-| ws314-p009 | 解説に新しい API（post・process・instance）を足す | planned | p008 |
+| ws314-p008 | `kl_app_watch_fd`・`kl_instance_fd` を公開の API から外す（KL_VERSION を上げる）、Linux・FreeBSD の build | planned | p004〜p007・p013・p014 |
+| ws314-p009 | 解説に新しい API（post・process・instance）を足す | planned | p008・p012 |
 | ws314-p010 | 規約の全文の見直し | planned | p009 |
 | ws314-p011 | 解説の構成の設計（Opus）: 章ごとに完全に動く source の全文を示し、そこから帰納的に分からせ演繹的な説明も引ける構成。keiland-programming.md に「ここにこういう説明を入れる」の comment を入れ、例の全文は compile・実行で確かめる | planned | p002 |
 | ws314-p012 | 解説の書き直し（Sonnet）: p011 の構成と comment に沿って人間向けの文章に | planned | p011 |
+| ws314-p013 | `kl_launch` と Files・Settings・PDF Viewer・Terminal の新しい窓の移行（design.md §5） | planned | p005 |
+| ws314-p014 | Preview の API から fd・pid を外し、`waitpid`・`kill` を Preview の platform の file へ（design.md §4.5） | planned | p003 |
 
 ## Resume point
 
@@ -63,3 +65,5 @@
   既存の `kl_window_post(window, code)`（KL_WINDOW_POST、dispatch の中で同じ thread から入力を積む）がある。`kl_app_post` は thread から呼べる別物として設計する。
 - 2026-10-30 P2（再開）: p003 cleared（[design.md](design.md)、design-reviewer 23 件を反映）。ユーザーの判断 A〜D を Q1 へ（phase003 の phase.md）。
   p004 を実装中（libkeiland の post と Mailer、host の試験 tests/post-test.c は PASS）。
+- 2026-10-30 P2: p004 cleared（KL_VERSION 97）。p005 は実装・build（3 arch・Linux、warning 0）・Linux の host の試験まで（KL_VERSION 98）。
+  残り: p005 の zedBSD（QEMU）の試験、`keiland-os-boundary` の許可の行（Q1）。
