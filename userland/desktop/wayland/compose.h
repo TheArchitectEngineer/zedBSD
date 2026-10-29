@@ -954,20 +954,7 @@ unsigned kwl_host_images_record(const struct kwl_list *list, VkCommandBuffer com
 void kwl_host_image_batch_begin(struct kwl_compose *compose);
 VkResult kwl_host_image_batch_end(struct kwl_compose *compose);
 
-/*
- * A wallpaper and its frosted glass made at another size before an output
- * turns (glass.c, WS217), the look's own kept until they are swapped in.
- */
-struct kwl_glass_size {
-	struct kwl_import wallpaper;
-	struct kwl_import blurred;
-	unsigned made;
-};
-
 /* The glass look (glass.c). */
-int kwl_glass_size_prepare(struct kwl_server *server, uint32_t width, uint32_t height, struct kwl_glass_size *size);
-void kwl_glass_size_swap(struct kwl_server *server, struct kwl_glass_size *size);
-void kwl_glass_size_drop(struct kwl_server *server, struct kwl_glass_size *size);
 int kwl_glass_open(struct kwl_server *server);
 void kwl_glass_close(struct kwl_server *server);
 void kwl_glass_draw(struct kwl_server *server, struct kwl_list *command, struct kwl_object **windows, unsigned count);

@@ -8,7 +8,7 @@
 # a still view of 1 copy (c), a spin of 5000 copies (d), still views of 5000 (e) and of 1 copy (f).  Each step's lines
 # of the session's compositor log (/run/user/1000/session.log) are OUT/<step>-session.log.  At the end the stick's
 # compositor and RESTORE (the NVMe kernel) are put back and checked by cksum, and Debian runs again (its RTX functions
-# on vfio-pci are printed).
+# on vfio-pci are printed); KEEP=1 leaves the stick as the run made it (zedBSD running), for a second run.
 # Prints, for each still view, the pixels 16 or more levels off the Linux reference (over15; the 1-copy views a, c and
 # f are judged: under 1000 is the window shown), the compositor's game mode and display lines of b and d, and
 # "rtx-bug353: PASS" when a, c and f show the window and no KWL FAILED or VULKAN_ERROR line came; e is printed only
@@ -110,8 +110,14 @@ if [ $failed = 0 ] && [ -n "$ip" ]; then
 	sed 's/^/kernel /' "$out/kernel.txt" | tee -a "$summary"
 fi
 
-# The stick as it was: its compositor and the NVMe kernel, checked.
+# The stick as it was: its compositor and the NVMe kernel, checked (KEEP=1: left as it is, for a second run).
 ip=$($M zedbsd 2> /dev/null | tail -1)
+if [ "${KEEP:-0}" = 1 ]; then
+	say "kept: the stick has the compositor and the kernel of this run"
+	say "end $(date +%H:%M)"
+	[ $failed = 0 ] && say "rtx-bug353: PASS" || say "rtx-bug353: FAIL"
+	exit 0
+fi
 if [ -n "$ip" ]; then
 	timeout 120 scp -O -i "$KEY" $SSHOPT "$restore" "root@$ip:/tmp/vmunix.restore" > /dev/null 2>&1
 	z 'cp -p /bin/wayland.p012old /bin/wayland.p012new && mv /bin/wayland.p012new /bin/wayland && cp /tmp/vmunix.restore /boot/boot0/vmunix && sync && cksum /bin/wayland /boot/boot0/vmunix' > "$out/restored.txt" 2>&1

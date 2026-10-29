@@ -68,6 +68,9 @@
   5'. 5 の script は新しい `plan/ws309/tests/scanout-guest.sh OUT IMAGE WAYLAND`（2026-10-29 15:0x、走らせる前）: 判定は compositor の READY、spin の window に
      KWL SCANOUT の行（direct=1、または direct=0 reason=backend … output=kept）、その後の still の mview が最後まで（MVIEW DONE run=still）、capture が画（spread 24 以上）、
      compositor が生きている、KWL FAILED・VULKAN_ERROR 無し。
+  7. 回転（2026-10-29 15:1x、走らせる前）: 新しい `plan/ws309/tests/rotate-guest.sh OUT IMAGE WAYLAND`（keiland-shot の ROTATE 90 → ROTATE 0、`--rotate-policy=any`）。
+     判定: 各回転で `KWL OUTPUT rotate … rotation=R … width=W height=H … by=user`、その後に thread の形の `KWL GLASS resize width=W height=H … images=`、
+     その間に frame が 1 つ以上（KWL COMPOSE frame=）、capture が画、KWL FAILED・VULKAN_ERROR 無し、compositor が生きている。回転の times の行と pass_max_us は記録だけ。
 - hand-guest の 1 回目の FAIL（2026-10-29 15:0x）: 3 画の認識の答えが無く 4 画だけ。見込みの原因: 最初の認識で templates を読む時間（QEMU）が 3 画の後の固定の 1.5 s を超え、
   4 画目の job が同じ key の 3 画の job を置き換えた（最新だけの決まり）。試験の直し（Q1 の指示）: 4 画目の前を、時間でなく log の
   `KWL OSK hand recognize strokes=3 ` を待つ形（上限 10 s）にした（`plan/ws309/tests/hand-guest.sh`）。

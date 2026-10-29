@@ -398,7 +398,6 @@ static int wallpaper_create(struct kwl_server *server, struct kwl_glass *glass, 
 static int wallpaper_target(struct kwl_server *server, struct kwl_glass *glass, uint32_t width, uint32_t height, unsigned *renewed);
 static int wallpaper_renew(struct kwl_server *server, struct kwl_glass *glass, uint32_t width, uint32_t height);
 static int glass_image_renew(struct kwl_server *server, struct kwl_import *place, uint32_t width, uint32_t height, VkSampler sampler);
-static int glass_size_make(struct kwl_server *server, uint32_t width, uint32_t height, struct kwl_glass_size *size);
 static int wallpaper_fill(struct kwl_glass *glass, const char *path, uint32_t width, uint32_t height);
 static int wallpaper_draw(struct kwl_glass *glass, struct wallpaper_picture *given, uint32_t width, uint32_t height);
 static void wallpaper_pixel(uint32_t x, uint32_t y, uint32_t width, uint32_t height, float *rgb);
@@ -740,104 +739,6 @@ kwl_glass_resize(
 
 	/* Succeeded: the look fits the output. */
 	return 0;
-}
-
-/*
- * Makes the wallpaper and its frosted glass at another size, the picture
- * in them, before an output turns: the look keeps its own images
- * until kwl_glass_size_swap gives it these, so that a failure here leaves
- * everything as it was.  The two images' layout moves are submitted and
- * waited for once, as at the start (each alone waited for the render
- * thread and the queue).  Returns 0 (nothing made without the
- * look) or an errno value, with nothing left made.
- */
-int
-kwl_glass_size_prepare(
-	struct kwl_server *server,
-	uint32_t width,
-	uint32_t height,
-	struct kwl_glass_size *size)
-{
-	uint64_t started;
-	VkResult moved;
-	int error;
-
-	/* Without the look there is no wallpaper. */
-	memset(size, 0, sizeof(*size));
-	if (server->compose == NULL || server->compose->glass == NULL)
-		return 0;
-
-	/* The images and the picture in them, their layout moves recorded together. */
-	started = kwl_milliseconds();
-	kwl_host_image_batch_begin(server->compose);
-	error = glass_size_make(server, width, height, size);
-
-	/* The moves submitted once, before a failure lets the images go (the moves name them). */
-	moved = kwl_host_image_batch_end(server->compose);
-	if (error == 0 && moved != VK_SUCCESS)
-		error = EIO;
-
-	/* A failure leaves nothing made. */
-	if (error != 0) {
-		kwl_glass_size_drop(server, size);
-		return error;
-	}
-
-	/* Succeeded: ready to take the look's place. */
-	size->made = 1U;
-	printf("KWL GLASS size width=%u height=%u by=turn ms=%llu\n", width, height, (unsigned long long)(kwl_milliseconds() - started));
-	return 0;
-}
-
-/*
- * Gives the look the wallpaper and frosted glass kwl_glass_size_prepare
- * made, and lets its old ones go (the device is idle: an output turning
- * with the render thread parked).  A wallpaper being read for the
- * old size is drawn again at the new one when it comes
- * (the blur thread's result compares the sizes).
- */
-void
-kwl_glass_size_swap(
-	struct kwl_server *server,
-	struct kwl_glass_size *size)
-{
-	struct kwl_glass *glass;
-
-	/* Nothing was made without the look. */
-	if (!size->made || server->compose == NULL || server->compose->glass == NULL)
-		return;
-	glass = server->compose->glass;
-
-	/* The old images go, the new ones take their places. */
-	kwl_host_image_release(server->compose, &glass->wallpaper);
-	kwl_host_image_release(server->compose, &glass->blurred);
-	kwl_host_image_move(server->compose, &size->wallpaper, &glass->wallpaper);
-	kwl_host_image_move(server->compose, &size->blurred, &glass->blurred);
-
-	/* The next frame copies both into their sampled images, and everything stands on them. */
-	kwl_host_image_written(&glass->wallpaper);
-	kwl_host_image_written(&glass->blurred);
-	server->dirty = 1;
-	memset(size, 0, sizeof(*size));
-}
-
-/*
- * Lets go of what kwl_glass_size_prepare made when it is not used (an
- * output that did not turn after all): no frame has used it.
- */
-void
-kwl_glass_size_drop(
-	struct kwl_server *server,
-	struct kwl_glass_size *size)
-{
-	/* Whatever part of each image was made. */
-	if (server->compose != NULL) {
-		kwl_host_image_release(server->compose, &size->wallpaper);
-		kwl_host_image_release(server->compose, &size->blurred);
-	}
-
-	/* Nothing is left. */
-	memset(size, 0, sizeof(*size));
 }
 
 /*
@@ -1315,51 +1216,6 @@ glass_image_renew(
 	if (place->image != VK_NULL_HANDLE || place->staging != VK_NULL_HANDLE)
 		kwl_host_image_release(server->compose, place);
 	kwl_host_image_move(server->compose, &fresh, place);
-	return 0;
-}
-
-/*
- * Makes the wallpaper's image and the frosted glass's at a size and draws
- * the picture shown now into them (kwl_glass_size_prepare); a failure
- * leaves what was made in size for the caller to let go.  Returns 0,
- * ENOMEM for an image that could not be made, or the error of drawing.
- */
-static int
-glass_size_make(
-	struct kwl_server *server,
-	uint32_t width,
-	uint32_t height,
-	struct kwl_glass_size *size)
-{
-	struct wallpaper_picture picture;
-	VkResult result;
-	int error;
-
-	/* The wallpaper's image at the size. */
-	result = kwl_host_image_create(server->compose, width, height, server->compose->sampler, &size->wallpaper);
-	if (result != VK_SUCCESS)
-		return ENOMEM;
-
-	/* The frosted glass's small image. */
-	result = kwl_host_image_create(server->compose, width / GLASS_BLUR_SCALE, height / GLASS_BLUR_SCALE, server->compose->linear_sampler, &size->blurred);
-	if (result != VK_SUCCESS)
-		return ENOMEM;
-
-	/* The picture shown now (or the landscape drawn here), read again. */
-	memset(&picture, 0, sizeof(picture));
-	if (server->wallpaper_path != NULL) {
-		error = wallpaper_load(server->wallpaper_path, &picture);
-		if (error != 0)
-			printf("KWL GLASS no wallpaper: path=%s errno=%d\n", server->wallpaper_path, error);
-	}
-
-	/* Into both images at the size; then its bytes go. */
-	error = wallpaper_render(&picture, width, height, size->wallpaper.map, size->wallpaper.row_pitch, size->blurred.map, size->blurred.row_pitch);
-	free(picture.data);
-	if (error != 0)
-		return error;
-
-	/* Succeeded: both images hold the picture. */
 	return 0;
 }
 

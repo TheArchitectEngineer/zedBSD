@@ -74,12 +74,14 @@ struct output_rotate_clock {
  * What a turn to another angle made before the clients are told, kept
  * until its images are exchanged (output_rotate_turn_begin, then
  * output_rotate_turn_end, with the render thread parked between them):
- * the new turn image and the look's wallpaper, whether the logical size
- * changes, and whether the turn image of the size serves the new angle.
+ * the new turn image, whether the logical size changes, and whether the
+ * turn image of the size serves the new angle.  The look's wallpaper at a
+ * new size is made after, off the event loop (kwl_glass_resize: the
+ * picture read and decoded by a thread of its own and drawn and blurred
+ * by the blur thread; the old one is drawn stretched meanwhile).
  */
 struct output_rotate_work {
 	struct kwl_turn fresh;
-	struct kwl_glass_size glass;
 	unsigned resized;
 	unsigned reuse;
 };
@@ -655,9 +657,9 @@ kwl_output_rotate_held(
 
 /*
  * Begins the turn to another angle the compositor turns (or none): another
- * logical size makes a new turn image and the look's wallpaper first (a
- * failure changes nothing), then the render and cursor threads are parked,
- * the device idle, and the new angle and logical size set.  The images are
+ * logical size makes a new turn image first (a failure changes nothing),
+ * then the render and cursor threads are parked (the render thread's park
+ * drains what it submitted) and the new angle and logical size set.  The images are
  * exchanged by output_rotate_turn_end, after the clients are told the new
  * size.  The clock gets when each step ended.  Returns 0 (the render
  * thread parked) or the errno of making the new images (nothing changed).
@@ -671,7 +673,6 @@ output_rotate_turn_begin(
 {
 	struct kwl_compose *compose;
 	VkResult result;
-	int error;
 
 	/* Whether the logical size changes, and whether the turn image of the size can serve the new angle. */
 	compose = server->compose;
@@ -697,17 +698,7 @@ output_rotate_turn_begin(
 		}
 	}
 	clock->turn_made = kwl_milliseconds();
-
-	/* The look's wallpaper at the new logical size, when the size changes. */
-	if (work->resized) {
-		error = kwl_glass_size_prepare(server, after->width, after->height, &work->glass);
-		if (error != 0) {
-			printf("KWL OUTPUT rotate refused key=%s rotation=%u reason=glass errno=%d\n", compose->display_name, after->rotation, error);
-			kwl_turn_close(compose, &work->fresh);
-			return error;
-		}
-	}
-	clock->glass_made = kwl_milliseconds();
+	clock->glass_made = clock->turn_made;
 
 	/*
 	 * The fingers and the pens end what they were doing while their places
@@ -716,11 +707,14 @@ output_rotate_turn_begin(
 	kwl_input_rotated(server);
 	clock->prepared = kwl_milliseconds();
 
-	/* No frame may use the old images from now until they are exchanged (the cursor's plane is held already). */
+	/*
+	 * No frame may use the old images from now until they are exchanged
+	 * (the cursor's plane is held already): the render thread parks after
+	 * the frame in flight and the tasks given before (drained).
+	 */
 	kwl_compose_park(server);
 	clock->parked = kwl_milliseconds();
-	kwl_device_wait_idle(compose);
-	clock->idle = kwl_milliseconds();
+	clock->idle = clock->parked;
 
 	/* The new angle and logical size, which the windows are fitted to and the clients told. */
 	kwl_output_size_set(server, compose->mode_width, compose->mode_height, after->rotation);
@@ -734,8 +728,10 @@ output_rotate_turn_begin(
 
 /*
  * Ends the turn output_rotate_turn_begin began: with the render thread
- * still parked and the device idle, the old turn image and wallpaper go
- * and the size-bound caches are made again, and the render thread goes on.
+ * still parked and drained, the old turn image goes and the size-bound
+ * caches are made again, and the render thread goes on; the look's
+ * wallpaper at a new size is asked for (made off the event loop, the old
+ * one stretched until it comes).
  * The same size (90 and 270, 0 and a turned 180) keeps every image of the
  * size, the turn image too (its pixels are logical), and only the
  * swapchain's images are drawn whole (review M5).  The clock gets when
@@ -749,6 +745,7 @@ output_rotate_turn_end(
 {
 	struct kwl_compose *compose;
 	unsigned scene_kept;
+	int error;
 
 	/* The same turn image at the new angle: its pixels stay, only the turn pass turns them otherwise. */
 	compose = server->compose;
@@ -771,8 +768,6 @@ output_rotate_turn_end(
 		compose->target_height = compose->turn.height;
 	}
 
-	/* The look's wallpaper exchanged. */
-	kwl_glass_size_swap(server, &work->glass);
 	clock->exchanged = kwl_milliseconds();
 
 	/* The caches of another size made again; every image is drawn whole next. */
@@ -781,9 +776,16 @@ output_rotate_turn_end(
 		scene_kept = 1U;
 	output_rotate_caches(server, scene_kept, work->resized);
 
-	/* Succeeded: the render thread goes on with the new images. */
+	/* The render thread goes on with the new images. */
 	kwl_compose_unpark(server);
 	clock->swapped = kwl_milliseconds();
+
+	/* Succeeded: the look's wallpaper at the new size is made off the event loop. */
+	if (work->resized) {
+		error = kwl_glass_resize(server);
+		if (error != 0)
+			printf("KWL OUTPUT rotate glass errno=%d\n", error);
+	}
 	memset(work, 0, sizeof(*work));
 }
 
@@ -857,7 +859,7 @@ output_rotate_clock_fill(
 
 /*
  * Makes the caches of the drawn-into size again after a turn to another
- * size (the device idle): the scene's copy (when the output had one), the
+ * size (the render thread parked and drained): the scene's copy (when the output had one), the
  * layers' pictures and the backdrop (made at its next use, with its own
  * pass); a failure leaves each unused, as at the output's opening.  The
  * same size keeps them.  Every image is drawn whole next.
