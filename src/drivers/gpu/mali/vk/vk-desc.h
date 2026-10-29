@@ -45,6 +45,12 @@
 #define MALI_DESC_STAGE_FRAGMENT	2U
 #define MALI_DESC_STAGE_VERTEX		3U
 
+/*
+ * Marks a vertex stage's descriptor as the varying (secondary) program's,
+ * which runs full warps; the position program runs half warps.
+ */
+#define MALI_DESC_STAGE_VARYING		0x100U
+
 /* The resource table entries a table pointer must be a multiple of. */
 #define MALI_DESC_TABLE_ALIGN		4U
 

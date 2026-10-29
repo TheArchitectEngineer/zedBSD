@@ -46,7 +46,11 @@ main(void)
 	expect("shader code low", words[2], 0x23456780U);
 	expect("shader code high", words[3], 0x1U);
 	mali_desc_shader(words, MALI_DESC_STAGE_FRAGMENT, 16, 0, 0);
-	expect("shader 32 registers", words[0], 8U | (2U << 4) | (2U << 30));
+	expect("shader 32 registers", words[0], 8U | (2U << 4) | (1U << 8) | (2U << 30));
+	mali_desc_shader(words, MALI_DESC_STAGE_VERTEX, 16, 0, 0);
+	expect("shader position half warps", words[0], 8U | (3U << 4) | (1U << 8) | (2U << 30));
+	mali_desc_shader(words, MALI_DESC_STAGE_VERTEX | MALI_DESC_STAGE_VARYING, 16, 0, 0);
+	expect("shader varying full warps", words[0], 8U | (3U << 4) | (2U << 30));
 
 	/* The storage, a table entry, a buffer. */
 	mali_desc_local_storage(words);
@@ -90,8 +94,10 @@ main(void)
 	equation = mali_desc_blend_equation(1U | (1U << 5) | (3U << 10), 0xf, &supported);
 	expect("min refused", supported, 0);
 	mali_desc_blend(words, true, 0x12345678U, 0xf, 2, 187U << 12);
-	expect("blend word 0", words[0], 1U | (1U << 9));
+	expect("blend word 0", words[0], 1U | (1U << 9) | (1U << 11));
 	expect("blend word 2", words[2], 2U | (3U << 3) | (2U << 16));
+	mali_desc_blend(words, false, 0, 0xf, 0, (237U << 12) | (1U << 20));
+	expect("blend sRGB word 0", words[0], (1U << 9) | (1U << 10) | (1U << 11));
 
 	/* A render target of RGBA8 written linearly, its clear. */
 	target.internal = 1;
@@ -111,7 +117,7 @@ main(void)
 	/* A framebuffer of 1920 by 1080, one target, tiles of 256 pixels, 1 KiB of colour. */
 	mali_desc_framebuffer(words, 1920, 1080, 1, 256, 1024, 0x6000ULL);
 	expect("framebuffer extent", words[8], 1919U | (1079U << 16));
-	expect("framebuffer word 11", words[11], (8U << 9) | (1U << 14) | (1U << 15) | (1U << 24));
+	expect("framebuffer word 11", words[11], (2U << 6) | (8U << 9) | (1U << 14) | (1U << 24));
 	expect("framebuffer tiler", words[14], 0x6000U);
 	expect("framebuffer pointer", mali_desc_framebuffer_pointer(0x7040ULL, 2), 0x7040U | 1U | (1U << 2));
 
@@ -233,8 +239,10 @@ main(void)
 	expect("wls one instance", words[1], 0U | (8U << 8));
 	expect("wls no tls", words[0], 0);
 
-	/* A sampler's compare: less or equal (3) at word 1 bits 13..15. */
-	expect("compare lequal", mali_desc_sampler_compare(3), 3U << 13);
+	/* A sampler's compare at word 1 bits 13..15, the sides exchanged: less or equal (3) is greater or equal (6). */
+	expect("compare lequal", mali_desc_sampler_compare(3), 6U << 13);
+	expect("compare greater", mali_desc_sampler_compare(4), 1U << 13);
+	expect("compare equal", mali_desc_sampler_compare(2), 2U << 13);
 
 	/* The report. */
 	if (failures != 0) {

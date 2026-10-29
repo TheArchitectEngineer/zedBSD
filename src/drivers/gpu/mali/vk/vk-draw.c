@@ -91,6 +91,32 @@
 #define FLAG_SHADER_COVERAGE	(1U << 20)
 
 /*
+ * A draw flag: the scissor box bounds the primitives (struct "DCD Flags
+ * 0", scissor to bounding box at bit 23), set for every draw.
+ *
+ * Values referenced:
+ * Mesa 26.2.6 src/panfrost/genxml/v10.xml (struct "DCD Flags 0") and
+ * src/panfrost/vulkan/csf/panvk_vX_cmd_draw.c (prepare_dcd:
+ * scissor_to_bounding_box set for every draw).
+ */
+#define FLAG_SCISSOR_BOX	(1U << 23)
+
+/*
+ * The render targets a draw writes, in its third flags word (struct
+ * "DCD Flags 2": read mask 0..11, write mask 12..23); no draw reads a
+ * target through the tile buffer.
+ *
+ * Values referenced:
+ * Mesa 26.2.6 src/panfrost/genxml/v10.xml (struct "DCD Flags 2") and
+ * src/panfrost/vulkan/csf/panvk_vX_cmd_draw.c (prepare_dcd: the write
+ * mask the targets written, the read mask those read).
+ */
+#define DCD2_WRITE_SHIFT	12U
+
+/* The tile buffer's depth of 24 bits (enum "Z Internal Format" D24). */
+#define Z_INTERNAL_D24		1U
+
+/*
  * A clear inside a pass: the four corners of its rectangle as a strip of
  * two triangles, one instance.
  */
@@ -411,6 +437,18 @@ pass_begin(
 	words[4] = (uint32_t)(memory + TILER_SAMPLES_AT);
 	words[5] = (uint32_t)((memory + TILER_SAMPLES_AT) >> 32);
 
+	/*
+	 * Without a depth and stencil attachment the tile buffer's depth is
+	 * of 24 bits (word 12 bits 16..17, "Z Internal Format" D24 1).
+	 *
+	 * Values referenced:
+	 * Mesa 26.2.6 src/panfrost/lib/pan_desc.c (pan_emit_fbd: D24 when
+	 * there is no depth surface) and src/panfrost/genxml/v10.xml (enum
+	 * "Z Internal Format").
+	 */
+	if (!state->zs)
+		words[12] |= Z_INTERNAL_D24 << 16;
+
 	/* The depth and stencil attachment's words and extension; a stored clear of it writes back every tile too. */
 	if (state->zs) {
 		clean_depth = pass_depth(entry, state, words, fbd_view + MALI_DESC_FBD_BYTES);
@@ -635,6 +673,21 @@ pass_end(
 	/* The fragment run, waited for. */
 	mali_cs_emit(&build->cs, mali_cs_run_fragment(false, 0));
 	mali_cs_emit(&build->cs, mali_cs_wait(MALI_VK_WAIT_ALL));
+
+	/*
+	 * The texture caches invalidated, waited for: a later read of what
+	 * the pass wrote in the same stream (a sampled image, a pass's
+	 * preload) does not find the texels from before.  The flush names
+	 * flush id zero, so it is never skipped as done already.
+	 *
+	 * Procedure referenced:
+	 * Mesa 26.2.6 src/panfrost/vulkan/csf/panvk_vX_cmd_buffer.c
+	 * (add_memory_dependency: the read-only caches in front of the
+	 * texture unit are invalidated after a write a later sample reads).
+	 */
+	mali_cs_emit(&build->cs, mali_cs_move32(MALI_VK_SCRATCH_REGISTER, 0));
+	mali_cs_emit(&build->cs, mali_cs_flush_cache(MALI_CS_FLUSH_NONE, MALI_CS_FLUSH_NONE, MALI_CS_FLUSH_OTHER_INVALIDATE, 0, MALI_VK_SCRATCH_REGISTER, MALI_VK_SLOT_LOAD_STORE));
+	mali_cs_emit(&build->cs, mali_cs_wait(1U << MALI_VK_SLOT_LOAD_STORE));
 }
 
 /*
@@ -722,7 +775,7 @@ draw(
 	position_shader = mali_vk_build_shader(build, MALI_DESC_STAGE_VERTEX, vertex->work_registers, vertex->preload, pipeline->vertex_address);
 	varying_shader = 0;
 	if (pipeline->varying_address != 0U)
-		varying_shader = mali_vk_build_shader(build, MALI_DESC_STAGE_VERTEX, vertex->varying_work_registers, vertex->varying_preload, pipeline->varying_address);
+		varying_shader = mali_vk_build_shader(build, MALI_DESC_STAGE_VERTEX | MALI_DESC_STAGE_VARYING, vertex->varying_work_registers, vertex->varying_preload, pipeline->varying_address);
 	fragment_shader = mali_vk_build_shader(build, MALI_DESC_STAGE_FRAGMENT, fragment->work_registers, fragment->preload, pipeline->fragment_address);
 
 	/* One blend a colour target. */
@@ -785,7 +838,8 @@ draw(
 		draw_depth(build, state, graphics, fragment, words, &flags);
 	store(depth_view, words, 8);
 
-	/* The faces, the culls, and whether the program changes its coverage. */
+	/* The scissor box, the faces, the culls, and whether the program changes its coverage. */
+	flags |= FLAG_SCISSOR_BOX;
 	if (fragment->writes_sample_mask != 0U)
 		flags |= FLAG_SHADER_COVERAGE;
 	if (graphics->front_face == VK_FRONT_FACE_COUNTER_CLOCKWISE)
@@ -876,8 +930,8 @@ draw(
 		mali_cs_emit(&build->cs, mali_cs_move32(MALI_CS_IDVS_INSTANCE_OFFSET, entry->values[3]));
 	}
 
-	/* The index buffer, the scissor box and the depth clamps. */
-	mali_cs_emit(&build->cs, mali_cs_move32(MALI_CS_IDVS_DCD2, 0));
+	/* The targets written, the index buffer, the scissor box and the depth clamps. */
+	mali_cs_emit(&build->cs, mali_cs_move32(MALI_CS_IDVS_DCD2, (state->target_mask & 0xffU) << DCD2_WRITE_SHIFT));
 	mali_cs_emit(&build->cs, mali_cs_move32(MALI_CS_IDVS_INDEX_BUFFER_SIZE, index_bytes));
 	mali_cs_move64(&build->cs, MALI_CS_IDVS_INDEX_BUFFER, index_address);
 	mali_cs_emit(&build->cs, mali_cs_move32(MALI_CS_IDVS_SCISSOR, mali_desc_scissor_low((uint32_t)scissor[0], (uint32_t)scissor[1])));
@@ -1211,8 +1265,8 @@ clear_rect(
 	mali_cs_emit(&build->cs, mali_cs_move32(MALI_CS_IDVS_VERTEX_OFFSET, 0));
 	mali_cs_emit(&build->cs, mali_cs_move32(MALI_CS_IDVS_INSTANCE_OFFSET, 0));
 
-	/* No index buffer, the scissor of the rectangle, the depth clamps. */
-	mali_cs_emit(&build->cs, mali_cs_move32(MALI_CS_IDVS_DCD2, 0));
+	/* The target written (or none), no index buffer, the scissor of the rectangle, the depth clamps. */
+	mali_cs_emit(&build->cs, mali_cs_move32(MALI_CS_IDVS_DCD2, target_mask << DCD2_WRITE_SHIFT));
 	mali_cs_emit(&build->cs, mali_cs_move32(MALI_CS_IDVS_INDEX_BUFFER_SIZE, 0));
 	mali_cs_move64(&build->cs, MALI_CS_IDVS_INDEX_BUFFER, 0);
 	mali_cs_emit(&build->cs, mali_cs_move32(MALI_CS_IDVS_SCISSOR, mali_desc_scissor_low((uint32_t)box[0], (uint32_t)box[1])));
@@ -1226,7 +1280,7 @@ clear_rect(
 	mali_cs_move64(&build->cs, MALI_CS_IDVS_BLEND, (blends & ~0xfULL) | state->targets);
 	mali_cs_move64(&build->cs, MALI_CS_IDVS_DEPTH_STENCIL, depth);
 	mali_cs_emit(&build->cs, mali_cs_move32(MALI_CS_IDVS_TILER_FLAGS, mali_desc_primitive(MALI_DESC_DRAW_TRIANGLE_STRIP, 0)));
-	mali_cs_emit(&build->cs, mali_cs_move32(MALI_CS_IDVS_DCD0, flags));
+	mali_cs_emit(&build->cs, mali_cs_move32(MALI_CS_IDVS_DCD0, flags | FLAG_SCISSOR_BOX));
 	mali_cs_emit(&build->cs, mali_cs_move32(MALI_CS_IDVS_DCD1, 0xffffU | (target_mask << 16)));
 	mali_cs_emit(&build->cs, mali_cs_move32(MALI_CS_IDVS_PRIMITIVE_SIZE, FLOAT_ONE));
 
@@ -1582,8 +1636,10 @@ hierarchy_mask(
 	uint32_t last;
 	uint32_t mask;
 
-	/* The levels the tiler has. */
+	/* The levels the tiler has; fewer than two (the features not read) as every one of eight. */
 	levels = (tiler_features >> 8) & 0xfU;
+	if (levels < 2U)
+		levels = 8U;
 	if (levels < 8U) {
 		mask = spread[levels];
 		levels = 8U;

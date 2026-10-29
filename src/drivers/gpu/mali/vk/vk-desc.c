@@ -29,6 +29,23 @@
 #define TYPE_BUFFER		9U
 #define TYPE_PLANE		10U
 
+/* The compares whose operands' sides matter (VkCompareOp's numbers, the hardware's too). */
+#define VK_COMPARE_LESS		1U
+#define VK_COMPARE_LESS_EQUAL	3U
+#define VK_COMPARE_GREATER	4U
+#define VK_COMPARE_GREATER_EQUAL	6U
+
+/* A blend's sRGB and round to the target's precision bits, and the memory format's sRGB bit. */
+#define BLEND_SRGB		(1U << 10)
+#define BLEND_ROUND		(1U << 11)
+#define BLEND_FORMAT_SRGB	(1U << 20)
+
+/* The framebuffer's tie-break rule of one sample: -180 in, 0 out. */
+#define TIE_BREAK_MINUS_180_IN	2U
+
+/* A program descriptor's bit 8: the GL coverage bitmask of a fragment program, half warps of a position program. */
+#define SHADER_BIT8		(1U << 8)
+
 /* The buffer types, the register allocations, and the other enum values used. */
 #define BUFFER_SIMPLE		1U
 #define BUFFER_TILER_HEAP	2U
@@ -90,8 +107,18 @@ static uint32_t blend_function(uint32_t source, uint32_t destination, uint32_t o
 
 /*
  * Packs a shader program descriptor (struct "Shader Program"): the
- * type, the stage, 32 or 64 registers a thread, the preloaded registers
- * (bit i for r(48 + i)) and the code's address.
+ * type, the stage, bit 8 (a fragment program's coverage bitmask of the
+ * GL type; a position program's warp limit of half; clear for a varying
+ * program, MALI_DESC_STAGE_VARYING with the vertex stage, and a compute
+ * program), 32 or 64 registers a thread, the preloaded registers (bit i
+ * for r(48 + i)) and the code's address.
+ *
+ * Values referenced:
+ * Mesa 26.2.6 src/panfrost/genxml/v10.xml (struct "Shader Program":
+ * fragment coverage bitmask type and vertex warp limit at 0:8; enums
+ * "Coverage bitmask type" GL 1, "Warp limit" full 0 and half 1) and
+ * src/panfrost/vulkan/panvk_vX_shader.c (the program descriptors before
+ * PAN_ARCH 12: fragment GL, position half, varying full).
  */
 void
 mali_desc_shader(
@@ -110,7 +137,11 @@ mali_desc_shader(
 		allocation = ALLOCATION_64;
 
 	/* Word 0: type 0..3, stage 4..7, allocation 30..31; word 1: the preloads; words 2..3: the code. */
-	words[0] = TYPE_SHADER | ((uint32_t)stage << 4) | (allocation << 30);
+	words[0] = TYPE_SHADER | (((uint32_t)stage & 0xfU) << 4) | (allocation << 30);
+
+	/* Bit 8: a fragment program's GL coverage bitmask, a position program's half warps. */
+	if (stage == MALI_DESC_STAGE_FRAGMENT || stage == MALI_DESC_STAGE_VERTEX)
+		words[0] |= SHADER_BIT8;
 	words[1] = preload & 0xffffU;
 	put64(words, 2, code);
 }
@@ -254,9 +285,16 @@ mali_desc_workgroup(
 
 /*
  * Packs a fixed-function blend descriptor (struct "Blend", "Blend
- * Fixed-Function"): whether it reads the destination, the equation
- * word, four components into render target `target`, converted from
- * the memory format.
+ * Fixed-Function"): whether it reads the destination, the result
+ * rounded to the target's precision, sRGB when the memory format is
+ * (its bit 20), the equation word, four components into render target
+ * `target`, converted from the memory format.
+ *
+ * Values referenced:
+ * Mesa 26.2.6 src/panfrost/genxml/v10.xml (struct "Blend": sRGB 0:10,
+ * round to FB precision 0:11) and src/panfrost/vulkan/panvk_vX_blend.c
+ * (emit_blend_desc: sRGB of an sRGB format, round to FB precision on
+ * every enabled blend).
  */
 void
 mali_desc_blend(
@@ -269,9 +307,11 @@ mali_desc_blend(
 {
 	/* Word 0: load destination 0, enable 9; word 1: the equation; words 2..3: fixed function. */
 	clear(words, 4);
-	words[0] = 1U << 9;
+	words[0] = (1U << 9) | BLEND_ROUND;
 	if (load_destination || color_mask != 0xfU)
 		words[0] |= 1U;
+	if ((memory_format & BLEND_FORMAT_SRGB) != 0U)
+		words[0] |= BLEND_SRGB;
 	words[1] = equation;
 	words[2] = BLEND_FIXED | (3U << 3) | (((uint32_t)target & 0xfU) << 16);
 	words[3] = memory_format & 0x3fffffU;
@@ -378,10 +418,22 @@ mali_desc_framebuffer(
 	words[9] = 0;
 	words[10] = words[8];
 
-	/* Word 11: the tile size 9..12, the first vertex provoking 14, the sprite origin 15, the targets 19..22, the colour buffer 24..31. */
-	words[11] = (log2 & 0xfU) << 9;
+	/*
+	 * Word 11: the tie-break rule 6..8 (-180 in, 0 out, of one sample),
+	 * the tile size 9..12, the first vertex provoking 14, the point
+	 * sprite's origin at the top (bit 15 clear), the targets 19..22, the
+	 * colour buffer 24..31.
+	 *
+	 * Values referenced:
+	 * Mesa 26.2.6 src/panfrost/genxml/v10.xml (struct "Framebuffer
+	 * Parameters": tie-break rule 11:6; enum "Tie-Break Rule":
+	 * MINUS_180_IN_0_OUT 2), src/panfrost/lib/pan_desc.c (pan_emit_fbd:
+	 * that rule below 16 samples) and the Vulkan specification 1.0
+	 * (PointCoord's origin is the upper left).
+	 */
+	words[11] = TIE_BREAK_MINUS_180_IN << 6;
+	words[11] |= (log2 & 0xfU) << 9;
 	words[11] |= 1U << 14;
-	words[11] |= 1U << 15;
 	words[11] |= ((targets - 1U) & 0xfU) << 19;
 	words[11] |= ((color_buffer_bytes >> 10) & 0xffU) << 24;
 
@@ -722,19 +774,45 @@ mali_desc_tls_size(
 
 /*
  * Gives a sampler's compare function field (word 1 bits 13..15) of a
- * VkCompareOp, whose numbers are the hardware's: never, less, equal,
- * less or equal, greater, not equal, greater or equal, always.
+ * VkCompareOp, whose numbers are the hardware's (never, less, equal,
+ * less or equal, greater, not equal, greater or equal, always), with
+ * the operands' sides exchanged: the hardware compares the texel with
+ * the reference, Vulkan the reference with the texel, so less and
+ * greater, and less or equal and greater or equal, trade places.
  *
  * Values referenced: Mesa 26.2.6 src/panfrost/genxml/v10.xml (enum
- * "Func"; struct "Sampler": compare function at 1:13); the Vulkan
- * specification (VkCompareOp).
+ * "Func"; struct "Sampler": compare function at 1:13),
+ * src/panfrost/lib/pan_encoder.h (pan_flip_compare_func) and
+ * src/panfrost/vulkan/panvk_vX_sampler.c (the sampler's compare
+ * function flipped); the Vulkan specification (VkCompareOp).
  */
 uint32_t
 mali_desc_sampler_compare(
 	uint32_t compare_op)
 {
+	uint32_t function;
+
+	/* One case a function whose sides matter; the others are their own flip. */
+	function = compare_op & 7U;
+	switch (function) {
+	case VK_COMPARE_LESS:
+		function = VK_COMPARE_GREATER;
+		break;
+	case VK_COMPARE_GREATER:
+		function = VK_COMPARE_LESS;
+		break;
+	case VK_COMPARE_LESS_EQUAL:
+		function = VK_COMPARE_GREATER_EQUAL;
+		break;
+	case VK_COMPARE_GREATER_EQUAL:
+		function = VK_COMPARE_LESS_EQUAL;
+		break;
+	default:
+		break;
+	}
+
 	/* Succeeded: the field in place. */
-	return (compare_op & 7U) << 13;
+	return function << 13;
 }
 
 /* Stores a 64-bit value as two words, low first. */
