@@ -95,6 +95,9 @@
 /* The link interrupt's bit for a link. */
 #define RTL_INTERRUPT_LINK		0x0004U
 
+/* How often the worker reads the link of an open interface without one. */
+#define RTL_LINK_POLL_MS			1000U
+
 /* The work the worker thread is asked for. */
 #define RTL_WORK_INTERRUPT		0x1U
 #define RTL_WORK_LINK			0x2U
@@ -278,8 +281,11 @@
 #define ADV_2500			0x0080U
 #define ADV_5000			0x0100U
 
-/* Polls of a register that the device sets or clears on its own. */
-#define RTL_POLL_TRIES			100U
+/*
+ * Polls of a register that the device sets or clears on its own: ten
+ * seconds at most, after which the setup goes on, as FreeBSD's does.
+ */
+#define RTL_POLL_TRIES			1000U
 #define RTL_POLL_STEP_MS		10U
 
 /*
@@ -1060,14 +1066,19 @@ rtl_chip_init(
 		}
 	}
 
-	/* Waits for the chip to have loaded its defaults. */
+	/* Waits for the chip to have loaded its defaults; one that never says so is set up anyway. */
 	error = rtl_wait_bits(adapter, DRV_USB_RTL815X_SPACE_PLA, REG_BOOT_STATUS, 2, BOOT_LOADED, 1);
-	if (error != 0)
+	if (error == ETIMEDOUT)
+		kern_logf("usb-rtl815x: chip autoload not reported, going on\n");
+	else if (error != 0)
 		return error;
 
-	/* A PHY still in its external initialization is let go on. */
+	/* A PHY still in its external initialization is let go on; one that never settles is set up anyway. */
+	state = 0;
 	error = rtl_phy_wait_state(adapter, 0, &state);
-	if (error != 0)
+	if (error == ETIMEDOUT)
+		kern_logf("usb-rtl815x: PHY state %u did not settle, going on\n", state);
+	else if (error != 0)
 		return error;
 	if (state == PHY_STATE_EXT_INIT) {
 		error = rtl_ocp_modify(adapter, PHY_A468, 0x000aU, 0);
@@ -1091,7 +1102,9 @@ rtl_chip_init(
 	}
 
 	error = rtl_phy_wait_state(adapter, PHY_STATE_LAN_ON, &state);
-	if (error != 0)
+	if (error == ETIMEDOUT)
+		kern_logf("usb-rtl815x: PHY state %u is not LAN-on, going on\n", state);
+	else if (error != 0)
 		return error;
 
 	/* The power settings and the rest. */
@@ -1416,7 +1429,9 @@ rtl_nic_reset(
 	if (error != 0)
 		return error;
 	error = rtl_wait_bits(adapter, DRV_USB_RTL815X_SPACE_PLA, REG_COMMAND, 1, COMMAND_RESET, 0);
-	if (error != 0)
+	if (error == ETIMEDOUT)
+		kern_logf("usb-rtl815x: MAC reset did not end, going on\n");
+	else if (error != 0)
 		return error;
 
 	/* Resets the buffer manager of both endpoints. */
@@ -1770,6 +1785,7 @@ rtl_worker(
 	unsigned long irq;
 	unsigned work;
 	unsigned stopping;
+	unsigned opened;
 	int link_check;
 	int error;
 
@@ -1782,6 +1798,7 @@ rtl_worker(
 		work = adapter->work;
 		adapter->work = 0;
 		stopping = adapter->worker_stopping;
+		opened = adapter->opened;
 
 		spin_unlock_irqrestore(&adapter->lock, irq);
 
@@ -1789,10 +1806,20 @@ rtl_worker(
 		if (stopping)
 			return;
 
-		/* Nothing to do: sleeps until asked (a request made just before is kept). */
+		/*
+		 * Nothing to do: an open interface without a link reads the
+		 * link again each second (should the interrupt not tell it);
+		 * otherwise the worker sleeps until asked (a request made just
+		 * before is kept).
+		 */
 		if (work == 0) {
-			kern_thread_block();
-			continue;
+			if (opened && !adapter->link_up) {
+				rtl_sleep_ms(RTL_LINK_POLL_MS);
+				work = RTL_WORK_LINK;
+			} else {
+				kern_thread_block();
+				continue;
+			}
 		}
 
 		/* A link interrupt: whether the link changed, and the transfer back on. */
@@ -2204,8 +2231,13 @@ rtl_open(
 	mutex_lock(&adapter->register_lock);
 
 	error = rtl_nic_reset(adapter, device->mtu);
-	if (error == 0)
+	if (error != 0)
+		kern_logf("usb-rtl815x: %s reset failed (%d)\n", device->name, error);
+	if (error == 0) {
 		error = rtl_nic_enable(adapter, device->mtu);
+		if (error != 0)
+			kern_logf("usb-rtl815x: %s enable failed (%d)\n", device->name, error);
+	}
 
 	mutex_unlock(&adapter->register_lock);
 
@@ -2244,6 +2276,7 @@ rtl_open(
 	}
 
 	/* Reads the link as it is now. */
+	kern_logf("usb-rtl815x: %s up, mtu %u\n", device->name, device->mtu);
 	rtl_request(adapter, RTL_WORK_LINK);
 
 	/* Succeeded: the interface carries traffic once it has a link. */
@@ -3423,8 +3456,11 @@ rtl_attach(
 
 	/* Tells the chip and refuses one this driver does not drive. */
 	error = rtl_read_version(adapter);
-	if (error != 0)
+	if (error != 0) {
+		kern_logf("usb-rtl815x: attach failed at %s (%d)\n", "version", error);
 		return error;
+	}
+	kern_logf("usb-rtl815x: attaching %s version 0x%04x\n", drv_usb_rtl815x_chip_name(adapter->chip), adapter->version);
 	error = drv_usb_rtl815x_format_for(adapter->chip, &adapter->format);
 	if (error != 0) {
 		kern_logf("usb-rtl815x: chip %s (version 0x%04x) is not driven in vendor mode; "
@@ -3448,11 +3484,15 @@ rtl_attach(
 		return error;
 	}
 	error = rtl_read_mac(adapter);
-	if (error != 0)
+	if (error != 0) {
+		kern_logf("usb-rtl815x: attach failed at %s (%d)\n", "mac", error);
 		return error;
+	}
 	error = rtl_advertise(adapter);
-	if (error != 0)
+	if (error != 0) {
+		kern_logf("usb-rtl815x: attach failed at %s (%d)\n", "advertise", error);
 		return error;
+	}
 
 	/* Asks the host controller to keep several bulk transfers on the bus each way. */
 	error = drv_usb_endpoint_set_queue_depth(bulk_in, RTL_RX_URBS, &adapter->rx_urb_count);
@@ -3464,19 +3504,27 @@ rtl_attach(
 
 	/* The buffers, the transfers, and the interface. */
 	error = rtl_buffers_alloc(adapter);
-	if (error != 0)
+	if (error != 0) {
+		kern_logf("usb-rtl815x: attach failed at %s (%d)\n", "buffers", error);
 		return error;
+	}
 	error = rtl_urbs_alloc(adapter);
-	if (error != 0)
+	if (error != 0) {
+		kern_logf("usb-rtl815x: attach failed at %s (%d)\n", "transfers", error);
 		return error;
+	}
 	error = rtl_net_device_create(adapter);
-	if (error != 0)
+	if (error != 0) {
+		kern_logf("usb-rtl815x: attach failed at %s (%d)\n", "interface", error);
 		return error;
+	}
 
 	/* The worker that follows the link. */
 	error = kthread_create(rtl_worker, adapter, SCHED_PRIORITY_DEFAULT, &adapter->worker);
-	if (error != 0)
+	if (error != 0) {
+		kern_logf("usb-rtl815x: attach failed at %s (%d)\n", "worker", error);
 		return error;
+	}
 	thread_start(adapter->worker);
 
 	/* Ready for traffic. */
