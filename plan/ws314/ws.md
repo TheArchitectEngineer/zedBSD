@@ -94,3 +94,10 @@
   `kl_app_post`。host（TSan も）・QEMU `guest-browser.sh` PASS）。次は p008（KL_VERSION 102 から、Q1 に確かめる）→ p009 → p010。
 - 2026-10-30 P2（q1690-i02）: p008 cleared（KL_VERSION 102、fd の API を公開から外した。zedBSD 3 arch・Linux・FreeBSD（backend-test 全 PASS）・
   QEMU `guest.sh`・`guest-browser.sh` PASS）。次は p009（解説に post・process・launch・instance・language の節）→ p010。
+- 再開点（2026-10-30 P2、context の残りが少ないため返却）: p009 は未着手。手がかり: `docs/howto/keiland-programming.md`（4311 行、章 1〜7、
+  各章は「完全な例の全文 → Reading the program（行の link）→ The rules → Pitfalls」、例は `docs/howto/keiland-examples/NN-*.c` と PNG、
+  冒頭の章の一覧と「The programs」の表も足す）。足す節: post（`kl_app_post`・`kl_window_post`、worker の thread）、process（`kl_process_*`、
+  行・byte・終了・terminal の mode）、launch（`kl_launch`）、instance（`kl_instance_open`・`kl_instance_bind`・`KL_APP_INSTANCE`・`kl_instance_take`）、
+  language（`KL_APP_LANGUAGE`・`kl_app_language`、design §13.3 の翻訳の読み直しの 2 つの形、7 章の「Text in the user's language」と繋ぐ）。
+  確かめは `sh plan/ws314/tests/doc-examples.sh build/ws314-p008-linux/lib`（compile・link・本文と file の一致）と `doc-examples.sh guest`（画面）。
+  その後 p010（conformance-reviewer、WS の変えた C の全文）。
