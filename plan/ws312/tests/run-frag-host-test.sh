@@ -19,12 +19,8 @@ for arch in AMD64 I386; do
 	built=y
 	for source in src/kern/net/ipv6-frag.c src/kern/net/in6.c src/kern/net/packet-buf.c; do
 		name=$(basename "$source" .c)
-		# The pool works out its empty jumbo class's range from a null array on a 32-bit board (an empty range, never
-		# entered); the pointer-overflow check is left out for that file only.
-		extra=
-		[ "$name" = packet-buf ] && extra=-fno-sanitize=pointer-overflow
 		# shellcheck disable=SC2086
-		$cc $kernel $sanitize $extra -c "$source" -o "$out/$name-$arch.o" || built=n
+		$cc $kernel $sanitize -c "$source" -o "$out/$name-$arch.o" || built=n
 	done
 	# shellcheck disable=SC2086
 	$cc $common $sanitize -c plan/ws312/tests/frag-host-test.c -o "$out/frag-host-test-$arch.o" || built=n
