@@ -1586,6 +1586,8 @@ ipv6_extensions(
 	    *next_header == IPV6_NEXT_ICMPV6 &&
 	    *offset < packet->length) {
 		type = packet->data[*offset];
+
+		/* Router and neighbor discovery messages are the types from the router solicitation to the redirect. */
 		if (type >= ICMP6_ROUTER_SOLICITATION && type <= ICMP6_REDIRECT) {
 			packet_buf_free(packet);
 			return EINVAL;

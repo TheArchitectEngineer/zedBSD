@@ -62,7 +62,7 @@ main(
 	int ready;
 	int error;
 
-	/* The port, the time and the count. */
+	/* Three arguments are wanted: the port, the time and the count. */
 	if (argc != 4) {
 		fprintf(stderr, "usage: udp6-recv PORT SECONDS COUNT\n");
 		return 2;
@@ -132,6 +132,8 @@ main(
 		waiting.revents = 0;
 		ready = poll(&waiting, 1, 1000);
 		now = time(NULL);
+
+		/* Nothing came in that second, or the wait failed: waits again. */
 		if (ready <= 0)
 			continue;
 

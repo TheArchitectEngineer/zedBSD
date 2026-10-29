@@ -309,6 +309,7 @@ check(
 	if (condition)
 		return;
 
+	/* A check that failed is counted and named. */
 	failures++;
 	printf("FAIL: %s\n", what);
 }
@@ -335,6 +336,7 @@ fragment_make(
 	struct ipv6_fragment_wire *fragment;
 	uint8_t *bytes;
 	size_t headers;
+	uint16_t offset_flags;
 	int error;
 
 	/* The packet for the headers and the data. */
@@ -377,7 +379,10 @@ fragment_make(
 
 	/* The fragment header and the data. */
 	fragment->next_header = next_header;
-	wire_put16(fragment->offset_flags, (uint16_t)(offset | (more ? 1U : 0U)));
+	offset_flags = (uint16_t)offset;
+	if (more)
+		offset_flags |= 1U;
+	wire_put16(fragment->offset_flags, offset_flags);
 	wire_put32(fragment->identification, identification);
 	if (length != 0U)
 		memcpy(bytes + headers, data, length);
@@ -472,6 +477,8 @@ whole_check(
 	size_t unfragmentable)
 {
 	const struct ipv6_wire *header;
+	uint16_t payload_length;
+	int different;
 	int right;
 
 	/* Nothing came. */
@@ -483,7 +490,8 @@ whole_check(
 	header = (const struct ipv6_wire *)whole->data;
 	if (whole->length != unfragmentable + length)
 		right = 0;
-	if (wire_get16(header->payload_length) != unfragmentable + length - IPV6_HEADER_LENGTH)
+	payload_length = wire_get16(header->payload_length);
+	if (payload_length != unfragmentable + length - IPV6_HEADER_LENGTH)
 		right = 0;
 	if (whole->l3_offset != (uint16_t)(whole->data - whole->storage) || whole->l3_length != whole->length)
 		right = 0;
@@ -491,8 +499,13 @@ whole_check(
 		right = 0;
 	if (unfragmentable == IPV6_HEADER_LENGTH && header->next_header != TEST_UDP)
 		right = 0;
-	if (right && memcmp(whole->data + unfragmentable, pattern, length) != 0)
-		right = 0;
+	if (right) {
+		different = memcmp(whole->data + unfragmentable, pattern, length);
+		if (different != 0)
+			right = 0;
+	}
+
+	/* The packet is no longer needed. */
 	packet_buf_free(whole);
 
 	/* Whether it was right. */
@@ -846,6 +859,8 @@ test_size(void)
 		error = fragment_send(&test_devices[0], 60U, (unsigned)done, done + piece < fragmentable, piece, &whole);
 		done += piece;
 	}
+
+	/* The largest datagram whole, and its bytes right. */
 	check(error == 0, "size: largest whole");
 	check(whole_check(whole, fragmentable, IPV6_HEADER_LENGTH), "size: largest bytes");
 	settle("size largest");
@@ -877,6 +892,8 @@ test_records(void)
 		error = fragment_send(&test_devices[0], 100U + index, 8U, 1, 8U, &whole);
 		check(error == EINPROGRESS, "records: kept");
 	}
+
+	/* Every record keeps one packet. */
 	check(packet_buf_in_use() == TEST_DATAGRAMS, "records: one packet a record");
 
 	/* One more while they are all young: it is the one dropped. */
@@ -920,6 +937,7 @@ test_held(void)
 	struct packet_buf *whole;
 	unsigned pieces;
 	unsigned held;
+	unsigned in_use;
 	unsigned index;
 	unsigned identification;
 	int error;
@@ -933,11 +951,16 @@ test_held(void)
 	for (identification = 500U; identification < 500U + 2U * TEST_HELD / pieces + 2U; identification++) {
 		for (index = 0U; index < pieces; index++) {
 			error = fragment_send(&test_devices[0], identification, 16U * index + 8U, 1, 8U, &whole);
-			if (packet_buf_in_use() > held)
-				held = packet_buf_in_use();
+			in_use = packet_buf_in_use();
+			if (in_use > held)
+				held = in_use;
 		}
+
+	/* A second on, so that the next datagram is the newer. */
 		test_now_ms += 1100U;
 	}
+
+	/* The newest datagram is still kept. */
 	check(error == EINPROGRESS, "held: the newest still kept");
 	check(held == TEST_HELD, "held: reaches the bound and no further");
 
@@ -950,6 +973,8 @@ test_held(void)
 		check(error == 0, "held: newest whole");
 		check(whole_check(whole, 16U * pieces + 8U, IPV6_HEADER_LENGTH), "held: newest bytes");
 	}
+
+	/* Every record run out, nothing left. */
 	settle("held");
 }
 
@@ -970,6 +995,8 @@ test_pieces(void)
 		if (error == EINPROGRESS)
 			kept++;
 	}
+
+	/* The datagram is refused at the bound, and thrown away. */
 	check(error == EINVAL, "pieces: refused at the bound");
 	check(kept == TEST_PIECES, "pieces: as many as the bound");
 	check(packet_buf_in_use() == 0U, "pieces: datagram thrown away");
@@ -1102,8 +1129,12 @@ test_jumbo(void)
 			if (usage.jumbo_used > most)
 				most = usage.jumbo_used;
 		}
+
+	/* A second on, so that the next datagram is the newer. */
 		test_now_ms += 1100U;
 	}
+
+	/* The newest datagram is kept, the jumbo packets within their bound. */
 	check(error == EINPROGRESS, "jumbo: newest kept");
 	check(most == TEST_HELD_JUMBO, "jumbo: kept up to the bound and no further");
 	check(PACKET_BUF_JUMBO_COUNT - most >= PACKET_BUF_JUMBO_RESERVE, "jumbo: the receive reserve left");
@@ -1152,6 +1183,8 @@ test_tcp_size(void)
 		if (error == 0)
 			packet_buf_free(packet);
 	}
+
+	/* Every record run out, nothing left. */
 	settle("tcp udp");
 }
 
@@ -1175,6 +1208,8 @@ test_ecn_merge(void)
 		check(((header->version_class_flow[1] >> 4) & 3U) == 3U, "ecn: whole is CE");
 		packet_buf_free(whole);
 	}
+
+	/* Every record run out, nothing left. */
 	settle("ecn ce");
 
 	/* Not-ECT, then ECT(1). */
@@ -1243,6 +1278,8 @@ test_allocation(void)
 		count--;
 		packet_buf_free(taken[count]);
 	}
+
+	/* Every record run out, nothing left. */
 	settle("allocation");
 #endif
 }

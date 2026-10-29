@@ -281,6 +281,7 @@ ipv6_fragment_input(
 	void *pulled;
 	int error;
 
+	/* The packet the walk has reached. */
 	arrived = *packet;
 
 	/* The fragment header whole. */
@@ -289,14 +290,18 @@ ipv6_fragment_input(
 		return EINVAL;
 	}
 
-	/* Its fields, and the fragment's data after it (the reserved bits are not looked at). */
+	/* Its offset and its flags (the reserved bits are not looked at). */
 	fragment = (const struct ipv6_fragment_wire *)(arrived->data + *offset);
 	offset_flags = wire_get16(fragment->offset_flags);
 	arrival.packet = arrived;
 	arrival.offset = offset_flags & IPV6_FRAGMENT_OFFSET_MASK;
 	arrival.more = 0;
+
+	/* More fragments follow this one when the flag says so. */
 	if ((offset_flags & IPV6_FRAGMENT_MORE) != 0U)
 		arrival.more = 1;
+
+	/* Where the fragment header is, what it names, and the fragment's data after it. */
 	arrival.start = *offset;
 	arrival.field = *field;
 	arrival.next_header = fragment->next_header;
@@ -343,6 +348,8 @@ ipv6_fragment_input(
 			icmp6_error(arrived, ICMP6_PARAMETER_PROBLEM, ICMP6_PARAMETER_FIRST_FRAGMENT, 0U);
 			return EINVAL;
 		}
+
+		/* A header chain that nests another fragment header is dropped. */
 		if (error != 0) {
 			packet_buf_free(arrived);
 			return EINVAL;
@@ -366,19 +373,26 @@ ipv6_fragment_input(
 		return EINVAL;
 	}
 
+	/* The time, and the outcome of a fragment no record takes. */
+	now = ipv6_now_ms();
+	release = NULL;
+	outcome = IPV6_FRAGMENT_DROPPED;
+
 	/*
 	 * The fragment placed in its datagram's record, made when it is the
 	 * first to come (or dropped when no record can make way); a whole
 	 * datagram's record is copied out and emptied.
 	 */
-	now = ipv6_now_ms();
-	release = NULL;
-	outcome = IPV6_FRAGMENT_DROPPED;
 	irq = spin_lock_irqsave(&ipv6_fragment_lock);
 
+	/* Finds the record its datagram already has. */
 	datagram = ipv6_fragment_find_locked(arrived->device, &source, &destination, identification);
+
+	/* The first fragment of a datagram starts a record, if one is free or can make way. */
 	if (datagram == NULL) {
 		datagram = ipv6_fragment_take_locked(now, &release);
+
+		/* A record taken is filled with the datagram's key and its time. */
 		if (datagram != NULL) {
 			datagram->used = 1;
 			datagram->device = arrived->device;
@@ -389,8 +403,12 @@ ipv6_fragment_input(
 			datagram->expire_ms = now + IPV6_FRAGMENT_TIMEOUT_MS;
 		}
 	}
+
+	/* A live record takes the fragment; a dead one drops it. */
 	if (datagram != NULL && !datagram->dead)
 		outcome = ipv6_fragment_place_locked(datagram, &arrival, now, &release);
+
+	/* A datagram made whole is copied out of its record, which is emptied. */
 	if (outcome == IPV6_FRAGMENT_WHOLE) {
 		kern_memcpy(&whole, datagram, sizeof(whole));
 		ipv6_fragment_held -= datagram->count;
@@ -448,8 +466,11 @@ ipv6_fragment_timer_run(
 	exceeded_count = 0U;
 	irq = spin_lock_irqsave(&ipv6_fragment_lock);
 
+	/* Each record in use. */
 	for (index = 0U; index < IPV6_FRAGMENT_DATAGRAMS; index++) {
 		datagram = &ipv6_fragment_datagrams[index];
+
+		/* A record free, or with time left, stays. */
 		if (!datagram->used || datagram->expire_ms > now_ms)
 			continue;
 
@@ -461,7 +482,7 @@ ipv6_fragment_timer_run(
 			piece = 1U;
 		}
 
-		/* The other pieces go with the record. */
+		/* The other pieces go with the record, each chained to be freed. */
 		while (piece < datagram->count) {
 			datagram->pieces[piece].packet->next = release;
 			release = datagram->pieces[piece].packet;
@@ -476,8 +497,10 @@ ipv6_fragment_timer_run(
 
 	spin_unlock_irqrestore(&ipv6_fragment_lock, irq);
 
-	/* The pieces freed, and each Time Exceeded sent (it consumes its fragment). */
+	/* The pieces freed. */
 	ipv6_fragment_release(release);
+
+	/* Each Time Exceeded sent (it consumes its fragment). */
 	for (index = 0U; index < exceeded_count; index++)
 		icmp6_error(exceeded[index], ICMP6_TIME_EXCEEDED, IPV6_FRAGMENT_TIME_EXCEEDED_CODE, 0U);
 }
@@ -498,9 +521,13 @@ ipv6_fragment_deadline(
 	deadline = 0U;
 	irq = spin_lock_irqsave(&ipv6_fragment_lock);
 
+	/* Each record in use. */
 	for (index = 0U; index < IPV6_FRAGMENT_DATAGRAMS; index++) {
+		/* A free record has no time. */
 		if (!ipv6_fragment_datagrams[index].used)
 			continue;
+
+		/* The earliest time so far, or this one when it is earlier. */
 		if (deadline == 0U || ipv6_fragment_datagrams[index].expire_ms < deadline)
 			deadline = ipv6_fragment_datagrams[index].expire_ms;
 	}
@@ -527,9 +554,13 @@ ipv6_fragment_purge_device(
 	release = NULL;
 	irq = spin_lock_irqsave(&ipv6_fragment_lock);
 
+	/* Each record in use. */
 	for (index = 0U; index < IPV6_FRAGMENT_DATAGRAMS; index++) {
+		/* A record free, or of another device, stays. */
 		if (!ipv6_fragment_datagrams[index].used || ipv6_fragment_datagrams[index].device != device)
 			continue;
+
+		/* The device's record emptied, its fragments chained to be freed. */
 		ipv6_fragment_empty_locked(&ipv6_fragment_datagrams[index], &release);
 	}
 
@@ -619,13 +650,19 @@ ipv6_fragment_find_locked(
 	/* Each record in use, by its device, identification and addresses. */
 	for (index = 0U; index < IPV6_FRAGMENT_DATAGRAMS; index++) {
 		datagram = &ipv6_fragment_datagrams[index];
+
+		/* A record free, of another device, or of another identification is not the one. */
 		if (!datagram->used ||
 		    datagram->device != device ||
 		    datagram->identification != identification)
 			continue;
+
+		/* A record of another source is not the one. */
 		same = in6_equal(&datagram->source, source);
 		if (!same)
 			continue;
+
+		/* A record with this destination as well is the one. */
 		same = in6_equal(&datagram->destination, destination);
 		if (same)
 			return datagram;
@@ -656,12 +693,18 @@ ipv6_fragment_take_locked(
 	oldest_live = NULL;
 	for (index = 0U; index < IPV6_FRAGMENT_DATAGRAMS; index++) {
 		datagram = &ipv6_fragment_datagrams[index];
+
+		/* A free record is taken at once. */
 		if (!datagram->used)
 			return datagram;
+
+		/* A dead record, or a live one that is not young, may make way; the oldest of each kind is kept in view. */
 		if (datagram->dead) {
+			/* The oldest dead record so far. */
 			if (oldest_dead == NULL || datagram->arrived_ms < oldest_dead->arrived_ms)
 				oldest_dead = datagram;
 		} else if (now_ms - datagram->arrived_ms >= IPV6_FRAGMENT_YOUNG_MS) {
+			/* The oldest live record that is not young so far. */
 			if (oldest_live == NULL || datagram->arrived_ms < oldest_live->arrived_ms)
 				oldest_live = datagram;
 		}
@@ -671,8 +714,12 @@ ipv6_fragment_take_locked(
 	datagram = oldest_dead;
 	if (datagram == NULL)
 		datagram = oldest_live;
+
+	/* Every record is live and young: none makes way. */
 	if (datagram == NULL)
 		return NULL;
+
+	/* The record chosen emptied, its fragments chained to be freed. */
 	ipv6_fragment_empty_locked(datagram, release);
 
 	/* Succeeded: the record made free. */
@@ -708,9 +755,12 @@ ipv6_fragment_place_locked(
 	int same;
 	int room;
 
+	/* The fragment's packet, its length, and where its data ends in the fragmentable part. */
 	packet = arrival->packet;
 	length = (unsigned)packet->length;
 	end = arrival->offset + length;
+
+	/* A packet with more than a standard packet's storage is a jumbo one. */
 	jumbo = 0;
 	if (packet->capacity > PACKET_BUF_STORAGE_SIZE)
 		jumbo = 1;
@@ -718,6 +768,7 @@ ipv6_fragment_place_locked(
 	/* The furthest any fragment reaches, this one's included: the last piece reaches furthest of those kept. */
 	furthest = end;
 	if (datagram->count != 0U) {
+		/* The last piece kept reaches furthest of those kept. */
 		last = &datagram->pieces[datagram->count - 1U];
 		if (last->offset + last->length > furthest)
 			furthest = last->offset + last->length;
@@ -730,6 +781,8 @@ ipv6_fragment_place_locked(
 		unfragmentable = datagram->unfragmentable;
 		upper = datagram->first_upper;
 	}
+
+	/* This fragment, when it is the offset-zero one, says it itself. */
 	if (arrival->offset == 0U) {
 		unfragmentable = arrival->start;
 		upper = arrival->upper;
@@ -739,6 +792,8 @@ ipv6_fragment_place_locked(
 	largest = IPV6_FRAGMENT_LARGEST;
 	if (upper == IPV6_FRAGMENT_PROTOCOL_TCP)
 		largest = IPV6_FRAGMENT_TCP_LARGEST;
+
+	/* A datagram too large for that is killed. */
 	if (unfragmentable + furthest > largest) {
 		ipv6_fragment_kill_locked(datagram, release);
 		return IPV6_FRAGMENT_DROPPED;
@@ -746,10 +801,13 @@ ipv6_fragment_place_locked(
 
 	/* The last fragment fixes the end: another end, or a fragment beyond it, contradicts it. */
 	if (!arrival->more) {
+		/* A second last fragment with another end: the datagram is killed. */
 		if (datagram->end_known && end != datagram->end) {
 			ipv6_fragment_kill_locked(datagram, release);
 			return IPV6_FRAGMENT_DROPPED;
 		}
+
+		/* A piece already kept that reaches beyond this end: the datagram is killed. */
 		if (furthest > end) {
 			ipv6_fragment_kill_locked(datagram, release);
 			return IPV6_FRAGMENT_DROPPED;
@@ -768,9 +826,14 @@ ipv6_fragment_place_locked(
 	if (position < datagram->count &&
 	    datagram->pieces[position].offset == arrival->offset &&
 	    datagram->pieces[position].length == length) {
+		/* Compares the two pieces' bytes. */
 		same = kern_memcmp(datagram->pieces[position].packet->data, packet->data, length);
+
+		/* The same bytes: an exact duplicate, dropped alone. */
 		if (same == 0)
 			return IPV6_FRAGMENT_DROPPED;
+
+		/* Other bytes in the same place: an overlap, and the datagram is killed. */
 		ipv6_fragment_kill_locked(datagram, release);
 		return IPV6_FRAGMENT_DROPPED;
 	}
@@ -778,6 +841,8 @@ ipv6_fragment_place_locked(
 	/* The piece before it must end where it starts or earlier (RFC 5722). */
 	if (position > 0U) {
 		neighbor = &datagram->pieces[position - 1U];
+
+		/* A piece that reaches into this one: an overlap, and the datagram is killed. */
 		if (neighbor->offset + neighbor->length > arrival->offset) {
 			ipv6_fragment_kill_locked(datagram, release);
 			return IPV6_FRAGMENT_DROPPED;
@@ -787,6 +852,8 @@ ipv6_fragment_place_locked(
 	/* The piece after it must start where it ends or later (RFC 5722). */
 	if (position < datagram->count) {
 		neighbor = &datagram->pieces[position];
+
+		/* A piece that starts inside this one: an overlap, and the datagram is killed. */
 		if (end > neighbor->offset) {
 			ipv6_fragment_kill_locked(datagram, release);
 			return IPV6_FRAGMENT_DROPPED;
@@ -822,6 +889,8 @@ ipv6_fragment_place_locked(
 	datagram->received += length;
 	datagram->ecn |= arrival->ecn;
 	ipv6_fragment_held++;
+
+	/* A jumbo packet counts among the jumbo ones kept as well. */
 	if (jumbo) {
 		datagram->jumbo++;
 		ipv6_fragment_held_jumbo++;
@@ -878,12 +947,20 @@ ipv6_fragment_room_locked(
 		oldest = NULL;
 		for (index = 0U; index < IPV6_FRAGMENT_DATAGRAMS; index++) {
 			datagram = &ipv6_fragment_datagrams[index];
+
+			/* A record free, empty, or the one to keep frees nothing. */
 			if (!datagram->used || datagram == keep || datagram->count == 0U)
 				continue;
+
+			/* A record with no jumbo packet frees none when those are short. */
 			if (shortage == IPV6_FRAGMENT_SHORT_JUMBO && datagram->jumbo == 0U)
 				continue;
+
+			/* A young record never makes way. */
 			if (now_ms - datagram->arrived_ms < IPV6_FRAGMENT_YOUNG_MS)
 				continue;
+
+			/* The oldest of those left so far. */
 			if (oldest == NULL || datagram->arrived_ms < oldest->arrived_ms)
 				oldest = datagram;
 		}
@@ -1044,8 +1121,12 @@ ipv6_fragment_assemble(
 	packet->protocol = first->protocol;
 	packet->flags = first->flags;
 	packet->device = first->device;
+
+	/* The reassembled packet holds a reference to the device of its own. */
 	if (packet->device != NULL)
 		net_device_ref(packet->device);
+
+	/* Where the link-layer source came from. */
 	packet->source_length = first->source_length;
 	kern_memcpy(packet->source_address, first->source_address, sizeof(packet->source_address));
 
@@ -1070,6 +1151,8 @@ ipv6_fragment_pieces_free(
 		whole->pieces[index].packet->next = release;
 		release = whole->pieces[index].packet;
 	}
+
+	/* The chain freed. */
 	ipv6_fragment_release(release);
 }
 
