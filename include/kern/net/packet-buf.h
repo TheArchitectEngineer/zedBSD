@@ -70,6 +70,29 @@
 #define PACKET_BUF_DEFAULT_HEADROOM	64U
 #define PACKET_OFFSET_NONE	UINT16_MAX
 
+/*
+ * The checksums a device computes or checked, in a packet's flags.
+ *
+ * On the way out the protocol sets them only for a device whose
+ * capabilities say it computes them (NET_DEVICE_CAP_TX_CSUM_IPV4_TCP):
+ * PACKET_BUF_TX_CSUM_TCP, the device completes the TCP checksum, whose
+ * field holds the folded sum of the pseudo-header, not complemented
+ * (net_checksum_pseudo_partial); PACKET_BUF_TX_CSUM_IPV4, the device fills
+ * the IPv4 header's checksum, whose field is zero.  l3_offset and
+ * l4_offset name the headers.  The device's own copy of the frame is what
+ * the checksum goes into; the packet keeps the partial one.
+ *
+ * On the way in the driver sets them for what the device checked and found
+ * right: PACKET_BUF_RX_CSUM_IPV4, the IPv4 header's checksum;
+ * PACKET_BUF_RX_CSUM_L4, the TCP or UDP checksum with its pseudo-header,
+ * over IPv4 or IPv6.  A checksum the device found wrong, or did not check,
+ * is not marked, and the stack checks it itself.
+ */
+#define PACKET_BUF_TX_CSUM_TCP		0x00000001U
+#define PACKET_BUF_TX_CSUM_IPV4		0x00000002U
+#define PACKET_BUF_RX_CSUM_IPV4		0x00000004U
+#define PACKET_BUF_RX_CSUM_L4		0x00000008U
+
 struct net_device;
 
 /*
@@ -127,6 +150,9 @@ struct packet_buf {
 
 void
 packet_buf_pool_init(void);
+void
+packet_buf_checksum_finish(
+	struct packet_buf *packet);
 struct packet_buf *
 packet_buf_alloc(
 	size_t headroom);

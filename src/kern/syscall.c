@@ -2960,6 +2960,7 @@ sys_read_call(
 	size_t length;
 	intptr_t result;
 	int error;
+	int reads_user;
 	int direct;
 	size_t chunk;
 	ssize_t count;
@@ -2974,6 +2975,31 @@ sys_read_call(
 	file = filedesc_get_ref(process->fd, (int)args[0]);
 	if (file == NULL)
 		return -EBADF;
+
+	/*
+	 * A stream socket reads into the range itself, pinning only the part
+	 * its queued bytes fill once they are there: a long read of a stream
+	 * with a little queued pins a few pages, and nothing bounces.
+	 */
+	reads_user = 0;
+	if (length != 0)
+		reads_user = socket_file_reads_user(file);
+	if (reads_user) {
+		error = file_io_begin(file, FILE_IO_READ, 0, 0, &io);
+		if (error != 0) {
+			(void)file_close(file);
+			return -error;
+		}
+
+		/* Counts the request and reads it. */
+		io_stats_record(IO_SYSCALL_READ, length);
+		result = socket_file_read_user(file, args[1], length);
+		result = file_io_complete(&io, result);
+		(void)file_close(file);
+		return result;
+	}
+
+	/* Pins the whole range for the other files. */
 	error = uaccess_pin(args[1], length, HAL_SPACE_WRITE, &pin);
 	if (error != 0) {
 		(void)file_close(file);

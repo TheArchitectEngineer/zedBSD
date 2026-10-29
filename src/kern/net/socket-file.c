@@ -338,6 +338,60 @@ socket_file_write_pinned(
 	return result;
 }
 
+/*
+ * Tells whether read(2) on the file reads into the caller's user range
+ * itself: a stream socket whose protocol copies to it from its queue.
+ */
+int
+socket_file_reads_user(
+	struct file *file)
+{
+	struct socket *socket;
+
+	/* A socket file of a protocol that reads into the range. */
+	socket = socket_from_file(file);
+	if (socket == NULL || socket->type != SOCK_STREAM || socket->ops == NULL ||
+	    socket->ops->recv_user == NULL)
+		return 0;
+
+	/* Succeeded: it does. */
+	return 1;
+}
+
+/*
+ * Reads from a socket file into the caller's user range, as a receive
+ * without an address: the protocol pins as much of the range as it fills.
+ */
+ssize_t
+socket_file_read_user(
+	struct file *file,
+	uintptr_t address,
+	size_t length)
+{
+	struct socket *socket;
+	ssize_t result;
+	int status_flags;
+	int flags;
+
+	/* Rejects a file that does not read into the range. */
+	socket = socket_from_file(file);
+	if (socket == NULL || socket->ops == NULL || socket->ops->recv_user == NULL)
+		return -EOPNOTSUPP;
+
+	/* A non-blocking file receives without waiting. */
+	status_flags = file_status_flags_get(file);
+	if ((status_flags & O_NONBLOCK) != 0)
+		flags = MSG_DONTWAIT;
+	else
+		flags = 0;
+
+	/* Receives through the socket. */
+	result = socket->ops->recv_user(socket, address, length, flags);
+
+	/* Reports the receive result. */
+	return result;
+}
+
 /* Forwards an ioctl to the socket. */
 static int
 socket_file_ioctl(

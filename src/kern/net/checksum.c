@@ -10,8 +10,11 @@
  */
 
 #include "internal.h"
+#include "wire.h"
+#include "kern/net/packet-buf.h"
 
 #include <stdint.h>
+#include <uapi/netinet.h>
 
 static uint32_t checksum_add(uint32_t sum, const uint8_t *data, size_t length);
 static uint16_t checksum_finish(uint32_t sum);
@@ -73,6 +76,77 @@ net_checksum_pseudo(
 
 	/* Reports the checksum. */
 	return checksum;
+}
+
+/*
+ * Computes the folded sum of an IPv4 pseudo-header, not complemented: what
+ * a transport checksum's field holds for a device that completes the
+ * checksum over the segment (PACKET_BUF_TX_CSUM_TCP).  The sum of the
+ * segment with that in its field is then the whole checksum's.
+ */
+uint16_t
+net_checksum_pseudo_partial(
+	uint32_t source,
+	uint32_t destination,
+	uint8_t protocol,
+	size_t length)
+{
+	uint32_t sum;
+
+	/* The addresses, the protocol and the length, as 16-bit words. */
+	sum = (source >> 16) + (source & 0xffffU);
+	sum += (destination >> 16) + (destination & 0xffffU);
+	sum += protocol;
+	sum += (uint32_t)length;
+
+	/* Folds the carries. */
+	while ((sum >> 16) != 0)
+		sum = (sum & 0xffffU) + (sum >> 16);
+
+	/* Reports the sum. */
+	return (uint16_t)sum;
+}
+
+/*
+ * Computes the checksums a packet left to its device (PACKET_BUF_TX_CSUM_*)
+ * for a device or a frame that cannot: the IPv4 header's and the TCP
+ * segment's, whose field holds the pseudo-header's partial sum.  The
+ * packet's l3_offset names the IPv4 header.  A packet that left none is
+ * not changed.
+ */
+void
+packet_buf_checksum_finish(
+	struct packet_buf *packet)
+{
+	struct ipv4_wire *header;
+	uint8_t *segment;
+	uint16_t checksum;
+	size_t header_length;
+	size_t total;
+
+	/* Nothing was left to the device. */
+	if (packet == NULL || (packet->flags & (PACKET_BUF_TX_CSUM_TCP | PACKET_BUF_TX_CSUM_IPV4)) == 0)
+		return;
+	packet->flags &= ~(PACKET_BUF_TX_CSUM_TCP | PACKET_BUF_TX_CSUM_IPV4);
+	if (packet->l3_offset == PACKET_OFFSET_NONE)
+		return;
+
+	/* The headers, as the IPv4 output put them. */
+	header = (struct ipv4_wire *)(void *)(packet->storage + packet->l3_offset);
+	header_length = (size_t)(header->version_ihl & 0x0fU) * 4U;
+	total = wire_get16(header->total_length);
+	segment = (uint8_t *)header + header_length;
+
+	/* The segment's checksum: the sum over it with the partial one in its field. */
+	if (header->protocol == IPPROTO_TCP && total > header_length) {
+		checksum = net_checksum(segment, total - header_length);
+		wire_put16(segment + 16, checksum);
+	}
+
+	/* The header's, over the header with its field zero. */
+	wire_put16(header->checksum, 0);
+	checksum = net_checksum(header, header_length);
+	wire_put16(header->checksum, checksum);
 }
 
 /*

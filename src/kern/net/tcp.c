@@ -546,6 +546,8 @@ static void tcp_connect_cancel_locked(struct tcp_endpoint *endpoint, uint32_t ge
 static int tcp_send_reliable(struct tcp_endpoint *endpoint, uint8_t flags, const void *data, const struct uaccess_pin *pin, size_t pin_offset, size_t length);
 static ssize_t tcp_send_bytes(struct socket *socket, const void *buffer, const struct uaccess_pin *pin, size_t pin_offset, size_t length, int flags);
 static ssize_t tcp_send_pinned(struct socket *socket, const struct uaccess_pin *pin, size_t offset, size_t length, int flags);
+static ssize_t tcp_recv_user(struct socket *socket, uintptr_t address, size_t length, int flags);
+static ssize_t tcp_receive_into(struct socket *socket, void *buffer, uintptr_t user, size_t length, int flags);
 static int tcp_bind(struct socket *socket, const struct sockaddr *address, socklen_t length);
 static int tcp_listen(struct socket *socket, int backlog);
 static int tcp_accept(struct socket *socket, struct socket **result, struct sockaddr *address, socklen_t *length, unsigned io_flags);
@@ -589,6 +591,7 @@ static const struct socket_ops tcp_ops = {
 	.sendto = tcp_sendto,
 	.send_pinned = tcp_send_pinned,
 	.recvfrom = tcp_recvfrom,
+	.recv_user = tcp_recv_user,
 	.shutdown = tcp_shutdown,
 	.getsockname = tcp_getsockname,
 	.getpeername = tcp_getpeername,
@@ -2845,6 +2848,9 @@ tcp_output_segment(
 	endpoint->tcp.receive_edge_set = 1;
 	wire_put16(tcp->window, field);
 
+	/* A copy sent before may carry the marks of its last way out. */
+	packet->flags &= ~(PACKET_BUF_TX_CSUM_TCP | PACKET_BUF_TX_CSUM_IPV4);
+
 	/* Hands the segment to IPv6, with the checksum over its pseudo-header. */
 	if (ipv6) {
 		checksum = net_checksum_pseudo6(source6.s6_addr, endpoint->tcp.inet.remote6.s6_addr, IPPROTO_TCP,
@@ -2863,9 +2869,21 @@ tcp_output_segment(
 		return 0;
 	}
 
-	/* Hands the segment to IPv4. */
-	checksum = net_checksum_pseudo(source, endpoint->tcp.inet.remote_address,
-	    IPPROTO_TCP, packet->data, packet->length);
+	/*
+	 * Hands the segment to IPv4: with its checksum, or with the
+	 * pseudo-header's partial sum for a device that completes it.
+	 */
+	if (device != NULL && (device->capabilities & NET_DEVICE_CAP_TX_CSUM_IPV4_TCP) != 0) {
+		checksum = net_checksum_pseudo_partial(source, endpoint->tcp.inet.remote_address,
+		    IPPROTO_TCP, packet->length);
+		packet->flags |= PACKET_BUF_TX_CSUM_TCP;
+		packet->l4_offset = (uint16_t)(packet->data - packet->storage);
+	} else {
+		checksum = net_checksum_pseudo(source, endpoint->tcp.inet.remote_address,
+		    IPPROTO_TCP, packet->data, packet->length);
+	}
+
+	/* The checksum, or the partial sum, in its field. */
 	wire_put16(tcp->checksum, checksum);
 	if (routed) {
 		error = ipv4_output_routed(device, endpoint->tcp.inet.remote_address, next_hop,
@@ -6754,7 +6772,7 @@ tcp_send_bytes(
 	return (ssize_t)total;
 }
 
-/* Receives data from the socket's queue, keeping an unread remainder. */
+/* Receives data from the socket's queue into a kernel buffer, keeping an unread remainder. */
 static ssize_t
 tcp_recvfrom(
 	struct socket *socket,
@@ -6764,10 +6782,59 @@ tcp_recvfrom(
 	struct sockaddr *address,
 	socklen_t *address_length)
 {
+	ssize_t result;
+
+	(void)address;
+	(void)address_length;
+
+	/* Receives into the buffer. */
+	result = tcp_receive_into(socket, buffer, 0, length, flags);
+
+	/* The bytes received, or why none were. */
+	return result;
+}
+
+/* Receives data from the socket's queue into a user range (read(2), socket_file_read_user). */
+static ssize_t
+tcp_recv_user(
+	struct socket *socket,
+	uintptr_t address,
+	size_t length,
+	int flags)
+{
+	ssize_t result;
+
+	/* Rejects a missing range. */
+	if (address == 0 && length != 0)
+		return -EFAULT;
+
+	/* Receives into the range. */
+	result = tcp_receive_into(socket, NULL, address, length, flags);
+
+	/* The bytes received, or why none were. */
+	return result;
+}
+
+/*
+ * Receives data from the socket's queue, keeping an unread remainder: into
+ * buffer, or (user not 0) straight into the user range at user.  The range
+ * is pinned once the first packet is there, only as far as the bytes
+ * queued then fill it, and the read takes no more than that.
+ */
+static ssize_t
+tcp_receive_into(
+	struct socket *socket,
+	void *buffer,
+	uintptr_t user,
+	size_t length,
+	int flags)
+{
 	struct tcp_endpoint *endpoint;
 	struct packet_buf *packet;
+	struct uaccess_pin pin;
 	size_t copied;
 	size_t take;
+	size_t queued;
 	uint32_t window;
 	uint32_t mss;
 	uint32_t offered;
@@ -6775,14 +6842,13 @@ tcp_recvfrom(
 	uint32_t step;
 	unsigned long irq;
 	int dequeue_flags;
+	int pinned;
 	int update;
 	int sent;
 	int error;
 
 	endpoint = tcp_endpoint(socket);
-
-	(void)address;
-	(void)address_length;
+	pinned = 0;
 
 	/* A shut-down or drained closing connection reports end of file. */
 	if (socket->read_shutdown)
@@ -6834,12 +6900,44 @@ tcp_recvfrom(
 			break;
 		}
 
+		/*
+		 * A user range is pinned at the first data, as far as this packet
+		 * and the bytes queued behind it fill it (read without the lock: a
+		 * byte that comes meanwhile waits for the next read); a range that
+		 * cannot be pinned leaves the packet queued.
+		 */
+		if (user != 0 && !pinned && packet->length != 0) {
+			queued = packet->length + socket->receive_bytes;
+			if (queued < length)
+				length = queued;
+			error = uaccess_pin(user, length, HAL_SPACE_WRITE, &pin);
+			if (error != 0) {
+				(void)socket_requeue_packet_front(socket, packet);
+				return -error;
+			}
+
+			/* Pinned once for the whole read. */
+			pinned = 1;
+		}
+
 		/* The part of it that fits. */
 		take = packet->length;
 		if (take > length - copied)
 			take = length - copied;
-		if (take != 0)
+		if (take != 0 && pinned) {
+			error = copyout_pinned(&pin, copied, packet->data, take);
+			if (error != 0) {
+				(void)socket_requeue_packet_front(socket, packet);
+				if (copied != 0)
+					break;
+				uaccess_unpin(&pin);
+				return -error;
+			}
+		} else if (take != 0) {
 			kern_memcpy((uint8_t *)buffer + copied, packet->data, take);
+		}
+
+		/* Counts what was taken. */
 		copied += take;
 
 		/* A short unread suffix goes back to the head; the read is full. */
@@ -6854,6 +6952,10 @@ tcp_recvfrom(
 		if (take == 0 || copied == length)
 			break;
 	}
+
+	/* The range is not needed past the copies. */
+	if (pinned)
+		uaccess_unpin(&pin);
 
 	/*
 	 * Tells the peer about room the read has made (RFC 1122 4.2.3.3) when
@@ -7705,7 +7807,10 @@ tcp_input(
 		return EINVAL;
 	}
 
-	checksum = net_checksum_pseudo(source, destination, IPPROTO_TCP, packet->data, packet->length);
+	/* Checks the checksum, unless the device found it right. */
+	checksum = 0;
+	if ((packet->flags & PACKET_BUF_RX_CSUM_L4) == 0)
+		checksum = net_checksum_pseudo(source, destination, IPPROTO_TCP, packet->data, packet->length);
 	if (checksum != 0) {
 		packet_buf_free(packet);
 		return EINVAL;
@@ -7742,7 +7847,13 @@ tcp6_input(
 		return EINVAL;
 	}
 
-	checksum = net_checksum_pseudo6(source->s6_addr, destination->s6_addr, IPPROTO_TCP, packet->data, packet->length);
+	/* Checks the checksum, unless the device found it right. */
+	checksum = 0;
+	if ((packet->flags & PACKET_BUF_RX_CSUM_L4) == 0) {
+		checksum = net_checksum_pseudo6(source->s6_addr, destination->s6_addr, IPPROTO_TCP, packet->data,
+		    packet->length);
+	}
+
 	if (checksum != 0) {
 		packet_buf_free(packet);
 		return EINVAL;
