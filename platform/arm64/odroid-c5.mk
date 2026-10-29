@@ -12,7 +12,7 @@
 ODROID_C5_DIR := $(ARM64_PLATFORM)/odroid-c5
 ODROID_C5_DTS_MANIFEST := $(ODROID_C5_DIR)/dts-sources.txt
 override ODROID_C5_DTS_REVISION := 34daba993d84e4aa09afbe3e2678dd19978eaace
-ODROID_C5_DTS_CACHE_ROOT ?= build/sources/odroid-c5-dts
+ODROID_C5_DTS_CACHE_ROOT ?= $(BUILD)/dts-sources
 override ODROID_C5_DTS_CACHE := $(ODROID_C5_DTS_CACHE_ROOT)/$(ODROID_C5_DTS_REVISION)
 override ODROID_C5_DTS_STAMP := $(BUILD)/odroid-c5/dts-cache.stamp
 ODROID_C5_DTB := $(BUILD)/odroid-c5.dtb
