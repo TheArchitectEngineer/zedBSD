@@ -18,6 +18,14 @@ Resume point: 2026-10-29 P3 q1664-i05: p001 の設計の第 2 版（design-revie
 - Reno と CUBIC を同じ条件で測り（VF2 の 1GbE、10.0.10.3 の 10GbE、遅延と損失のある経路、CUBIC の相手との取り合い）、性能が良ければ既定を CUBIC に切り替える。良くなければ切り替えず、測った値と理由を残す。
 - 順: WS221（Jumbo frame と TCP、p010 の 10GbE を含む）の続き。窓の前提（自分の window scale の広告、byte で数える受けの窓）は WS221 の p008・p009 の残りに依存。
 
+## p001 の問いへの答え（2026-10-29 Q1 の判断。どれも範囲の中の技術の判断で、ユーザーの回答ではない）
+
+- Q1 `TCP_CONGESTION`（文字列、64）: はい。Q2 sysctl `net.tcp.congestion`: はい。Q3 HyStart++: この WS では入れず Future Work。
+- Q4 cwnd を使っている時だけ増やす門を Reno にも入れる: 入れる（不具合の直し、p002 で模型と VF2 の非退行）。Q9 2 回目以降の timeout で ssthresh を変えない形: CUBIC だけ。
+- Q5 5330（Debian、TCP の相手）の ingress に `modprobe ifb`・`tc netem` を run の間だけ使い、終わりに消して元に戻す: 承認（Q1。5330 の MTU を run の間だけ変えてきたのと同じ扱い、flock /tmp/i915-hw.lock の中で）。
+- Q6 Linux CUBIC との取り合い: p004 で試し、作れなければ模型の fair-* だけ。Q7 判定の数値: §5 のとおり。Q8 fast convergence: 入れる。
+- review-2 は p002 の実装の前に流す。
+
 ## Phase（p001 の第 2 版で改めた、[phase001/phase.md](phase001/phase.md) §7）
 
 | Phase | 目的 | 状態 | 依存 |
