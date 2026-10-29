@@ -76,7 +76,7 @@ class Walk:
 		blank(usb, 9)
 		gpt(usb, 512)
 		mbr = out / "mbr.img"
-		blank(mbr, 2)
+		blank(mbr, 4)  # large enough for the whole disk (S2), so that S3 is what refuses it
 		with open(mbr, "r+b") as f:
 			entry = bytes([0, 0, 0, 0, 0x0c, 0, 0, 0]) + (2048).to_bytes(4, "little") + (1048576).to_bytes(4, "little")
 			f.seek(446)
@@ -115,7 +115,7 @@ class Walk:
 	def map_disks(self):
 		"""The live system's names of the disks, by their sizes (install-admin probe as root)."""
 		code, text = self.run.root("/usr/libexec/install-admin probe")
-		sizes = {"nvme": 12 << 30, "k4": 8 << 30, "other": 14 << 30, "usb": 9 << 30, "mbr": 2 << 30, "zcfg": 3 << 30,
+		sizes = {"nvme": 12 << 30, "k4": 8 << 30, "other": 14 << 30, "usb": 9 << 30, "mbr": 4 << 30, "zcfg": 3 << 30,
 			 "tiny": 1 << 30}
 		for line in text.splitlines():
 			field = line.split("\t")
