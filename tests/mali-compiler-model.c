@@ -143,6 +143,7 @@ static int find_texture(const struct mali_shader_program *program, uint32_t set,
 static void run_reference(const struct drv_gpu_shader_ir *ir, const struct mali_shader_program *program, const struct trial *trial, struct result *result);
 static void run_model(const uint8_t *code, size_t length, uint32_t stage, const struct mali_shader_program *program, const struct trial *trial, struct result *result);
 static int close_enough(uint32_t a, uint32_t b);
+static int check_load(const char *name, uint64_t word, uint32_t count, uint64_t address);
 
 /* A small linear congruential generator, the same for every run. */
 static uint32_t
@@ -1176,6 +1177,38 @@ model_texture(
 	return 0;
 }
 
+/*
+ * Checks a LOAD of whole words: its staging registers are its words, its
+ * load lane the identity one (w0 for one word), and a load of more than
+ * one word is aligned to its bytes rounded up to a power of two (the
+ * rule of Mesa's bifrost_nir.c mem_access_size_align_cb): nonzero when
+ * it is not so.
+ */
+static int
+check_load(
+	const char *name,
+	uint64_t word,
+	uint32_t count,
+	uint64_t address)
+{
+	uint32_t bits;
+	uint32_t lane;
+
+	bits = (uint32_t)strtoul(name + 6, NULL, 10);
+	if (bits % 32U != 0U)
+		return 0;
+	lane = (uint32_t)((word >> 36) & 7U);
+	if (bits / 32U != count)
+		return 1;
+	if ((bits == 32U && lane != 0U) || ((bits == 64U || bits == 128U) && lane != 7U) || (bits == 96U && lane != 6U))
+		return 1;
+	if (bits == 64U && (address & 7U) != 0U)
+		return 1;
+	if (bits > 64U && (address & 15U) != 0U)
+		return 1;
+	return 0;
+}
+
 /* Runs one program of the compiled shader on the model. */
 static void
 run_model(
@@ -1490,6 +1523,10 @@ run_model(
 			m.r[(dest + 1U) & 63U] = (uint32_t)(address >> 32);
 		} else if (strncmp(name, "LOAD.", 5) == 0 || strncmp(name, "STORE.", 6) == 0) {
 			address = read_source64(&m, (uint8_t)word, page) + (uint64_t)(int64_t)(int16_t)(uint16_t)(word >> 8);
+			if (name[0] == 'L' && check_load(name, word, count, address) != 0) {
+				result->why = "a load whose staging count, lane or alignment does not fit its size";
+				return;
+			}
 			if (address >= TLS_BASE && address < TLS_BASE + 0x100000000ULL && ((word >> 24) & 3U) != 3U) {
 				result->why = "a thread local storage access without the force hint";
 				return;

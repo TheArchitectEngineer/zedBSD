@@ -88,6 +88,7 @@ static int decode_index(uint64_t word);
 static int check_encoder(void);
 static int check_cases_file(const char *path);
 static int test_module(const char *outdir, const char *path, unsigned trials);
+static int test_program(const char *outdir, const char *name, const uint32_t *words, size_t count, uint32_t stage, uint32_t flags, unsigned trials, int *has_ubo);
 static int decode_program(FILE *listing, const char *what, const uint8_t *code, size_t length);
 static void print_source(FILE *out, uint8_t byte, uint32_t page);
 static uint32_t *read_file(const char *path, size_t *words);
@@ -193,7 +194,7 @@ decode_index(
 static int
 check_encoder(void)
 {
-	struct encode_case cases[24];
+	struct encode_case cases[27];
 	unsigned count;
 	unsigned index;
 	unsigned failed;
@@ -241,6 +242,15 @@ check_encoder(void)
 	     va_staging(8U, 4U, VA_STAGING_READ) | va_field(VA_FLOW_END, VA_SHIFT_FLOW));
 	CASE("80 00 00 18 82 82 60 00    LOAD.i32.unsigned.slot0 @r2, u0, offset:0", 0U,
 	     VA_OP_LOAD_I32 | va_source_uniform(0U) | va_field(1U, VA_SHIFT_LOAD_UNSIGNED) | va_staging(2U, 1U, VA_STAGING_WRITE));
+	CASE("80 00 00 28 f4 82 60 00    LOAD.i64.unsigned.slot0 @r2:r3, u0, offset:0", 0U,
+	     VA_OP_LOAD_I64 | va_field(VA_LOAD_LANE_64_IDENTITY, VA_SHIFT_LOAD_LANE) | va_source_uniform(0U) |
+	     va_field(1U, VA_SHIFT_LOAD_UNSIGNED) | va_staging(2U, 2U, VA_STAGING_WRITE));
+	CASE("80 00 00 30 e6 82 60 00    LOAD.i96.unsigned.slot0 @r2:r3:r4, u0, offset:0", 0U,
+	     VA_OP_LOAD_I96 | va_field(VA_LOAD_LANE_96_IDENTITY, VA_SHIFT_LOAD_LANE) | va_source_uniform(0U) |
+	     va_field(1U, VA_SHIFT_LOAD_UNSIGNED) | va_staging(2U, 3U, VA_STAGING_WRITE));
+	CASE("80 00 00 38 f8 84 60 00    LOAD.i128.unsigned.slot0 @r4:r5:r6:r7, u0, offset:0", 0U,
+	     VA_OP_LOAD_I128 | va_field(VA_LOAD_LANE_128_IDENTITY, VA_SHIFT_LOAD_LANE) | va_source_uniform(0U) |
+	     va_field(1U, VA_SHIFT_LOAD_UNSIGNED) | va_staging(4U, 4U, VA_STAGING_WRITE));
 	CASE("3d 00 10 72 18 84 5c 00    LD_VAR_BUF_IMM.f32.slot1.v4.src_f32.center.retrieve @r4:r5:r6:r7, r61, index:0x10", 0U,
 	     VA_OP_LD_VAR_BUF_IMM_F32 | va_source_register(61U) | va_field(0x10U, VA_SHIFT_VARYING_INDEX) |
 	     va_field(VA_SOURCE_FORMAT_F32, VA_SHIFT_SOURCE_FORMAT) | va_field(3U, VA_SHIFT_VECTOR_SIZE) | va_field(1U, VA_SHIFT_SLOT) |
@@ -408,17 +418,13 @@ test_module(
 	const char *path,
 	unsigned trials)
 {
-	struct mali_shader_diagnostic diagnostic;
-	struct mali_shader_program *program;
-	char listing_path[1024];
 	const char *name;
 	uint32_t *words;
 	uint32_t stage;
 	size_t count;
 	size_t at;
-	FILE *listing;
+	int has_ubo;
 	int failed;
-	int error;
 
 	name = strrchr(path, '/');
 	name = name == NULL ? path : name + 1;
@@ -440,16 +446,62 @@ test_module(
 		}
 	}
 
+	/* 2 and 3 as the driver compiles it, then with the vector uniform buffer loads for a module that reads a uniform buffer. */
+	has_ubo = 0;
+	failed = test_program(outdir, name, words, count, stage, 0U, trials, &has_ubo);
+	if (failed == 0 && has_ubo != 0)
+		failed = test_program(outdir, name, words, count, stage, MALI_SHADER_OPTION_VECTOR_UBO, trials, &has_ubo);
+	free(words);
+	return failed;
+}
+
+/*
+ * Compiles a module with the option flags, writes its listing (NAME.txt,
+ * or NAME.vector-ubo.txt with the vector uniform buffer loads), decodes
+ * it and runs it on the model against the IR's reference; says whether
+ * the program binds a uniform buffer.
+ */
+static int
+test_program(
+	const char *outdir,
+	const char *name,
+	const uint32_t *words,
+	size_t count,
+	uint32_t stage,
+	uint32_t flags,
+	unsigned trials,
+	int *has_ubo)
+{
+	struct mali_shader_diagnostic diagnostic;
+	struct mali_shader_options options;
+	struct mali_shader_program *program;
+	char listing_path[1024];
+	const char *variant;
+	uint32_t index;
+	FILE *listing;
+	int failed;
+	int error;
+
 	/* 2: compiles and decodes. */
+	variant = "";
+	if ((flags & MALI_SHADER_OPTION_VECTOR_UBO) != 0U)
+		variant = " vector-ubo";
+	options.flags = flags;
 	program = NULL;
-	error = mali_shader_compile(words, count, stage, NULL, &program, &diagnostic);
+	error = mali_shader_compile(words, count, stage, flags != 0U ? &options : NULL, &program, &diagnostic);
 	if (error != 0) {
-		printf("FAIL %s: compile error %d at %u: %s\n", name, error, diagnostic.instruction,
+		printf("FAIL %s%s: compile error %d at %u: %s\n", name, variant, error, diagnostic.instruction,
 		       diagnostic.reason != NULL ? diagnostic.reason : "");
-		free(words);
 		return 1;
 	}
-	snprintf(listing_path, sizeof(listing_path), "%s/%s.txt", outdir, name);
+	for (index = 0U; index < program->buffer_count; index++) {
+		if (program->buffers[index].kind == MALI_SHADER_BUFFER_UNIFORM)
+			*has_ubo = 1;
+	}
+	if (flags == 0U)
+		snprintf(listing_path, sizeof(listing_path), "%s/%s.txt", outdir, name);
+	else
+		snprintf(listing_path, sizeof(listing_path), "%s/%s.vector-ubo.txt", outdir, name);
 	listing = fopen(listing_path, "w");
 	if (listing == NULL)
 		listing = stdout;
@@ -468,19 +520,19 @@ test_module(
 	if (listing != stdout)
 		fclose(listing);
 	if (failed != 0) {
-		printf("FAIL %s: %d words do not decode (%s)\n", name, failed, listing_path);
+		printf("FAIL %s%s: %d words do not decode (%s)\n", name, variant, failed, listing_path);
 		mali_shader_program_free(program);
-		free(words);
 		return 1;
 	}
 
 	/* 3: runs on the model against the IR's reference. */
 	error = mali_model_check(words, count, stage, program, trials, name);
 	mali_shader_program_free(program);
-	free(words);
-	if (error != 0)
+	if (error != 0) {
+		printf("FAIL %s%s: the model disagrees (above)\n", name, variant);
 		return 1;
-	printf("PASS %s\n", name);
+	}
+	printf("PASS %s%s\n", name, variant);
 	return 0;
 }
 

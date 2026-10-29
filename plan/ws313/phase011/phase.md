@@ -3,7 +3,7 @@
 # ws313-p011: Mali の render の node・scheduler・Vulkan の executor・CS の命令の builder
 
 Status: in-progress（実装済み・実機未試験）
-Queue: q1675-i02（P7 の配下 D）、q1675-i03 の一部（P7 の配下 D2: render pass の LOAD・display の import）、q1675-i04 の一部（P7 の配下 D3: WLS の dispatch・拡大の blit。clear attachments は未着手）
+Queue: q1675-i02（P7 の配下 D）、q1675-i03 の一部（P7 の配下 D2: render pass の LOAD・display の import）、q1675-i04 の一部（P7 の配下 D3: WLS の dispatch・拡大の blit、続けて clear attachments・depth と sample mask を書く fragment program の DCD・ZSD）
 WS: [WS313](../ws.md)、設計 [gpu.md](../gpu.md) §11・§13。compiler は配下 C（§12）。
 
 ## ユーザーの指示（原文、2026-10-29、Q1 経由）
@@ -66,6 +66,7 @@ WS: [WS313](../ws.md)、設計 [gpu.md](../gpu.md) §11・§13。compiler は配
 | `src/drivers/gpu/mali/sched.c` | 自前の program を走らせた submission が失敗したら node の `meta_refused` に立て 1 行（preload と同じ形） |
 | `platform/arm64/mali.mk` | `vk-meta.c`・`vk-meta-spirv.c` の 2 行 |
 | `tests/mali-vk-desc-host-test.c` | WLS の語の照合（13 checks を追加） |
+| `src/drivers/gpu/mali/vk/vk-draw.c`（D3 の続き） | pass の中の vkCmdClearAttachments を `clear_attachments`・`clear_rect` で draw に（通常の `draw()` とは別の関数、同じ IDVS の staging register を全て書く）。`draw()` には、fragment program が `writes_depth` の時に ZSD の Depth source を Shader（3）・DCD の kill と ZS update を Force Late、`writes_sample_mask` の時に DCD の Shader Modifies Coverage（bit 20）を足した。discards の時の bit 20 は足していない |
 | `tests/mali-vk-meta-host-test.c`（新） | 埋め込みの SPIR-V を host の Mali compiler で compile し、blit（compute、8×8×1、push 52 byte、storage buffer 2 本 set 0 binding 0・1、長さを読まない）・clear の vertex（position だけ、vertex index、viewport の 6 語が FAU の中）・clear の colour（location 0〜7 に移した各々が その location だけ）の形を確かめる。引数の directory に SPIR-V を書き出す |
 
 ## 判断（推しで進めた所）
@@ -102,7 +103,10 @@ WS: [WS313](../ws.md)、設計 [gpu.md](../gpu.md) §11・§13。compiler は配
 - **拡大の blit は compute の meta program**: image は linear だけなので src・dst を storage buffer（語の配列）として扱う。push constant に src の角、16.16 の固定小数の歩幅（dst の 1 texel あたり、flip は負）、dst の幅・高さ、pitch と layer の大きさ（語）、src の大きさ（clamp to edge）、flag（linear・R と B の入れ替え）。dst が逆向きなら dst を正の向きにして src の向きを逆に。kernel は float を使えない（`-mgeneral-regs-only`）ので歩幅は整数の除算で kernel が出し、shader も整数だけ（linear は 4 texel を 1/256 の重みで byte ごとに 2 段の lerp、各段で丸め。誤差は 1 以下）。nearest も同じ式で重み 0（4 回同じ texel を読む。帯域より式の 1 本化を採った）。dst の address は region の左上の texel から、src は base layer から、layer は workgroup の z。
 - **形式**: RGBA8・BGRA8 の UNORM と sRGB の 4 つの間だけ（順が違えば R と B を入れ替え）。**sRGB は UNORM の byte として扱う**（filter は符号化された値で重み付け。spec は線形の空間での filter を求めるが、desktop の用途（mirror・cursor）では差が小さい推し）。他の形式・3D（z の範囲が 0〜1 でない）は従来の 1 行で skip。
 - **glslc の -O 無し**: compiler は OpFunctionCall を lower しない（`instruction with execution semantics is not lowered`。glslc の -O 無しの出力は関数を inline しない）ので、blit の GLSL は関数無し・early return 無しで書いた（compiler の不足として P7 に報告。compiler は A3 の所有）。
-- **clear attachments の準備**: vertex（gl_VertexIndex で矩形の 4 隅、pixel の座標で w 1、viewport は恒等の予定）と fragment（push の色を location L に。SPIR-V の Location の語を差し替え）の module と compile・形の確かめは入れたが、vk-draw.c の draw は未実装（P7 の指示で区切り。program 1〜9 は今は誰も求めない）。
+- **clear attachments**（D3 の続き）: 色の attachment ごと・矩形ごとに 1 本の draw。vertex program（gl_VertexIndex の bit 0・1 で矩形 (x0, y0, x1, y1) の 4 隅、pixel の座標で w 1）を triangle strip の 4 頂点・1 instance で、viewport の変換は恒等（scale 1・1・1、offset 0・0・0 の float の bit を FAU に）。fragment program は clear の色（record の 4 語、float の bit）を push の FAU から location L に。L は SPIR-V の Location の語を差し替えた location ごとの program（8 本、使う時に node で 1 回 compile）。blend は target L が replace の 4 成分、他の target は color mask 0。DCD1 の render target mask は target L だけ。scissor は矩形と render area・framebuffer の交わり。ZSD は全て通す物、kill は weak early、cull 無し。TSD は pass の物。resource table は空の 4 本（vertex と fragment で共有）。staging register は通常の draw と同じ番号を全て書くので、次の draw に clear の値は残らない。bind された pipeline・set・push・viewport・scissor（build の state）は読みも書きもしない。
+  - 範囲: color の aspect で値が colour（tag 0）の物だけ。STORE しない target・render pass の外の target・面積 0 の矩形は何もしない。`baseArrayLayer` が 0 でない矩形（pass は 1 layer）と program が無い時は従来の 1 行（`a clear of attachments inside a pass is not run`、submission で 1 度）で、その矩形だけ skip（同じ record の他の矩形は描く）。
+  - 判断: 通常の `draw()` を共有の関数に分けず、clear の発行を別に書いた（desktop の draw の stream を確実に変えないため。register の並びは同じ）。clear の draw は record の順に tiler に入るので、前後の draw との順序は Vulkan のとおり。
+- **depth と sample mask を書く fragment program**（A3 の案、D3 の続き）: `writes_depth` で ZSD word 4 の Depth source を 3、DCD0 の kill と ZS update を Force Late（Mesa の prepare_dcd の手順）。`writes_sample_mask` で DCD0 の bit 20。depth の attachment はこの driver に無いので、depth の値は捨てられる（gl_FragDepth の program が拒否されずに走る、が目的）。**discards の時の bit 20 は足していない**（desktop の draw の DCD が変わるため。夜の後の案）。desktop の fragment shader 41 本（`plan/tools/nvrtx/sm75-desktop-extract.py` が出す物）を host の compiler に通して、`writes_depth`・`writes_sample_mask` が全て 0（下の確かめ）なので desktop の draw の語は変わらない。
 - **既存の気づき（変えていない）**: `vk-desc.c` の `NO_WORKGROUP_MEMORY` は word 1 に 0x80000000 をそのまま入れている。v10.xml の WLS Instances は 1:0 の 5 bit で modifier が log2、既定の NO_WORKGROUP_MEM（0x80000000）は gen_pack では util_logbase2 で 31（word 1 = 0x1f）になる。今の語は instance の数 log2 0（1 個）・size scale 0・base 0 で、bit 31 は field の外。shared を使わない program には影響しない見込みだが、desktop の経路の語なので変えず P7 への案に置く。
 
 ## 夜の serial で見る行（`mali:` で始まる。gpu.md §9 の行の後）
@@ -119,6 +123,7 @@ WS: [WS313](../ws.md)、設計 [gpu.md](../gpu.md) §11・§13。compiler は配
 
 10. （D3）WLS の dispatch: 前の `mali: vk: a dispatch with workgroup memory is not run` は出なくなる。shared が 1 MiB を超える program だけ `mali: vk: a dispatch of N bytes of workgroup memory is not run`（session で 1 度、submission は失敗）。shared を使う compute の submission が FAULT したら 6 の行（fault の address が stage の WLS の memory の範囲か見る）。**行が出ず結果が正しければ成功**（compute の出力を照合する試験は無い）。
 11. （D3）拡大・縮小・flip・RGBA↔BGRA の blit: `a scaling or converting blit is not run` は、4 byte/px の RGBA8・BGRA8（UNORM・sRGB）以外・3D・program が無い時だけ出る（submission で 1 度）。program の不足は node で 1 度 `mali: vk: the program that scales or converts a blit is not compiled (E) at I: reason; that work is not run` か `mali: vk: the program that scales or converts a blit <理由>; that work is not run`、code は session で 1 度 `mali: vk: the code of the program that scales or converts a blit has no memory (E) …`・`… is not mapped (E) …`。blit を含む submission が失敗したら 6 の行の後に `mali: render: submission K ran the executor's own programs (1); later blits and clears that need them are not run`。mirror（`heads.c`）の拡大の画面・cursor の形式の変換の blit が出れば成功（目で見る）。
+12. （D3 の続き）clear attachments: 前の `a clear of attachments inside a pass is not run` は、layer 0 でない矩形と program が無い時だけ出る。program の不足は node で 1 度 `mali: vk: the program that places a clear inside a pass …`（vertex）か `mali: vk: the program that colours a clear inside a pass …`（fragment）、`… is not compiled (E) at I: reason; that work is not run` か `… <理由>; that work is not run`。code は session で 1 度 `mali: vk: the code of the program … has no memory (E)`・`is not mapped (E)`。clear を含む submission の失敗は 6 の行の後に `mali: render: submission K ran the executor's own programs (M); …`（M の bit 1 が vertex、bit 2+L が location L）。desktop（compositor）は vkCmdClearAttachments を使わないので、desktop の起動では新しい行は出ない見込み。
 
 ## 確かめ
 
@@ -142,14 +147,18 @@ WS: [WS313](../ws.md)、設計 [gpu.md](../gpu.md) §11・§13。compiler は配
   - 書き出した 4 本（blit・vertex・colour 0・colour 3）を `tests/mali-compiler-host-test.c` と `tests/mali-compiler-model.c`（`mali-compiler-desktop-test.sh` と同じ flag、asan・ubsan）で `--trials 50` → 4 本とも `PASS`（ISA.xml の表で decode でき、1 lane の模型が IR の参照と一致）。
   - blit の式（GLSL と同じ整数の式）を Python で書き直して手で確かめた: 2×2→4×4 の nearest、x の flip、2→4 の linear（0・0x40・0xbf・0xff）、4→2 の linear、R・B の入れ替え。試験の file にはしていない。
   - 既存: `tests/mali-vk-frame-host-test.c` → 49、`tests/mali-cs-host-test.c` → 61、`tests/mali-preload-host-test.c` → 15（変わらないことの確かめ）。
-- （D3）未実施: 実機（全部: TSD の WLS の語、instance の数の振る舞い、blit の compute の run）、QEMU（無い）、clear attachments（未実装）、`c5-build-check.sh` の全体（P7 が流す。新しい host 試験はまだその script に入っていない）。
+- （D3）未実施: 実機（全部: TSD の WLS の語、instance の数の振る舞い、blit の compute の run）、QEMU（無い）、`c5-build-check.sh` の全体（P7 が流す）。
+- （D3 の続き）build: 同じコマンド → exit 0、`grep -c ' warning:' build/d3-k.log` = 0（2026-10-29 16:25 頃、A3 の未 commit の compiler の変更を含む worktree で）。`git diff --check` 0。
+- （D3 の続き）host（出力は build/d3-host2/）: `tests/mali-vk-meta-host-test.c`（上と同じ cc の行）→ `all checks passed (130)`（clear の vertex と location 0〜7 の colour の形を含む）。`tests/mali-vk-desc-host-test.c` → 78、`tests/mali-vk-frame-host-test.c` → 49（変わらないことの確かめ）。
+- （D3 の続き）desktop の draw が変わらないことの確かめ: `python3 -I plan/tools/nvrtx/sm75-desktop-extract.py <worktree> build/d3-desk/spv` で出した 60 本のうち fragment の 41 本を host の Mali compiler に通し（小さな probe、build/d3-desk/）、`writes_depth`・`writes_sample_mask` が 41 本とも 0（build/d3-desk/flags.txt）。
+- （D3 の続き）未実施: clear の draw の host 試験（vk-draw.c は kernel に依るので、stream と descriptor を偽の memory で組み立てる試験は無い。program の形だけ確かめた）、実機（clear の draw が GPU で動くか、location 1 以上の fragment program の ATEST、恒等の viewport の y の向き）。
 
 ## 残り（夜の結果で直す順）
 
 1. self-test と render の stream の起動（上の 1〜4）。
 2. compute の dispatch（`vkdemo` の compute、C の compute shader）: RUN_COMPUTE の task increment（今は 1）、TSD、FAU の pointer の形。
 3. 三角形: RUN_IDVS の staging register、tiler context・heap、FBD・RT、blend の memory format（BGRA を RGBA 順にしている、未確認）、ZSD。
-4. compositor: ~~LOAD の pass の pre-frame の shader~~（D2 で実装、実機未試験）、clear attachments（D3 で program だけ用意、draw は未実装）、~~拡大の blit、cursor の形式の変換の blit~~（D3 で compute の blit、実機未試験）、AFBC 無しの性能、target 1 以上の LOAD。
+4. compositor: ~~LOAD の pass の pre-frame の shader~~（D2 で実装、実機未試験）、~~clear attachments~~（D3 で draw、実機未試験）、~~拡大の blit、cursor の形式の変換の blit~~（D3 で compute の blit、実機未試験）、AFBC 無しの性能、target 1 以上の LOAD。
 5. 改善: 非同期の submit（ring に複数の job、IRQ で完了）、TILER_OOM、~~shared memory~~（D3 で WLS、実機未試験）、mip・array・depth、WLS の instance の数を GPU の THREAD_MAX_THREADS・THREAD_FEATURES から。
 
 ## P7 への案（変えていない）
@@ -157,6 +166,7 @@ WS: [WS313](../ws.md)、設計 [gpu.md](../gpu.md) §11・§13。compiler は配
 - ~~（D3）`plan/ws313/tests/c5-build-check.sh` に `tests/mali-vk-meta-host-test.c` の行~~（P7 が足した、2026-10-29。引数無しで流す）。
 - ~~（D3）`vk-desc.c` の `NO_WORKGROUP_MEMORY` の語~~: **P7 が v10.xml の log2 の形（word 1 = 0x1f）に直した**（2026-10-29、q1675-i04）。判断: Mesa（panvk・gallium）が v10 の実機で使う語は gen_pack の util_logbase2(0x80000000) = 31 で、今までの 0x80000000 は field としては「instance 1 個・size scale 0・base 0」という Mesa が出さない語だった。どちらも G310 の実機では未試験だが、資料の上で正しく実機で使われている形に合わせる方を推しとした。全ての TSD（compute の dispatch、pass の draw、pre-frame の DCD が指す TSD）の word 1 が変わるので、**夜に最初の compute・draw で TSD の fault（`mali: render: submission K failed` の fault の値が TSD の descriptor を指す）が出たら、まずこの 1 語（`vk-desc.c` の `NO_WORKGROUP_MEMORY`）を 0x80000000U に戻して比べる**。`tests/mali-vk-desc-host-test.c` の 2 か所も 0x1fU に。
 - （D3）compiler（A3）: OpFunctionCall の inline（glslc の -O 無しの出力の関数が lower されない）。
+- （D3 の続き）夜の後: discards の program の DCD に Shader Modifies Coverage（bit 20）を足すか（Mesa の prepare_dcd は discard を coverage の変更に数える。desktop の draw の DCD が変わるので今は足していない）。
 
 - ~~`display/display.c` の `import_image`~~（D2 で実装、実機未試験）。
 - （D2）gpu.md §5 の route の行の形（`display lease N: shared|copied-in frames flipped|copied`）と §13 に pre-frame の draw・clean tile write の 1 行を足すこと（gpu.md は D2 の所有の外）。

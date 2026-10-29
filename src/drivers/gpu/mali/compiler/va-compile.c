@@ -144,8 +144,8 @@
  * table), each value's last use, the free registers and the first one the
  * stage's preloads leave alone, the temporaries of the instruction,
  * the outputs the program writes at its end (a fragment program's depth
- * and sample mask among them), and the loops it is in (their heads'
- * places in the list and in the IR).
+ * and sample mask among them), the loops it is in (their heads' places
+ * in the list and in the IR), and the compile's MALI_SHADER_OPTION_*.
  *
  * A value the registers cannot keep is spilled to a word of thread local
  * storage (tls_word, VA_NO_TLS_WORD for none) and loaded again where it
@@ -184,6 +184,7 @@ struct va_compiler {
 	uint32_t point_size_value;
 	uint32_t depth_value;
 	uint32_t sample_mask_value;
+	uint32_t options;
 
 	uint32_t loop_start[VA_LOOP_DEPTH];
 	uint32_t loop_head[VA_LOOP_DEPTH];
@@ -236,7 +237,7 @@ struct va_texture {
 /* The texture and sampler handle's table and index bits for texture slot k. */
 static uint32_t texture_handle(uint32_t slot);
 
-static int compile_variant(const struct drv_gpu_shader_ir *ir, struct mali_shader_program *program, uint32_t variant, uint8_t *out, size_t room, size_t *length, uint32_t *work_registers, uint32_t *preload, struct mali_shader_diagnostic *diagnostic);
+static int compile_variant(const struct drv_gpu_shader_ir *ir, struct mali_shader_program *program, uint32_t variant, uint32_t options, uint8_t *out, size_t room, size_t *length, uint32_t *work_registers, uint32_t *preload, struct mali_shader_diagnostic *diagnostic);
 static int lay_out(const struct drv_gpu_shader_ir *ir, struct mali_shader_program *program);
 static uint32_t buffer_of(const struct drv_gpu_shader_ir *ir, const struct mali_shader_program *program, uint32_t uniform);
 static void lower_size_query(struct va_compiler *c, const struct drv_gpu_shader_ir_inst *inst);
@@ -290,7 +291,8 @@ static void lower_load_input(struct va_compiler *c, uint32_t index);
 static void lower_vertex_attribute(struct va_compiler *c, uint32_t index);
 static void lower_varying(struct va_compiler *c, uint32_t index);
 static void lower_special_input(struct va_compiler *c, const struct drv_gpu_shader_ir_inst *inst);
-static void lower_load_ubo(struct va_compiler *c, const struct drv_gpu_shader_ir_inst *inst);
+static void lower_load_ubo(struct va_compiler *c, uint32_t index);
+static uint32_t ubo_run(const struct va_compiler *c, uint32_t index);
 static uint32_t buffer_address(struct va_compiler *c, uint32_t uniform, uint32_t offset_reg);
 static void lower_storage(struct va_compiler *c, const struct drv_gpu_shader_ir_inst *inst);
 static void lower_atomic(struct va_compiler *c, const struct drv_gpu_shader_ir_inst *inst);
@@ -400,10 +402,8 @@ mali_shader_compile_ir(
 	size_t second;
 	uint32_t work;
 	uint32_t preload;
+	uint32_t flags;
 	int error;
-
-	/* No option changes the program yet. */
-	(void)options;
 
 	/* Starts with no program and no refusal. */
 	if (program != NULL)
@@ -414,6 +414,11 @@ mali_shader_compile_ir(
 	/* A missing IR or result is refused. */
 	if (ir == NULL || program == NULL)
 		return EINVAL;
+
+	/* Takes the options asked for (none without a record). */
+	flags = 0U;
+	if (options != NULL)
+		flags = options->flags;
 
 	/* Allocates the program's description. */
 	made = kern_calloc(1U, sizeof(*made));
@@ -456,9 +461,9 @@ mali_shader_compile_ir(
 	/* Compiles the main program, or a vertex shader's position program. */
 	first = 0U;
 	if (ir->stage == DRV_GPU_STAGE_VERTEX) {
-		error = compile_variant(ir, made, VA_VARIANT_POSITION, code, room, &first, &work, &preload, diagnostic);
+		error = compile_variant(ir, made, VA_VARIANT_POSITION, flags, code, room, &first, &work, &preload, diagnostic);
 	} else {
-		error = compile_variant(ir, made, VA_VARIANT_MAIN, code, room, &first, &work, &preload, diagnostic);
+		error = compile_variant(ir, made, VA_VARIANT_MAIN, flags, code, room, &first, &work, &preload, diagnostic);
 	}
 	if (error != 0) {
 		kern_free(code);
@@ -473,7 +478,7 @@ mali_shader_compile_ir(
 	/* Compiles a vertex shader's varying program after the position program, when it writes varyings. */
 	second = 0U;
 	if (ir->stage == DRV_GPU_STAGE_VERTEX && made->varying_mask != 0U) {
-		error = compile_variant(ir, made, VA_VARIANT_VARYING, code + first, room - first, &second, &work, &preload, diagnostic);
+		error = compile_variant(ir, made, VA_VARIANT_VARYING, flags, code + first, room - first, &second, &work, &preload, diagnostic);
 		if (error != 0) {
 			kern_free(code);
 			kern_free(made);
@@ -517,6 +522,7 @@ compile_variant(
 	const struct drv_gpu_shader_ir *ir,
 	struct mali_shader_program *program,
 	uint32_t variant,
+	uint32_t options,
 	uint8_t *out,
 	size_t room,
 	size_t *length,
@@ -546,6 +552,7 @@ compile_variant(
 	}
 	c->program = program;
 	c->variant = variant;
+	c->options = options;
 	if (optimized.instructions != NULL) {
 		c->ir = &optimized;
 	} else {
@@ -559,6 +566,7 @@ compile_variant(
 		kern_memset(c, 0, sizeof(*c));
 		c->program = program;
 		c->variant = variant;
+		c->options = options;
 		c->ir = ir;
 		error = lower_with_room(c);
 	}
@@ -832,6 +840,7 @@ lower_with_room(
 	const struct drv_gpu_shader_ir *ir;
 	struct mali_shader_program *program;
 	uint32_t variant;
+	uint32_t options;
 	uint32_t attempt;
 	int error;
 
@@ -839,6 +848,7 @@ lower_with_room(
 	ir = c->ir;
 	program = c->program;
 	variant = c->variant;
+	options = c->options;
 	error = 0;
 	for (attempt = 0U; attempt < sizeof(reserves) / sizeof(reserves[0]); attempt++) {
 		if (attempt != 0U) {
@@ -846,7 +856,8 @@ lower_with_room(
 			kern_memset(c, 0, sizeof(*c));
 			c->program = program;
 			c->variant = variant;
-				c->ir = ir;
+			c->options = options;
+			c->ir = ir;
 		}
 		c->loop_reserve = reserves[attempt];
 		error = lower(c);
@@ -1036,7 +1047,7 @@ lower_instruction(
 		break;
 
 	case DRV_GPU_IR_LOAD_UBO:
-		lower_load_ubo(c, inst);
+		lower_load_ubo(c, index);
 		break;
 
 	case DRV_GPU_IR_LOAD_STORAGE:
@@ -2256,39 +2267,67 @@ lower_special_input(
 }
 
 /*
- * Loads a uniform buffer word: LOAD.i32 from the buffer's address in the
- * FAU at the word's byte offset (a 16-bit immediate; a farther word's
- * address is computed).
+ * Loads uniform buffer words: one LOAD from the buffer's address in the
+ * FAU at the first word's byte offset (a 16-bit immediate; a farther
+ * word's address is computed), of the word alone or, with
+ * MALI_SHADER_OPTION_VECTOR_UBO, of the run of following words
+ * ubo_run() finds, into a block whose registers the run's values take.
  */
 static void
 lower_load_ubo(
 	struct va_compiler *c,
-	const struct drv_gpu_shader_ir_inst *inst)
+	uint32_t index)
 {
+	static const uint64_t loads[4] = {
+		VA_OP_LOAD_I32,
+		VA_OP_LOAD_I64 | ((uint64_t)VA_LOAD_LANE_64_IDENTITY << VA_SHIFT_LOAD_LANE),
+		VA_OP_LOAD_I96 | ((uint64_t)VA_LOAD_LANE_96_IDENTITY << VA_SHIFT_LOAD_LANE),
+		VA_OP_LOAD_I128 | ((uint64_t)VA_LOAD_LANE_128_IDENTITY << VA_SHIFT_LOAD_LANE)
+	};
+	const struct drv_gpu_shader_ir_inst *inst;
 	uint32_t slot;
 	uint32_t word;
 	uint32_t dst;
+	uint32_t count;
+	uint32_t next;
 	uint32_t offset;
 	uint32_t address;
 	uint64_t bits;
+
+	inst = &c->ir->instructions[index];
 
 	/* Finds the buffer's address word. */
 	slot = buffer_slot(c, inst->location);
 	if (c->error != 0)
 		return;
 	word = c->program->buffers[slot].fau_word;
-	dst = define_value(c, inst->dst);
+
+	/* Gives the word its register, or the run's words a block of them. */
+	count = ubo_run(c, index);
+	if (count == 1U) {
+		dst = define_value(c, inst->dst);
+	} else {
+		dst = alloc_block(c, count);
+	}
 	if (c->error != 0)
 		return;
 
+	/* The run's values take the block's registers; their own loads are done. */
+	if (count != 1U)
+		bind_value(c, inst->dst, dst);
+	for (next = 1U; next < count; next++) {
+		bind_value(c, c->ir->instructions[index + next].dst, dst + next);
+		c->done[index + next] = 1U;
+	}
+
 	/* A near offset loads from the FAU address directly. */
 	if (inst->immediate < 0x8000U) {
-		bits = VA_OP_LOAD_I32 | va_source_uniform(word);
+		bits = loads[count - 1U] | va_source_uniform(word);
 		bits |= va_field(va_uniform_page(word), VA_SHIFT_FAU_PAGE);
 		bits |= va_field(inst->immediate, VA_SHIFT_MEMORY_OFFSET);
 		bits |= va_field(1U, VA_SHIFT_LOAD_UNSIGNED);
-		bits |= va_staging(dst, 1U, VA_STAGING_WRITE);
-		emit(c, bits, 0U, va_register_mask(dst, 1U), VA_INST_MESSAGE);
+		bits |= va_staging(dst, count, VA_STAGING_WRITE);
+		emit(c, bits, 0U, va_register_mask(dst, count), VA_INST_MESSAGE);
 		return;
 	}
 
@@ -2298,12 +2337,59 @@ lower_load_ubo(
 	free_reg(c, offset);
 	if (c->error != 0)
 		return;
-	bits = VA_OP_LOAD_I32 | va_source_register(address);
+	bits = loads[count - 1U] | va_source_register(address);
 	bits |= va_field(1U, VA_SHIFT_LOAD_UNSIGNED);
-	bits |= va_staging(dst, 1U, VA_STAGING_WRITE);
-	emit(c, bits, va_register_mask(address, 2U), va_register_mask(dst, 1U), VA_INST_MESSAGE);
+	bits |= va_staging(dst, count, VA_STAGING_WRITE);
+	emit(c, bits, va_register_mask(address, 2U), va_register_mask(dst, count), VA_INST_MESSAGE);
 	free_reg(c, address);
 	free_reg(c, address + 1U);
+}
+
+/*
+ * Counts the uniform buffer words one load reads from the LOAD_UBO at
+ * index: with MALI_SHADER_OPTION_VECTOR_UBO, it and the LOAD_UBOs right
+ * after it of the next words of the same buffer, up to four, kept to two
+ * when the first word's offset is not aligned to 16 bytes and to one
+ * when it is not aligned to 8 (a load is aligned to its size rounded up
+ * to a power of two); otherwise one.
+ *
+ * Procedure referenced: Mesa 26.2.6
+ * src/panfrost/compiler/bifrost/bifrost_nir.c (mem_access_size_align_cb:
+ * at most 16 bytes, aligned to the next power of two of their size).
+ */
+static uint32_t
+ubo_run(
+	const struct va_compiler *c,
+	uint32_t index)
+{
+	const struct drv_gpu_shader_ir_inst *first;
+	const struct drv_gpu_shader_ir_inst *inst;
+	uint32_t count;
+
+	/* Without the option every word is a load of its own. */
+	if ((c->options & MALI_SHADER_OPTION_VECTOR_UBO) == 0U)
+		return 1U;
+
+	/* Takes each following load of the next word of the same buffer. */
+	first = &c->ir->instructions[index];
+	count = 1U;
+	while (count < 4U && index + count < c->ir->instruction_count) {
+		inst = &c->ir->instructions[index + count];
+		if (inst->op != DRV_GPU_IR_LOAD_UBO || inst->location != first->location)
+			break;
+		if (inst->immediate != first->immediate + 4U * count || inst->dst > c->ir->value_count)
+			break;
+		count++;
+	}
+
+	/* Three or four words need 16-byte alignment, two need 8. */
+	if (count > 2U && (first->immediate & 15U) != 0U)
+		count = 2U;
+	if (count == 2U && (first->immediate & 7U) != 0U)
+		count = 1U;
+
+	/* Reports the words of the load. */
+	return count;
 }
 
 /*
