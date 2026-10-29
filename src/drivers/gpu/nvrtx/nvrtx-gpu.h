@@ -336,24 +336,6 @@ struct nvrtx_bo {
 };
 
 /*
- * The states of a channel of the work space (struct nvrtx_work_channel):
- * none before it exists, ready while it takes work, lost once its work
- * did not end (or the GSP reported an error on it) and its stop is
- * asked for, killing while the stop runs, and after the stop freed (the
- * resource manager let it go: nothing on the GPU reads its memory),
- * stopped (the GPU no longer runs it, but the resource manager keeps its
- * objects: its memory stays the device's) or stuck (nothing showed that it
- * stopped).
- */
-#define NVRTX_WORK_CHANNEL_NONE		0U
-#define NVRTX_WORK_CHANNEL_READY	1U
-#define NVRTX_WORK_CHANNEL_LOST		2U
-#define NVRTX_WORK_CHANNEL_KILLING	3U
-#define NVRTX_WORK_CHANNEL_FREED	4U
-#define NVRTX_WORK_CHANNEL_STOPPED	5U
-#define NVRTX_WORK_CHANNEL_STUCK	6U
-
-/*
  * One graphics channel of the work space (nvrtx-work.h has its layout):
  * the driver's own work channel, or a channel of one session's.
  *
@@ -376,11 +358,14 @@ struct nvrtx_bo {
  * last value a submission asked the semaphore to reach (also read without
  * the lock, by nvrtx_work_channel_passed()), entry_fence the fence each ring
  * entry's submission ended with (so an entry and its fence slot are reused
- * only after that work is done).  ready is set once the channel ran its
- * first fence; nothing is submitted before.  timed, set when the boot asks
- * for the counts (nvrtx.vk.perf=1), puts an end stamp with the GPU's timer
- * after every segment as well as the start stamp every run gets, so the
- * GPU's own time for a run can be read after later runs.
+ * only after that work is done), submitted_us the CPU's time each of the
+ * last runs was submitted (by the fence's low bits, read without the lock
+ * by the recovery).  ready is set once the channel ran its first fence;
+ * nothing is submitted before.  Every run gets a start stamp with the GPU's
+ * timer before its segment (so the recovery sees which run began, and
+ * when); timed, set when the boot asks for the counts (nvrtx.vk.perf=1),
+ * adds an end stamp after it, so the GPU's own time for a run can be read
+ * after later runs.
  *
  * state, rc_type and lost_reason are the renderer's (under its node's
  * queue_lock, read without it where a racy look is harmless): the channel's
@@ -409,6 +394,7 @@ struct nvrtx_work_channel {
 	uint32_t put;
 	uint32_t fence;
 	uint32_t entry_fence[NVRTX_WORK_RING_ENTRIES];
+	uint64_t submitted_us[NVRTX_WORK_RUN_RECORDS];
 	int arena_made;
 	int region_made;
 	int channel_made;
@@ -431,9 +417,12 @@ struct nvrtx_work_channel {
  * page tables, the driver's channel's instance block and USERD, and its own
  * context buffers (the global ones are the golden context's).  lock
  * serializes the space's mappings: va hands out the addresses of the runs
- * mapped for users and of the sessions' channels' regions.  timed is set at
- * the start when the boot asks for the counts (nvrtx.vk.perf=1); every
- * channel made afterwards times its runs as well.
+ * mapped for users and of the sessions' channels' regions.  ready is set
+ * once the driver's channel ran its first fence (the space takes mappings
+ * and channels from then on, even after that channel was stopped), and
+ * cleared by the stop.  timed is set at the start when the boot asks for the
+ * counts (nvrtx.vk.perf=1); every channel made afterwards times its runs as
+ * well.
  */
 struct nvrtx_work_state {
 	struct nvrtx_bo arena;
@@ -444,6 +433,7 @@ struct nvrtx_work_state {
 	int arena_made;
 	int space_made;
 	int root_set;
+	int ready;
 	int timed;
 	struct nvrtx_work_channel driver;
 };
@@ -707,6 +697,13 @@ struct nvrtx_gpu {
 	 */
 	struct mutex rpc_lock;
 	uint32_t rpc_wanted;
+	/*
+	 * Told of every channel error the GSP reports (its channel number and
+	 * its kind), by whichever thread reads the message under rpc_lock; set
+	 * once by the renderer's start, NULL before.  It takes only spinlocks.
+	 */
+	void (*channel_error)(void *argument, uint32_t chid, uint32_t type);
+	void *channel_error_argument;
 
 	/* The first address space and channel. */
 	struct nvrtx_engine_state engine;
@@ -860,6 +857,11 @@ int nvrtx_work_map_system(struct nvrtx_gpu *gpu, const uint64_t *pages, size_t c
 int nvrtx_work_unmap(struct nvrtx_gpu *gpu, uint64_t va, uint64_t size);
 int nvrtx_work_channel_open(struct nvrtx_gpu *gpu, struct nvrtx_work_channel *channel, uint32_t chid);
 int nvrtx_work_channel_close(struct nvrtx_gpu *gpu, struct nvrtx_work_channel *channel);
+void nvrtx_work_channel_look(struct nvrtx_work_channel *channel, struct nvrtx_recover_view *view);
+bool nvrtx_work_channel_resident(struct nvrtx_gpu *gpu, const struct nvrtx_work_channel *channel);
+int nvrtx_work_channel_stop(struct nvrtx_gpu *gpu, struct nvrtx_work_channel *channel);
+int nvrtx_work_channel_reset(struct nvrtx_gpu *gpu, struct nvrtx_work_channel *channel, int reported);
+int nvrtx_work_channel_free(struct nvrtx_gpu *gpu, struct nvrtx_work_channel *channel);
 int nvrtx_work_channel_submit(struct nvrtx_gpu *gpu, struct nvrtx_work_channel *channel, uint64_t push_va, size_t length, uint32_t *fence);
 int nvrtx_work_channel_wait(struct nvrtx_work_channel *channel, uint32_t fence, uint32_t timeout_us);
 int nvrtx_work_channel_wait_late(struct nvrtx_work_channel *channel, uint32_t fence, uint32_t timeout_us, uint32_t quiet_us);

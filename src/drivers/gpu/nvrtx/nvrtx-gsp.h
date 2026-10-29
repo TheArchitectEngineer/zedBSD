@@ -710,6 +710,18 @@ struct nvrtx_fwsec {
 #define NVRTX_CTL_SCHEDULE		0xa06f0103U
 
 /*
+ * A channel's stop (off its runlist, preempted at once when asked) and its
+ * reset (the channel and its engine).
+ *
+ * Values referenced: NVIDIA open-gpu-kernel-modules 570.144
+ * src/common/sdk/nvidia/inc/ctrl/ctrla06f/ctrla06fgpfifo.h
+ * (NVA06F_CTRL_CMD_STOP_CHANNEL) and
+ * src/common/sdk/nvidia/inc/ctrl/ctrl906f.h (NV906F_CTRL_CMD_RESET_CHANNEL).
+ */
+#define NVRTX_CTL_STOP_CHANNEL		0xa06f0112U
+#define NVRTX_CTL_RESET_CHANNEL		0x906f0102U
+
+/*
  * The classes of address-space and copy-channel on Turing (a generation's own
  * are its profile's).
  *

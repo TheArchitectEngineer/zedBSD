@@ -285,6 +285,10 @@ nvrtx_rpc_wait(
 			    (unsigned)nvrtx_get32(gpu->reply, RPC_ERROR_FAULT_KIND_AT));
 			if (nvrtx_get32(gpu->reply, RPC_ERROR_TYPE_AT) == RPC_GR_CLASS_ERROR)
 				rpc_gr_class_error(gpu);
+
+			/* The renderer loses the channel's session. */
+			if (gpu->channel_error != NULL)
+				gpu->channel_error(gpu->channel_error_argument, nvrtx_get32(gpu->reply, RPC_ERROR_CHANNEL_AT), nvrtx_get32(gpu->reply, RPC_ERROR_TYPE_AT));
 			continue;
 		}
 

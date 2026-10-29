@@ -44,6 +44,15 @@ struct nvrtx_vk_session;
 /* The markers of supervised jobs the renderer holds at once (runtime.c). */
 #define NVRTX_NODE_MARKERS		64U
 
+/*
+ * How long a run of a session's may take on the GPU from its submission
+ * (or from the end of the last stop, when later) before the recovery looks
+ * for what holds the GPU up, and how long it may wait at most before its
+ * session is lost even when no stop came.
+ */
+#define NVRTX_NODE_RUN_US		2000000U
+#define NVRTX_NODE_RUN_LIMIT_US		8000000U
+
 /* Where a queue entry is: free (a marker), reserved, queued, being run. */
 #define NVRTX_ENTRY_FREE		0U
 #define NVRTX_ENTRY_RESERVED		1U
@@ -116,6 +125,8 @@ struct nvrtx_resource {
  * the node's channel_lock, NULL before): a channel of its own, or the
  * driver's work channel when shared is set (no channel of its own could be
  * made, or the boot asked for none), whose runs all sessions share.
+ * quarantined (under queue_lock) is set by the core's isolate: the
+ * session's channel and memory are kept the device's (never given back).
  */
 struct nvrtx_session {
 	struct nvrtx_node *node;
@@ -130,6 +141,7 @@ struct nvrtx_session {
 	int run_lost;
 	struct nvrtx_work_channel *channel;
 	int shared;
+	int quarantined;
 };
 
 /*
@@ -259,6 +271,17 @@ struct nvrtx_node_perf {
  * at the start unless the boot asked for no channel of the sessions' own
  * (nvrtx.channels=0).
  *
+ * The recovery (runtime.c): the reaper thread looks at the channels every
+ * period, or when reaper_wake wakes it, and stops the one that holds the
+ * graphics engine up; it holds channel_lock while it looks and stops.
+ * kill_end_us is when its last stop ended (atomically; a run's time counts
+ * from it when later), kills_wanted is set at the start unless the boot
+ * asked for no stop (nvrtx.kill=0), recovery_stuck once a stop left a
+ * channel stuck (no other channel is stopped then: the device faults),
+ * bus_lost (atomically) once the GSP reported the GPU off the bus,
+ * reaper_stop (under queue_lock) by the stop for the reboot, after which
+ * the reaper stops nothing, and reaper_busy while it calls the GSP.
+ *
  * The message drain (node.c): drain_running is set while its thread runs,
  * drain_stop asks it to end at its next turn (the reboot's stop, which
  * then reads the GSP's replies itself).
@@ -315,6 +338,13 @@ struct nvrtx_node {
 	uint32_t chid_last;
 	struct nvrtx_session *channels[NVRTX_WORK_SESSION_CHANNELS];
 	int channels_wanted;
+	struct wait_queue reaper_wake;
+	uint64_t kill_end_us;
+	int kills_wanted;
+	int recovery_stuck;
+	int bus_lost;
+	int reaper_stop;
+	int reaper_busy;
 	volatile int drain_running;
 	volatile int drain_stop;
 	int perf;
@@ -386,6 +416,7 @@ void nvrtx_runtime_bind(struct nvrtx_node *node);
 void nvrtx_runtime_start(struct nvrtx_node *node);
 void nvrtx_runtime_stop(struct nvrtx_node *node);
 void nvrtx_runtime_session_close(struct nvrtx_node *node, struct nvrtx_session *session);
+void nvrtx_runtime_reaper_wake(struct nvrtx_node *node);
 
 int nvrtx_vk_node_run_wait(struct nvrtx_session *session, uint32_t fence, uint64_t submitted_us);
 bool nvrtx_vk_node_run_passed(struct nvrtx_session *session, uint32_t fence);

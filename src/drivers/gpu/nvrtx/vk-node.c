@@ -20,8 +20,10 @@
  * work channel) without waiting for it: the session keeps its newest
  * run's fence, and whatever needs the GPU done
  * with the session's work first (a run of memory given back, a copy by the
- * CPU, vkQueueWaitIdle) waits for it.  A run may take VK_NODE_RUN_US from
- * its submission; one that takes longer loses the session's runs.
+ * CPU, vkQueueWaitIdle) waits for it.  A run may take NVRTX_NODE_RUN_US
+ * from its submission (or from the recovery's last stop); one that takes
+ * longer wakes the recovery, which stops the channel holding the GPU up,
+ * and a run whose channel is stopped loses the session's runs.
  */
 
 #include <stdbool.h>
@@ -35,8 +37,8 @@
 #include "drivers/gpu/nvrtx/nvrtx-node.h"
 #include "drivers/gpu/nvrtx/vk/nvrtx-vk.h"
 
-/* How long a push buffer may run before the executor calls the GPU lost. */
-#define VK_NODE_RUN_US			2000000U
+/* How long each wait past a run's time lasts while the recovery looks for what holds the GPU up. */
+#define VK_NODE_LATE_SLICE_US		50000U
 
 /*
  * How long before a run is expected to end (as the session's last run
@@ -82,6 +84,8 @@ static uint8_t *vk_node_backing_view(struct nvrtx_node *node, const struct nvrtx
 static void vk_node_backing_drop(struct nvrtx_node *node, struct nvrtx_backing *backing);
 static int vk_node_wait(struct nvrtx_session *session, uint32_t fence, uint64_t submitted_us, uint64_t *waited_us);
 static bool vk_node_passed(struct nvrtx_session *session, uint32_t fence);
+static bool vk_node_lost(struct nvrtx_session *session);
+static bool vk_node_quiet(struct nvrtx_session *session);
 static void vk_node_gr_check(struct nvrtx_node *node);
 
 /*
@@ -144,6 +148,7 @@ nvrtx_vk_memory_detach(
 {
 	struct nvrtx_session *session;
 	struct nvrtx_backing *held;
+	bool quiet;
 	int error;
 
 	UNUSED_PARAMETER(bytes);
@@ -151,9 +156,10 @@ nvrtx_vk_memory_detach(
 	session = owner;
 	held = backing;
 
-	/* Runs that may read it keep the mapping and the reference for good when they do not end. */
+	/* Runs that may read it keep the mapping and the reference for good when they do not end (unless their channel was freed). */
 	error = nvrtx_vk_gpu_idle(owner);
-	if (error != 0) {
+	quiet = vk_node_quiet(session);
+	if (error != 0 && !quiet) {
 		nvrtx_stage_mark("executor: a memory's run at %llx stays, its work did not end", (unsigned long long)va);
 		return;
 	}
@@ -334,6 +340,7 @@ nvrtx_vk_gpu_free(
 {
 	struct nvrtx_session *session;
 	struct vk_node_run *run;
+	bool quiet;
 	int error;
 
 	session = owner;
@@ -343,9 +350,10 @@ nvrtx_vk_gpu_free(
 	if (run == NULL)
 		return;
 
-	/* Runs that may read it keep it when they do not end. */
+	/* Runs that may read it keep it when they do not end (unless their channel was freed). */
 	error = nvrtx_vk_gpu_idle(owner);
-	if (error != 0) {
+	quiet = vk_node_quiet(session);
+	if (error != 0 && !quiet) {
 		nvrtx_stage_mark("executor: an executor run at %llx stays, its work did not end", (unsigned long long)run->va);
 		return;
 	}
@@ -388,6 +396,7 @@ nvrtx_vk_gpu_submit(
 	struct nvrtx_node *node;
 	uint64_t submitted;
 	uint32_t fence;
+	bool lost;
 	int error;
 
 	session = owner;
@@ -395,8 +404,9 @@ nvrtx_vk_gpu_submit(
 	ticket->fence = 0U;
 	ticket->submitted_us = 0U;
 
-	/* A session whose run did not end puts nothing more on the GPU. */
-	if (__atomic_load_n(&session->run_lost, __ATOMIC_ACQUIRE) != 0)
+	/* A session whose run did not end, or whose channel the recovery lost, puts nothing more on the GPU. */
+	lost = vk_node_lost(session);
+	if (lost)
 		return EIO;
 
 	/* The renderer gives the session its channel before its first frame runs. */
@@ -600,10 +610,14 @@ nvrtx_vk_gpu_idle(
 }
 
 /*
- * Waits for a run's fence until VK_NODE_RUN_US after its submission and
- * counts the run's time from its submission to its end; a run that did not
- * end loses the session's runs.  *waited_us is the wait's own time.
- * Returns 0, or EIO.
+ * Waits for a run's fence and counts the run's time from its submission
+ * to its end; *waited_us is the wait's own time.  The run's time,
+ * NVRTX_NODE_RUN_US, counts from its submission, or from the end of the
+ * recovery's last stop when that came later (the run waited behind the
+ * stopped work).  Once it is spent the reaper is woken and the wait goes on
+ * while the session's channel is not lost, up to NVRTX_NODE_RUN_LIMIT_US
+ * from the submission; past that, or once the reaper lost the channel, the
+ * session's runs are lost.  Returns 0, or EIO.
  */
 static int
 vk_node_wait(
@@ -614,11 +628,15 @@ vk_node_wait(
 {
 	struct nvrtx_node *node;
 	uint64_t start;
+	uint64_t now;
+	uint64_t since;
+	uint64_t kill_end;
 	uint64_t age;
 	uint64_t spent;
 	uint64_t took;
 	uint32_t left;
 	uint32_t quiet;
+	bool lost;
 	int error;
 
 	node = session->node;
@@ -626,28 +644,57 @@ vk_node_wait(
 	*waited_us = 0U;
 
 	/* The session's runs are lost already: nothing is waited for again. */
-	if (__atomic_load_n(&session->run_lost, __ATOMIC_ACQUIRE) != 0)
+	lost = vk_node_lost(session);
+	if (lost)
 		return EIO;
 
-	/* What is left of the run's time. */
-	left = 0U;
-	age = start - submitted_us;
-	if (age < VK_NODE_RUN_US)
-		left = (uint32_t)(VK_NODE_RUN_US - age);
-
-	/* The run is expected to take as long as the session's last one: the wait sleeps until shortly before. */
+	/* The run is expected to take as long as the session's last one: the first wait sleeps until shortly before. */
 	quiet = 0U;
+	age = start - submitted_us;
 	took = __atomic_load_n(&session->run_took_us, __ATOMIC_RELAXED);
-	if (took > age + VK_NODE_SPIN_EARLY_US && took - age - VK_NODE_SPIN_EARLY_US < left)
+	if (took > age + VK_NODE_SPIN_EARLY_US && took - age - VK_NODE_SPIN_EARLY_US < NVRTX_NODE_RUN_US)
 		quiet = (uint32_t)(took - age - VK_NODE_SPIN_EARLY_US);
 
-	/* Waits for the fence on the session's channel. */
-	error = nvrtx_work_channel_wait_late(session->channel, fence, left, quiet);
+	/* Waits for the fence a slice at a time: what is left of the run's time, or past it a short slice while the recovery looks. */
+	error = ETIMEDOUT;
+	for (;;) {
+		now = nvrtx_now_us();
+		since = submitted_us;
+		kill_end = __atomic_load_n(&node->kill_end_us, __ATOMIC_ACQUIRE);
+		if (kill_end > since)
+			since = kill_end;
+		left = 0U;
+		if (now >= since && now - since < NVRTX_NODE_RUN_US)
+			left = (uint32_t)(NVRTX_NODE_RUN_US - (now - since));
+		if (now < since)
+			left = NVRTX_NODE_RUN_US;
+
+		/* The run's time is spent: the reaper looks for what holds the GPU up, up to the limit. */
+		if (left == 0U) {
+			nvrtx_runtime_reaper_wake(node);
+			if (now - submitted_us >= NVRTX_NODE_RUN_LIMIT_US)
+				break;
+			left = VK_NODE_LATE_SLICE_US;
+		}
+
+		error = nvrtx_work_channel_wait_late(session->channel, fence, left, quiet);
+		quiet = 0U;
+		if (error == 0)
+			break;
+
+		/* A channel the reaper lost (or a session lost meanwhile) waits no more. */
+		lost = vk_node_lost(session);
+		if (lost)
+			break;
+	}
+
 	spent = nvrtx_now_us();
 	*waited_us = spent - start;
-	if (error != 0) {
+	if (error != 0 || lost) {
 		__atomic_store_n(&session->run_lost, 1, __ATOMIC_RELEASE);
-		nvrtx_stage_mark("executor fail: the work of fence %u did not finish (%d); the session's runs are lost", (unsigned)fence, error);
+		nvrtx_stage_mark("executor fail: the work of fence %u did not finish (%u ms); the session's runs are lost",
+		    (unsigned)fence,
+		    (unsigned)((spent - submitted_us) / 1000U));
 		return EIO;
 	}
 
@@ -659,6 +706,65 @@ vk_node_wait(
 
 	/* Succeeded: the run ended. */
 	return 0;
+}
+
+/*
+ * Reports whether the session's runs are lost: it lost a run, or the
+ * recovery lost its channel (the shared work channel too).
+ */
+static bool
+vk_node_lost(
+	struct nvrtx_session *session)
+{
+	struct nvrtx_work_channel *channel;
+	uint32_t state;
+	int lost;
+
+	/* The session's own loss. */
+	lost = __atomic_load_n(&session->run_lost, __ATOMIC_ACQUIRE);
+	if (lost != 0)
+		return true;
+
+	/* Its channel's: anything but ready (none yet is no loss). */
+	channel = session->channel;
+	if (channel == NULL)
+		return false;
+	state = __atomic_load_n(&channel->state, __ATOMIC_ACQUIRE);
+	if (state != NVRTX_WORK_CHANNEL_READY)
+		return true;
+
+	/* Succeeded: the session's runs go on. */
+	return false;
+}
+
+/*
+ * Reports whether the GPU can no longer reach what a session's runs read
+ * though they did not end: its channel (not the shared one) was freed and
+ * the core did not isolate the session.  Its memory may then be given back.
+ */
+static bool
+vk_node_quiet(
+	struct nvrtx_session *session)
+{
+	struct nvrtx_work_channel *channel;
+	uint32_t state;
+	int quarantined;
+
+	/* An isolated session keeps everything. */
+	quarantined = __atomic_load_n(&session->quarantined, __ATOMIC_ACQUIRE);
+	if (quarantined != 0)
+		return false;
+
+	/* A channel of its own that the resource manager freed. */
+	channel = session->channel;
+	if (channel == NULL || session->shared != 0)
+		return false;
+	state = __atomic_load_n(&channel->state, __ATOMIC_ACQUIRE);
+	if (state != NVRTX_WORK_CHANNEL_FREED)
+		return false;
+
+	/* Succeeded: nothing on the GPU reads the session's memory. */
+	return true;
 }
 
 /*

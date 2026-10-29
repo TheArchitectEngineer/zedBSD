@@ -29,6 +29,16 @@
  * under the node's channel_lock, before the node's lock is taken, as it
  * calls the GSP), or the driver's work channel to share when none can be
  * made; its close frees that channel.
+ *
+ * The recovery: a run that does not end in its time wakes the reaper
+ * thread (and the reaper looks every period on its own).  It picks the
+ * channel that holds the graphics engine up (recover.c), loses its
+ * session (or every session sharing the work channel) and stops it on the
+ * GPU: the stop, else the GSP's error report on it, else its reset, then
+ * its free.  The GSP's error reports on a channel lose its session too.
+ * Other channels' runs then go on, their time counted from the stop's end.
+ * The reaper alone stops channels; the core's isolate only reads their
+ * state.
  */
 
 #include <stdbool.h>
@@ -39,6 +49,7 @@
 #include <kern/kcrt.h>
 #include <kern/kmem.h>
 #include <kern/lock.h>
+#include <kern/clock.h>
 #include <kern/sched.h>
 #include <kern/thread.h>
 #include <kern/waitq.h>
@@ -67,6 +78,31 @@
 /* The timelines a queue may name (1 to 63; 0 is the context's own). */
 #define RUNTIME_TIMELINES		64U
 
+/*
+ * How often the reaper looks at the channels on its own, how long it waits
+ * for the GSP's error report on a channel whose stop failed and how often
+ * it looks for it.
+ */
+#define RUNTIME_REAPER_PERIOD_MS	250U
+#define RUNTIME_REPORT_WAIT_US		500000U
+#define RUNTIME_REPORT_STEP_US		10000U
+
+/* How long the stop for the reboot waits for a stop the reaper is making, and its step. */
+#define RUNTIME_REAPER_STOP_US		15000000U
+#define RUNTIME_REAPER_STOP_STEP_US	10000U
+
+/*
+ * The GSP's error report that the GPU fell off the bus: the whole device is
+ * lost.
+ *
+ * Value referenced: NVIDIA open-gpu-kernel-modules 570.144
+ * src/common/sdk/nvidia/inc/nverror.h (Xid 79).
+ */
+#define RUNTIME_RC_OFF_THE_BUS		79U
+
+/* The views the reaper takes: one per session's number, then the shared work channel. */
+#define RUNTIME_VIEWS			(NVRTX_WORK_SESSION_CHANNELS + 1U)
+
 /* What a queue entry is. */
 #define RUNTIME_ENTRY_FRAME		1U
 #define RUNTIME_ENTRY_MARKER		2U
@@ -82,6 +118,13 @@ static int runtime_capacity(void *private_data, void *session, uint32_t timeline
 static int runtime_stop_begin(void *private_data, void *session, int error);
 static int runtime_stop_poll(void *private_data, void *session);
 static void runtime_fault(void *private_data, int error);
+static int runtime_isolate(void *private_data, void *session);
+static void runtime_reaper(void *argument);
+static void runtime_reap(struct nvrtx_node *node);
+static int runtime_pick(struct nvrtx_node *node, struct nvrtx_work_channel **picked);
+static void runtime_kill(struct nvrtx_node *node, struct nvrtx_work_channel *channel);
+static void runtime_channel_error(void *argument, uint32_t chid, uint32_t type);
+static bool runtime_session_stopped(struct nvrtx_node *node, struct nvrtx_session *session);
 static void runtime_worker(void *argument);
 static void runtime_completer(void *argument);
 static bool runtime_park(struct nvrtx_node *node, struct nvrtx_node_entry *entry);
@@ -108,13 +151,13 @@ static const struct drv_gpu_job_ops runtime_jobs = {
 	runtime_capacity
 };
 
-/* The recovery operations: a session's stop and its poll, and the device's fault. */
+/* The recovery operations: a session's stop and its poll, the device's fault and a session's isolation (no reset). */
 static const struct drv_gpu_recovery_ops runtime_recovery = {
 	runtime_stop_begin,
 	runtime_stop_poll,
 	runtime_fault,
 	NULL,
-	NULL
+	runtime_isolate
 };
 
 /*
@@ -144,6 +187,13 @@ nvrtx_runtime_bind(
 	if (wanted)
 		node->channels_wanted = 1;
 
+	/* The recovery: its wait queue, and whether it stops channels (unless the boot asked it not to). */
+	waitq_init(&node->reaper_wake, "nvrtx reaper");
+	wanted = nvrtx_stage_kill_wanted();
+	node->kills_wanted = 0;
+	if (wanted)
+		node->kills_wanted = 1;
+
 	/* The operations and the capabilities they make good. */
 	node->ops.get_capset = runtime_capset;
 	node->ops.command = runtime_command;
@@ -165,11 +215,21 @@ nvrtx_runtime_start(
 {
 	struct thread *worker;
 	struct thread *completer;
+	struct thread *reaper;
 	unsigned long enabled;
 	int error;
 
-	/* The completer of the parked markers, then the worker. */
-	error = kthread_create(runtime_completer, node, SCHED_PRIORITY_DEFAULT, &completer);
+	/* The reaper, the completer of the parked markers, then the worker. */
+	error = kthread_create(runtime_reaper, node, SCHED_PRIORITY_DEFAULT, &reaper);
+	if (error == 0) {
+		reaper->detached = 1;
+		thread_start(reaper);
+
+		/* The GSP's error reports on channels reach the recovery from now on. */
+		__atomic_store_n(&node->gpu->channel_error_argument, node, __ATOMIC_RELEASE);
+		__atomic_store_n(&node->gpu->channel_error, runtime_channel_error, __ATOMIC_RELEASE);
+		error = kthread_create(runtime_completer, node, SCHED_PRIORITY_DEFAULT, &completer);
+	}
 	if (error == 0) {
 		completer->detached = 1;
 		thread_start(completer);
@@ -188,7 +248,7 @@ nvrtx_runtime_start(
 
 	spin_unlock_irqrestore(&node->queue_lock, enabled);
 
-	nvrtx_stage_mark("renderer: no renderer worker or completer (%d)", error);
+	nvrtx_stage_mark("renderer: no renderer worker, completer or reaper (%d)", error);
 }
 
 /*
@@ -201,18 +261,37 @@ nvrtx_runtime_stop(
 	struct nvrtx_node *node)
 {
 	unsigned long enabled;
+	uint64_t start;
+	uint64_t spent;
+	int busy;
 
 	/* A node that is no renderer has no queue. */
 	if (node->renderer == 0)
 		return;
 
-	/* faulted refuses every later frame, marker and reservation; the worker completes the rest with EIO. */
+	/* faulted refuses every later frame, marker and reservation; the worker completes the rest with EIO; the reaper stops nothing more. */
 	enabled = spin_lock_irqsave(&node->queue_lock);
 
 	node->faulted = 1;
+	node->reaper_stop = 1;
 	waitq_wake_all(&node->available);
 
 	spin_unlock_irqrestore(&node->queue_lock, enabled);
+
+	/* A stop the reaper is making ends before the GSP is stopped (its calls may take their whole time). */
+	start = nvrtx_now_us();
+	for (;;) {
+		busy = __atomic_load_n(&node->reaper_busy, __ATOMIC_ACQUIRE);
+		if (busy == 0)
+			break;
+		spent = nvrtx_now_us() - start;
+		if (spent > RUNTIME_REAPER_STOP_US) {
+			nvrtx_stage_mark("unload shutdown: the reaper's stop did not end");
+			break;
+		}
+
+		kern_usleep_range(RUNTIME_REAPER_STOP_STEP_US, RUNTIME_REAPER_STOP_STEP_US * 2U);
+	}
 
 	nvrtx_stage_mark("unload shutdown: the renderer takes no more work");
 }
@@ -220,8 +299,9 @@ nvrtx_runtime_stop(
 /*
  * Closes a session's channel once its executor session is closed (its
  * runs ended, or were given up): a channel of its own is freed and its
- * number free again; one the resource manager would not free stays the
- * device's, with its number.  The shared work channel stays.
+ * number free again; one the resource manager would not free, or one of
+ * an isolated session, stays the device's, with its number.  The shared
+ * work channel stays.
  */
 void
 nvrtx_runtime_session_close(
@@ -231,6 +311,7 @@ nvrtx_runtime_session_close(
 	struct nvrtx_work_channel *channel;
 	unsigned long enabled;
 	uint32_t number;
+	int quarantined;
 	int error;
 
 	/* A session that never ran a frame, or one that shares the work channel, has none of its own. */
@@ -239,17 +320,24 @@ nvrtx_runtime_session_close(
 		return;
 	number = channel->chid - NVRTX_WORK_SESSION_CHID_FIRST;
 
-	/* The GSP's reports no longer name the session. */
+	/*
+	 * Under the lock of the channels' making (the reaper holds it while it
+	 * looks and stops): the GSP's reports no longer name the session, then
+	 * the channel is freed and its number free again, unless the core
+	 * isolated the session (its channel stays the device's).
+	 */
+	mutex_lock(&node->channel_lock);
+
 	enabled = spin_lock_irqsave(&node->queue_lock);
 
 	node->channels[number] = NULL;
+	quarantined = session->quarantined;
 
 	spin_unlock_irqrestore(&node->queue_lock, enabled);
 
-	/* Frees the channel, then its number, under the lock of the channels' making. */
-	mutex_lock(&node->channel_lock);
-
-	error = nvrtx_work_channel_close(node->gpu, channel);
+	error = EBUSY;
+	if (quarantined == 0)
+		error = nvrtx_work_channel_close(node->gpu, channel);
 	if (error == 0)
 		node->chid_used &= ~(1U << number);
 
@@ -262,6 +350,21 @@ nvrtx_runtime_session_close(
 
 	/* Succeeded: the channel is gone. */
 	kern_free(channel);
+}
+
+/* Wakes the reaper: a run did not end in its time. */
+void
+nvrtx_runtime_reaper_wake(
+	struct nvrtx_node *node)
+{
+	unsigned long enabled;
+
+	/* The reaper looks at the channels at once. */
+	enabled = spin_lock_irqsave(&node->queue_lock);
+
+	waitq_wake_all(&node->reaper_wake);
+
+	spin_unlock_irqrestore(&node->queue_lock, enabled);
 }
 
 /* Reports the protocol's capset: wire 1, XML 1.3.269, timelines, the vendor suffix and its flags. */
@@ -682,8 +785,10 @@ runtime_stop_begin(
 
 /*
  * Reports whether a stopping session's work has ended: 0 once nothing it
- * queued is queued or running any more (reservations it never committed
- * may remain: the core withdraws them), EAGAIN until then.
+ * queued is queued or running any more, on the GPU too (reservations it
+ * never committed may remain: the core withdraws them), EAGAIN until then.
+ * A run that does not end counts as running until the reaper stopped its
+ * channel.
  */
 static int
 runtime_stop_poll(
@@ -696,6 +801,7 @@ runtime_stop_poll(
 	uint32_t reserved;
 	uint32_t slot;
 	uint32_t pending;
+	bool stopped;
 
 	node = private_data;
 	owner = session;
@@ -714,6 +820,11 @@ runtime_stop_poll(
 
 	/* Work of the session still queued or running. */
 	if (pending != 0U)
+		return EAGAIN;
+
+	/* Its runs on the GPU: ended, or their channel stopped (a lost run is stopped by the reaper). */
+	stopped = runtime_session_stopped(node, owner);
+	if (!stopped)
 		return EAGAIN;
 
 	/* Succeeded: the session's work has ended. */
@@ -748,6 +859,48 @@ runtime_fault(
 
 	if (first)
 		nvrtx_stage_mark("renderer: the renderer faulted (%d); it takes no more work", error);
+}
+
+/*
+ * Isolates a session whose stop could not be confirmed in time: its
+ * channel and memory stay the device's from now on (its close gives
+ * nothing back and touches no hardware), its work answers EIO.  Returns 0
+ * when the GPU no longer runs its work (its channel was stopped or freed,
+ * it has none, or its runs have ended), else EIO: the device faults.  It
+ * stops nothing itself (the reaper alone does).
+ */
+static int
+runtime_isolate(
+	void *private_data,
+	void *session)
+{
+	struct nvrtx_node *node;
+	struct nvrtx_session *owner;
+	unsigned long enabled;
+	bool stopped;
+
+	node = private_data;
+	owner = session;
+
+	/* The session keeps everything and takes nothing new. */
+	enabled = spin_lock_irqsave(&node->queue_lock);
+
+	owner->quarantined = 1;
+	owner->stopping = 1;
+	__atomic_store_n(&owner->run_lost, 1, __ATOMIC_RELEASE);
+
+	spin_unlock_irqrestore(&node->queue_lock, enabled);
+
+	/* Whether the GPU still runs its work. */
+	stopped = runtime_session_stopped(node, owner);
+	if (!stopped) {
+		nvrtx_stage_mark("session isolation failed: its work may still run on the GPU");
+		return EIO;
+	}
+
+	/* Succeeded: the session is isolated. */
+	nvrtx_stage_mark("session isolated: its channel and memory are kept");
+	return 0;
 }
 
 /*
@@ -986,6 +1139,384 @@ runtime_retire(
 	} else {
 		drv_gpu_capacity_changed(node->device);
 	}
+}
+
+/*
+ * Looks at the channels and stops the one that holds the graphics engine
+ * up, every period or when woken, for the node's life (after the stop for
+ * the reboot it stops nothing).
+ */
+static void
+runtime_reaper(
+	void *argument)
+{
+	struct nvrtx_node *node;
+	unsigned long enabled;
+	uint64_t observed;
+	int stopping;
+
+	node = argument;
+
+	/* A period's sleep (or a wake), then a look. */
+	for (;;) {
+		enabled = spin_lock_irqsave(&node->queue_lock);
+
+		observed = waitq_sequence(&node->reaper_wake);
+		(void)waitq_sleep(&node->reaper_wake, &node->queue_lock, observed, sched_ticks() + KERN_MS_TO_TICKS(RUNTIME_REAPER_PERIOD_MS), 0U);
+		stopping = node->reaper_stop;
+
+		spin_unlock_irqrestore(&node->queue_lock, enabled);
+
+		/* The stop for the reboot owns the GSP now. */
+		if (stopping != 0)
+			continue;
+
+		runtime_reap(node);
+	}
+}
+
+/*
+ * One look of the reaper: a GPU off the bus faults the device; else the
+ * channel lost by an error report, or the one that holds the graphics
+ * engine up, is stopped (when the boot allows it), under the lock of the
+ * channels' making.
+ */
+static void
+runtime_reap(
+	struct nvrtx_node *node)
+{
+	struct nvrtx_work_channel *picked;
+	unsigned long enabled;
+	int bus_lost;
+	int stopping;
+	int found;
+
+	/* The GPU off the bus: the whole device is lost. */
+	bus_lost = __atomic_exchange_n(&node->bus_lost, 0, __ATOMIC_ACQ_REL);
+	if (bus_lost != 0) {
+		runtime_fault(node, EIO);
+		drv_gpu_report_error(node->device, EIO);
+		return;
+	}
+
+	/* The channel to stop, if any, with the channels held still. */
+	mutex_lock(&node->channel_lock);
+
+	found = runtime_pick(node, &picked);
+
+	/* The stop, unless the boot asked for none or the reboot's stop began. */
+	enabled = spin_lock_irqsave(&node->queue_lock);
+
+	stopping = node->reaper_stop;
+	if (found != 0 && stopping == 0 && node->kills_wanted != 0)
+		__atomic_store_n(&node->reaper_busy, 1, __ATOMIC_RELEASE);
+
+	spin_unlock_irqrestore(&node->queue_lock, enabled);
+
+	if (found != 0 && stopping == 0 && node->kills_wanted != 0) {
+		runtime_kill(node, picked);
+		__atomic_store_n(&node->reaper_busy, 0, __ATOMIC_RELEASE);
+	} else if (found != 0) {
+		/* Not stopped (the boot asked for none): nothing else is picked, the other runs' waits end at their limit. */
+		enabled = spin_lock_irqsave(&node->queue_lock);
+
+		node->recovery_stuck = 1;
+
+		spin_unlock_irqrestore(&node->queue_lock, enabled);
+	}
+
+	mutex_unlock(&node->channel_lock);
+}
+
+/*
+ * Picks the channel to stop, the caller holding the lock of the channels'
+ * making: one lost already (an error report, or picked before while stops
+ * were not allowed it is not picked again), else the one that holds the
+ * graphics engine up, which is lost now (its session, or every session
+ * sharing the work channel, answers EIO from now on).  Nothing is picked
+ * once a stop left a channel stuck.  Returns whether one was picked.
+ */
+static int
+runtime_pick(
+	struct nvrtx_node *node,
+	struct nvrtx_work_channel **picked)
+{
+	struct nvrtx_recover_view views[RUNTIME_VIEWS];
+	struct nvrtx_work_channel *channels[RUNTIME_VIEWS];
+	struct nvrtx_session *owners[RUNTIME_VIEWS];
+	struct nvrtx_work_channel *channel;
+	unsigned long enabled;
+	uint64_t kill_end;
+	uint64_t now;
+	uint32_t index;
+	int culprit;
+
+	*picked = NULL;
+
+	/* The sessions' channels and the shared one, each with its state; one lost already is stopped first. */
+	enabled = spin_lock_irqsave(&node->queue_lock);
+
+	for (index = 0U; index < RUNTIME_VIEWS; index++) {
+		owners[index] = NULL;
+		channels[index] = NULL;
+		if (index < NVRTX_WORK_SESSION_CHANNELS && node->channels[index] != NULL) {
+			owners[index] = node->channels[index];
+			channels[index] = owners[index]->channel;
+		} else if (index == NVRTX_WORK_SESSION_CHANNELS) {
+			channels[index] = &node->gpu->work.driver;
+		}
+
+		views[index].stoppable = 0;
+		if (channels[index] != NULL && channels[index]->state == NVRTX_WORK_CHANNEL_READY && node->recovery_stuck == 0)
+			views[index].stoppable = 1;
+		if (channels[index] != NULL && channels[index]->state == NVRTX_WORK_CHANNEL_LOST && node->kills_wanted != 0 && *picked == NULL)
+			*picked = channels[index];
+	}
+
+	spin_unlock_irqrestore(&node->queue_lock, enabled);
+
+	if (*picked != NULL)
+		return 1;
+
+	/* What each channel's GPU side shows. */
+	for (index = 0U; index < RUNTIME_VIEWS; index++) {
+		views[index].busy = 0;
+		views[index].resident = 0;
+		if (channels[index] != NULL)
+			nvrtx_work_channel_look(channels[index], &views[index]);
+	}
+
+	/* Whether any run waited its time; then the engine is asked which channel it holds. */
+	now = nvrtx_now_us();
+	kill_end = __atomic_load_n(&node->kill_end_us, __ATOMIC_ACQUIRE);
+	culprit = nvrtx_recover_culprit(views, RUNTIME_VIEWS, now, kill_end, NVRTX_NODE_RUN_US);
+	if (culprit < 0)
+		return 0;
+	for (index = 0U; index < RUNTIME_VIEWS; index++) {
+		if (views[index].busy != 0)
+			views[index].resident = (int)nvrtx_work_channel_resident(node->gpu, channels[index]);
+	}
+
+	culprit = nvrtx_recover_culprit(views, RUNTIME_VIEWS, now, kill_end, NVRTX_NODE_RUN_US);
+	if (culprit < 0)
+		return 0;
+	channel = channels[culprit];
+
+	/* The culprit is lost, once: its session (or the work channel's sessions) answers EIO from now on. */
+	enabled = spin_lock_irqsave(&node->queue_lock);
+
+	if (channel->state == NVRTX_WORK_CHANNEL_READY) {
+		channel->state = NVRTX_WORK_CHANNEL_LOST;
+		channel->lost_reason = ETIMEDOUT;
+		if (owners[culprit] != NULL)
+			__atomic_store_n(&owners[culprit]->run_lost, 1, __ATOMIC_RELEASE);
+	}
+
+	spin_unlock_irqrestore(&node->queue_lock, enabled);
+
+	nvrtx_stage_mark("channel %u lost: its run held the graphics engine (resident %d, started %d)",
+	    (unsigned)channel->chid,
+	    views[culprit].resident,
+	    views[culprit].started);
+
+	/* Succeeded: the channel is picked. */
+	*picked = channel;
+	return 1;
+}
+
+/*
+ * Stops a lost channel on the GPU, the caller holding the lock of the
+ * channels' making: the stop at once; when it fails, the GSP's error report
+ * on the channel is waited for a while; without either, the channel and its
+ * engine are reset.  With any of them the channel is freed in the resource
+ * manager.  The channel's state says what is left (freed, stopped or stuck);
+ * the other runs' time counts from the end.
+ */
+static void
+runtime_kill(
+	struct nvrtx_node *node,
+	struct nvrtx_work_channel *channel)
+{
+	unsigned long enabled;
+	uint64_t start;
+	uint64_t spent;
+	uint32_t state;
+	uint32_t rc_type;
+	int stopped;
+	int reported;
+	int reset;
+	int freed;
+	int failures;
+	int error;
+
+	start = nvrtx_now_us();
+
+	/* Being stopped. */
+	enabled = spin_lock_irqsave(&node->queue_lock);
+
+	channel->state = NVRTX_WORK_CHANNEL_KILLING;
+
+	spin_unlock_irqrestore(&node->queue_lock, enabled);
+
+	/* The stop at once. */
+	error = nvrtx_work_channel_stop(node->gpu, channel);
+	stopped = 0;
+	if (error == 0)
+		stopped = 1;
+
+	/* A stop that failed: the GSP reports the channel's error once it has taken it off (the drain reads the report). */
+	reported = 0;
+	for (;;) {
+		rc_type = __atomic_load_n(&channel->rc_type, __ATOMIC_ACQUIRE);
+		if (rc_type != 0U)
+			reported = 1;
+		spent = nvrtx_now_us() - start;
+		if (stopped != 0 || reported != 0 || spent > RUNTIME_REPORT_WAIT_US)
+			break;
+
+		kern_usleep_range(RUNTIME_REPORT_STEP_US, RUNTIME_REPORT_STEP_US * 2U);
+	}
+
+	/* Neither: the channel and its engine are reset. */
+	reset = 0;
+	if (stopped == 0 && reported == 0) {
+		error = nvrtx_work_channel_reset(node->gpu, channel, 0);
+		if (error == 0)
+			reset = 1;
+	}
+
+	/* The resource manager frees a channel the GPU no longer runs. */
+	freed = 0;
+	if (stopped != 0 || reported != 0 || reset != 0) {
+		failures = nvrtx_work_channel_free(node->gpu, channel);
+		if (failures == 0)
+			freed = 1;
+	}
+
+	/* What the stop left, and when it ended. */
+	state = nvrtx_recover_kill_state(stopped, reported, reset, freed);
+
+	enabled = spin_lock_irqsave(&node->queue_lock);
+
+	channel->state = state;
+	if (state == NVRTX_WORK_CHANNEL_STUCK)
+		node->recovery_stuck = 1;
+
+	spin_unlock_irqrestore(&node->queue_lock, enabled);
+
+	__atomic_store_n(&node->kill_end_us, nvrtx_now_us(), __ATOMIC_RELEASE);
+	spent = nvrtx_now_us() - start;
+
+	/* Says how it went. */
+	if (state == NVRTX_WORK_CHANNEL_STUCK) {
+		nvrtx_stage_mark("channel %u stuck: no stop, report or reset took it off (%u ms)", (unsigned)channel->chid, (unsigned)(spent / 1000U));
+		return;
+	}
+
+	/* Succeeded: the GPU no longer runs the channel. */
+	nvrtx_stage_mark("channel %u stopped%s (stop %d, report %d, reset %d, %u ms)",
+	    (unsigned)channel->chid,
+	    state == NVRTX_WORK_CHANNEL_FREED ? " and freed" : ", kept",
+	    stopped,
+	    reported,
+	    reset,
+	    (unsigned)(spent / 1000U));
+}
+
+/*
+ * Takes the GSP's error report on a channel (any thread reading the GSP's
+ * messages under its lock; spinlocks only): a session's channel, or the
+ * shared work channel, is lost (its session, or the work channel's
+ * sessions, answer EIO) and the reaper stops it; a GPU off the bus faults
+ * the device from the reaper.  Reports on the driver's other channels are
+ * only shown (by the drain).
+ */
+static void
+runtime_channel_error(
+	void *argument,
+	uint32_t chid,
+	uint32_t type)
+{
+	struct nvrtx_node *node;
+	struct nvrtx_session *owner;
+	struct nvrtx_work_channel *channel;
+	unsigned long enabled;
+
+	node = argument;
+
+	/* The GPU off the bus: the reaper faults the device. */
+	if (type == RUNTIME_RC_OFF_THE_BUS)
+		__atomic_store_n(&node->bus_lost, 1, __ATOMIC_RELEASE);
+
+	/* The channel the report names, and its session. */
+	enabled = spin_lock_irqsave(&node->queue_lock);
+
+	owner = NULL;
+	channel = NULL;
+	if (chid >= NVRTX_WORK_SESSION_CHID_FIRST && chid - NVRTX_WORK_SESSION_CHID_FIRST < NVRTX_WORK_SESSION_CHANNELS)
+		owner = node->channels[chid - NVRTX_WORK_SESSION_CHID_FIRST];
+	if (owner != NULL)
+		channel = owner->channel;
+	if (owner == NULL && chid == node->gpu->work.driver.chid)
+		channel = &node->gpu->work.driver;
+
+	/* The report is kept, and a ready channel is lost. */
+	if (channel != NULL) {
+		__atomic_store_n(&channel->rc_type, type + 1U, __ATOMIC_RELEASE);
+		if (channel->state == NVRTX_WORK_CHANNEL_READY) {
+			channel->state = NVRTX_WORK_CHANNEL_LOST;
+			channel->lost_reason = EIO;
+			if (owner != NULL)
+				__atomic_store_n(&owner->run_lost, 1, __ATOMIC_RELEASE);
+		}
+	}
+
+	/* The reaper looks at once. */
+	waitq_wake_all(&node->reaper_wake);
+
+	spin_unlock_irqrestore(&node->queue_lock, enabled);
+}
+
+/*
+ * Reports whether a session's runs no longer run on the GPU: its channel
+ * (or the shared work channel) was freed or stopped, it has none, or its
+ * newest run has ended.
+ */
+static bool
+runtime_session_stopped(
+	struct nvrtx_node *node,
+	struct nvrtx_session *session)
+{
+	struct nvrtx_work_channel *channel;
+	unsigned long enabled;
+	uint32_t state;
+	uint32_t fence;
+	bool passed;
+	bool stopped;
+	int busy;
+
+	/* A session that never ran a frame has nothing on the GPU. */
+	channel = __atomic_load_n(&session->channel, __ATOMIC_ACQUIRE);
+	if (channel == NULL)
+		return true;
+
+	/* The channel's state. */
+	enabled = spin_lock_irqsave(&node->queue_lock);
+
+	state = channel->state;
+
+	spin_unlock_irqrestore(&node->queue_lock, enabled);
+
+	/* The session's newest run. */
+	fence = __atomic_load_n(&session->run_fence, __ATOMIC_ACQUIRE);
+	passed = nvrtx_vk_node_run_passed(session, fence);
+
+	/* Succeeded: whether the GPU still runs the session's work. */
+	busy = 1;
+	if (passed)
+		busy = 0;
+	stopped = nvrtx_recover_stopped(state, busy);
+	return stopped;
 }
 
 /*
