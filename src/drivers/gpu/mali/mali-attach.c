@@ -47,8 +47,14 @@
 #define GIC_SPI_TYPE		0U
 #define INTERRUPT_CELLS		3U
 
-/* The smallest register window the driver uses: up to the last doorbell it rings. */
+/*
+ * The smallest register window the driver uses (up to the last doorbell
+ * it rings), and the most of the window it maps: the control blocks and
+ * the first eight doorbells.  The rest of the window holds doorbells the
+ * driver never rings.
+ */
 #define REGISTERS_MIN_BYTES	(MALI_DOORBELL_BASE + 2U * MALI_DOORBELL_STRIDE)
+#define REGISTERS_MAP_BYTES	(MALI_DOORBELL_BASE + 8U * MALI_DOORBELL_STRIDE)
 
 /* The largest firmware file the driver reads (16 MiB), the longest path it builds, and where the files are. */
 #define FIRMWARE_LIMIT		(16U * 1024U * 1024U)
@@ -318,7 +324,10 @@ bring_up(
 		return error;
 	}
 
-	/* The register window. */
+	/* The part of the register window the driver uses. */
+	if (device->register_bytes > REGISTERS_MAP_BYTES)
+		device->register_bytes = REGISTERS_MAP_BYTES;
+
 	error = kern_device_map(device->register_base, (size_t)device->register_bytes, KERN_DEVICE_UNCACHED, &mapped);
 	if (error != 0) {
 		kern_logf("mali: registers at %llx not mapped (%d)\n", (unsigned long long)device->register_base, error);
