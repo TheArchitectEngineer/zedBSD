@@ -14,16 +14,18 @@
  * corners of a quad.  The records are turned into methods in order
  * (exec-push.c and draw-push.c) and the push buffer is put on the work
  * channel when it is full, when a copy must be done by the CPU, and at the
- * end, without waiting for the GPU: the next push buffer is written in a
- * slot whose run has ended (a new slot is made while one is to be had,
- * else the oldest run is waited for), so the CPU writes one while the GPU
- * runs the others.  The runs on the one work channel run in order, each
+ * end, without waiting for the GPU: the next submission's run follows the
+ * last one in the same slot while the slot has room, and a full slot is
+ * left for one whose runs have ended (a new slot is made while one is to
+ * be had, else the oldest run is waited for), so the CPU writes one while
+ * the GPU runs the others.  The runs on the one work channel run in order, each
  * after the one before has finished (its fence waits for idle).  What
  * needs the GPU done with the session's work first waits for its newest
  * run: a copy by the CPU, a shadow given back, the session's close (and,
  * in the node, a memory or a run of the executor's memory given back).
  *
- * A draw writes everything it uses: its constants (the push constants and
+ * A draw writes what it uses and the draw before it in the run did not
+ * leave as it needs (execute_drawn): its constants (the push constants and
  * its texture handles) in a constant buffer of its own, a header and a
  * sampler for each sampled image, the viewport, scissor, blend, vertex
  * input and programs.  A copy, a blit, a copy between a buffer and an
@@ -170,6 +172,9 @@ struct nvrtx_vk_execute {
 	uint8_t *cpu;
 	uint64_t va;
 	size_t at;
+	/* Where the run being written starts in the push buffer: a slot holds several runs one after another until it fills. */
+	size_t run_start;
+	bool used;
 	uint32_t constants;
 	uint32_t headers;
 	uint32_t samplers;
@@ -276,6 +281,8 @@ static int execute_compile(struct nvrtx_draw_ir *program, uint32_t shader_model,
 static int execute_slot_make(struct nvrtx_vk_session *session, struct execute_slot *slot);
 static int execute_start(struct nvrtx_vk_session *session, struct nvrtx_vk_execute *execute);
 static void execute_begin(struct nvrtx_vk_execute *execute);
+static void execute_head(struct nvrtx_vk_execute *execute);
+static bool execute_full(const struct nvrtx_vk_execute *execute);
 static int execute_submit(struct nvrtx_vk_session *session, struct nvrtx_vk_execute *execute);
 static int execute_flush(struct nvrtx_vk_session *session, struct nvrtx_vk_execute *execute);
 static int execute_drain(struct nvrtx_vk_session *session, struct nvrtx_vk_execute *execute);
@@ -325,6 +332,7 @@ nvrtx_vk_execute(
 	struct nvrtx_vk_execute *execute;
 	struct execute_state *state;
 	uint32_t index;
+	bool full;
 	int error;
 
 	/* Only an executable command buffer runs. */
@@ -343,10 +351,21 @@ nvrtx_vk_execute(
 	if (state == NULL)
 		return ENOMEM;
 
-	/* A push buffer begun before and never submitted (its command buffer failed) is begun again; else a slot is taken. */
+	/*
+	 * A run begun before and never submitted (its command buffer failed) is
+	 * begun again where it started; else the next run follows the last one
+	 * in the current slot while the slot has room (the runs before it may
+	 * still run: their parts are not reused); else a slot is taken.
+	 */
 	error = 0;
+	full = true;
+	if (execute->used)
+		full = execute_full(execute);
 	if (execute->started) {
-		execute_begin(execute);
+		execute->at = execute->run_start;
+		execute_head(execute);
+	} else if (!full) {
+		execute_head(execute);
 	} else {
 		error = execute_start(session, execute);
 	}
@@ -657,24 +676,45 @@ static void
 execute_begin(
 	struct nvrtx_vk_execute *execute)
 {
-	uint8_t *push;
-
-	/* The state and the pools. */
-	push = execute->cpu + EXECUTE_PUSH_AT;
-	execute->at = nvrtx_push_draw_init_class(push, 0U, execute->va + EXECUTE_ZERO_AT, execute->threed_class);
-	execute->at = nvrtx_push_draw_textures(push, execute->at, execute->va + EXECUTE_HEADERS_AT, EXECUTE_POOL_ENTRIES,
-					       execute->va + EXECUTE_SAMPLERS_AT, EXECUTE_POOL_ENTRIES);
-
-	/* The programs and constants the CPU wrote since the last run are read anew, once for every draw of this push buffer. */
-	execute->at = nvrtx_push_draw_invalidate(push, execute->at);
-
-	/* A new push buffer: no draw's state is known in it. */
-	execute->generation++;
-
-	/* Nothing of the parts is used. */
+	/* Nothing of the slot's parts is used: the push buffer starts at its beginning. */
+	execute->at = 0U;
 	execute->constants = 0U;
 	execute->headers = 0U;
 	execute->samplers = 0U;
+	execute->used = true;
+
+	/* The first run's head. */
+	execute_head(execute);
+}
+
+/*
+ * Begins a run at the push buffer's end: the 3D class's state a queue
+ * starts with (another session's runs on the work channel may have run
+ * between), the header and sampler pools, and the shader caches emptied.
+ * The slot's parts used by the runs before it stay theirs.
+ */
+static void
+execute_head(
+	struct nvrtx_vk_execute *execute)
+{
+	uint8_t *push;
+
+	/* The run starts here. */
+	push = execute->cpu + EXECUTE_PUSH_AT;
+	execute->run_start = execute->at;
+
+	/* The state and the pools. */
+	execute->at = nvrtx_push_draw_init_class(push, execute->at, execute->va + EXECUTE_ZERO_AT, execute->threed_class);
+	execute->at = nvrtx_push_draw_textures(push, execute->at, execute->va + EXECUTE_HEADERS_AT, EXECUTE_POOL_ENTRIES,
+					       execute->va + EXECUTE_SAMPLERS_AT, EXECUTE_POOL_ENTRIES);
+
+	/* The programs and constants the CPU wrote since the last run are read anew, once for every draw of this run. */
+	execute->at = nvrtx_push_draw_invalidate(push, execute->at);
+
+	/* A new run: no draw's state is known in it. */
+	execute->generation++;
+
+	/* Nothing of the run is counted yet. */
 	execute->draws = 0U;
 	execute->quads = 0U;
 	execute->started = true;
@@ -692,10 +732,14 @@ execute_submit(
 	struct execute_slot *slot;
 	int error;
 
-	/* Counts its draws, then submits it; the slot keeps its run. */
+	/* Counts its draws; the slot's last run is counted if it has ended (the slot keeps only its newest run, which ends after the others). */
 	slot = &execute->slots[execute->slot];
 	nvrtx_vk_gpu_drawn(session->owner, execute->draws, execute->quads);
-	error = nvrtx_vk_gpu_submit(session->owner, execute->va + EXECUTE_PUSH_AT, (uint32_t)execute->at, &slot->ticket);
+	nvrtx_vk_gpu_retire(session->owner, &slot->ticket);
+
+	/* Submits the run, from its start to the push buffer's end. */
+	error = nvrtx_vk_gpu_submit(session->owner, execute->va + EXECUTE_PUSH_AT + execute->run_start,
+				    (uint32_t)(execute->at - execute->run_start), &slot->ticket);
 	if (error != 0)
 		return error;
 
@@ -765,14 +809,8 @@ execute_room(
 	bool full;
 	int error;
 
-	/* Full when the push buffer, the constants or the pools could not take a record. */
-	full = false;
-	if (execute->at + EXECUTE_RECORD_ROOM > EXECUTE_PUSH_BYTES)
-		full = true;
-	if (execute->constants + NVRTX_VK_REGIONS_MAX * EXECUTE_CONSTANTS_SLOT > EXECUTE_CONSTANTS_BYTES)
-		full = true;
-	if (execute->headers + NVRTX_VK_REGIONS_MAX + NVRTX_VK_TEXTURES_MAX > EXECUTE_POOL_ENTRIES)
-		full = true;
+	/* Nothing to do while the push buffer, the constants and the pools can take a record. */
+	full = execute_full(execute);
 	if (!full)
 		return 0;
 
@@ -784,6 +822,23 @@ execute_room(
 	/* Succeeded: the next push buffer has room; its target is written anew. */
 	state->target_written = false;
 	return 0;
+}
+
+/* Reports whether the push buffer, the constants or the pools could not take one more record. */
+static bool
+execute_full(
+	const struct nvrtx_vk_execute *execute)
+{
+	/* Each part's room for a record. */
+	if (execute->at + EXECUTE_RECORD_ROOM > EXECUTE_PUSH_BYTES)
+		return true;
+	if (execute->constants + NVRTX_VK_REGIONS_MAX * EXECUTE_CONSTANTS_SLOT > EXECUTE_CONSTANTS_BYTES)
+		return true;
+	if (execute->headers + NVRTX_VK_REGIONS_MAX + NVRTX_VK_TEXTURES_MAX > EXECUTE_POOL_ENTRIES)
+		return true;
+
+	/* Room for a record. */
+	return false;
 }
 
 /* Runs one record. */
