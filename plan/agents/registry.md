@@ -9,7 +9,7 @@
 | P2 | phase-runner | ws291 の NVIDIA の段 (q1670-i03) | `/home/awe/zedBSD-worktrees/p2-ws291o` / `agent/p2-ws291o` | returned（2026-10-29 09:52、次は P1 の枠の後に新しい起動で rtx-depth-probe.sh から） | 89108832d（merge e30f1b78e） |
 | P3 | phase-runner | ws221 (q1664-i05) | `/home/awe/zedBSD-worktrees/p3-ws221e` / `agent/p3-ws221e` | running | e2ce3ff0e（merge d0bdf9b87） |
 | P4 | phase-runner | ws307 (q1665-i07) | `/home/awe/zedBSD-worktrees/p4-ws307k` / `agent/p4-ws307k` | running | dc4dd958e（merge 23d2741ea） |
-| P5 | kernel-and-driver-designer | 設計 (q1666-i04) | `/home/awe/zedBSD-worktrees/p5-design-d` / `agent/p5-design-d` | stopped（2026-10-29 ユーザーが停止） | 8d9ea93ce（merge e24ab6ebf） |
+| P5 | phase-runner | ws307 p002 の残り (q1671-i01) | `/home/awe/zedBSD-worktrees/p5-ws307p002` / `agent/p5-ws307p002` | running | 8d9ea93ce（merge e24ab6ebf） |
 | P6 | phase-runner | WS282〜WS284・WS223 の実装 (q1667-i04) | `/home/awe/zedBSD-worktrees/p6-ws282c` / `agent/p6-ws282c` | returned（2026-10-29 ラップアップ、merge しない、先頭 677277d8f） | — |
 
 - 同時に動かす数は 6（2026-10-29 ユーザーの P1〜P6 の指示）。VF2（主）と 5330（従）は P3、10.0.10.3 は P2。
