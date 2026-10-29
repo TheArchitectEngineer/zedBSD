@@ -683,7 +683,7 @@ sched_stop_begin(
 /*
  * Reports a session stopped: a submission holds the device's lock until
  * its work ended or its group was stopped, so taking the lock proves no
- * work of the session runs.
+ * work of the session runs; EAGAIN while one holds it.
  */
 static int
 sched_stop_poll(
@@ -691,12 +691,15 @@ sched_stop_poll(
 	void *opaque)
 {
 	struct mali_render *render;
+	int locked;
 	int error;
 
-	/* A submission in progress ends before the lock is taken. */
+	/* A submission in progress holds the lock: not yet (the poll does not wait). */
 	render = device;
 	(void)opaque;
-	mutex_lock(&render->device->lock);
+	locked = mutex_trylock(&render->device->lock);
+	if (locked == 0)
+		return EAGAIN;
 
 	error = 0;
 	if (render->faulted)
