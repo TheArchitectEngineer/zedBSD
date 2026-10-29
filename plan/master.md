@@ -19,7 +19,7 @@
 
 | 担当 | Queue | WS と次の手 | 実機 |
 | --- | --- | --- | --- |
-| P1 | q1662-i10 in-progress | [ws309](ws309/ws.md) p013（present の常駐の thread）から（p012 cleared・BUG-353 PASS、main a9d07b850）、worktree p1-ws309i | 10.0.10.3（時間の枠） |
+| P1 | q1662-i10 in-progress | [ws309](ws309/ws.md) p013・p014 cleared（main e554645ca）、p016 → p017 → p018。p015 はユーザーの判断待ち（[phase015](ws309/phase015/phase.md)「要る判断」） | — |
 | P2 | q1686-i01 in-progress | [ws068](ws068/ws.md) p034〜p036 の残りの実装と Venus の試験（q1682 は cleared、main fe49f1d60。試験待ち: agent/p2-ws242・agent/p2-ws217） | — |
 | P3 | q1679-i02 in-progress、q1689-i01 pending | [ws221](ws221/ws.md) p010 の 10GbE の受信（10.0.10.3 を専有）、次に 5330 の USB 2.5G の NCM の driver。終われば返却。VF2 は手放す | 10.0.10.3（専有）、5330 |
 | P4 | q1688-i01 in-progress | [BUG-355](bugs/BUG-355.md)・[BUG-358](bugs/BUG-358.md) UFS の書き込みの遅さを直す → [ws307](ws307/ws.md) p011 の通しを流し直す（ユーザーの指示で p011 は中止） | QEMU |
