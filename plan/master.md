@@ -23,7 +23,7 @@
 | P2 | q1686-i01 in-progress | [ws068](ws068/ws.md) p034〜p036 の残りの実装と Venus の試験（q1682 は cleared、main fe49f1d60。試験待ち: agent/p2-ws242・agent/p2-ws217） | — |
 | P3 | q1679-i02 in-progress、q1689-i01 pending | [ws221](ws221/ws.md) p010 の 10GbE の受信（10.0.10.3 を専有）、次に 5330 の USB 2.5G の NCM の driver。終われば返却。VF2 は手放す | 10.0.10.3（専有）、5330 |
 | P4 | q1688-i01 in-progress | [BUG-355](bugs/BUG-355.md)・[BUG-358](bugs/BUG-358.md) UFS の書き込みの遅さを直す → [ws307](ws307/ws.md) p011 の通しを流し直す（ユーザーの指示で p011 は中止） | QEMU |
-| P5 | q1677-i02 in-progress | [ws243](ws243/ws.md) p006 の実機（Video Player 1080p60）は P3 の後。WS243 completed で返却 | 10.0.10.3（P3 の後） |
+| P5 | q1677-i02 返却（実機待ち） | [ws243](ws243/ws.md) p006 は host まで（agent/p5-ws243 fb8d9af77、未 merge）。10.0.10.3 が P3 から空いたら P5 を起動し直し、`rtx-p004.sh … video hang restore` から | 10.0.10.3（P3 の後） |
 | P6 | q1667-i05 返却・merge 済み（main 7be3822e6） | [ws282](ws282/ws.md)・[ws284](ws284/ws.md) の handover（別のツリーのセッションが試験から続ける）を書いている | — |
 | P7 | q1687-i01 返却 | [ws313](ws313/ws.md) Mali の残りと Mesa との照合の直しを main に（b6649f09f）。実機未実施。C5 で描画がおかしい時の境目は c08176e6c・db080e110 | — |
 

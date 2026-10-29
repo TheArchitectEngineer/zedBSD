@@ -9,7 +9,7 @@
 | P2 | phase-runner | ws068 (q1686-i01) | `/home/awe/zedBSD-worktrees/p2-ws068` / `agent/p2-ws068` | running（試験待ちの branch: agent/p2-ws242 fda52e406、agent/p2-ws217 fb1b270d2） | 45aa87120（merge fe49f1d60） |
 | P3 | phase-runner | ws221 p010 (q1679-i02) | `/home/awe/zedBSD-worktrees/p3-ws221g` / `agent/p3-ws221g` | running | b05aacf5b（merge b4d1043b3） |
 | P4 | phase-runner | BUG-355・358 → ws307 p011 (q1688-i01) | `/home/awe/zedBSD-worktrees/p4-ws307n` / `agent/p4-ws307n` | running（試験待ちの branch: agent/p4-ws283 b7fd8d23e） | 580a117e3（merge ee83a6eda） |
-| P5 | phase-runner | ws243 (q1677-i02) | `/home/awe/zedBSD-worktrees/p5-ws243` / `agent/p5-ws243` | running | 005871516（merge fbe855149） |
+| P5 | phase-runner | ws243 (q1677-i02 返却、p006 の実機待ち) | `/home/awe/zedBSD-worktrees/p5-ws243` / `agent/p5-ws243` | returned（先頭 fb8d9af77、p006 は実機の後に merge。10.0.10.3 が空いたら同じ名前で起動し直す） | 005871516（merge fbe855149） |
 | P6 | phase-runner | ws282・ws284 handover (q1667-i05) | `/home/awe/zedBSD-worktrees/p6-ws282d` / `agent/p6-ws282d` | running（handover だけ） | 212cbdd4a（merge 7be3822e6） |
 | P7 | phase-runner | ws313 (q1687-i01 返却) | `/home/awe/zedBSD-worktrees/p7-ws313e` / `agent/p7-ws313e` | returned（実機の結果待ち） | b35b6240c（merge b6649f09f） |
 
