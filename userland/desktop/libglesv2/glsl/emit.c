@@ -49,6 +49,7 @@ static void emit_interface_decorations(struct emit_state *state, struct glsl_sym
 static void emit_block_members(struct emit_state *state, const struct glsl_type *type);
 static void emit_per_vertex(struct emit_state *state, const struct glsl_type *type);
 static void emit_geometry_modes(struct emit_state *state, uint32_t main_id);
+static void emit_tess_modes(struct emit_state *state, uint32_t main_id);
 static void emit_label(struct emit_state *state, uint32_t label);
 static void emit_branch(struct emit_state *state, uint32_t target);
 static void emit_conditional(struct emit_state *state, uint32_t condition, uint32_t if_true, uint32_t if_false);
@@ -186,6 +187,10 @@ glsl_emit(
 		operands[0] = SPV_MODEL_GEOMETRY;
 	if (shader->stage == GLSL_STAGE_COMPUTE)
 		operands[0] = SPV_MODEL_GL_COMPUTE;
+	if (shader->stage == GLSL_STAGE_TESS_CONTROL)
+		operands[0] = SPV_MODEL_TESS_CONTROL;
+	if (shader->stage == GLSL_STAGE_TESS_EVALUATION)
+		operands[0] = SPV_MODEL_TESS_EVALUATION;
 	operands[1] = main_id;
 	operands[2] = 0x6e69616dU;
 	operands[3] = 0U;
@@ -195,6 +200,10 @@ glsl_emit(
 	/* A geometry shader's capability, primitives, most vertices and one invocation. */
 	if (shader->stage == GLSL_STAGE_GEOMETRY)
 		emit_geometry_modes(state, main_id);
+
+	/* A tessellation shader's capability and its patch's modes. */
+	if (shader->stage == GLSL_STAGE_TESS_CONTROL || shader->stage == GLSL_STAGE_TESS_EVALUATION)
+		emit_tess_modes(state, main_id);
 
 	/* A compute shader's workgroup size (ws101-p008). */
 	if (shader->stage == GLSL_STAGE_COMPUTE) {
@@ -1330,8 +1339,38 @@ emit_interface_decorations(
 		break;
 	case GLSL_BUILTIN_PRIMITIVE_ID_IN:
 	case GLSL_BUILTIN_PRIMITIVE_ID:
+		/* A tessellation shader's needs its own capability, not the geometry one (a device feature of its own). */
 		value = SPV_BUILT_IN_PRIMITIVE_ID;
+		if (state->shader->stage == GLSL_STAGE_TESS_CONTROL || state->shader->stage == GLSL_STAGE_TESS_EVALUATION)
+			break;
 		emit_capability(state, SPV_CAPABILITY_GEOMETRY, &state->module->geometry);
+		break;
+	case GLSL_BUILTIN_SAMPLE_ID:
+		value = SPV_BUILT_IN_SAMPLE_ID;
+		emit_capability(state, SPV_CAPABILITY_SAMPLE_RATE_SHADING, &state->module->sample_rate_shading);
+		break;
+	case GLSL_BUILTIN_SAMPLE_POSITION:
+		value = SPV_BUILT_IN_SAMPLE_POSITION;
+		emit_capability(state, SPV_CAPABILITY_SAMPLE_RATE_SHADING, &state->module->sample_rate_shading);
+		break;
+	case GLSL_BUILTIN_SAMPLE_MASK_IN:
+	case GLSL_BUILTIN_SAMPLE_MASK:
+		value = SPV_BUILT_IN_SAMPLE_MASK;
+		break;
+	case GLSL_BUILTIN_TESS_LEVEL_OUTER:
+		value = SPV_BUILT_IN_TESS_LEVEL_OUTER;
+		break;
+	case GLSL_BUILTIN_TESS_LEVEL_INNER:
+		value = SPV_BUILT_IN_TESS_LEVEL_INNER;
+		break;
+	case GLSL_BUILTIN_TESS_COORD:
+		value = SPV_BUILT_IN_TESS_COORD;
+		break;
+	case GLSL_BUILTIN_PATCH_VERTICES:
+		value = SPV_BUILT_IN_PATCH_VERTICES;
+		break;
+	case GLSL_BUILTIN_INVOCATION_ID:
+		value = SPV_BUILT_IN_INVOCATION_ID;
 		break;
 	case GLSL_BUILTIN_LAYER:
 		value = SPV_BUILT_IN_LAYER;
@@ -1360,15 +1399,19 @@ emit_interface_decorations(
 		break;
 	}
 
-	/* A fragment shader's gl_PrimitiveID is an integer input, so flat. */
+	/* A fragment shader's gl_PrimitiveID, gl_SampleID and gl_SampleMaskIn are integer inputs, so flat. */
 	if (symbol->builtin == GLSL_BUILTIN_PRIMITIVE_ID && state->shader->stage == GLSL_STAGE_FRAGMENT)
 		glsl_module_decorate(state->module, variable, SPV_DECORATION_FLAT, NULL, 0U);
+	if (symbol->builtin == GLSL_BUILTIN_SAMPLE_ID || symbol->builtin == GLSL_BUILTIN_SAMPLE_MASK_IN)
+		glsl_module_decorate(state->module, variable, SPV_DECORATION_FLAT, NULL, 0U);
 
-	/* A built-in has no location, only its built-in and invariance. */
+	/* A built-in has no location, only its built-in and invariance (the levels are one per patch). */
 	if (value != 0xffffffffU) {
 		glsl_module_decorate(state->module, variable, SPV_DECORATION_BUILT_IN, &value, 1U);
 		if (symbol->invariant)
 			glsl_module_decorate(state->module, variable, SPV_DECORATION_INVARIANT, NULL, 0U);
+		if (symbol->builtin == GLSL_BUILTIN_TESS_LEVEL_OUTER || symbol->builtin == GLSL_BUILTIN_TESS_LEVEL_INNER)
+			glsl_module_decorate(state->module, variable, SPV_DECORATION_PATCH, NULL, 0U);
 		return;
 	}
 
@@ -1376,6 +1419,16 @@ emit_interface_decorations(
 	value = symbol->location;
 	glsl_module_decorate(state->module, variable, SPV_DECORATION_LOCATION, &value, 1U);
 	glsl_module_name(state->module, variable, symbol->name);
+
+	/* A tessellation shader's patch variable. */
+	if (symbol->patch)
+		glsl_module_decorate(state->module, variable, SPV_DECORATION_PATCH, NULL, 0U);
+
+	/* A fragment output that is a dual-source blend's second colour. */
+	if (symbol->where == GLSL_VAR_OUTPUT && symbol->explicit_index != 0U) {
+		value = symbol->explicit_index;
+		glsl_module_decorate(state->module, variable, SPV_DECORATION_INDEX, &value, 1U);
+	}
 
 	/* Interpolation (integers into a fragment shader are always flat). */
 	if (symbol->interpolation == GLSL_INTERP_FLAT) {
@@ -1489,6 +1542,67 @@ emit_geometry_modes(
 	operands[1] = SPV_MODE_INVOCATIONS;
 	operands[2] = 1U;
 	glsl_words_add(state->module, &state->module->modes, SPV_OP_EXECUTION_MODE, operands, 3U);
+}
+
+/*
+ * Declares a tessellation shader's capability and execution modes: a
+ * control shader's output vertices; an evaluation shader's domain,
+ * spacing (equal by default), vertex order and point mode.
+ *
+ * Vulkan 1.0's tessellation domain has its origin at the upper left and
+ * GL's at the lower left (VK_KHR_maintenance2's domain origin is not
+ * there), so the same vertices of the domain wind the other way: GL's
+ * ccw (the default) is Vulkan's cw, as Mesa's Zink turns it without
+ * that extension.
+ */
+static void
+emit_tess_modes(
+	struct emit_state *state,
+	uint32_t main_id)
+{
+	struct glsl_shader *shader;
+	uint32_t operands[3];
+
+	/* The capability. */
+	shader = state->shader;
+	emit_capability(state, SPV_CAPABILITY_TESSELLATION, &state->module->tessellation);
+
+	/* A control shader's output patch. */
+	operands[0] = main_id;
+	if (shader->stage == GLSL_STAGE_TESS_CONTROL) {
+		operands[1] = SPV_MODE_OUTPUT_VERTICES;
+		operands[2] = shader->tess_vertices;
+		glsl_words_add(state->module, &state->module->modes, SPV_OP_EXECUTION_MODE, operands, 3U);
+		return;
+	}
+
+	/* The domain. */
+	operands[1] = SPV_MODE_TRIANGLES;
+	if (shader->tess_domain == GLSL_PRIMITIVE_QUADS)
+		operands[1] = SPV_MODE_QUADS;
+	if (shader->tess_domain == GLSL_PRIMITIVE_ISOLINES)
+		operands[1] = SPV_MODE_ISOLINES;
+	glsl_words_add(state->module, &state->module->modes, SPV_OP_EXECUTION_MODE, operands, 2U);
+
+	/* The spacing. */
+	operands[1] = SPV_MODE_SPACING_EQUAL;
+	if (shader->tess_spacing == GLSL_SPACING_FRACTIONAL_EVEN)
+		operands[1] = SPV_MODE_SPACING_FRACTIONAL_EVEN;
+	if (shader->tess_spacing == GLSL_SPACING_FRACTIONAL_ODD)
+		operands[1] = SPV_MODE_SPACING_FRACTIONAL_ODD;
+	glsl_words_add(state->module, &state->module->modes, SPV_OP_EXECUTION_MODE, operands, 2U);
+
+	/* The vertex order, turned for Vulkan's domain origin. */
+	operands[1] = SPV_MODE_VERTEX_ORDER_CW;
+	if (shader->tess_order == GLSL_ORDER_CW)
+		operands[1] = SPV_MODE_VERTEX_ORDER_CCW;
+	glsl_words_add(state->module, &state->module->modes, SPV_OP_EXECUTION_MODE, operands, 2U);
+
+	/* Points instead of the domain's primitives. */
+	if (shader->tess_point_mode) {
+		operands[1] = SPV_MODE_POINT_MODE;
+		glsl_words_add(state->module, &state->module->modes, SPV_OP_EXECUTION_MODE, operands, 2U);
+	}
 }
 
 /* Starts a block. */
@@ -3994,9 +4108,14 @@ emit_compute_call(
 	special = node->builtin->number;
 	switch (special) {
 	case GLSL_SPECIAL_BARRIER:
+		/* A tessellation control shader's barrier orders its patch's invocations; their outputs need no memory semantics then. */
 		operands[0] = emit_uint(state, SPV_SCOPE_WORKGROUP);
 		operands[1] = emit_uint(state, SPV_SCOPE_WORKGROUP);
 		operands[2] = emit_uint(state, SPV_SEMANTICS_ACQUIRE_RELEASE | SPV_SEMANTICS_WORKGROUP_MEMORY);
+		if (state->shader->stage == GLSL_STAGE_TESS_CONTROL) {
+			operands[1] = emit_uint(state, SPV_SCOPE_INVOCATION);
+			operands[2] = emit_uint(state, 0U);
+		}
 		glsl_words_add(state->module, &state->module->body, SPV_OP_CONTROL_BARRIER, operands, 3U);
 		return emit_value_of(0U, node->type);
 	case GLSL_SPECIAL_MEMORY_BARRIER:

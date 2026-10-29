@@ -4,10 +4,13 @@
 
 Phase ID: `ws068-p037`
 Parent: [WS068](../ws.md)
-Status: planned（保留、2026-09-27。コードは未着手）
+Status: cleared（2026-10-29 q1682-i02 P2。Venus で glx-p037 と回帰 PASS。i915 実機は未実施）。旧: in-progress（実装済み・試験未実施、q1682-i01）
 Phase disposition: normal
-保留の理由: 2026-09-27 ユーザー「OpenGL 3.2が問題なければ、それ以降のOpenGLはいったん保留して、i915の高度化に進んでください。」
-（p033 の GL 3.2 は Venus で PASS）。再開はユーザーの指示で。
+保留の理由（旧）: 2026-09-27 ユーザー「OpenGL 3.2が問題なければ、それ以降のOpenGLはいったん保留して、i915の高度化に進んでください。」
+（p033 の GL 3.2 は Venus で PASS）。
+再開（2026-10-29）: ユーザー「作業の手が空いてしまったら、テストなしで実装だけ進める戦略で、残っているWSのphaseをまんべんなく進めましょう。」
+（Q1 の依頼 q1682-i01 の引用）。WS068 は 2026-10-27 ユーザーの回答「継続」（空き時間だけ）。試験なし（QEMU・実機なし）で実装と
+build・host の試験まで。branch は試験の後に Q1 が merge する。
 
 ## 範囲
 
@@ -22,7 +25,7 @@ Phase disposition: normal
 
 範囲外: 4.x（p034〜p036）。compatibility だけの `glVertexP*`・`glColorP*` 等の packed の固定機能の call。
 
-## 設計の下書き（再開の時の出発点。未実装）
+## 設計（2026-09-27 の下書き。2026-10-29 に下の「実装」の通りに実装した）
 
 - libegl: `zegl_display` に queue family の `timestampValidBits` と limits の `timestampPeriod`、features に `dualSrcBlend`。
   （libegl の device 作成の数行。WSI・present には触れない。）
@@ -40,10 +43,73 @@ Phase disposition: normal
 - glx.c・fixed.c: 3.3 の版（profile は 3.2 以上）、文字列、GLSL の上限 330、extension の表に 3.3 の ARB 6 つ。
 - 試験: glxtest `--gl33`（gl33.c）と `plan/ws068/tests/glx-p037.sh`、glsl-host の pass/ に index の shader、fail/ に vertex の index。
 
-## 判断が要る点
+## 実装（2026-10-29、q1682-i01、P2）
 
-（なし）
+- libegl（`zegl.h`・`vulkan.c`）: `zegl_display.timestamp_bits`（queue family の `timestampValidBits`）、features に `dualSrcBlend`。
+- query.c: query pool を 2 つ（occlusion と timestamp。timestamp の pool は最初の timer query で作る、valid bits が 0 なら作らず結果 0）。
+  slot の表・`query_slot_take` を pool ごとに。`GL_TIME_ELAPSED`（begin・end で draw surface の frame の command buffer に
+  `vkCmdWriteTimestamp(BOTTOM_OF_PIPE)`、frame が開いていなければ `zegl_frame_begin` で開く）、`glQueryCounter(GL_TIMESTAMP)`、
+  `glGetQueryObjecti64v`・`ui64v`（`uiv` は 32 bit に切る）、`glGetQueryiv(GL_QUERY_COUNTER_BITS)`（timer は valid bits、数の query は 32）、
+  `glGetInteger64v(GL_TIMESTAMP)`（`gles_query_timestamp`: 今の frame を submit・待ちしてから upload の command buffer で timestamp）。
+  結果は (end − begin) を valid bits で mask して `timestampPeriod` を掛けた ns。active の判定を `query_is_active` にまとめた。
+- GLSL: `layout(index = N)`（desktop 3.30〜、fragment の output、location 必須、0 か 1）。index 1 の output にだけ `Index` の decoration を
+  出す（index 0 は出さない: 既存の desktop の shader の SPIR-V を変えない）。link の衝突の検査は (location, index) で、index 1 は location 0 だけ。
+- spirv.c: output の `Index` の word と id を反射（`gles_spirv_variable.id`・`index`・`index_word`）。
+- program.c: `glBindFragDataLocationIndexed`・`glGetFragDataIndex`。bind の index が Index の word を書き換え、word の無い output が
+  index 1 になる時は Location の OpDecorate の後に `OpDecorate %id Index 1` を挿す（`program_output_indexes`、fragment の word の書き換えの後の最後）。
+  index 1 が location 0 以外なら link の失敗。
+- draw.c・gles.c: `GL_SRC1_COLOR`・`GL_SRC1_ALPHA`・`GL_ONE_MINUS_SRC1_*` の blend factor。`glBlendFunc*` は desktop で device が
+  `dualSrcBlend` を持つ時だけ受ける（他は `GL_INVALID_ENUM`）。`GL_MAX_DUAL_SOURCE_DRAW_BUFFERS` は 1（無い device は 0）。
+  dual-source の blend で draw buffer 1 以降に書く draw は `GL_INVALID_OPERATION`。
+- libGL `gl33.c`（新）: `glVertexAttribP{1,2,3,4}ui{,v}`（2_10_10_10 を展開、符号付きの正規化は GL 4.2 の式）。exports.map と `GL/gl.h` に 3.3 の宣言と定数。
+- 版: libGLX `glx.c` が 3.3 の context を受ける（profile は 3.2 以上。device が dualSrcBlend を持たなければ拒む、下の「判断」）。libGL `fixed.c` が「3.3 …」・GLSL「3.30」・GLSL の上限 330、
+  extension に 3.3 の ARB 6 つ（blend_func_extended・explicit_attrib_location・shader_bit_encoding・texture_rgb10_a2ui・timer_query・
+  vertex_type_2_10_10_10_rev）。
+- 試験の program: glxtest `--gl33`（`userland/x11/glxtest/gl33.c`: 版と extension、TIME_ELAPSED、QueryCounter と GL_TIMESTAMP の順、
+  dual-source（layout と bind）、P4ui（unsigned）と P3ui（signed）、RGB10_A2UI の FBO の clear と読み戻し）と `plan/ws068/tests/glx-p037.sh`。
+  glxtest の「later-refused」の検査は 3.3 が受かるようになったので 4.7（無い版）の拒否に替えた（glx-p013・p031・p033 の期待の行は不変）。
+- glsl-host: `pass/dual330.{vert,frag}`、`fail/index-{vertex,range,no-location,es}`、反射の index の検査（3d）、i915 の受け入れに dual330。
+
+## 判断（Q1 の指示で直した、2026-10-29）
+
+1. Q1「GL 3.3 の仕様（Table 23.x の implementation dependent values）では MAX_DUAL_SOURCE_DRAW_BUFFERS の最小は 1 なので、dualSrcBlend の無い
+   device で 3.3 を名乗ると仕様に合わない。dualSrcBlend が無い device では 3.2 を上限にし（context の作成で 3.3 を求められたら拒む）、ある device
+   だけ 3.3 にして。」→ libGL に `zgl_glx_version_limit(EGLDisplay)`（`zgl-glx.h` の private な口、exports.map）: 初期化した display の device が
+   `dualSrcBlend` を持てば 33、無ければ 32。libGLX の `glx_context` が EGL の display を作った後に版がそれを超える context を拒む（NULL）。
+   （最初の案は「無い device でも 3.3、MAX_DUAL_SOURCE 0」だった。）
+   device の `dualSrcBlend`（2026-10-29 の source の読み。実機・QEMU では未確かめ）:
+
+   | GPU（driver） | dualSrcBlend | GL の上限 | 根拠 |
+   | --- | --- | --- | --- |
+   | Venus（QEMU、host の GPU を転送） | host の driver による（host の Mesa の radv・anv・lavapipe は出す見込み、未確かめ） | 3.3（出せば） | `src/drivers/gpu/venus/` は host の features をそのまま返す |
+   | i915 | 出さない | 3.2 | `src/drivers/gpu/i915/vk/vk-instance.c` の features は vertexPipelineStoresAndAtomics・logicOp・shaderInt16・geometryShader だけ |
+   | nvrtx | 出さない | 3.2 | `src/drivers/gpu/nvrtx/vk/vk-device.c` の `device_features` は全て off |
+   | amdrdna | 出さない | 3.2 | `src/drivers/gpu/amdrdna/vk/vk-device.c` の `device_features` は全て off |
+   | powervr（VF2） | 出さない | 3.2 | `src/drivers/gpu/powervr/vk/vk-device.c` は全て off |
+   | bcm2711（Pi 4） | 出さない | 3.2 | `src/drivers/gpu/bcm2711/vk/vulkan-query.c` は 0 から、optional の feature を出さない |
+   | mali | 出さない | 3.2 | `src/drivers/gpu/mali/vk/vk-device.c` は全て off |
+   | ghci（KC705） | caps の `GHCI_HAS_DUAL_SOURCE` の時 | 3.3（caps による） | `src/drivers/gpu/ghci/vk/vk-caps.c` |
+
+   extension の表は静的で、3.3 の context だけが `GL_ARB_blend_func_extended` を名乗る（3.3 の context は dualSrcBlend のある device だけ）。
+2. timestamp を書かない queue（valid bits 0）では timer の結果は 0、`GL_QUERY_COUNTER_BITS` は 0。
+3. desktop の fragment output の `Index 0` は出さない（他の backend の compiler の差を増やさない）。index 1 の bind は decoration を挿して実現。
 
 ## 検証
 
-未実施（保留）。
+- build（2026-10-29、版の上限の直しの後にもう一度）: amd64（config-amd64）・arm64（config-rpi4）・riscv64（config-visionfive2）で `dynamic/libGL.so`・`libGLESv2.so`・
+  `libEGL.so`・`libGLX.so`・`bin/glxtest` → exit 0、`warning:` 0（各 arch の sysroot は worktree の中で作り直し、`GL/gl.h` の変更を含む）。
+  `git diff --check` 問題なし。
+- host: `sh plan/ws068/tests/glsl-host/run.sh build/glsl-host-p037` → `glsl-host: PASS`（compile・expect・link と spirv-val・反射の
+  index（dual330: `out factor location=0 index=1`、`out colour location=0 index=0`）・i915 の受け入れ（dual330 を含む）・lavapipe の 24 試験）。
+- Venus（QEMU、host の lavapipe、2026-10-29 q1682-i02 P2）: `plan/ws068/tests/venus-all.sh`（image の build → guest の起動 → 試験 → 停止 →
+  summary の 1 本）を tree 595743d90 で流した。image は `build/p2-img6`（新しい dir で作り直し、`warning:` 0、sha256 の先頭 8b5ab7d858b78d41）。
+  - `build/p2-v6/summary.txt`: glx-p013・p031・p033、egl-p039、egl-p019・p020・p022〜p030 が rc=0 PASS。glx-p037 は FAIL だったが、
+    原因は script の誤り（`zdesktop-guest.sh start` は emulator を起こすだけで SSH を待たず、最初の試験の guest の命令が走らなかった:
+    `/tmp/glx3.log` が無い、画面は全面 000000）。`guest.py wait` を足した。
+  - `build/p2-v7/summary.txt`（同じ image、wait を足した script）: glx-p037 rc=0 PASS。画面の 12 square と固定機能の square が期待の色、
+    log は `version="3.3 zedBSD …"`、`GLXTEST GL33 elapsed=10980184 ns`、timestamps の順、dual-layout・dual-bound・packed-unsigned・
+    packed-signed が 00ff00、`rgb10-a2ui texel=1023,512,7,3`、`GL33 ready failures=0`、`EGLTEST CHECK run=g33 failures=0 glerror=0x0`。
+    同じ画面の tessellation（p034）・draw-indirect（p036 a）の square も 00ff00（この Phase の受け入れではない観察）。
+  - 前の起動（2026-10-29 16:38〜16:56、`build/p2-v4`・`p2-v5`）でも同じ結果（egl-p019 は display の撮影が最初の frame の前で FAIL、
+    egl-p019 の script を EGLTEST CHECK を待つよう直して PASS）。その image の出所は記録が無いので、上の作り直しを証拠とする。
+- 未実施: i915 実機（device が dualSrcBlend を出さないので GL 3.2 が上限、上の「判断」）。

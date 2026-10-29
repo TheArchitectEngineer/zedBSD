@@ -101,6 +101,9 @@ struct zegl_display {
 	/* The optional device features enabled (those of the ones GL's translation uses the device has). */
 	VkPhysicalDeviceFeatures features;
 
+	/* The bits of a timestamp the queue writes (its family's timestampValidBits; 0: it writes none). */
+	uint32_t timestamp_bits;
+
 	/* The configs offered. */
 	struct zegl_config configs[ZEGL_CONFIGS];
 	unsigned config_count;

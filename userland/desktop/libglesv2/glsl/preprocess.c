@@ -331,6 +331,8 @@ pp_start(
 		pp_define_text(state, "GL_core_profile", "1");
 		if (state->compatibility)
 			pp_define_text(state, "GL_compatibility_profile", "1");
+		pp_define_text(state, "GL_ARB_tessellation_shader", "1");
+		pp_define_text(state, "GL_ARB_sample_shading", "1");
 	}
 }
 
@@ -544,6 +546,13 @@ pp_version(
 		case GLSL_VERSION_140:
 		case GLSL_VERSION_150:
 		case GLSL_VERSION_330:
+		case GLSL_VERSION_400:
+		case GLSL_VERSION_410:
+		case GLSL_VERSION_420:
+		case GLSL_VERSION_430:
+		case GLSL_VERSION_440:
+		case GLSL_VERSION_450:
+		case GLSL_VERSION_460:
 			shader->version = version;
 			shader->es = 0U;
 			return;
@@ -553,7 +562,7 @@ pp_version(
 	}
 
 	/* Any other version is not taken (yet). */
-	glsl_error(shader, directive_line, "GLSL version %u is not supported (100, 300 es, 310 es, and 110 to 330 are)", version);
+	glsl_error(shader, directive_line, "GLSL version %u is not supported (100, 300 es, 310 es, and 110 to 460 are)", version);
 }
 
 /* Carries out #define: an object-like or function-like macro. */
@@ -876,6 +885,8 @@ pp_extension(
 	int disabled;
 	int all;
 	int derivatives;
+	int tessellation;
+	int sample_shading;
 
 	/* The form: a name, a colon, a behavior. */
 	shader = state->shader;
@@ -914,6 +925,22 @@ pp_extension(
 	derivatives = glsl_token_is(name, "GL_OES_standard_derivatives");
 	if (derivatives && shader->es) {
 		shader->derivatives = (unsigned)enabled;
+		return;
+	}
+
+	/* GL_ARB_tessellation_shader: the tessellation stages in desktop GLSL 1.50 and 3.30 (4.00 on has them). */
+	tessellation = glsl_token_is(name, "GL_ARB_tessellation_shader");
+	if (tessellation && !shader->es && shader->version >= GLSL_VERSION_150) {
+		if (shader->version < GLSL_VERSION_400)
+			shader->tessellation = (unsigned)enabled;
+		return;
+	}
+
+	/* GL_ARB_sample_shading: the per-sample built-ins in desktop GLSL 1.50 and 3.30 (4.00 on has them). */
+	sample_shading = glsl_token_is(name, "GL_ARB_sample_shading");
+	if (sample_shading && !shader->es && shader->version >= GLSL_VERSION_150) {
+		if (shader->version < GLSL_VERSION_400)
+			shader->sample_shading = (unsigned)enabled;
 		return;
 	}
 

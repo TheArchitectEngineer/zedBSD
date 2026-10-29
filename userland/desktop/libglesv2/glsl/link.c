@@ -70,10 +70,12 @@ static void link_blocks(struct link_state *state, struct glsl_shader **stages, u
 static void link_attributes(struct link_state *state, struct glsl_shader *vertex, const struct glsl_binding *bindings, unsigned binding_count);
 static void link_varyings(struct link_state *state, struct glsl_shader *producer, struct glsl_shader *consumer);
 static const struct glsl_type *link_input_type(const struct glsl_shader *consumer, const struct glsl_symbol *input);
+static const struct glsl_type *link_output_type(const struct glsl_shader *producer, const struct glsl_symbol *output);
+static unsigned link_place_outputs(struct glsl_shader *producer, unsigned patch, unsigned location);
 static void link_outputs(struct link_state *state, struct glsl_shader *fragment);
 static struct glsl_symbol *link_find(struct glsl_shader *shader, const char *name, unsigned where);
 static struct glsl_symbol *link_find_varying(struct glsl_shader *producer, struct glsl_symbol *input, const struct glsl_type *type);
-static int link_take_output(struct link_state *state, struct glsl_symbol *symbol, unsigned char *taken);
+static int link_take_output(struct link_state *state, struct glsl_symbol *symbol, unsigned char taken[2][LINK_MAX_LOCATIONS]);
 static void link_info(struct link_state *state, struct glsl_program *program);
 static void link_leaves(struct link_state *state, const struct glsl_type *type, const char *name, struct glsl_uniform_info *out, unsigned *count, unsigned capacity);
 static void link_block_infos(struct link_state *state, struct glsl_shader *shader, unsigned stage, struct glsl_program *program);
@@ -151,14 +153,51 @@ glsl_link_stages(
 	struct glsl_program *program,
 	char **log)
 {
+	int status;
+
+	/* A link without tessellation shaders. */
+	status = glsl_link_pipeline(vertex_shader, NULL, NULL, geometry_shader, fragment_shader, bindings, binding_count, captures,
+				    capture_count, program, log);
+	if (status != 0)
+		return -1;
+
+	/* Succeeded: the program. */
+	return 0;
+}
+
+/*
+ * Links the stages of a draw into SPIR-V: a vertex shader, the two
+ * tessellation shaders (both NULL for none), a geometry shader (NULL for
+ * none) and a fragment shader, the vertex shader capturing the outputs
+ * of the names given (only when it is the last stage before the
+ * fragment shader).
+ */
+int
+glsl_link_pipeline(
+	const struct glsl_shader *vertex_shader,
+	const struct glsl_shader *tess_control_shader,
+	const struct glsl_shader *tess_evaluation_shader,
+	const struct glsl_shader *geometry_shader,
+	const struct glsl_shader *fragment_shader,
+	const struct glsl_binding *bindings,
+	unsigned binding_count,
+	const char *const *captures,
+	unsigned capture_count,
+	struct glsl_program *program,
+	char **log)
+{
 	struct link_state *volatile state;
 	struct glsl_shader *vertex;
+	struct glsl_shader *tess_control;
+	struct glsl_shader *tess_evaluation;
 	struct glsl_shader *geometry;
 	struct glsl_shader *fragment;
-	struct glsl_shader *stages[3];
+	struct glsl_shader *stages[5];
 	uint32_t *code;
 	size_t words;
 	unsigned count;
+	unsigned index;
+	unsigned stage;
 
 	/* Nothing yet. */
 	*log = NULL;
@@ -170,6 +209,8 @@ glsl_link_stages(
 
 	/* The link records its decisions in the shaders' symbols. */
 	vertex = (struct glsl_shader *)vertex_shader;
+	tess_control = (struct glsl_shader *)tess_control_shader;
+	tess_evaluation = (struct glsl_shader *)tess_evaluation_shader;
 	geometry = (struct glsl_shader *)geometry_shader;
 	fragment = (struct glsl_shader *)fragment_shader;
 
@@ -194,34 +235,40 @@ glsl_link_stages(
 		link_error(state, "a program needs a vertex and a fragment shader");
 	if (geometry != NULL && geometry->stage != GLSL_STAGE_GEOMETRY)
 		link_error(state, "the shader between the vertex and the fragment shader is not a geometry shader");
+	if (tess_control != NULL && tess_control->stage != GLSL_STAGE_TESS_CONTROL)
+		link_error(state, "the tessellation control shader is of another stage");
+	if (tess_evaluation != NULL && tess_evaluation->stage != GLSL_STAGE_TESS_EVALUATION)
+		link_error(state, "the tessellation evaluation shader is of another stage");
+	if (tess_control != NULL && tess_evaluation == NULL)
+		link_error(state, "a tessellation control shader needs a tessellation evaluation shader");
+	if (tess_control == NULL && tess_evaluation != NULL)
+		link_error(state, "a tessellation evaluation shader without a control shader is not supported");
 	if (vertex->es != fragment->es)
 		link_error(state, "OpenGL ES and desktop GLSL shaders cannot be linked together");
-	if (geometry != NULL && capture_count != 0U)
-		link_error(state, "transform feedback with a geometry shader is not supported");
+	if ((geometry != NULL || tess_evaluation != NULL) && capture_count != 0U)
+		link_error(state, "transform feedback with a geometry or tessellation shader is not supported");
 	if (state->errors != 0U)
 		longjmp(state->failure, 1);
 
-	/* The stages in order: the vertex, the geometry (if any) and the fragment shader. */
+	/* The stages in order: the vertex, the tessellation and the geometry shaders (if any) and the fragment shader. */
 	count = 0U;
 	stages[count++] = vertex;
+	if (tess_control != NULL) {
+		stages[count++] = tess_control;
+		stages[count++] = tess_evaluation;
+	}
 	if (geometry != NULL)
 		stages[count++] = geometry;
 	stages[count++] = fragment;
 
-	/* The uniforms, laid out; the attributes, varyings and outputs, located. */
-	link_uniforms(state, vertex);
-	if (geometry != NULL)
-		link_uniforms(state, geometry);
-	link_uniforms(state, fragment);
+	/* The uniforms, laid out; the attributes, the varyings between each stage and the next, and the outputs, located. */
+	for (index = 0U; index < count; index++)
+		link_uniforms(state, stages[index]);
 	link_layout(state);
 	link_blocks(state, stages, count);
 	link_attributes(state, vertex, bindings, binding_count);
-	if (geometry != NULL) {
-		link_varyings(state, vertex, geometry);
-		link_varyings(state, geometry, fragment);
-	} else {
-		link_varyings(state, vertex, fragment);
-	}
+	for (index = 0U; index + 1U < count; index++)
+		link_varyings(state, stages[index], stages[index + 1U]);
 
 	/* The fragment outputs and the captured outputs. */
 	link_outputs(state, fragment);
@@ -240,12 +287,13 @@ glsl_link_stages(
 	if (program->code[0] == NULL || program->code[1] == NULL)
 		longjmp(state->failure, 1);
 
-	/* The geometry stage's, when there is one. */
-	if (geometry != NULL) {
-		code = glsl_emit(geometry, &state->arena, state->uniforms, state->uniform_count, NULL, 0U, 0U, &words);
-		program->code[GLSL_STAGE_GEOMETRY] = link_copy(code, words);
-		program->words[GLSL_STAGE_GEOMETRY] = words;
-		if (program->code[GLSL_STAGE_GEOMETRY] == NULL)
+	/* The tessellation and geometry stages', when there are some. */
+	for (index = 1U; index + 1U < count; index++) {
+		stage = stages[index]->stage;
+		code = glsl_emit(stages[index], &state->arena, state->uniforms, state->uniform_count, NULL, 0U, 0U, &words);
+		program->code[stage] = link_copy(code, words);
+		program->words[stage] = words;
+		if (program->code[stage] == NULL)
 			longjmp(state->failure, 1);
 	}
 
@@ -253,8 +301,8 @@ glsl_link_stages(
 	link_info(state, program);
 	link_block_infos(state, vertex, GLSL_STAGE_VERTEX, program);
 	link_block_infos(state, fragment, GLSL_STAGE_FRAGMENT, program);
-	if (geometry != NULL)
-		link_block_infos(state, geometry, GLSL_STAGE_GEOMETRY, program);
+	for (index = 1U; index + 1U < count; index++)
+		link_block_infos(state, stages[index], stages[index]->stage, program);
 	link_capture_infos(state, program);
 
 	/* Succeeded: the program. */
@@ -628,6 +676,7 @@ link_varyings(
 	struct glsl_symbol *symbol;
 	struct glsl_symbol *output;
 	const struct glsl_type *type;
+	const struct glsl_type *output_type;
 	unsigned location;
 	int same;
 
@@ -642,10 +691,15 @@ link_varyings(
 			continue;
 		}
 
-		/* Of the same type. */
-		same = link_same_type(output->type, type);
+		/* Of the same type, both per vertex or both per patch. */
+		output_type = link_output_type(producer, output);
+		same = link_same_type(output_type, type);
 		if (!same) {
 			link_error(state, "varying '%s' has different types in the two shaders", symbol->name);
+			continue;
+		}
+		if (output->patch != symbol->patch) {
+			link_error(state, "varying '%s' is a patch variable in one shader only", symbol->name);
 			continue;
 		}
 
@@ -653,14 +707,9 @@ link_varyings(
 		output->used = 1U;
 	}
 
-	/* The producer's outputs in order. */
-	location = 0U;
-	for (symbol = producer->globals; symbol != NULL; symbol = symbol->next_global) {
-		if (!symbol->used || symbol->where != GLSL_VAR_OUTPUT || symbol->builtin != GLSL_BUILTIN_NONE)
-			continue;
-		symbol->location = location;
-		location += glsl_type_locations(symbol->type);
-	}
+	/* The producer's outputs in order, the per-vertex ones first and then a control shader's patch ones (one space of locations). */
+	location = link_place_outputs(producer, 0U, 0U);
+	location = link_place_outputs(producer, 1U, location);
 
 	/* Sixteen locations in all. */
 	if (location > 16U)
@@ -680,7 +729,11 @@ link_varyings(
 	}
 }
 
-/* Returns the type of the output an input reads: its own, or a geometry shader's input array's element. */
+/*
+ * Returns the type of the output an input reads: its own, or the element
+ * of a geometry shader's input array or a tessellation shader's
+ * per-vertex input array.
+ */
 static const struct glsl_type *
 link_input_type(
 	const struct glsl_shader *consumer,
@@ -690,8 +743,58 @@ link_input_type(
 	if (consumer->stage == GLSL_STAGE_GEOMETRY && input->type->kind == GLSL_KIND_ARRAY)
 		return input->type->element;
 
+	/* So does a tessellation shader, but for its patch inputs. */
+	if ((consumer->stage == GLSL_STAGE_TESS_CONTROL || consumer->stage == GLSL_STAGE_TESS_EVALUATION) &&
+	    !input->patch &&
+	    input->type->kind == GLSL_KIND_ARRAY)
+		return input->type->element;
+
 	/* Succeeded: the input's own type. */
 	return input->type;
+}
+
+/* Returns the type of one vertex's value of an output: its own, or the element of a tessellation control shader's per-vertex output array. */
+static const struct glsl_type *
+link_output_type(
+	const struct glsl_shader *producer,
+	const struct glsl_symbol *output)
+{
+	/* A control shader writes an array of its patch's vertices' values. */
+	if (producer->stage == GLSL_STAGE_TESS_CONTROL && !output->patch && output->type->kind == GLSL_KIND_ARRAY)
+		return output->type->element;
+
+	/* Succeeded: the output's own type. */
+	return output->type;
+}
+
+/*
+ * Gives a stage's used outputs (its per-vertex ones, or its patch ones)
+ * locations in order from a location, a per-vertex array of a control
+ * shader as many as one vertex's value needs.  Returns the location after
+ * them.
+ */
+static unsigned
+link_place_outputs(
+	struct glsl_shader *producer,
+	unsigned patch,
+	unsigned location)
+{
+	struct glsl_symbol *symbol;
+	const struct glsl_type *type;
+
+	/* Each output of the kind, in order. */
+	for (symbol = producer->globals; symbol != NULL; symbol = symbol->next_global) {
+		if (!symbol->used || symbol->where != GLSL_VAR_OUTPUT || symbol->builtin != GLSL_BUILTIN_NONE)
+			continue;
+		if (symbol->patch != patch)
+			continue;
+		symbol->location = location;
+		type = link_output_type(producer, symbol);
+		location += glsl_type_locations(type);
+	}
+
+	/* Succeeded: the next free location. */
+	return location;
 }
 
 /* Gives the fragment shader's outputs their locations: gl_FragColor and gl_FragData 0, the others in order. */
@@ -701,7 +804,7 @@ link_outputs(
 	struct glsl_shader *fragment)
 {
 	struct glsl_symbol *symbol;
-	unsigned char taken[LINK_MAX_LOCATIONS];
+	unsigned char taken[2][LINK_MAX_LOCATIONS];
 	unsigned location;
 	unsigned builtins;
 	unsigned outputs;
@@ -744,7 +847,7 @@ link_outputs(
 		if (symbol->location != GLSL_NO_LOCATION)
 			continue;
 		for (location = 0U; location < LINK_MAX_LOCATIONS; location++) {
-			if (taken[location])
+			if (taken[0][location])
 				continue;
 			symbol->location = location;
 			break;
@@ -768,8 +871,9 @@ static int
 link_take_output(
 	struct link_state *state,
 	struct glsl_symbol *symbol,
-	unsigned char *taken)
+	unsigned char taken[2][LINK_MAX_LOCATIONS])
 {
+	unsigned char *row;
 	unsigned locations;
 	unsigned slot;
 
@@ -780,15 +884,24 @@ link_take_output(
 		return -1;
 	}
 
-	/* Each location once. */
+	/* A dual-source blend's second colour goes to the one draw buffer such a blend has. */
+	if (symbol->explicit_index != 0U && symbol->location + locations > 1U) {
+		link_error(state, "output '%s' has index 1 at a location other than 0", symbol->name);
+		return -1;
+	}
+
+	/* Each location once for each index. */
+	row = taken[0];
+	if (symbol->explicit_index != 0U)
+		row = taken[1];
 	for (slot = 0U; slot < locations; slot++) {
-		if (taken[symbol->location + slot]) {
+		if (row[symbol->location + slot]) {
 			link_error(state, "two fragment shader outputs share location %u", symbol->location + slot);
 			return -1;
 		}
 
 		/* Taken now. */
-		taken[symbol->location + slot] = 1U;
+		row[symbol->location + slot] = 1U;
 	}
 
 	/* Succeeded: taken. */
@@ -807,6 +920,7 @@ link_find_varying(
 	const struct glsl_type *type)
 {
 	struct glsl_symbol *symbol;
+	const struct glsl_type *output_type;
 	int differs;
 
 	/* Anything but a block, by name. */
@@ -815,11 +929,14 @@ link_find_varying(
 		return symbol;
 	}
 
-	/* A block: the output block of the same block name. */
+	/* A block: the output block of the same block name (a control shader's per vertex). */
 	for (symbol = producer->globals; symbol != NULL; symbol = symbol->next_global) {
-		if (symbol->where != GLSL_VAR_OUTPUT || symbol->type->kind != GLSL_KIND_STRUCT || symbol->type->block == 0U)
+		if (symbol->where != GLSL_VAR_OUTPUT)
 			continue;
-		differs = strcmp(symbol->type->name, type->name);
+		output_type = link_output_type(producer, symbol);
+		if (output_type->kind != GLSL_KIND_STRUCT || output_type->block == 0U)
+			continue;
+		differs = strcmp(output_type->name, type->name);
 		if (differs == 0)
 			return symbol;
 	}
