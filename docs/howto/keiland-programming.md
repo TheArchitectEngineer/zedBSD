@@ -3,90 +3,79 @@ Programming a Keiland application
 
 Status: how-to guide
 
-<!-- WRITE (whole guide, read first):
-This file is a structure for the rewrite.  Every "WRITE" comment says what text goes at its place; every "OLD TEXT"
-comment holds the text of the earlier version for reuse.  When the rewrite is done, no WRITE and no OLD TEXT comment
-is left; the "example:" marker comments stay (a test compares the code block under each marker with its file).
+This guide shows how to write a desktop application with libkeiland, the library that every Keiland program uses to draw, to read its input and to talk to the desktop. It teaches by programs. Each chapter is built on one complete program that compiles, links and runs. You read the program first, then a walk through it line by line, then the rules that the program showed.
 
-Readers: C programmers who know other UI toolkits (some of them experts in immediate mode or retained mode toolkits)
-and know nothing of Keiland yet.  The reviewer of the earlier version could not understand kl_ui from snippets, so:
+The chapters go in the order a program is built:
 
-1. Every chapter is built on one complete program, shown whole, that compiles, links with -lkeiland and runs.  The
-   programs live in docs/howto/keiland-examples/ and are shown byte for byte under their "example:" markers.  Do not
-   edit the code inside the blocks; if a program must change, change the file, copy it into the block again, run the
-   test (it is not linked from here), and fix every line number this guide cites from it.
-2. The pattern of every chapter, in this order:
-   a. What the chapter's program does and what it looks like (one short paragraph and the screenshot, an image link
-      to keiland-examples/NAME.png; each picture was taken on a running Keiland desktop, and the chapter's WRITE
-      comment says which input led to it, so the caption can say so).
-   b. The program, whole.
-   c. "Reading the program" (inductive): walk through the program in the order it runs, citing line ranges as links
-      of the form [lines 118-127](keiland-examples/04-counter.c#L118-L127), and quoting the two to six lines being
-      discussed right under the sentence, so the reader does not count lines.  Explain only what this chapter adds;
-      for what an earlier chapter explained, say "as in chapter N" and move on.
-   d. "The rules" (deductive): the concepts and rules the program showed, stated generally, each with a link back to
-      the lines of the program where it is seen.  A reader who skipped (c) can read (d) alone and come back.
-   e. "Pitfalls" and one sentence that leads to the next chapter.
-3. Grow the examples visibly: 02 is 01 with a window, 03 is 02 with a titlebar, 04 is 02 with kl_ui and buttons,
-   04-counter-parts is 04 with pacing and partial frames, 06 is 04 with menus.  Say what changed from the program
-   before (the new struct members, the new calls), not only what the program is.
-4. Define each term where the WRITE comment says it is first defined, in bold, once; later chapters use it without
-   redefining it.  Keep one meaning per word.  In particular "frame" means two things in libkeiland: the pixels the
-   program draws into and shows (chapter 2), and one drawing of the window's widgets between kl_ui_begin and
-   kl_ui_end (chapter 4).  Chapter 4 must say that these are the same event seen from two sides: drawing one frame
-   of pixels is one pass of the widgets.
-5. Do not mention the descriptor API (kl_app_watch_fd, KL_APP_FD, kl_instance_*, kl_system_media_*): it is being
-   replaced, and the guide gets the new API later.  Do not link into plan/.  Write in English, in the plain style of
-   docs/style.md.  Keep headers as the authority: link the header of each component where it is first used.
-6. Keep "Prerequisites" and the build and run commands per chapter (cc ... -lkeiland), with FONT_DIR for a Linux
-   build: cc -DFONT_DIR='"/opt/keiland/share/fonts"' -o counter 04-counter.c -lkeiland.
--->
+1. [The application](#1-the-application): the connection to the desktop and the event queue.
+2. [The window](#2-the-window): a window, the pixels you draw into, and the input.
+3. [The titlebar](#3-the-titlebar): controls that the desktop draws for you.
+4. [The user interface and the main loop](#4-the-user-interface-and-the-main-loop): widgets, `kl_ui`, and how a program decides when to draw.
+5. [The widgets](#5-the-widgets): fields, lists, switches, sliders, and widgets you make yourself.
+6. [Menus](#6-menus): the window's menu and context menus.
+7. [Other services](#7-other-services): glass, appearance, translations, files, the clipboard and notifications.
 
-<!-- WRITE (introduction): Keep the earlier introduction's content (OLD TEXT below): what libkeiland is, the order of
-the chapters, the headers as the authority, the prerequisites, linking with -lkeiland, one thread.  Add: the guide is
-built on eight complete programs in keiland-examples/ (list them in a small table: file, chapter, what it shows), each
-one growing out of an earlier one; how to build one (cc -o NAME NAME.c -lkeiland, and -DFONT_DIR for a Linux build
-under /opt/keiland), and that each runs in a Keiland session (WAYLAND_DISPLAY set).  Say how to read the guide: run
-the chapter's program first, then read it with the guide. -->
+## The programs
 
-<!-- OLD TEXT (introduction; reuse, then delete):
-Status: how-to guide
+The programs are in [keiland-examples/](keiland-examples/). Each one grows out of an earlier one, so you can follow the changes from chapter to chapter.
 
-This guide shows how to write a desktop application with libkeiland, the
-library every Keiland program draws, reads its input and talks to the desktop
-with. It goes in the order a program is built: the application, its window,
-the window's titlebar, the user interface and the main loop, the widgets, the
-menus, and then the other services of the desktop.
+| File | Chapter | What it shows | Grows out of |
+| --- | --- | --- | --- |
+| [01-app.c](keiland-examples/01-app.c) | 1 | Connect, post a notification, read the event queue for two seconds | - |
+| [02-window.c](keiland-examples/02-window.c) | 2 | A window, a frame of pixels, a dot that follows the pointer | 01 |
+| [03-titlebar.c](keiland-examples/03-titlebar.c) | 3 | Titlebar controls: Back, Forward and a search field | 02 |
+| [04-counter.c](keiland-examples/04-counter.c) | 4 | `kl_ui` and three buttons: a counter | 02 |
+| [04-counter-parts.c](keiland-examples/04-counter-parts.c) | 4 | The counter at the display's pace, drawing only what changed | 04 |
+| [05-widgets.c](keiland-examples/05-widgets.c) | 5 | A field, a list, a switch, a slider and a widget of your own | 04 |
+| [06-menu.c](keiland-examples/06-menu.c) | 6 | The counter with a window menu and a context menu | 04 |
+| [07-services.c](keiland-examples/07-services.c) | 7 | Glass, appearance, translations, a file chooser, the clipboard, a notification | 04 |
 
-The interface is the C headers under
-[userland/desktop/include/keiland/](../../userland/desktop/include/keiland/).
-`<keiland/keiland.h>` includes all of them; each `keiland_*.h` holds one
-component (`kl_app`, `kl_window`, `kl_ui`, the widgets, ...) and can be
-included alone. The header of each call is the authority for its exact
-behaviour; this guide explains how the parts fit together.
+## How to read this guide
 
-Prerequisites:
+Run the chapter's program first, then read it with the guide. Every chapter has the same parts:
 
-- A C compiler and libkeiland: the zedBSD sysroot, or the Keiland build for
-  Linux or FreeBSD (`userland/desktop/keiland-linux.mk`,
-  `userland/desktop/keiland-freebsd.mk`).
-- A running Keiland compositor to show the window.
-- A TrueType font for the text. Keiland installs its own as
-  `/usr/share/fonts/keiland.ttf` and `/usr/share/fonts/keiland-fallback.ttf`
-  on zedBSD (under the installation's prefix elsewhere).
+- A short description of what the program does, with a picture of it.
+- The program, whole.
+- **Reading the program**: a walk through the program in the order it runs. The line numbers are links to the lines in the program file, and the lines being discussed are quoted under the sentence.
+- **The rules**: what the program showed, stated in general, with links back to the lines where you can see each rule at work. You can read this part alone and come back to the program when you need an example.
+- **Pitfalls**, and a sentence that leads to the next chapter.
 
-A program links with `-lkeiland`. Every call of an application is made from
-the one thread that opened it.
+A chapter explains only what is new in it. For what an earlier chapter explained, it says "as in chapter N" and moves on.
 
--->
+The interface is the C headers under [userland/desktop/include/keiland/](../../userland/desktop/include/keiland/). `<keiland/keiland.h>` includes all of them. Each `keiland_*.h` holds one component (`kl_app`, `kl_window`, `kl_ui`, the widgets, and so on) and can be included alone. The header of a call is the authority for its exact behaviour. This guide explains how the parts fit together, and each chapter links the headers it uses.
+
+## Prerequisites
+
+- A C compiler and libkeiland: the zedBSD sysroot, or the Keiland build for Linux or FreeBSD (`userland/desktop/keiland-linux.mk`, `userland/desktop/keiland-freebsd.mk`).
+- A running Keiland compositor to show the windows. The programs run inside a Keiland session, where `WAYLAND_DISPLAY` names the compositor's socket.
+- A TrueType font for the text (chapters 4 to 7). Keiland installs its own as `keiland.ttf` and `keiland-fallback.ttf` in the desktop's font directory: `/usr/share/fonts` on zedBSD.
+
+## Building and running a program
+
+A program links with `-lkeiland`:
+
+```sh
+cc -o app 01-app.c -lkeiland
+./app
+```
+
+The programs of chapters 4 to 7 open fonts. They look for them in `FONT_DIR`, which is `/usr/share/fonts` unless you define it. For a Linux build installed under `/opt/keiland`, define it when you compile:
+
+```sh
+cc -DFONT_DIR='"/opt/keiland/share/fonts"' -o counter 04-counter.c -lkeiland
+```
+
+Every libkeiland call of an application is made from the one thread that opened it.
 
 ## 1. The application
 
-<!-- WRITE (chapter 1, summary): The program connects to the desktop, posts a notification so that something is seen
-(a notification under org.example.Hello), listens to the desktop for two seconds, and ends.  Screenshot
-keiland-examples/01-app.png: the notification it posts.  Terms first defined here: application (struct
-kl_app, one connection to the desktop's compositor), compositor, application ID, event, event queue, dispatch (wait
-and read), take.  -->
+The first program connects to the desktop, posts a notification under the name `org.example.Hello`, listens to the desktop for two seconds, and ends. It opens no window. It exists to show the two things every Keiland program does first: it connects, and it reads the events the desktop sends.
+
+![The notification that 01-app.c posts, shown on the desktop](keiland-examples/01-app.png)
+
+*The notification the program posts.*
+
+Build and run it as shown above. You see the notification; the program prints `hello: done` after two seconds.
 
 <!-- example: keiland-examples/01-app.c -->
 ```c
@@ -173,104 +162,97 @@ main(void)
 }
 ```
 
-<!-- WRITE (chapter 1, reading the program), in this order:
-1. Lines 33-40: kl_app_open with struct kl_app_options zeroed then filled: display NULL means WAYLAND_DISPLAY,
-   application is the application ID windows are grouped by.  NULL with errno on failure: EOPNOTSUPP (no Keiland
-   compositor), a connection error, EPROTO, ENOMEM.  Define "application" and "application ID" here.
-2. Lines 42-45: kl_app_notify, the first visible effect; returns an errno value (ENOTSUP without notifications).
-   Only one sentence here; chapter 7 has notifications in full.
-3. Lines 47-73: the shape every later main loop has: dispatch (wait for the desktop and queue what came), then take
-   every queued event, oldest first.  Define "dispatch", "take", "event" and "event queue".  Say what timeout_ms means
-   (-1 for ever, 0 not at all) and that dispatch does not wait while events are already queued; -1 means the
-   connection is lost (lines 57-61).
-4. Lines 69-71: the kinds: KL_APP_THEME here; KL_APP_WINDOW comes with a window in chapter 2.  An application without
-   windows usually gets nothing, which is why this program only listens for a moment.
-5. Line 76: kl_app_close closes the windows still open and the connection.
--->
+### Reading the program
 
-<!-- WRITE (chapter 1, the rules): One struct kl_app per program; every libkeiland call of the application from the one
-thread that opened it; everything that happens to the program arrives through the one queue, in the order it happened
-(so a window's typed text and a menu's Ctrl+S keep their order); a held key repeats inside kl_app_dispatch.  The table
-of event kinds (KL_APP_WINDOW, KL_APP_THEME) from the OLD TEXT, without the descriptor kind.  Link
-userland/desktop/include/keiland/keiland_app.h. -->
-
-<!-- WRITE (chapter 1, pitfalls and next): Calling libkeiland from another thread; forgetting that dispatch returns at
-once while the queue is not empty (take everything before dispatching again).  Next: a window, whose inputs are what
-fills the queue. -->
-
-<!-- OLD TEXT (chapter 1; reuse, then delete):
-## 1. The application
-
-A `struct kl_app` is the program's connection to the desktop. It learns what
-the compositor offers once, when it opens, and everything the program makes
-afterwards (windows, menus, titlebar controls, glass) uses that one
-connection. Everything that happens to the program arrives as one queue of
-`struct kl_app_event` values, in the order it happened.
+**Connecting ([lines 33-40](keiland-examples/01-app.c#L33-L40)).** A program starts by connecting to the desktop. The options say which desktop and who you are.
 
 ```c
-#include <keiland/keiland.h>
-#include <errno.h>
-#include <stdio.h>
-#include <string.h>
-
-int
-main(void)
-{
-	struct kl_app_options options;
-	struct kl_app *app;
-
-	/* The connection: WAYLAND_DISPLAY's compositor, and the app_id the windows get. */
-	memset(&options, 0, sizeof(options));
-	options.application = "org.example.Hello";
-	app = kl_app_open(&options);
-	if (app == NULL) {
-		fprintf(stderr, "hello: no desktop (%s)\n", strerror(errno));
-		return 1;
-	}
-
-	/* ... windows and the main loop ... */
-
-	kl_app_close(app);
-	return 0;
-}
+memset(&options, 0, sizeof(options));
+options.application = "org.example.Hello";
+app = kl_app_open(&options);
 ```
 
-- `options.display` names the compositor's socket; NULL takes
-  `WAYLAND_DISPLAY`. `options.application` is the application ID the desktop
-  shows and groups windows by.
-- `kl_app_open` returns NULL with `errno` set when there is no compositor
-  (`EOPNOTSUPP`), the connection fails, or memory runs out.
-- `kl_app_close` closes the windows still open and the connection.
+Fill in a zeroed `struct kl_app_options` and call `kl_app_open`. `display` names the **compositor** to connect to. The compositor is the desktop's program: it draws the windows on the screen and sends them the input. A `NULL` display, as here, means the one `WAYLAND_DISPLAY` names. `application` is the **application ID**: the name the desktop shows for the program and groups its windows by. Here it is `org.example.Hello`.
 
-The queue is read with two calls:
+What you get back is a `struct kl_app`, an **application**: one connection to the compositor. A program has one. Everything else the program makes (windows, menus, titlebar controls, glass) goes through it.
 
-- `kl_app_dispatch(app, timeout_ms)` waits up to `timeout_ms` milliseconds
-  (-1 waits for ever, 0 does not wait) for the compositor, reads what came,
-  and queues it. It does not wait while events are already queued or a held
-  key is due to repeat. It returns -1 when the connection is lost.
-- `kl_app_take(app, &event)` takes the oldest event: 1 with it, 0 when the
-  queue is empty.
+[Lines 37-40](keiland-examples/01-app.c#L37-L40) handle failure. `kl_app_open` returns `NULL` and sets `errno`. `EOPNOTSUPP` means the program found no Keiland compositor. Other values mean the connection failed (`EPROTO` is a protocol error, `ENOMEM` is memory).
 
-An event's `kind` is one of:
+**The first visible effect ([lines 42-45](keiland-examples/01-app.c#L42-L45)).** `kl_app_notify` asks the desktop to show a notification under the program's application ID.
 
-| kind | meaning |
-| --- | --- |
-| `KL_APP_WINDOW` | an input of one of the application's windows: `event.window` and `event.input` |
-| `KL_APP_THEME` | the desktop's appearance (light or dark, the accent) changed: draw every window again |
+```c
+status = kl_app_notify(app, "Hello", "A Keiland application is running.");
+if (status != 0)
+	fprintf(stderr, "hello: no notification (%s)\n", strerror(status));
+```
 
-A held key repeats by itself inside `kl_app_dispatch`: the repeats are queued
-as key inputs with `repeated` set, after the inputs read with them.
+It returns 0, or an `errno` value (`ENOTSUP` if the compositor shows no notifications). Chapter 7 covers notifications in full.
 
--->
+**Listening ([lines 47-73](keiland-examples/01-app.c#L47-L73)).** The rest of the program is the shape that every later main loop has: wait for the desktop, then take what it sent.
+
+```c
+/* Waits for the desktop, at most until the deadline. */
+wait = (int)((deadline - now) / 1000U);
+status = kl_app_dispatch(app, wait);
+```
+
+`kl_app_dispatch` is **dispatch**. It waits for the compositor for at most `timeout_ms` milliseconds, reads whatever arrived, and queues it. A timeout of `-1` waits for ever, and `0` does not wait at all. Dispatch does not wait while events are already queued, so a loop that does not take the queued events spins. Dispatch returns 0, or `-1` when the connection is lost ([lines 58-61](keiland-examples/01-app.c#L58-L61)). Here the timeout is the time that is left until the two seconds are over ([lines 48-56](keiland-examples/01-app.c#L48-L56)).
+
+Dispatch only fills a queue. Reading the queue is **take**:
+
+```c
+/* Takes every event queued, oldest first. */
+for (;;) {
+	taken = kl_app_take(app, &event);
+	if (!taken)
+		break;
+```
+
+`kl_app_take` removes the oldest **event** from the **event queue** and returns 1 with it in the structure you pass. It returns 0 when the queue is empty. An event is a `struct kl_app_event`: a `kind`, and for some kinds more. The loop takes events until the queue is empty, then goes back to dispatch.
+
+**The kinds of event ([lines 69-71](keiland-examples/01-app.c#L69-L71)).** This program knows one kind:
+
+```c
+/* The desktop's appearance changed: light or dark, or the accent. */
+if (event.kind == KL_APP_THEME)
+	printf("hello: the appearance changed\n");
+```
+
+`KL_APP_THEME` says that the desktop's appearance changed: light or dark, or the accent colour. The other kind, `KL_APP_WINDOW`, carries the input of one of the application's windows. It comes in chapter 2, when there is a window. A program without windows gets almost nothing, which is why this one only listens for a moment.
+
+**Disconnecting ([lines 75-76](keiland-examples/01-app.c#L75-L76)).** `kl_app_close` closes the windows that are still open and the connection.
+
+### The rules
+
+- A program has one `struct kl_app`. Open it first, close it last. `kl_app_close` closes the windows that are still open, so the order of closing is forgiving, but the application must outlive everything made from it ([lines 34-36](keiland-examples/01-app.c#L34-L36), [75-76](keiland-examples/01-app.c#L75-L76)).
+- Every libkeiland call of the application is made from the one thread that opened it.
+- Everything that happens to the program arrives through one queue, in the order it happened. A window's typed text and a menu's Ctrl+S therefore keep their order ([lines 63-72](keiland-examples/01-app.c#L63-L72)).
+- The program reads the queue in two steps: `kl_app_dispatch` waits and queues, `kl_app_take` hands the events over one at a time. Take every queued event before you dispatch again ([lines 55-72](keiland-examples/01-app.c#L55-L72)).
+- A held key repeats by itself inside `kl_app_dispatch`. The repeats are queued as key inputs with `repeated` set.
+- An event's `kind` is one of:
+
+  | Kind | Meaning |
+  | --- | --- |
+  | `KL_APP_WINDOW` | An input of one of the application's windows: `event.window` and `event.input` (chapter 2). |
+  | `KL_APP_THEME` | The desktop's appearance changed (light or dark, the accent): draw every window again ([line 70](keiland-examples/01-app.c#L70)). |
+
+The component's header is [keiland_app.h](../../userland/desktop/include/keiland/keiland_app.h).
+
+### Pitfalls
+
+- Calling libkeiland from a second thread. The application belongs to the thread that opened it.
+- Dispatching again while the queue is not empty. Dispatch returns at once in that case, so a loop that forgets to take everything runs hot.
+- Ignoring `kl_app_open`'s failure. A program started outside a Keiland session has no compositor to talk to.
+
+This program has no window, so nothing fills the queue except the desktop's own news. Next: a window, whose input is what fills the queue.
 
 ## 2. The window
 
-<!-- WRITE (chapter 2, summary): The program opens a 480x320 window, paints the theme's ground, and draws a dot that
-follows the pointer; the close button ends it.  It is chapter 1's program with a window, a frame and a real main loop.
-Screenshot keiland-examples/02-window.png: the window with the dot under the pointer.  Terms first defined here: window, configure (the compositor gives the
-size), presenter (KL_PRESENT_*), frame (the pixels the program draws and shows: premultiplied 0xAARRGGBB words, stride
-counted in words), canvas, input (struct kl_window_event, delivered as KL_APP_WINDOW), main loop, and the program's
-"dirty", "resized" and "closed" flags as a pattern every later example keeps. -->
+The second program opens a 480x320 window, paints the theme's ground colour in it, and draws a dot under the pointer. The close button ends it. It is chapter 1's program with a window, a frame and a real main loop.
+
+![The window of 02-window.c with a dot under the pointer](keiland-examples/02-window.png)
+
+*The window with the dot under the pointer.*
 
 <!-- example: keiland-examples/02-window.c -->
 ```c
@@ -528,126 +510,173 @@ hello_input(
 }
 ```
 
-<!-- WRITE (chapter 2, reading the program), in this order:
-1. Lines 22-38: struct hello holds everything the program keeps.  Point out the three kinds of member: the desktop's
-   objects (app, window), the frame (canvas, pixels, width, height), the state the picture shows (pointer_*), and what
-   the main loop must do next (dirty, resized, closed).  Later chapters keep this shape.
-2. Lines 66-76: kl_app_window_create with struct kl_window_options: title, the size asked for until the compositor
-   gives one, present.  The window is already configured when the call returns.  KL_PRESENT_VULKAN shows CPU-drawn
-   frames through a Vulkan swapchain and is the one that can be see-through for glass (chapter 7); KL_PRESENT_SHM
-   through shared memory; KL_PRESENT_NONE leaves the surface to the program's own Vulkan.
-3. Lines 133-165 (hello_resize): kl_window_present_resize reports the size; the frame is malloc'ed memory of that many
-   words; kl_canvas_init puts a canvas on it (stride in words).  The old canvas is released before the new one is made
-   (lines 154-156).  Define "frame" and "canvas".
-4. Lines 167-188 (hello_draw): the canvas calls, the theme's colours (kl_theme_default), drawing the whole picture
-   from the state every time.
-5. Lines 190-216 (hello_frame): kl_window_present, and EAGAIN: the swapchain no longer matches the window; the loop
-   makes a new frame and draws again (no error).
-6. Lines 218-252 (hello_input): the input kinds used here (MOTION, LEAVE, RESIZE, CLOSE); input changes the state and
-   sets a flag; it never draws.
-7. Lines 83-122 (the main loop): wait (no wait while a frame is due, lines 86-88), take every event (KL_APP_THEME sets
-   dirty; KL_APP_WINDOW of this window goes to hello_input), then act on the flags: resize first, then draw once.  Say
-   explicitly why drawing happens once after the queue is empty and not per input: many inputs, one frame.
--->
+### Reading the program
 
-<!-- WRITE (chapter 2, the rules): The frame is ordinary memory the program owns (premultiplied 0xAARRGGBB, stride in
-words); kl_window_present copies or shows it; EAGAIN means resize and draw again; KL_WINDOW_RESIZE means call
-kl_window_present_resize and make a new frame; KL_WINDOW_CLOSE is a request (the program decides).  Coordinates are
-surface pixels; times are CLOCK_MONOTONIC microseconds (kl_clock_us).  The list of input kinds from the OLD TEXT (the
-pointer, keys, fingers, an input method's text, RESIZE, CLOSE, ACTION), each with the chapter that uses it.  Link
-keiland_window.h and keiland_canvas.h. -->
-
-<!-- WRITE (chapter 2, pitfalls and next): Drawing inside the input handler; forgetting to release the old canvas;
-counting the stride in bytes; treating EAGAIN as an error.  Next: the window's titlebar, which the program does not
-draw. -->
-
-<!-- OLD TEXT (chapter 2; reuse, then delete):
-## 2. The window
-
-A window is made from the application with a `struct kl_window_options`.
+**What the program keeps ([lines 22-39](keiland-examples/02-window.c#L22-L39)).** Everything lives in one structure. It has four kinds of member, and every later program keeps the same shape.
 
 ```c
-struct kl_window_options window_options;
-struct kl_window *window;
+struct hello {
+	struct kl_app *app;
+	struct kl_window *window;
+	struct kl_canvas canvas;
+	uint32_t *pixels;
+	uint32_t width;
+	uint32_t height;
+	double pointer_x;
+	double pointer_y;
+	int pointer_in;
+	int dirty;
+	int resized;
+	int closed;
+};
+```
 
+- The desktop's objects: `app` and `window`.
+- The **frame**: `pixels`, `width`, `height` and the `canvas` that draws into them. A frame is the picture of the whole window that the program makes and shows. More on it below.
+- The state the picture shows: `pointer_x`, `pointer_y` and `pointer_in`. The picture is drawn from this state, never the other way round.
+- What the main loop has to do next: `dirty` (a frame must be drawn), `resized` (the frame must be made again at a new size) and `closed` (the program must end).
+
+**Opening the window ([lines 66-76](keiland-examples/02-window.c#L66-L76)).** Fill in a `struct kl_window_options` and call `kl_app_window_create`.
+
+```c
 memset(&window_options, 0, sizeof(window_options));
-window_options.title = "Hello";
+window_options.title = "Window";
 window_options.width = 480;
 window_options.height = 320;
 window_options.present = KL_PRESENT_VULKAN;
-window = kl_app_window_create(app, &window_options);
-if (window == NULL)
-	return 1;
+hello.window = kl_app_window_create(hello.app, &window_options);
 ```
 
-- `width` and `height` are the size asked for until the compositor gives
-  one. The window is already configured when the call returns.
-- `present` says how the frames are shown. `KL_PRESENT_VULKAN` shows the
-  frames the program draws on the CPU through a Vulkan swapchain, and is the
-  one that can be see-through for the desktop's glass. `KL_PRESENT_SHM`
-  shows them through shared memory (a small window, or no Vulkan).
-  `KL_PRESENT_NONE` leaves the surface to the program's own Vulkan
-  (`kl_window_vulkan_surface`).
-- `fullscreen` asks for the full screen before the first configure.
+`title` is the window's title. `width` and `height` are the size you ask for, until the compositor gives the window a size of its own. The window is **configured** when the call returns: the compositor has already told it its size. `present` chooses how the frames reach the screen, the **presenter**:
 
-### Frames
+- `KL_PRESENT_VULKAN` shows the frames you draw on the CPU through a Vulkan swapchain. It is see-through for the desktop's glass (chapter 7) when the swapchain is premultiplied.
+- `KL_PRESENT_SHM` shows them through shared memory, which is always blended by its alpha, so it is see-through too. Use it for a small window, or where there is no Vulkan.
+- `KL_PRESENT_NONE` leaves the surface to the program's own Vulkan.
 
-A frame is ordinary memory: premultiplied `0xAARRGGBB` words, as many as the
-size `kl_window_present_resize` reports. The program draws into it with a
-`struct kl_canvas` and shows it with `kl_window_present`.
+**Making a frame ([lines 133-165](keiland-examples/02-window.c#L133-L165), `hello_resize`).** A **frame** is ordinary memory that the program owns: one 32-bit word per pixel, in the form premultiplied `0xAARRGGBB`, row after row. A **canvas** (`struct kl_canvas`) is the object you draw with: it knows the pixels, their width and the stride, and has calls that fill rectangles, circles and so on.
 
 ```c
-uint32_t width;
-uint32_t height;
-uint32_t *pixels;
-struct kl_canvas canvas;
-
-/* The presenter at the window's size, and a frame of that size. */
-if (kl_window_present_resize(window, &width, &height) != 0)
-	return 1;
-pixels = malloc((size_t)width * height * sizeof(pixels[0]));
-if (pixels == NULL)
-	return 1;
-kl_canvas_init(&canvas, pixels, width, (int)width, (int)height);
-
-/* Draws and shows it. */
-kl_canvas_fill(&canvas, &(struct kl_rect){ 0, 0, (int)width, (int)height }, KL_RGB(0x2a6fdb));
-kl_window_present(window, pixels, width);
+status = kl_window_present_resize(hello->window, &hello->width, &hello->height);
+/* ... */
+pixels = malloc((size_t)hello->width * hello->height * sizeof(pixels[0]));
+/* ... */
+status = kl_canvas_init(&hello->canvas, hello->pixels, hello->width, (int)hello->width, (int)hello->height);
 ```
 
-- The stride is counted in words, not bytes.
-- `kl_window_present` returns `EAGAIN` when the swapchain no longer matches
-  the window: call `kl_window_present_resize` again, make a frame of the new
-  size, and draw again.
-- `kl_canvas_release` frees what the canvas allocated (the row its shapes are
-  filled through); the pixels stay the program's.
+`kl_window_present_resize` makes the presenter match the window's size and reports that size. The program allocates that many words, then puts a canvas on them with `kl_canvas_init`. The stride, the distance between two rows, is counted in words, not bytes. Here it equals the width.
 
-### The window's inputs
+When the window changes size, the program makes a new frame. It releases the old canvas before it makes the new one ([lines 153-160](keiland-examples/02-window.c#L153-L160)): `kl_canvas_release` frees what the canvas allocated for itself, and the pixels stay the program's.
 
-The window's inputs come as `KL_APP_WINDOW` events. `event.input.kind` is a
-`KL_WINDOW_*` value: the pointer (`KL_WINDOW_MOTION`, `_LEAVE`, `_BUTTON`,
-`_AXIS`), the keys (`KL_WINDOW_KEY`, `_FOCUS`), the fingers
-(`KL_WINDOW_TOUCH_*`), an input method's text (`KL_WINDOW_TEXT_*`), a new
-size (`KL_WINDOW_RESIZE`), the close button (`KL_WINDOW_CLOSE`), and an
-action chosen in the titlebar or a menu (`KL_WINDOW_ACTION`, see sections 3
-and 6). Coordinates are in the surface's pixels, times in `CLOCK_MONOTONIC`
-microseconds (`kl_clock_us()` reads that clock).
+**Drawing ([lines 167-188](keiland-examples/02-window.c#L167-L188), `hello_draw`).** The function draws the whole picture from the state, every time.
 
-On `KL_WINDOW_RESIZE` the program calls `kl_window_present_resize`, makes a
-frame of the new size and draws. On `KL_WINDOW_CLOSE` it closes the window
-(`kl_window_close`) or ends.
+```c
+kl_canvas_gradient(&hello->canvas, &whole, theme->ground_top, theme->ground_bottom);
+/* ... */
+if (hello->pointer_in)
+	kl_canvas_circle(&hello->canvas, (float)hello->pointer_x, (float)hello->pointer_y, DOT_RADIUS, theme->accent);
+```
 
--->
+`kl_theme_default` gives the **theme**: the desktop's colours and sizes. They follow the light or dark appearance and the user's accent. `ground_top` and `ground_bottom` are the colours of the window's ground; `accent` is the accent colour. The function paints the ground, then draws the dot where the pointer is.
+
+**Showing the frame ([lines 190-216](keiland-examples/02-window.c#L190-L216), `hello_frame`).** `kl_window_present` hands the frame to the compositor.
+
+```c
+status = kl_window_present(hello->window, hello->pixels, hello->width);
+/* ... */
+if (status == EAGAIN) {
+	hello->resized = 1;
+	return 0;
+}
+```
+
+`EAGAIN` is not an error. It says that the window's size changed under the frame, so the presenter no longer matches. The program sets `resized`, and the main loop makes a new frame and draws again.
+
+**The input ([lines 218-252](keiland-examples/02-window.c#L218-L252), `hello_input`).** The window's inputs arrive as events of kind `KL_APP_WINDOW`. The program's handler looks at `input->kind`.
+
+```c
+case KL_WINDOW_MOTION:
+	/* The pointer moved: the dot follows it. */
+	hello->pointer_x = input->x;
+	hello->pointer_y = input->y;
+	hello->pointer_in = 1;
+	hello->dirty = 1;
+	break;
+```
+
+A pointer motion stores the place in the state and sets `dirty`. `KL_WINDOW_LEAVE` says that the pointer left the window. `KL_WINDOW_RESIZE` says that the compositor gave a new size ([lines 240-243](keiland-examples/02-window.c#L240-L243)). `KL_WINDOW_CLOSE` says that the user pressed the close button ([lines 244-247](keiland-examples/02-window.c#L244-L247)). The handler never draws. It changes the state and sets a flag.
+
+**The main loop ([lines 83-122](keiland-examples/02-window.c#L83-L122)).** The loop is chapter 1's loop with the window's work added.
+
+```c
+timeout = -1;
+if (hello.dirty || hello.resized)
+	timeout = 0;
+status = kl_app_dispatch(hello.app, timeout);
+```
+
+The program waits for the desktop. It does not wait at all while a frame is due (`dirty`) or a new frame must be made (`resized`). Otherwise it waits for ever, since nothing needs doing until the desktop says so.
+
+```c
+if (event.kind == KL_APP_THEME)
+	hello.dirty = 1;
+/* ... */
+if (event.kind == KL_APP_WINDOW && event.window == hello.window)
+	hello_input(&hello, &event.input);
+```
+
+It takes every queued event. `KL_APP_THEME` marks the frame dirty, since the theme's colours are new. A `KL_APP_WINDOW` event for this window goes to `hello_input`.
+
+```c
+if (hello.resized) {
+	hello.resized = 0;
+	status = hello_resize(&hello);
+	if (status != 0)
+		break;
+}
+/* ... */
+if (hello.dirty) {
+	status = hello_frame(&hello);
+```
+
+Then it acts on the flags: first the new size, then one frame. Many inputs make one frame. A pointer that moves fifty times between two dispatches sets `dirty` fifty times and draws once. That is why drawing is not done in the input handler.
+
+### The rules
+
+- A frame is memory the program owns: premultiplied `0xAARRGGBB` words, with the stride counted in words ([lines 148-151](keiland-examples/02-window.c#L148-L151), [158](keiland-examples/02-window.c#L158)). Premultiplied means each colour channel is already multiplied by the alpha. An opaque pixel is unchanged by this.
+- `kl_window_present` copies or shows the frame. It returns `EAGAIN` when the window's size has changed. Respond by making a new frame of the new size and drawing again ([lines 204-208](keiland-examples/02-window.c#L204-L208)).
+- `KL_WINDOW_RESIZE` means: call `kl_window_present_resize` and make a new frame ([lines 240-243](keiland-examples/02-window.c#L240-L243), [108-114](keiland-examples/02-window.c#L108-L114)).
+- `KL_WINDOW_CLOSE` is a request. The program decides what to do. This one ends; another might ask "Save changes?" ([lines 244-247](keiland-examples/02-window.c#L244-L247)).
+- Coordinates in an input are in the surface's pixels. Times are `CLOCK_MONOTONIC` microseconds; `kl_clock_us()` reads that clock.
+- The **main loop** is: wait, take every event, change the state, then draw once if something changed. The flags `dirty`, `resized` and `closed` are the pattern that every later program keeps ([lines 83-122](keiland-examples/02-window.c#L83-L122)).
+- A window's input has these kinds. Each one has a chapter that uses it:
+
+  | Kind | Meaning | Chapter |
+  | --- | --- | --- |
+  | `KL_WINDOW_MOTION`, `_LEAVE`, `_BUTTON`, `_AXIS` | The pointer, its buttons and the wheel | 2, 4, 6 |
+  | `KL_WINDOW_KEY`, `_FOCUS` | The keys and the keyboard focus | 4, 5 |
+  | `KL_WINDOW_TOUCH_*` | Fingers | 4 |
+  | `KL_WINDOW_TEXT_*` | Text from an input method | 5 |
+  | `KL_WINDOW_RESIZE`, `_CLOSE` | A new size, the close request | 2 |
+  | `KL_WINDOW_ACTION` | An action chosen in the titlebar or a menu | 3, 6 |
+
+The headers are [keiland_window.h](../../userland/desktop/include/keiland/keiland_window.h) and [keiland_canvas.h](../../userland/desktop/include/keiland/keiland_canvas.h).
+
+### Pitfalls
+
+- Drawing inside the input handler. Many inputs can arrive between two frames; draw once, after the queue is empty.
+- Forgetting to release the old canvas when the frame is remade.
+- Counting the stride in bytes. It is in words.
+- Treating `EAGAIN` from `kl_window_present` as an error.
+
+The window's titlebar is not drawn by the program at all. Next: how to describe it to the desktop.
 
 ## 3. The titlebar
 
-<!-- WRITE (chapter 3, summary): The program shows one colour at a time; Back and Forward in the titlebar step through
-five colours, the search field finds a colour by name as it is typed, and the window's title is the colour's name.
-It is chapter 2's program with titlebar controls and without the pointer's dot.  Screenshot
-keiland-examples/03-titlebar.png: after Forward was clicked twice, Sun is shown, its name is the title, and Back is
-enabled (it is disabled at the first colour).  Terms first defined here: titlebar presentation (menu, controls, tabs), control,
-role, priority, action, action state, declarative and retained (the compositor keeps what the program gave until it
-gives something else). -->
+The third program shows one colour at a time. Back and Forward in the titlebar step through five colours, the search field finds a colour by its name as you type, and the window's title is the colour's name. It is chapter 2's program with titlebar controls, and without the dot.
+
+![The window of 03-titlebar.c showing the colour Sun, with Back enabled](keiland-examples/03-titlebar.png)
+
+*After Forward was clicked twice: Sun is shown, its name is the title, and Back is enabled. At the first colour Back is disabled.*
 
 <!-- example: keiland-examples/03-titlebar.c -->
 ```c
@@ -1051,100 +1080,130 @@ colours_find(
 }
 ```
 
-<!-- WRITE (chapter 3, reading the program), in this order:
-1. Lines 21-29: two numberings: a control's ID (which control) and an action (what the program is asked to do).  They
-   happen to be equal here; say why they are separate (chapter 6: a menu item and a control can share one action).
-2. Lines 80-90: the table of struct kl_control_entry: id, role (KL_CONTROL_*: how the compositor draws it), priority
-   (KL_PRIORITY_*: which give way first when the titlebar is short), group (segmented controls, 0 for none), label,
-   action.  Define "control", "role", "priority", "action".
-3. Lines 124-131: kl_window_set_controls gives the whole table; ENOTSUP from a compositor without the presentation (the
-   window still works); kl_window_set_control_text sets the search field's placeholder after the table.
-4. Lines 288-314 (colours_show): after every change the program gives the state again: the title and the action
-   states (KL_ACTION_DISABLED for Back at the first colour).  Define "action state"; say it applies to every control
-   and menu item of that action.  Contrast with chapter 2: here the program does not draw these, it describes them.
-5. Lines 316-362 (colours_input): KL_WINDOW_ACTION with the action in input.code (and the control's ID in input.id);
-   KL_WINDOW_CONTROL_TEXT with the search text as typed in input.text; KL_WINDOW_CONTROL_DONE when the editing ends
-   (how in input.code: KL_TEXT_SUBMITTED and the others).  These come through the same queue as every other input.
--->
+### Reading the program
 
-<!-- WRITE (chapter 3, the rules): The titlebar is declarative and retained: the program gives the whole table whenever
-something changes, the library sends only the difference, and it stays as given.  The three presentations (the menu
-by default, controls, tabs) and how to choose: a count of 0 gives the titlebar back to the menu; kl_window_set_tabs
-and KL_WINDOW_TAB with KL_WINDOW_TAB_* for tabs (no example; keep the OLD TEXT's paragraph).  The compositor decides
-the look.  Link keiland_titlebar.h and the declarative calls in keiland_window.h. -->
-
-<!-- WRITE (chapter 3, pitfalls and next): Expecting the compositor to disable Back by itself (it does not; set the
-action state); using the same number for two controls; treating ENOTSUP as fatal.  Next: the window's content made of
-widgets, which is the opposite model: immediate, not retained. -->
-
-<!-- OLD TEXT (chapter 3; reuse, then delete):
-## 3. The titlebar
-
-The compositor draws every window's titlebar: its mark and title, the
-window's buttons, and one presentation the program chooses:
-
-- the **menu**, the default: the window's menu bar (section 6);
-- **controls**: back, forward, a breadcrumb, a search field, view switches,
-  a progress, a primary action;
-- **tabs**.
-
-The program does not draw these. It describes them as a table, and gives the
-whole table again whenever something changes; the library compares it with
-what is shown and sends only the difference. The titlebar is *declarative and
-retained*: it stays as given until the next table.
+**Two numberings ([lines 21-29](keiland-examples/03-titlebar.c#L21-L29)).** The program numbers its controls and, separately, its actions.
 
 ```c
+#define ID_BACK		1U
+#define ID_FORWARD	2U
+#define ID_SEARCH	3U
+/* ... */
 #define ACTION_BACK	1U
 #define ACTION_FORWARD	2U
 #define ACTION_SEARCH	3U
-
-static const struct kl_control_entry controls[] = {
-	/* id, role, priority, group, label, action */
-	{ 1U, KL_CONTROL_BACK, KL_PRIORITY_PRIMARY, 0U, "Back", ACTION_BACK },
-	{ 2U, KL_CONTROL_FORWARD, KL_PRIORITY_PRIMARY, 0U, "Forward", ACTION_FORWARD },
-	{ 3U, KL_CONTROL_SEARCH, KL_PRIORITY_NORMAL, 0U, "Search", ACTION_SEARCH }
-};
-
-kl_window_set_title(window, "Hello");
-kl_window_set_controls(window, controls, sizeof(controls) / sizeof(controls[0]));
 ```
 
-- `id` names the control (not 0, unique in the table). `role`
-  (`KL_CONTROL_*`) decides how the compositor draws it, with the label.
-  `priority` (`KL_PRIORITY_*`) is
-  the order controls give way in when the titlebar is short of room. `group`
-  joins segmented controls (0 for none).
-- A control chosen comes as a window input of kind `KL_WINDOW_ACTION`: the
-  control's `action` in `input.code` and its `id` in `input.id`.
-- An action's state is set with `kl_window_set_action_state(window, action,
-  state)`: `KL_ACTION_DISABLED`, `KL_ACTION_CHECKED`, `KL_ACTION_HIDDEN`
-  (0 is enabled, unchecked and shown). It applies to every control and menu
-  item of that action.
-- A search field's text comes as it is typed (`KL_WINDOW_CONTROL_TEXT`, the
-  text in `input.text`) and when its editing ends (`KL_WINDOW_CONTROL_DONE`).
-  `kl_window_set_control_text` sets it.
-- A count of 0 gives the titlebar back to the menu.
-- `kl_window_set_tabs` shows tabs (`struct kl_tab_entry`: an ID, a title,
-  `KL_TAB_*` flags); a tab chosen or closed comes as `KL_WINDOW_TAB` with
-  `KL_WINDOW_TAB_*` in `code` and the tab's ID in `id`.
+A control's ID says which control it is. An **action** says what the program is asked to do. Here they happen to be equal. They are separate because one action can have several sources: chapter 6 shows menu items, buttons and keys that ask for the same action.
 
-A compositor without the titlebar presentation returns `ENOTSUP`; the window
-still works, with only its title.
+**The table of controls ([lines 80-90](keiland-examples/03-titlebar.c#L80-L90)).** The **titlebar presentation** is what the desktop draws in a window's titlebar. There are three: the window's **menu** (the default, chapter 6), **controls**, and **tabs**. The program picks controls here by giving a table.
 
--->
+```c
+static const struct kl_control_entry control_table[] = {
+	/* id, role, priority, group, label, action */
+	{ ID_BACK, KL_CONTROL_BACK, KL_PRIORITY_PRIMARY, 0U, "Back", ACTION_BACK },
+	{ ID_FORWARD, KL_CONTROL_FORWARD, KL_PRIORITY_PRIMARY, 0U, "Forward", ACTION_FORWARD },
+	{ ID_SEARCH, KL_CONTROL_SEARCH, KL_PRIORITY_NORMAL, 0U, "Find a colour", ACTION_SEARCH }
+};
+```
+
+Each row of `struct kl_control_entry` has:
+
+- `id`: names the **control**. It is not 0 and is unique in the table.
+- `role` (`KL_CONTROL_*`): what the control is. The **role** decides how the compositor draws it: a back arrow, a search field, a breadcrumb.
+- `priority` (`KL_PRIORITY_PRIMARY`, `_NORMAL`, `_SECONDARY`): the order in which controls give way when the titlebar is too short.
+- `group`: joins segmented controls, such as a pair of view switches. 0 means none.
+- `label`: the text for the control.
+- `action`: the action the control queues when it is chosen.
+
+**Giving the table ([lines 124-131](keiland-examples/03-titlebar.c#L124-L131)).** `kl_window_set_controls` gives the whole table at once.
+
+```c
+status = kl_window_set_controls(colours.window, control_table, sizeof(control_table) / sizeof(control_table[0]));
+if (status != 0)
+	fprintf(stderr, "colours: no titlebar controls (%s)\n", strerror(status));
+/* ... */
+if (status == 0)
+	(void)kl_window_set_control_text(colours.window, ID_SEARCH, NULL, "Colour name");
+```
+
+A compositor without the titlebar presentation returns `ENOTSUP`. The window still works; it keeps only its title. After the table is given, `kl_window_set_control_text` sets the search field's placeholder, the hint shown while it is empty.
+
+**Describing the state ([lines 288-314](keiland-examples/03-titlebar.c#L288-L314), `colours_show`).** After every change, the program tells the desktop what the titlebar must now look like.
+
+```c
+kl_window_set_title(colours->window, colour_table[colours->current].name);
+/* ... */
+if (colours->current == 0U)
+	back = KL_ACTION_DISABLED;
+if (colours->current + 1U == COLOUR_COUNT)
+	forward = KL_ACTION_DISABLED;
+(void)kl_window_set_action_state(colours->window, ACTION_BACK, back);
+(void)kl_window_set_action_state(colours->window, ACTION_FORWARD, forward);
+```
+
+It sets the title and the **action state** of Back and Forward. An action state is a set of bits: `KL_ACTION_DISABLED`, `KL_ACTION_CHECKED`, `KL_ACTION_HIDDEN`. 0 means enabled, unchecked and shown. The state applies to every control and menu item of that action. Back is disabled at the first colour and Forward at the last.
+
+Compare this with chapter 2. There the program drew the picture. Here the program does not draw the titlebar. It describes it, and the compositor draws it.
+
+**The titlebar's inputs ([lines 316-362](keiland-examples/03-titlebar.c#L316-L362), `colours_input`).** Choosing a control queues an input in the same queue as every other input.
+
+```c
+case KL_WINDOW_ACTION:
+	/* A control was chosen: its action is in code. */
+	if (input->code == ACTION_BACK && colours->current > 0U) {
+		colours->current--;
+		colours_show(colours);
+	} else if (input->code == ACTION_FORWARD && colours->current + 1U < COLOUR_COUNT) {
+		colours->current++;
+		colours_show(colours);
+	}
+```
+
+`KL_WINDOW_ACTION` brings the action in `input.code`, and the control's ID in `input.id`. The program changes the current colour and calls `colours_show` again.
+
+The search field brings two more inputs:
+
+```c
+case KL_WINDOW_CONTROL_TEXT:
+	/* The search field's text as it is typed: the first colour it names. */
+	found = colours_find(input->text);
+/* ... */
+case KL_WINDOW_CONTROL_DONE:
+	/* The search ended (Enter, Escape or elsewhere): the field is emptied for the next one. */
+	(void)kl_window_set_control_text(colours->window, ID_SEARCH, "", NULL);
+```
+
+`KL_WINDOW_CONTROL_TEXT` carries the text as it is typed, in `input.text`. `KL_WINDOW_CONTROL_DONE` says that editing ended. How it ended is in `input.code`: `KL_TEXT_SUBMITTED` and the other `KL_TEXT_*` values. This program clears the field for the next search.
+
+### The rules
+
+- The titlebar is **declarative and retained**. Declarative: the program says what the titlebar is, not how to draw it. Retained: the compositor keeps what the program gave until the program gives something else. The program gives the whole table whenever something changes. The library compares it with what is shown and sends only the difference ([lines 124-131](keiland-examples/03-titlebar.c#L124-L131), [288-314](keiland-examples/03-titlebar.c#L288-L314)).
+- An action is the program's request, a control is one way to make it ([lines 26-29](keiland-examples/03-titlebar.c#L26-L29), [85-90](keiland-examples/03-titlebar.c#L85-L90)).
+- An action state applies to every control and menu item of its action ([lines 303-310](keiland-examples/03-titlebar.c#L303-L310)).
+- There are three presentations: the menu (the default), controls and tabs. A count of 0 in `kl_window_set_controls` gives the titlebar back to the menu.
+- Tabs: `kl_window_set_tabs` shows a table of `struct kl_tab_entry` (an ID, a title and `KL_TAB_*` flags). A tab chosen, closed or asked for comes as `KL_WINDOW_TAB`, with `KL_WINDOW_TAB_*` in `code` and the tab's ID in `id`. This guide has no example for tabs.
+- The compositor decides how everything looks. The program picks roles and priorities, not pixels.
+
+The headers are [keiland_titlebar.h](../../userland/desktop/include/keiland/keiland_titlebar.h) and the declarative calls in [keiland_window.h](../../userland/desktop/include/keiland/keiland_window.h).
+
+### Pitfalls
+
+- Expecting the compositor to disable Back by itself. It does not. Set the action state ([lines 303-310](keiland-examples/03-titlebar.c#L303-L310)).
+- Using the same ID for two controls.
+- Treating `ENOTSUP` as fatal. The window works without a titlebar presentation.
+
+The titlebar was declarative. The window's own content is the opposite: in the next chapter the program calls a function for every widget in every frame, and the library keeps no copy.
 
 ## 4. The user interface and the main loop
 
-<!-- WRITE (chapter 4, summary): This is the chapter the reviewer could not follow in the earlier version, which
-explained kl_ui from one kl_button line.  Order it strictly: the program first, then one frame followed through the
-program, then the rules.  The program is a counter: a number and three buttons, Less, Reset (disabled at 0) and More;
-Up and Down change the number.  It is chapter 2's program with a struct kl_ui, a font, a struct kl_style and three
-kl_button calls.  Screenshot keiland-examples/04-counter.png: after Up three times and one click on More, the number
-is 4, Reset is enabled, and More is lit under the pointer.  Terms first defined here: kl_ui (the widgets' record of
-one window), widget (a function called while a frame is drawn), immediate mode, frame of the widgets (kl_ui_begin to
-kl_ui_end; say it is the same frame as chapter 2's pixels), id and index, record (where a widget was drawn), "resolved
-against the frame last drawn", click reported in the next frame, unclaimed input (kl_ui_take), style, theme,
-"moving". -->
+The fourth program is a counter: a number, and three buttons under it. Less takes one off, More adds one, and Reset sets it back to 0 and is disabled while the number is 0. The Up and Down keys change the number too.
+
+It is chapter 2's program with three additions: a `struct kl_ui`, a font, and a `struct kl_style`. It also calls `kl_button` three times. Everything else is the same loop. This is the first chapter with widgets, so it explains more than the others.
+
+![The window of 04-counter.c showing the number 4](keiland-examples/04-counter.png)
+
+*After Up was pressed three times and More was clicked once: the number is 4, Reset is enabled, and More is lit because the pointer is over it.*
 
 <!-- example: keiland-examples/04-counter.c -->
 ```c
@@ -1520,79 +1579,210 @@ counter_unclaimed(
 }
 ```
 
-<!-- WRITE (chapter 4, reading the program): first the setup, then one click followed frame by frame.
-Setup:
-1. Lines 27-30: the widgets' ids, chosen by the program; the same id must name the same widget in every frame.
-2. Lines 41-56: struct counter adds ui, text and style to chapter 2's struct; count is the state the widgets show.
-   There is no button object anywhere in the program: point at that.
-3. Lines 96-110: kl_ui_create; kl_text_open (FONT and FALLBACK_FONT, FONT_DIR for Linux); the style (text, theme,
-   canvas set by counter_resize at line 199, glass 0).  Define "style".
-The frame (lines 206-282, counter_draw), in the order it runs:
-4. Lines 226-229: kl_ui_begin starts a frame of the widgets.
-5. Lines 231-241: the program's own drawing (ground, number) is ordinary canvas and text drawing between the widgets.
-6. Lines 243-251: layout is plain arithmetic on struct kl_rect values; there is no layout object.
-7. Lines 253-275: each kl_button call draws the button, records its rectangle under its id, and returns 1 when the
-   input since the last frame clicked it.  The program acts at once (count changes) and sets dirty.  Reset's flags are
-   computed from the state each frame (KL_BUTTON_DISABLED when count is 0): "showing a different button" is calling it
-   with different arguments.  Define "widget" and "immediate mode" here, with these lines as the evidence.
-8. Lines 277-281: kl_ui_end: the records of this frame become the ones the next input is resolved against, a click is
-   used up (it is reported in exactly one frame), and the return value says the frame needs successors by itself.
-   kl_ui_window_text follows the focused widget's text input (none here; chapter 5 needs it).
-One click, followed (write this as a numbered timeline, each step with its lines):
-9. Frame N is drawn: the More button is recorded at its rectangle (line 271).
-10. The press and the release arrive as KL_APP_WINDOW inputs (lines 129-142) and go to counter_input; RESIZE and CLOSE
-   are the window's (lines 325-333); the rest goes to kl_ui_window_input (lines 335-338), which matches the press and
-   the release with the button frame N recorded and returns 1, so dirty is set.
-11. The loop draws frame N+1 (lines 152-157): kl_button for More returns 1 there (line 271), count becomes 1, and
-   dirty is set again, because the number was already drawn above the buttons at line 241 with the old value.
-12. Frame N+2 shows 1.  Say plainly that this extra frame is normal in immediate mode and cheap, and that it is why
-   counter_frame clears dirty before drawing (line 295) rather than after.
-13. Lines 341-370 and 308-309: after the frame, kl_ui_take gives what no widget took (here: Up and Down; no widget
-   takes keys, so every key comes back); the program acts and sets dirty.
-The loop (lines 117-158): waits 0 while a frame is due, 16 ms while moving, else for ever; takes every event; resizes;
-draws once.  Same as chapter 2 plus "moving".
--->
+### Reading the program
 
-<!-- WRITE (chapter 4, the rules): State the immediate mode model as rules, each with a link to the counter's lines:
-1. A widget is a call, not an object: it exists in a frame because the program called it in that frame (lines
-   253-275).  Nothing to create, show, hide or destroy.
-2. What a widget shows is the program's state, passed in each frame (count; chapter 5's field, list, switch).  The
-   library keeps no copy that could disagree.
-3. A widget is named by an id (chosen by the program, unique in the window) and an index (to tell apart several
-   widgets of one id: rows, swatches; chapter 5).  The pair must be the same from frame to frame for the same widget.
-   The keyboard focus is such a pair too (kl_ui_set_focus, kl_ui_has_focus).
-4. Input is resolved when it arrives, against the records of the frame last drawn (the latest recorded first, so the
-   one on top wins): a press and a release on the same widget click it; the wheel goes to the scroll under the
-   pointer; a finger's tap to the widget it touched.
-5. The result comes back from the widget's call in the next frame, once (kl_ui_end uses it up).  What met no widget is
-   taken after the frame with kl_ui_take (KL_EVENT_* kinds, including KL_EVENT_KEY).
-6. A frame is drawn when something changed: an input the widgets took, the program's own state, the theme; and while
-   kl_ui_end returns nonzero.  Nothing redraws by itself.
-7. The window's frame (titlebar, controls, menus, glass panels) is not immediate: it is declarative and retained
-   (chapters 3 and 6).  Say why the two models are mixed: the compositor draws the frame, the program the content.
-State exactly what the input calls return (this corrects the earlier version):
-- kl_ui_window_input returns 1 when the input was of a kind the widgets take (pointer, main button, wheel, keys,
-  fingers, input method text), and 0 for another kind (the program's).  It does NOT tell whether the window must be
-  drawn again; a program that uses it draws after every input it returned 1 for, as the counter does.
-- The lower calls tell more: kl_ui_pointer_motion and kl_ui_pointer_leave return 1 only when the lit widget changed
-  (KL_VERSION 90 and later), which the partial frames below use.
-- kl_ui_end returns nonzero while the frame needs more frames by itself: a finger down, a drag, keys waiting for the
-  next frame, the lit widget changing under a still pointer, a scroll gliding or its bars fading.  (The earlier
-  version said "a widget animates or a scroll flies", which is incomplete.)
-Link keiland_ui.h and keiland_widgets.h. -->
+First the setup, then one frame, then one click followed through several frames.
 
-<!-- WRITE (chapter 4, pitfalls): Expecting the click's effect in the same frame as the click; changing the state
-above the widget that shows it and not drawing again; ids that change between frames (a list's row numbered by its
-position on screen instead of the item); calling a widget only while it is "visible" by a flag and expecting it to keep
-state (the state is the program's anyway); drawing inside the input handler. -->
+#### Setup
+
+**The widgets' IDs ([lines 27-30](keiland-examples/04-counter.c#L27-L30)).**
+
+```c
+#define ID_LESS		1U
+#define ID_RESET	2U
+#define ID_MORE		3U
+```
+
+The program picks a number for every widget. The number must be unique in the window, and the same widget must have the same number in every frame. The library uses it to tell, on the next input, which widget the input meant.
+
+**What the program keeps ([lines 36-56](keiland-examples/04-counter.c#L36-L56)).** The structure is chapter 2's, with three new members: `ui`, `text` and `style`. `count` is the state that the widgets show.
+
+```c
+struct kl_ui *ui;
+struct kl_text text;
+struct kl_style style;
+/* ... */
+int count;
+```
+
+There is no button anywhere in this structure, and there is none anywhere else in the program. A button is not an object that the program makes and keeps. Keep this in mind for the rest of the chapter.
+
+**Creating the pieces ([lines 96-110](keiland-examples/04-counter.c#L96-L110)).**
+
+```c
+counter.ui = kl_ui_create();
+/* ... */
+status = kl_text_open(&counter.text, FONT, FALLBACK_FONT);
+/* ... */
+counter.style.text = &counter.text;
+counter.style.glass = 0;
+```
+
+- `kl_ui_create` makes the `struct kl_ui`. This is the library's record of one window's widgets: where each was drawn in the last frame, which one is lit by the pointer, which one has the keyboard. The program makes one per window and destroys it with `kl_ui_destroy` at the end ([line 161](keiland-examples/04-counter.c#L161)).
+- `kl_text_open` opens the font and a fallback font for characters the first one lacks. `FONT` and `FALLBACK_FONT` are built from `FONT_DIR`, which is the directory you define for a Linux build (see "Building and running a program").
+- The **style** (`struct kl_style`) is what every widget draws with: the canvas, the text, the theme and whether the window stands on glass. The canvas is set by `counter_resize` ([line 199](keiland-examples/04-counter.c#L199)), since it changes whenever the frame is remade. The theme is set at the start of each frame ([line 228](keiland-examples/04-counter.c#L228)). Glass is chapter 7's; here it is 0.
+
+#### One frame ([lines 206-282](keiland-examples/04-counter.c#L206-L282), `counter_draw`)
+
+The function draws one frame, in the order it runs.
+
+**Beginning ([lines 226-229](keiland-examples/04-counter.c#L226-L229)).**
+
+```c
+theme = kl_theme_default();
+counter->style.theme = theme;
+kl_ui_begin(counter->ui, now_us);
+```
+
+`kl_ui_begin` starts a frame of the widgets. This is a second sense of the word "frame", and the chapter returns to it below. Between `kl_ui_begin` and `kl_ui_end`, every widget the program calls is part of this frame.
+
+**The program's own drawing ([lines 231-241](keiland-examples/04-counter.c#L231-L241)).** The ground and the number are ordinary canvas and text drawing. They sit between the widgets' calls as plain drawing does; the library does not need to know about them.
+
+```c
+kl_canvas_gradient(&counter->canvas, &whole, theme->ground_top, theme->ground_bottom);
+/* ... */
+snprintf(number, sizeof(number), "%d", counter->count);
+baseline = kl_text_center(theme->text_title, MARGIN, 64);
+(void)kl_text_draw(&counter->text, &counter->canvas, MARGIN, baseline, number, strlen(number), theme->text_title, 1, theme->text);
+```
+
+**Layout ([lines 243-251](keiland-examples/04-counter.c#L243-L251)).** There is no layout object. The three buttons' places are `struct kl_rect` values that the program computes by arithmetic.
+
+```c
+less.x = MARGIN;
+less.y = MARGIN + 80;
+less.width = BUTTON_WIDTH;
+less.height = theme->control_height;
+/* ... */
+more = reset;
+more.x = reset.x + BUTTON_WIDTH + 12;
+```
+
+**The widgets ([lines 253-275](keiland-examples/04-counter.c#L253-L275)).** Each `kl_button` call does three things at once. It draws the button in this frame. It records the button's rectangle under its ID, so that input can be matched with it. And it returns 1 when the input since the last frame clicked it.
+
+```c
+clicked = kl_button(counter->ui, &counter->style, ID_MORE, &more, "More", KL_BUTTON_PRIMARY);
+if (clicked) {
+	counter->count++;
+	counter->dirty = 1;
+}
+```
+
+The program acts on the click right there: it changes `count` and sets `dirty`.
+
+Look at Reset ([lines 260-268](keiland-examples/04-counter.c#L260-L268)):
+
+```c
+reset_flags = 0U;
+if (counter->count == 0)
+	reset_flags = KL_BUTTON_DISABLED;
+clicked = kl_button(counter->ui, &counter->style, ID_RESET, &reset, "Reset", reset_flags);
+```
+
+Its flags are worked out from the state in every frame: `KL_BUTTON_DISABLED` while `count` is 0. To show a different button, the program calls the function with different arguments. That is **immediate mode**: a **widget** is a function that the program calls while it draws a frame, in every frame the widget is shown. Nothing was made before, and nothing is destroyed after.
+
+**Ending ([lines 277-281](keiland-examples/04-counter.c#L277-L281)).**
+
+```c
+counter->moving = kl_ui_end(counter->ui, now_us);
+/* ... */
+kl_ui_window_text(counter->ui, counter->window);
+```
+
+`kl_ui_end` finishes the frame. It does three things:
+
+- It makes the records of this frame the ones that the next input is resolved against. A **record** is where one widget was drawn: its ID, its index and its rectangle.
+- It uses up the click: a click is reported by the widget in exactly one frame.
+- It returns nonzero while the frame needs more frames by itself. The program calls that state **moving** and stores it in `moving`; the loop uses it below.
+
+`kl_ui_window_text` follows the focused widget's text input and ties the text widgets to the window's clipboard. This program has no text widget, so it does nothing visible here. Chapter 5 needs it.
+
+#### One click, followed
+
+Here is what happens when the user clicks More. Call the frame that is on the screen when the user clicks frame N.
+
+1. **Frame N is drawn.** The More button is recorded at its rectangle ([line 271](keiland-examples/04-counter.c#L271)).
+2. **The press and the release arrive** as two `KL_APP_WINDOW` events of kind `KL_WINDOW_BUTTON`. The main loop takes them ([lines 129-142](keiland-examples/04-counter.c#L129-L142)) and passes them to `counter_input`.
+
+   ```c
+   taken = kl_ui_window_input(counter->ui, input);
+   if (taken)
+   	counter->dirty = 1;
+   ```
+
+   The window's own inputs, `KL_WINDOW_RESIZE` and `KL_WINDOW_CLOSE`, are handled by the program ([lines 325-333](keiland-examples/04-counter.c#L325-L333)). Everything else goes to `kl_ui_window_input`, which resolves it against the records of frame N. It sees a press and a release on the More button, so it counts a click. It returns 1, and the program sets `dirty`.
+3. **The loop draws frame N+1** ([lines 152-157](keiland-examples/04-counter.c#L152-L157)). In it, the call for More returns 1 ([line 271](keiland-examples/04-counter.c#L271)). `count` becomes 1. The program sets `dirty` again, because the number was already drawn above the buttons ([line 241](keiland-examples/04-counter.c#L241)) with the old value.
+4. **Frame N+2 shows 1.**
+
+The extra frame is normal in immediate mode, and it is cheap. It is also the reason that `counter_frame` clears `dirty` *before* it draws ([line 295](keiland-examples/04-counter.c#L295)). If it cleared `dirty` afterwards, the `dirty` that frame N+1 set would be lost, and the screen would keep showing 0.
+
+**The input no widget took ([lines 341-370](keiland-examples/04-counter.c#L341-L370)).** After the frame is shown, `counter_unclaimed` asks for what no widget took.
+
+```c
+taken = kl_ui_take(counter->ui, &event);
+if (!taken)
+	break;
+/* ... */
+if (event.kind != KL_EVENT_KEY)
+	continue;
+/* ... */
+if (event.code == KL_KEY_UP) {
+```
+
+`kl_ui_take` returns, one at a time, the **unclaimed** inputs: the ones that met no widget. Here those are Up and Down: no widget takes keys in this program, so every key comes back as a `KL_EVENT_KEY` event. The program acts on them and sets `dirty`. A press on bare ground would also come back here, as `KL_EVENT_PRESS`; this program ignores those.
+
+#### The main loop ([lines 117-158](keiland-examples/04-counter.c#L117-L158))
+
+It is chapter 2's loop with `moving` added.
+
+```c
+timeout = -1;
+if (counter.moving)
+	timeout = 16;
+if (counter.dirty || counter.resized)
+	timeout = 0;
+status = kl_app_dispatch(counter.app, timeout);
+```
+
+It does not wait while a frame is due (`dirty`) or a new size must be made (`resized`). It waits 16 milliseconds, about one display frame, while something moves. Otherwise it waits for ever. Then it takes every event, makes a new frame if the size changed, and draws one frame if something changed or moves ([lines 153-157](keiland-examples/04-counter.c#L153-L157)).
+
+#### Two meanings of "frame"
+
+The word has two meanings in libkeiland. In chapter 2 a **frame** was the pixels the program draws into and shows. In this chapter a frame is also one pass of the widgets between `kl_ui_begin` and `kl_ui_end`. They are the same event seen from two sides: drawing one frame of pixels *is* one pass of the widgets. Both start in `counter_draw` and end in `counter_frame`, which shows what the pass drew ([lines 288-313](keiland-examples/04-counter.c#L288-L313)).
+
+### The rules
+
+Immediate mode is a set of rules, each of which you can see in the counter.
+
+1. **A widget is a call, not an object.** It exists in a frame because the program called it in that frame ([lines 253-275](keiland-examples/04-counter.c#L253-L275)). There is nothing to create, show, hide or destroy.
+2. **What a widget shows is the program's state,** passed in every frame ([line 239](keiland-examples/04-counter.c#L239), [262-263](keiland-examples/04-counter.c#L262-L263)). The library keeps no copy that could disagree with the program. Chapter 5 adds a field's text, a switch's position and a list's selection.
+3. **A widget is named by an ID and an index.** The ID is chosen by the program ([lines 27-30](keiland-examples/04-counter.c#L27-L30)). The index tells apart several widgets of one ID: the rows of a list, a row of swatches (chapter 5). `kl_button` takes an ID alone. The pair must be the same from frame to frame for the same widget. The keyboard focus is such a pair too (`kl_ui_set_focus`, `kl_ui_has_focus`).
+4. **Input is resolved when it arrives, against the records of the frame last drawn.** The latest recorded wins, because it is on top. A press and a release on the same widget click it. The wheel goes to the scroll under the pointer. A finger's tap goes to the widget it touched ([lines 335-338](keiland-examples/04-counter.c#L335-L338)).
+5. **The result comes back from the widget's call in the next frame, once.** `kl_ui_end` uses it up ([line 278](keiland-examples/04-counter.c#L278)). What met no widget is taken after the frame with `kl_ui_take` ([lines 351-359](keiland-examples/04-counter.c#L351-L359)). Its kinds are the `KL_EVENT_*` values, including `KL_EVENT_KEY`. Only the oldest unclaimed key is handed over per frame; later keys wait for the next frame, which is one reason `kl_ui_end` reports that more frames are wanted.
+6. **A frame is drawn when something changed:** an input the widgets took, a change in the program's own state, a new theme. It is also drawn while `kl_ui_end` returns nonzero. Nothing redraws by itself ([lines 152-157](keiland-examples/04-counter.c#L152-L157)).
+7. **The window's frame is not immediate.** The titlebar, the controls, the menus and the glass panels are declarative and retained (chapters 3 and 6). The two models are mixed on purpose: the compositor draws the frame around the window, and the program draws what is inside it.
+
+What the input calls return:
+
+- `kl_ui_window_input` returns 1 when the input was of a kind the widgets take: the pointer, a button, the wheel, the keys, the fingers and an input method's text. It returns 0 for any other kind, which is the program's. It does **not** tell whether the window must be drawn again. A program that uses it draws after every input it returned 1 for, as the counter does ([lines 335-338](keiland-examples/04-counter.c#L335-L338)).
+- The lower calls tell more. `kl_ui_pointer_motion` and `kl_ui_pointer_leave` return 1 only when the lit widget changed. The partial frames in the next section use that.
+- `kl_ui_end` returns nonzero while the frame needs more frames by itself: a finger is down, a drag is going, keys are waiting for the next frame, the lit widget is changing under a still pointer, or a scroll is gliding or its bars are fading ([line 278](keiland-examples/04-counter.c#L278)).
+
+The headers are [keiland_ui.h](../../userland/desktop/include/keiland/keiland_ui.h) and [keiland_widgets.h](../../userland/desktop/include/keiland/keiland_widgets.h).
+
+### Pitfalls
+
+- Expecting the click's effect in the same frame as the click. It arrives one frame later.
+- Changing the state above the widget that shows it, and not drawing again. The counter sets `dirty` for this reason.
+- IDs that change between frames. A list row numbered by its place on the screen, not by its item, loses its selection when the list scrolls.
+- Calling a widget only while it is "visible" and expecting it to keep state. The state is the program's anyway, so keep it there.
+- Drawing inside the input handler.
 
 ### The pace of frames and drawing only what changed
 
-<!-- WRITE (section 4.x, summary): A second complete program, 04-counter-parts.c: the same counter at the display's
-pace and drawing only the buttons whose light changed when the pointer moves.  Say first when a program needs this
-(a fast pointer, a touch pad, a slow machine); the plain counter is correct without it.  Then show the program whole
-and walk through only what differs from 04-counter.c (say so: the rest is identical).  Terms first defined here:
-pacing (KL_PACING_MOTION, KL_PACING_FRAME), frame wait, lighting (the lit widget), damage, part. -->
+The counter is correct as it is. A program needs more when it has a fast pointer, a touch pad or a slow machine: a frame per pointer motion can fall behind. The second counter, `04-counter-parts.c`, draws at the display's pace, and draws only the buttons whose light changed when the pointer moves from one to another.
+
+It is the first counter with a few changes, so this section covers only the differences. Everything else is identical.
 
 <!-- example: keiland-examples/04-counter-parts.c -->
 ```c
@@ -2045,411 +2235,117 @@ counter_unclaimed(
 }
 ```
 
-<!-- WRITE (section 4.x, reading the program), in this order:
-1. Line 55: a second flag, lit: only the light changed (dirty means the whole frame).
-2. Lines 100-103: kl_window_set_pacing with KL_PACING_MOTION (a motion queued right after another replaces it) and
-   KL_PACING_FRAME (a frame only once the compositor took the last).  ENOTSUP only for KL_PRESENT_NONE.
-3. Lines 286-307 (counter_wait): the dispatch timeout now comes from kl_window_frame_wait: 0 draw now, a positive
-   number of milliseconds to wait at most, -1 wait for the compositor (its answer wakes the dispatch).
-4. Lines 376-416 (counter_input; the motion and the leave at lines 397-408): motion and leave go to kl_ui_pointer_motion and kl_ui_pointer_leave, whose 1 means
-   "the lit widget changed"; everything else goes to kl_ui_window_input and makes the whole frame dirty.  This is the
-   place to state the correction: kl_ui_window_input would return 1 for every motion, so it cannot be used to learn
-   that only the light changed.
-5. Lines 309-374 (counter_frame): wait for the pace (lines 330-334); when only the light changed, kl_ui_take_frame
-   gives KL_FRAME_NONE, KL_FRAME_PARTS with up to KL_FRAME_PARTS_MAX rectangles, or KL_FRAME_WHOLE (lines 336-346);
-   each part is drawn by running the whole frame's calls under a clip (lines 350-357), so that every widget is still
-   recorded; kl_window_present_parts shows the parts, or the whole frame for a count of 0 (line 360).
-6. Why a press or a key still draws the whole frame here: the light's parts are all kl_ui_take_frame knows; a change of
-   the program's own state is added with kl_ui_damage or kl_ui_damage_whole (not needed here because such changes set
-   dirty and draw everything).
--->
+#### What differs
 
-<!-- WRITE (section 4.x, the rules): The pacing rules (what each flag does; what frame_wait returns; input other than
-motions and the wheel is drawn at once, once).  The damage rules: kl_ui_take_frame takes and forgets the parts;
-kl_ui_begin also forgets them, so ask before drawing; a partial frame runs every widget call between kl_ui_begin and
-kl_ui_end; only pixels outside the clip are kept.  Pitfall: calling kl_ui_take_frame after drawing (always NONE). -->
-
-<!-- OLD TEXT (chapter 4; reuse the five rules' wording where it is right, then delete.  Two statements in it are wrong
-and must not be carried over: (a) "Drawing only what changed" says kl_ui_window_input returns 1 for a motion only when
-the lit widget changed, and rule 3 says the input calls including kl_ui_window_input "return 1 when the window must be
-drawn again"; kl_ui_window_input returns 1 for every input of the widgets' kinds.  (b) rule 5 says kl_ui_end returns
-nonzero "while a widget animates or a scroll flies"; see the list above.  Its snippets (the lone kl_button line, the
-frame skeleton, the partial-frame fragment) are replaced by the two programs):
-## 4. The user interface and the main loop
-
-### The immediate mode model
-
-`struct kl_ui` is the input and layout record of one window's widgets.
-Keiland's widgets are *immediate mode*: a widget is not an object the
-program creates and keeps. It is a function the program calls while it draws
-a frame, every frame the widget is shown:
+**A second flag ([line 55](keiland-examples/04-counter-parts.c#L55)).** `lit` means that only the light changed, so a whole frame is not needed. `dirty` still means the whole frame.
 
 ```c
-if (kl_button(ui, &style, ID_SAVE, &save_rect, "Save", KL_BUTTON_PRIMARY))
-	save_document(app_state);
+int dirty;
+int lit;
 ```
 
-That one call draws the button in the frame and records where it is. Its
-return value reports what the input did to it since the last frame. There is
-no button to create, show, hide or destroy: a button the program does not
-call this frame does not exist this frame.
-
-The model rests on five rules.
-
-1. **What a widget shows is the program's state.** The text of a field, a
-   switch's position, a slider's value, a list's selection and scroll live
-   in the program's own structures (`struct kl_field`, an `int`, a `double`,
-   `struct kl_list`), which the program passes to the widget each frame. The
-   widget changes them when the input says so. The library keeps no copy that
-   could disagree with the program.
-
-2. **A widget is named by an id and an index.** The id is a number the program
-   chooses (unique in the window); the index tells apart the widgets of one id
-   (the rows of a list, the buttons of a toolbar, the items of a sidebar).
-   The library matches a frame's widget with the input by this pair, so the
-   pair must stay the same from one frame to the next for the same widget.
-   The keyboard's focus is also a pair: `kl_ui_set_focus`, `kl_ui_has_focus`.
-
-3. **Input is resolved against the frame last drawn.** While a frame is
-   drawn, each widget records its rectangle (`kl_ui_hit` underneath, which
-   the widgets call). Input that arrives before the next frame is matched with
-   those records, the last recorded first (it is on top): a press and a
-   release on the same widget click it, the wheel goes to the scroll under the
-   pointer, a finger's tap to the widget it touched. The input calls
-   (`kl_ui_window_input`, or `kl_ui_pointer_motion`, `kl_ui_pointer_button`,
-   `kl_ui_key`, `kl_ui_touch_down` ...) return 1 when the window must be drawn
-   again.
-
-4. **The result comes back in the next frame.** A click recorded between two
-   frames is reported by the widget's call in the next frame (a button
-   returns 1, a field returns `KL_FIELD_SUBMITTED`, a list
-   `KL_LIST_ACTIVATED`). So after input that returned 1, the program draws a
-   frame, and that frame's widget calls are where it learns what happened.
-   Input that met no widget (a key no widget took, a press on empty space, a
-   long press) is kept for the program; it takes it after the frame with
-   `kl_ui_take`.
-
-5. **A frame is drawn when something changed.** Nothing redraws by itself.
-   The program draws a frame when the input said so, when its own state
-   changed, and while something moves: `kl_ui_end` returns nonzero while a
-   widget animates or a scroll flies, and the program then keeps drawing at
-   the display's pace.
-
-The window's frame itself (the titlebar, its controls, the menus, the glass
-panels) is *not* immediate: it is declarative and retained (section 3), set
-when it changes.
-
-### A frame
-
-A frame is drawn between `kl_ui_begin` and `kl_ui_end` with a
-`struct kl_style`: the canvas of the frame, the text, the theme and whether the
-window stands on glass.
+**Pacing ([lines 100-103](keiland-examples/04-counter-parts.c#L100-L103)).** `kl_window_set_pacing` turns on two behaviours.
 
 ```c
-kl_ui_begin(ui, now_us);
-/* the ground, then every widget of the frame, in drawing order */
-moving = kl_ui_end(ui, now_us);
-
-/* The focused field's input method and the clipboard follow the window. */
-kl_ui_window_text(ui, window);
-
-/* What no widget took. */
-while (kl_ui_take(ui, &event))
-	handle_unclaimed(&event);
+status = kl_window_set_pacing(counter.window, KL_PACING_MOTION | KL_PACING_FRAME, 0U);
+if (status != 0)
+	fprintf(stderr, "counter: no pacing (%s)\n", strerror(status));
 ```
 
-`kl_ui_window_text` asks the compositor for an input method while the focused
-widget takes text and tells it where the caret is; it also ties the text
-widgets' Cut, Copy and Paste to the window's clipboard.
+- **Pacing** is how the window spaces its frames. `KL_PACING_MOTION`: a pointer motion that is queued right after another replaces it, so the program sees the latest place and not every step.
+- `KL_PACING_FRAME`: a frame is drawn only once the compositor has taken the last one. What came meanwhile is drawn as one frame in its latest state.
 
-### The main loop
+The call returns `ENOTSUP` only for a `KL_PRESENT_NONE` window.
 
-The loop waits for input, gives each input to the widgets, and draws a frame
-when one is due. Here is a complete program: a window with a counter and two
-buttons.
+**How long to wait ([lines 286-307](keiland-examples/04-counter-parts.c#L286-L307), `counter_wait`).** The dispatch timeout now comes from `kl_window_frame_wait`.
 
 ```c
-/* counter.c: a window with a number and two buttons. */
-#include <keiland/keiland.h>
-#include <errno.h>
-#include <stdio.h>
-#include <stdlib.h>
-#include <string.h>
-
-#define FONT		"/usr/share/fonts/keiland.ttf"
-#define FALLBACK_FONT	"/usr/share/fonts/keiland-fallback.ttf"
-
-#define ID_LESS		1U
-#define ID_MORE		2U
-
-/* What the program keeps: its window, its frame, and the state its widgets show. */
-struct counter {
-	struct kl_app *app;
-	struct kl_window *window;
-	struct kl_ui *ui;
-	struct kl_text text;
-	struct kl_style style;
-	struct kl_canvas canvas;
-	uint32_t *pixels;
-	uint32_t width;
-	uint32_t height;
-	int count;
-	int dirty;
-	int moving;
-	int resized;
-	int closed;
-};
-
-/* Makes the frame at the window's size; nonzero when it cannot. */
-static int
-counter_resize(struct counter *c)
-{
-	uint32_t *pixels;
-
-	if (kl_window_present_resize(c->window, &c->width, &c->height) != 0)
-		return -1;
-	pixels = malloc((size_t)c->width * c->height * sizeof(pixels[0]));
-	if (pixels == NULL)
-		return -1;
-	if (c->pixels != NULL)
-		kl_canvas_release(&c->canvas);
-	free(c->pixels);
-	c->pixels = pixels;
-	if (kl_canvas_init(&c->canvas, c->pixels, c->width, (int)c->width, (int)c->height) != 0)
-		return -1;
-	c->style.canvas = &c->canvas;
-	c->dirty = 1;
+if (counter->resized)
 	return 0;
-}
-
-/* Draws one frame: the ground, the number and the buttons. */
-static void
-counter_draw(struct counter *c, uint64_t now_us)
-{
-	const struct kl_theme *theme;
-	struct kl_rect whole;
-	struct kl_rect less;
-	struct kl_rect more;
-	char number[32];
-	int baseline;
-
-	theme = kl_theme_default();
-	c->style.theme = theme;
-	kl_ui_begin(c->ui, now_us);
-
-	whole.x = 0;
-	whole.y = 0;
-	whole.width = (int)c->width;
-	whole.height = (int)c->height;
-	kl_canvas_gradient(&c->canvas, &whole, theme->ground_top, theme->ground_bottom);
-
-	snprintf(number, sizeof(number), "%d", c->count);
-	baseline = kl_text_center(theme->text_title, 40, 60);
-	kl_text_draw(&c->text, &c->canvas, 40, baseline, number, strlen(number), theme->text_title, 1, theme->text);
-
-	less.x = 40;
-	less.y = 120;
-	less.width = 100;
-	less.height = theme->control_height;
-	more = less;
-	more.x = 160;
-
-	/* The buttons report the clicks recorded since the last frame. */
-	if (kl_button(c->ui, &c->style, ID_LESS, &less, "Less", 0U)) {
-		c->count--;
-		c->dirty = 1;
-	}
-	if (kl_button(c->ui, &c->style, ID_MORE, &more, "More", KL_BUTTON_PRIMARY)) {
-		c->count++;
-		c->dirty = 1;
-	}
-
-	c->moving = kl_ui_end(c->ui, now_us);
-	kl_ui_window_text(c->ui, c->window);
-}
-
-/* Draws and shows a frame; nonzero when it cannot be shown. */
-static int
-counter_frame(struct counter *c)
-{
-	int status;
-
-	c->dirty = 0;
-	counter_draw(c, kl_clock_us());
-	status = kl_window_present(c->window, c->pixels, c->width);
-	if (status == EAGAIN)
-		c->resized = 1;
-	else if (status != 0)
-		return -1;
-	return 0;
-}
-
-/* Gives one input of the window to the widgets, or to the program. */
-static void
-counter_input(struct counter *c, const struct kl_window_event *input)
-{
-	if (input->kind == KL_WINDOW_RESIZE) {
-		c->resized = 1;
-		return;
-	}
-	if (input->kind == KL_WINDOW_CLOSE) {
-		c->closed = 1;
-		return;
-	}
-	if (kl_ui_window_input(c->ui, input))
-		c->dirty = 1;
-}
-
-int
-main(void)
-{
-	static struct counter c;
-	struct kl_window_options window_options;
-	struct kl_app_options app_options;
-	struct kl_app_event event;
-	int timeout;
-
-	memset(&app_options, 0, sizeof(app_options));
-	app_options.application = "org.example.Counter";
-	c.app = kl_app_open(&app_options);
-	if (c.app == NULL)
-		return 1;
-
-	memset(&window_options, 0, sizeof(window_options));
-	window_options.title = "Counter";
-	window_options.width = 320;
-	window_options.height = 200;
-	window_options.present = KL_PRESENT_VULKAN;
-	c.window = kl_app_window_create(c.app, &window_options);
-	c.ui = kl_ui_create();
-	if (c.window == NULL || c.ui == NULL || kl_text_open(&c.text, FONT, FALLBACK_FONT) != 0)
-		return 1;
-	c.style.text = &c.text;
-	c.style.glass = 0;
-	if (counter_resize(&c) != 0)
-		return 1;
-
-	while (!c.closed) {
-		/* No wait while a frame is due; a frame's time while something moves. */
-		timeout = -1;
-		if (c.moving)
-			timeout = 16;
-		if (c.dirty || c.resized)
-			timeout = 0;
-		if (kl_app_dispatch(c.app, timeout) != 0)
-			break;
-
-		/* Every event queued, in order. */
-		while (kl_app_take(c.app, &event)) {
-			if (event.kind == KL_APP_THEME)
-				c.dirty = 1;
-			if (event.kind == KL_APP_WINDOW && event.window == c.window)
-				counter_input(&c, &event.input);
-		}
-
-		if (c.resized) {
-			c.resized = 0;
-			if (counter_resize(&c) != 0)
-				break;
-		}
-		if ((c.dirty || c.moving) && counter_frame(&c) != 0)
-			break;
-	}
-
-	kl_ui_destroy(c.ui);
-	kl_canvas_release(&c.canvas);
-	free(c.pixels);
-	kl_text_close(&c.text);
-	kl_app_close(c.app);
-	return 0;
-}
+/* ... */
+if (!counter->dirty && !counter->lit && !counter->moving)
+	return -1;
+/* ... */
+pace = kl_window_frame_wait(counter->window, kl_clock_us());
+return pace;
 ```
 
-Note how a click works here. The press and the release arrive as
-`KL_WINDOW_BUTTON` inputs; `kl_ui_window_input` matches them with the button
-the last frame recorded and returns 1, so the loop draws a frame; in that
-frame `kl_button` returns 1, and the program changes `count` and asks for
-one more frame to show the new number.
+The **frame wait** is the time before the next frame may be drawn. 0 means draw now. A positive number is the most milliseconds to wait. `-1` means wait for the compositor alone: its answer wakes the dispatch. The call changes nothing. The loop calls `counter_wait` for its timeout ([lines 128-130](keiland-examples/04-counter-parts.c#L128-L130)).
 
-To build and run it on a Keiland desktop:
-
-```sh
-cc -o counter counter.c -lkeiland
-./counter
-```
-
-A window titled "Counter" opens with the number 0; More and Less change it,
-and the close button ends the program. If `kl_app_open` fails with
-`EOPNOTSUPP`, the program found no Keiland compositor: check that it runs in
-the desktop's session (`WAYLAND_DISPLAY` names the compositor's socket). If the
-program ends with status 1 at once, the window, its input or the font could
-not be made: check first that the paths in `FONT` and `FALLBACK_FONT` exist.
-
-### The pace of frames
-
-A program that draws on every input can fall behind a fast pointer or a touch
-pad. Two settings of the window keep it at the display's pace:
+**Which input is which ([lines 376-416](keiland-examples/04-counter-parts.c#L376-L416), `counter_input`).** Motions and leaves go to the lower calls, whose result says whether the lit widget changed. Everything else goes to `kl_ui_window_input` and dirties the whole frame.
 
 ```c
-kl_window_set_pacing(window, KL_PACING_MOTION | KL_PACING_FRAME, 0U);
+changed = kl_ui_pointer_motion(counter->ui, input->x, input->y);
+if (changed)
+	counter->lit = 1;
+/* ... */
+changed = kl_ui_pointer_leave(counter->ui);
+if (changed)
+	counter->lit = 1;
 ```
 
-- `KL_PACING_MOTION`: a pointer motion queued right after another replaces it,
-  so the program sees the latest place, not every step.
-- `KL_PACING_FRAME`: a frame is drawn only once the compositor took the last
-  one. The program asks `kl_window_frame_wait(window, now_us)` before it draws:
-  0 means draw now; a positive number is the most milliseconds to wait (use it
-  as the dispatch timeout); -1 means wait for the compositor alone (its answer
-  wakes `kl_app_dispatch`). Input that came meanwhile is drawn as one frame in
-  its latest state.
+The **lit** widget is the one the pointer is over; it is drawn lighter. This is why the program cannot use `kl_ui_window_input` for motions: it returns 1 for every motion, so it cannot tell that only the light changed.
 
-### Drawing only what changed
-
-When the pointer only moves from one widget to another, the frame needs only
-the two widgets' places drawn again. `kl_ui_pointer_motion` (and
-`kl_ui_window_input` for a motion) returns 1 only when the lit widget changed;
-the program then asks `kl_ui_take_frame`:
+**Drawing only the changed parts ([lines 309-374](keiland-examples/04-counter-parts.c#L309-L374), `counter_frame`).** First the frame waits for its pace.
 
 ```c
-struct kl_rect parts[KL_FRAME_PARTS_MAX];
-unsigned count;
-unsigned index;
-int need;
+now_us = kl_clock_us();
+pace = kl_window_frame_wait(counter->window, now_us);
+if (pace != 0)
+	return 0;
+```
 
-need = kl_ui_take_frame(ui, parts, KL_FRAME_PARTS_MAX, &count);
-if (need == KL_FRAME_WHOLE)
-	count = 0;
-if (need != KL_FRAME_NONE) {
-	/* Each part is drawn with the whole frame's calls, clipped to the part. */
-	for (index = 0; index < count; index++) {
-		kl_canvas_clip_push(&canvas, &parts[index]);
-		draw_frame(app_state);
-		kl_canvas_clip_pop(&canvas);
+If only the light changed, the program asks which parts of the window the widgets need drawn again.
+
+```c
+if (!counter->dirty && !counter->moving) {
+	need = kl_ui_take_frame(counter->ui, parts, KL_FRAME_PARTS_MAX, &count);
+	if (need == KL_FRAME_NONE) {
+		counter->lit = 0;
+		return 0;
 	}
-	if (count == 0)
-		draw_frame(app_state);
-	kl_window_present_parts(window, pixels, width, parts, count);
+	if (need == KL_FRAME_WHOLE)
+		count = 0U;
 }
 ```
 
-`KL_FRAME_NONE` means nothing needs drawing, `KL_FRAME_PARTS` gives up to
-`KL_FRAME_PARTS_MAX` rectangles, `KL_FRAME_WHOLE` the whole window. A change
-the widgets cannot know of (the program's own content) is added with
-`kl_ui_damage(ui, &rect)` or `kl_ui_damage_whole(ui)`. Each partial draw still
-runs every widget call of the frame (between `kl_ui_begin` and `kl_ui_end`)
-so that the records stay whole; only the pixels outside the clip are kept.
+`kl_ui_take_frame` returns `KL_FRAME_NONE` (nothing to draw), `KL_FRAME_PARTS` (`count` rectangles in `parts`, at most `KL_FRAME_PARTS_MAX`) or `KL_FRAME_WHOLE`. A **part** is one rectangle of the window that must be drawn again. The parts are **damage**: the places where the picture is out of date.
 
--->
+Each part is drawn by running the whole frame's calls under a clip.
+
+```c
+if (count == 0U)
+	counter_draw(counter, now_us);
+for (index = 0; index < count; index++) {
+	kl_canvas_clip_push(&counter->canvas, &parts[index]);
+	counter_draw(counter, now_us);
+	kl_canvas_clip_pop(&counter->canvas);
+}
+```
+
+`counter_draw` runs completely for every part, so that every widget is still recorded. Only the pixels inside the clip are changed; the rest of the frame keeps its pixels. Then `kl_window_present_parts` shows the parts, or the whole frame when the count is 0 ([line 360](keiland-examples/04-counter-parts.c#L360)).
+
+A press or a key still draws the whole frame, because `kl_ui_take_frame` knows only the parts of the light. A change of the program's own content, such as a number, would be added with `kl_ui_damage` (a rectangle) or `kl_ui_damage_whole`. This program does not need them: the changes it makes set `dirty` and draw everything.
+
+#### The rules of pacing and damage
+
+- `KL_PACING_MOTION` merges motions queued together. `KL_PACING_FRAME` waits for the compositor. `kl_window_frame_wait` says what to wait for ([lines 101-103](keiland-examples/04-counter-parts.c#L101-L103), [296-306](keiland-examples/04-counter-parts.c#L296-L306)).
+- With `KL_PACING_FRAME`, input other than motions and the wheel is drawn at once, once.
+- `kl_ui_take_frame` takes the parts and forgets them. `kl_ui_begin` forgets them too. Ask before you draw ([lines 338-346](keiland-examples/04-counter-parts.c#L338-L346)).
+- A partial frame runs every widget call between `kl_ui_begin` and `kl_ui_end`. Only the pixels outside the clip are kept ([lines 351-357](keiland-examples/04-counter-parts.c#L351-L357)).
+- Pitfall: calling `kl_ui_take_frame` after drawing. It always returns `KL_FRAME_NONE` then.
+
+Next: more widgets than a button.
 
 ## 5. The widgets
 
-<!-- WRITE (chapter 5, summary): A greeter: a text field for a name, a list of greetings, a Shout switch, a size
-slider, four colour swatches the program draws itself, and a Greet button; Greet, Enter in the field, or a double click
-or Enter in the list writes the greeting at the bottom; Escape clears it.  It follows chapter 4's structure exactly
-(say so; the loop, resize and frame functions are the counter's).  Screenshot keiland-examples/05-widgets.png: after
-Tab and Enter in the field, a click on the green swatch, a click on Shout and a double click on Good evening.  Terms
-first defined here: a widget's state struct (struct kl_field, struct kl_list), focus and its order (the order of
-drawing), row, ink, hit bits (KL_HIT_*), the program's own widget (kl_ui_hit). -->
+The fifth program is a greeter. It has a text field for a name, a list of greetings, a Shout switch, a size slider, four colour swatches that the program draws itself, and a Greet button. Greet, Enter in the field, or a double click or Enter in the list writes the greeting at the bottom of the window. Escape clears it.
+
+It follows chapter 4's structure exactly: the loop, the resize function and the frame function are the counter's. What is new is the set of widgets and the state they need.
+
+![The window of 05-widgets.c with a greeting written at the bottom](keiland-examples/05-widgets.png)
+
+*After Tab moved the focus to the name field and Enter was pressed, the green swatch was clicked, Shout was clicked, and Good evening was double clicked.*
 
 <!-- example: keiland-examples/05-widgets.c -->
 ```c
@@ -2973,135 +2869,163 @@ greeter_unclaimed(
 }
 ```
 
-<!-- WRITE (chapter 5, reading the program), in this order:
-1. Lines 43-69 (struct greeter): every widget's state is a member: name (struct kl_field: text, caret, selection),
-   greetings (struct kl_list: count, selected, scroll), shout (int), size (double), swatch (index).  This is rule 2 of
-   chapter 4 made concrete.
-2. Lines 139-144: the state is given its first values before the first frame (kl_field_set, kl_list_init and
-   selected); lines 195-196: kl_list_release frees the list's scroll.
-3. Lines 267-269: the order of the calls is the order of drawing and the order Tab moves the focus.
-4. Lines 297-304: kl_field with KL_FIELD_CHANGED, _SUBMITTED, _CANCELLED bits; the field takes the keys and the input
-   method's text while it has the focus; kl_ui_window_text (line 279) is what asks the compositor for the input method
-   and ties the field's Cut, Copy and Paste to the window's clipboard.
-5. Lines 306-316: kl_switch and kl_slider change the variable they are given and return 1 when they did.
-6. Lines 330-368 (greeter_list): kl_list_begin says which rows show (first, last) and takes the keys; kl_list_row draws
-   a row's ground and gives the rectangle and the ink for the program's text; kl_list_end ends the clip and draws the
-   scroll bar.  OR the results of kl_list_begin and every kl_list_row (lines 353 and 357): a key's activation comes
-   from kl_list_begin, a double click's from kl_list_row.  (The earlier version's snippet looked at kl_list_begin's
-   result alone and so missed double clicks; do not carry it over.)
-7. Lines 370-407 (greeter_swatches): a widget of the program's own: it draws with the canvas and records itself with
-   kl_ui_hit(ui, id, index, rect), one id and an index per swatch, and reads KL_HIT_CLICKED and KL_HIT_HOT.  Define
-   "index" in use here, pointing back to chapter 4's rule 3.
-8. Lines 409-436 (greeter_greet): a widget's result is acted on where it is reported; the program reads the other
-   widgets' state from its own struct, not from the widgets.
-9. Lines 495-518 (greeter_unclaimed): only keys no widget took come here: Escape in the field cancels the field (it
-   never arrives here), Escape elsewhere clears the greeting.
--->
+### Reading the program
 
-<!-- WRITE (chapter 5, the rules): The table of widgets from the OLD TEXT (call, what it shows, what it returns), with a
-column "in the example" pointing to the lines that use it, or "-" for the ones the example does not use (icon button,
-text area, sidebar, panel, card, header, row, dialog, chip, progress).  Then: focus (a click or tap gives it to a
-widget that takes keys; Tab and Shift+Tab in drawing order; keys no focused widget took become KL_EVENT_KEY); the
-program's own widgets (kl_ui_hit, kl_ui_hit_still, the KL_HIT_* bits, KL_HIT_DOUBLE, KL_HIT_TOUCHED); scrolling content
-of the program's own (struct kl_scroll, kl_ui_scroll_region; no example, keep the OLD TEXT's paragraph); the canvas,
-text and icon calls for the program's own drawing.  Link keiland_widgets.h, keiland_scroll.h, keiland_canvas.h,
-keiland_text.h, keiland_icon.h. -->
-
-<!-- WRITE (chapter 5, pitfalls and next): Keeping a widget's state in a local variable (it is lost every frame);
-reading a list's double click from kl_list_begin alone; giving rows ids by their position on screen; forgetting
-kl_ui_window_text (no input method, no clipboard in fields).  Next: the menus, which go back to the declarative model of
-chapter 3. -->
-
-<!-- OLD TEXT (chapter 5; reuse the table and the paragraphs on focus, kl_ui_hit and scrolling, then delete; its two
-snippets are replaced by the program, and its list snippet is wrong, see above):
-## 5. The widgets
-
-Every widget takes the `struct kl_ui` and the frame's `struct kl_style`, an id
-(and an index where a widget has several), its rectangle, and the program's
-state it shows. They draw in the Kei look of the theme (`kl_theme_default()`),
-light or dark as the desktop is, on glass when `style.glass` is set.
-
-| call | what it shows | returns |
-| --- | --- | --- |
-| `kl_button(ui, style, id, rect, label, flags)` | a push button; `KL_BUTTON_PRIMARY`, `_DANGER`, `_DISABLED` | 1 when pressed since the last frame |
-| `kl_icon_button(ui, style, id, index, rect, icon, pixels, flags)` | a button that is a picture (`KL_ICON_*`); `KL_BUTTON_ROUND`, `_QUIET` | 1 when pressed |
-| `kl_switch(ui, style, id, x, y, &on, flags)` | an on/off switch over an `int` | 1 when `on` changed |
-| `kl_slider(ui, style, id, rect, min, max, step, &value)` | a slider over a `double` | 1 when `value` changed |
-| `kl_field(ui, style, id, rect, &field, placeholder)` | a one-line text field over a `struct kl_field` | `KL_FIELD_CHANGED`, `_SUBMITTED`, `_CANCELLED` bits |
-| `kl_text_area(ui, style, id, rect, &area, placeholder)` | text of several lines over a `struct kl_text_area` | `KL_FIELD_*` bits |
-| `kl_list_begin` / `kl_list_row` / `kl_list_end` | a scrolling list over a `struct kl_list` | `KL_LIST_SELECTED`, `_ACTIVATED` bits |
-| `kl_sidebar_section`, `kl_sidebar_item(ui, style, id, index, rect, icon, label, current)` | a sidebar's title and places | 1 when an item was chosen |
-| `kl_panel`, `kl_card`, `kl_header`, `kl_row` | the sidebar's and content's panels, cards with titles, a page's header, a card's rows of a label and a value | the edge below what they drew |
-| `kl_dialog(ui, style, id, area, title, body, labels, count)` | a question over the window with its buttons | the index of the button chosen, or -1 |
-| `kl_chip(style, x, bottom, message)` | a short notice | — |
-| `kl_progress(style, rect, fraction, now_us)` | a progress bar (a negative fraction moves without an end) | — |
-
-A text field keeps its text in the program's structure:
+**Every widget's state is a member ([lines 43-69](keiland-examples/05-widgets.c#L43-L69)).** This is rule 2 of chapter 4 made concrete.
 
 ```c
-static struct kl_field name;	/* zeroed: empty, caret at 0 */
-unsigned what;
-
-kl_field_set(&name, "Guest");	/* once, before the first frame */
-
-/* in each frame */
-what = kl_field(ui, &style, ID_NAME, &name_rect, &name, "Your name");
-if (what & KL_FIELD_SUBMITTED)
-	greet(name.text);
+struct kl_field name;
+struct kl_list greetings;
+int shout;
+double size;
+size_t swatch;
 ```
 
-A list draws only the rows in sight. The program says how many rows there are;
-the list tells which ones to draw, and the program draws each row's content in
-the rectangle and ink the list gives:
+- `name` is a `struct kl_field`: the text, the caret and the selection.
+- `greetings` is a `struct kl_list`: the count, the selected row and the scroll.
+- `shout` is an `int`, `size` is a `double`, and `swatch` is an index.
+
+The widgets read these and change them when the input says so.
+
+**First values ([lines 139-145](keiland-examples/05-widgets.c#L139-L145)).** The state is given its first values before the first frame, and the list is freed at the end ([lines 195-196](keiland-examples/05-widgets.c#L195-L196)).
 
 ```c
-size_t first;
-size_t last;
-size_t index;
-struct kl_rect row;
-kl_color ink;
-unsigned what;
+kl_field_set(&greeter.name, "World");
+status = kl_list_init(&greeter.greetings);
+/* ... */
+greeter.greetings.selected = 0;
+greeter.size = 24.0;
+```
 
-what = kl_list_begin(ui, &style, ID_FILES, &list_rect, &list, file_count, &first, &last);
+`kl_field_set` puts text in the field. A zeroed field is empty with the caret at 0. `kl_list_init` makes the list's scroll, and `kl_list_release` frees it.
+
+**The order of the calls ([lines 267-269](keiland-examples/05-widgets.c#L267-L269)).** The order of drawing is also the order in which Tab moves the focus.
+
+```c
+/* Draws the widgets, in the order Tab moves the keyboard's focus through them. */
+greeter_controls(greeter, theme);
+greeter_list(greeter, theme);
+```
+
+The **focus** is which widget has the keyboard. A click or a tap gives it to a widget that takes keys (a field, a text area, a list). Tab and Shift+Tab move it through those widgets in the order in which they were drawn.
+
+**The field ([lines 297-304](keiland-examples/05-widgets.c#L297-L304)).**
+
+```c
+field = kl_field(greeter->ui, &greeter->style, ID_NAME, &rect, &greeter->name, "Your name");
+if ((field & KL_FIELD_SUBMITTED) != 0U)
+	greeter_greet(greeter);
+```
+
+`kl_field` returns bits: `KL_FIELD_CHANGED`, `KL_FIELD_SUBMITTED` (Enter) and `KL_FIELD_CANCELLED` (Escape). The field takes the keys and the input method's text while it has the focus. `kl_ui_window_text` ([line 279](keiland-examples/05-widgets.c#L279)) is what asks the compositor for the input method and ties the field's Cut, Copy and Paste to the window's clipboard.
+
+**The switch and the slider ([lines 306-316](keiland-examples/05-widgets.c#L306-L316)).**
+
+```c
+changed = kl_switch(greeter->ui, &greeter->style, ID_SHOUT, MARGIN, rect.y, &greeter->shout, 0U);
+if (changed)
+	greeter_greet(greeter);
+/* ... */
+(void)kl_slider(greeter->ui, &greeter->style, ID_SIZE, &rect, 16.0, 48.0, 1.0, &greeter->size);
+```
+
+`kl_switch` and `kl_slider` change the variable they are given and return 1 when they did.
+
+**The list ([lines 330-368](keiland-examples/05-widgets.c#L330-L368), `greeter_list`).** A list draws only the rows in sight. The program says how many rows there are, and the list says which rows to draw.
+
+```c
+changes = kl_list_begin(greeter->ui, &greeter->style, ID_GREETINGS, &rect, &greeter->greetings, GREETING_COUNT, &first, &last);
+/* ... */
 for (index = first; index < last; index++) {
-	kl_list_row(ui, &style, ID_FILES, &list_rect, &list, index, &row, &ink);
-	kl_text_draw(style.text, style.canvas, row.x + 12, kl_text_center(style.theme->text_body, row.y, row.height),
-		     names[index], strlen(names[index]), style.theme->text_body, 0, ink);
-}
-kl_list_end(ui, &style, &list_rect, &list);
-if (what & KL_LIST_ACTIVATED)
-	open_file(names[list.selected]);
+	changes |= kl_list_row(greeter->ui, &greeter->style, ID_GREETINGS, &rect, &greeter->greetings, index, &row, &ink);
+	baseline = kl_text_center(theme->text_body, row.y, row.height);
+	(void)kl_text_draw(&greeter->text, &greeter->canvas, row.x + 12, baseline, greeting_table[index], strlen(greeting_table[index]), theme->text_body, 0, ink);
 ```
 
-`struct kl_list` holds the selection and the scroll; `kl_list_init` and
-`kl_list_release` make and free it.
+`kl_list_begin` tells which rows show (`first` up to `last`) and takes the list's keys. For each row, `kl_list_row` draws the row's ground and gives the rectangle and the **ink** for the text: the colour that text must have on that ground. The program draws the text itself. `kl_list_end` ends the list's clip and draws the scroll bar.
 
-The keyboard's focus moves among the widgets that take keys (fields, text
-areas, lists) by a click or a tap, and by Tab and Shift+Tab in the order they
-were drawn. The keys the focused widget does not take, and every key while no
-widget has the focus, come back from `kl_ui_take` as `KL_EVENT_KEY`.
+An activation, a key's Enter or a double click, comes in the results:
 
-A program's own drawing between the widgets uses the canvas
-(`kl_canvas_fill`, `kl_canvas_round`, `kl_canvas_line`, `kl_canvas_image`
-...), the text (`kl_text_draw`, `kl_text_width`, `kl_text_metrics`) and the
-icons (`kl_icon_draw`). A part of the program's own that takes clicks records
-itself with `kl_ui_hit(ui, id, index, rect)`, which returns the same
-`KL_HIT_*` bits the widgets read (`KL_HIT_HOT` under the pointer,
-`KL_HIT_ACTIVE` held, `KL_HIT_CLICKED` clicked since the last frame,
-`KL_HIT_DOUBLE`). Content larger than its place scrolls with a
-`struct kl_scroll` (`kl_scroll_init`, `kl_scroll_set_size`) recorded each
-frame with `kl_ui_scroll_region`; the wheel, a touch pad and a finger then
-move it, and the program draws its content at the scroll's `x` and `y`.
+```c
+changes = kl_list_begin(greeter->ui, &greeter->style, ID_GREETINGS, &rect, &greeter->greetings, GREETING_COUNT, &first, &last);
+	/* ... */
+	changes |= kl_list_row(greeter->ui, &greeter->style, ID_GREETINGS, &rect, &greeter->greetings, index, &row, &ink);
+/* ... */
+if ((changes & KL_LIST_ACTIVATED) != 0U)
+```
 
--->
+The program ORs the results of `kl_list_begin` and of every `kl_list_row`. A key's activation comes from `kl_list_begin`. A double click's comes from the `kl_list_row` of the row clicked. Checking only `kl_list_begin` misses double clicks.
+
+**A widget of the program's own ([lines 370-407](keiland-examples/05-widgets.c#L370-L407), `greeter_swatches`).** The swatches are not a library widget. The program draws each swatch with the canvas and records it with `kl_ui_hit`.
+
+```c
+hit = kl_ui_hit(greeter->ui, ID_SWATCH, (uint32_t)index, &rect);
+if ((hit & KL_HIT_CLICKED) != 0U) {
+	greeter->swatch = index;
+	greeter->dirty = 1;
+}
+```
+
+`kl_ui_hit(ui, id, index, rect)` records a rectangle under an ID and an **index**, and returns bits that say what the input did to it. Here there is one ID, `ID_SWATCH`, and one index per swatch. `KL_HIT_CLICKED` says it was clicked since the last frame. `KL_HIT_HOT` says the pointer is over it ([line 402](keiland-examples/05-widgets.c#L402)). This is chapter 4's rule 3 at work: the pair (ID, index) names a swatch.
+
+**Acting on a result ([lines 409-436](keiland-examples/05-widgets.c#L409-L436), `greeter_greet`).** Every widget that can greet calls this function where its result is reported ([lines 303-304](keiland-examples/05-widgets.c#L303-L304), [309-310](keiland-examples/05-widgets.c#L309-L310), [326-327](keiland-examples/05-widgets.c#L326-L327), [366-367](keiland-examples/05-widgets.c#L366-L367)). It reads the other widgets' state from the program's own structure, not from the widgets.
+
+**Unclaimed keys ([lines 495-518](keiland-examples/05-widgets.c#L495-L518)).** Only keys that no widget took come here. Escape in the field cancels the field, and never arrives. Escape elsewhere clears the greeting.
+
+```c
+if (event.kind == KL_EVENT_KEY && event.code == KL_KEY_ESC) {
+	greeter->greeting[0] = '\0';
+	greeter->dirty = 1;
+}
+```
+
+### The rules
+
+The widgets, with what each shows and returns:
+
+| Call | What it shows | Returns | In the example |
+| --- | --- | --- | --- |
+| `kl_button(ui, style, id, rect, label, flags)` | A push button. Flags: `KL_BUTTON_PRIMARY`, `_DANGER`, `_DISABLED`. | 1 when pressed since the last frame | [line 325](keiland-examples/05-widgets.c#L325) |
+| `kl_icon_button(ui, style, id, index, rect, icon, pixels, flags)` | A button that is a picture (`KL_ICON_*`). Flags: `KL_BUTTON_ROUND`, `_QUIET`. | 1 when pressed | - |
+| `kl_switch(ui, style, id, x, y, &on, flags)` | An on/off switch over an `int` | 1 when `on` changed | [line 308](keiland-examples/05-widgets.c#L308) |
+| `kl_slider(ui, style, id, rect, min, max, step, &value)` | A slider over a `double` | 1 when `value` changed | [line 316](keiland-examples/05-widgets.c#L316) |
+| `kl_field(ui, style, id, rect, &field, placeholder)` | A one-line text field over a `struct kl_field` | `KL_FIELD_CHANGED`, `_SUBMITTED`, `_CANCELLED` bits | [line 302](keiland-examples/05-widgets.c#L302) |
+| `kl_text_area(ui, style, id, rect, &area, placeholder)` | Text of several lines over a `struct kl_text_area` | `KL_FIELD_*` bits | - |
+| `kl_list_begin`, `kl_list_row`, `kl_list_end` | A scrolling list over a `struct kl_list` | `KL_LIST_SELECTED`, `_ACTIVATED` bits | [lines 353-363](keiland-examples/05-widgets.c#L353-L363) |
+| `kl_sidebar_section`, `kl_sidebar_item(ui, style, id, index, rect, icon, label, current)` | A sidebar's titles and places | 1 when an item was chosen | - |
+| `kl_panel`, `kl_card`, `kl_header`, `kl_row` | Panels, cards with titles, a page's header, a card's rows of label and value | The edge below what they drew | - (`kl_panel` is in chapter 7) |
+| `kl_dialog(ui, style, id, area, title, body, labels, count)` | A question over the window with its buttons | The index of the button chosen, or -1 | - |
+| `kl_chip(style, centre_x, bottom, message)` | A short notice | Nothing | - |
+| `kl_progress(style, rect, fraction, now_us)` | A progress bar. A negative fraction moves without an end. | Nothing | - |
+
+Every widget takes the `struct kl_ui` and the frame's `struct kl_style`, an ID (and an index where a widget has several), its rectangle and the program's state it shows. They draw in the look of the theme, light or dark as the desktop is, and on glass when `style.glass` is set.
+
+More rules:
+
+- **State.** A widget's state lives in the program's structure and is passed in every frame ([lines 49-69](keiland-examples/05-widgets.c#L49-L69)). `struct kl_field` and `struct kl_list` hold the text, the caret, the selection and the scroll. `kl_list_init` and `kl_list_release` make and free a list.
+- **Focus.** A click or a tap gives the focus to a widget that takes keys. Tab and Shift+Tab move it in the order of drawing ([lines 267-269](keiland-examples/05-widgets.c#L267-L269)). The keys that the focused widget does not take, and every key while no widget has the focus, come back from `kl_ui_take` as `KL_EVENT_KEY` ([lines 507-516](keiland-examples/05-widgets.c#L507-L516)).
+- **The program's own widgets.** `kl_ui_hit(ui, id, index, rect)` returns the same `KL_HIT_*` bits that the widgets read: `KL_HIT_HOT` (under the pointer), `KL_HIT_ACTIVE` (held), `KL_HIT_CLICKED` (clicked since the last frame), `KL_HIT_DOUBLE`, `KL_HIT_FOCUSED` and `KL_HIT_TOUCHED` (a finger's tap). `kl_ui_hit_still` is the same for a widget that draws the same lit or not, so that the pointer coming onto it asks for no frame ([lines 392-404](keiland-examples/05-widgets.c#L392-L404)).
+- **Scrolling content of your own.** Content larger than its place scrolls with a `struct kl_scroll` (`kl_scroll_init`, `kl_scroll_set_size`), which the program records each frame with `kl_ui_scroll_region`. The wheel, a touch pad and a finger then move it, and the program draws its content at the scroll's `x` and `y`. This guide has no example for it.
+- **Drawing of your own.** Between the widgets, a program uses the canvas (`kl_canvas_fill`, `kl_canvas_round`, `kl_canvas_line`, `kl_canvas_image` and more), the text calls (`kl_text_draw`, `kl_text_width`, `kl_text_metrics`) and the icons (`kl_icon_draw`).
+
+The headers are [keiland_widgets.h](../../userland/desktop/include/keiland/keiland_widgets.h), [keiland_scroll.h](../../userland/desktop/include/keiland/keiland_scroll.h), [keiland_canvas.h](../../userland/desktop/include/keiland/keiland_canvas.h), [keiland_text.h](../../userland/desktop/include/keiland/keiland_text.h) and [keiland_icon.h](../../userland/desktop/include/keiland/keiland_icon.h).
+
+### Pitfalls
+
+- Keeping a widget's state in a local variable. It is lost when the function returns, and the next frame starts again from nothing.
+- Reading a list's double click from `kl_list_begin` alone.
+- Giving rows IDs by their place on the screen. Use the item's own number as the index.
+- Forgetting `kl_ui_window_text`. Without it, fields get no input method and no clipboard.
+
+The window's menu goes back to the declarative model of chapter 3.
 
 ## 6. Menus
 
-<!-- WRITE (chapter 6, summary): The counter of chapter 4 with the window's menu (File: Quit; Edit: Copy, Paste, Less,
-More, Reset; View: Small Number, Large Number) with shortcuts, and a context menu on a right click or a long press.
-The buttons, the keys and the menus all ask for the same actions.  Screenshot keiland-examples/06-menu.png: the menu
-bar (File, Edit, View) in the titlebar, the number 2 after Ctrl+= twice, and the context menu after a right click.  Terms first defined here: menu table, item, submenu, menu role, shortcut,
-context menu.  "Action" and "action state" are chapter 3's. -->
+The sixth program is chapter 4's counter with the window's menu: File with Quit; Edit with Copy, Paste, Less, More and Reset; View with Small Number and Large Number. The menu items have shortcuts. A right click, or a finger's long press, opens a context menu. The buttons, the keys and the menus all ask for the same actions.
+
+![The window of 06-menu.c with a context menu open](keiland-examples/06-menu.png)
+
+*The menu bar (File, Edit, View) in the titlebar, the number 2 after Ctrl+= was pressed twice, and the context menu after a right click.*
 
 <!-- example: keiland-examples/06-menu.c -->
 ```c
@@ -3628,110 +3552,137 @@ counter_states(
 }
 ```
 
-<!-- WRITE (chapter 6, reading the program), in this order:
-1. Lines 34-42: one list of actions for the whole program; what changed from the counter: the buttons now call
-   counter_act (lines 307-319) instead of changing count themselves.
-2. Lines 82-102: the menu table: id (not 0, unique), parent (KL_MENU_ROOT for the menu bar's items; a submenu's items
-   follow it), type (KL_MENU_ITEM_*), label, action, role (KL_MENU_ROLE_*: tells the desktop what the item means, so it
-   can place it), shortcut (KL_MENU_* modifiers and an XKB keysym).  Define "item", "submenu", "role", "shortcut".
-3. Lines 143-149: kl_window_set_menu with the whole table (ENOTSUP without the compositor's System Menu: the keys and
-   buttons still work), then counter_states.
-4. Lines 493-521 (counter_states): the program ticks the radio items and disables Reset with action states; the
-   compositor never ticks an item by itself; the state applies to the menu and the context menu alike.
-5. Lines 357-402 (counter_input; the action at lines 379-382, the right press at 383-394): KL_WINDOW_ACTION, chosen by the pointer or the shortcut, comes in the queue among the
-   other inputs, so typed text and a shortcut keep their order; a right press opens the context menu with
-   kl_window_popup_menu at the press's place (it must be the last press: call it when the press arrives), and must be
-   checked before kl_ui_window_input, which takes every KL_WINDOW_BUTTON.
-6. Lines 104-109 and 421-425: the context menu's table (top-level items only), and the finger's long press arriving as
-   KL_EVENT_LONG_PRESS from kl_ui_take.
-7. Lines 435-491 (counter_act): one place for every action; Copy and Paste through kl_window_copy and
-   kl_window_paste (chapter 7 says more about the clipboard).
--->
+### Reading the program
 
-<!-- WRITE (chapter 6, the rules): The menu is declarative and retained like the titlebar; give the whole table
-whenever it changes; ids are the program's; actions are shared by menu items, controls and context menus; the menu
-shows in the titlebar and in the system bar while the window is maximized; a context menu is shown once and goes when
-an item is chosen or the user clicks elsewhere.  Link keiland_menu.h and the declarative calls in keiland_window.h. -->
-
-<!-- WRITE (chapter 6, pitfalls and next): Expecting a radio item to tick itself; numbering two items alike; giving a
-right press to kl_ui_window_input first; opening a context menu later than the press it belongs to.  Next: the
-desktop's other services. -->
-
-<!-- OLD TEXT (chapter 6; reuse the paragraphs on types, roles, shortcuts and the context menu, then delete; its two
-snippets are replaced by the program):
-## 6. Menus
-
-The window's menu is shown by the compositor in the titlebar (and in the
-system bar while the window is maximized). Like the titlebar's controls, it is
-a table the program gives whenever it changes:
+**The actions ([lines 34-42](keiland-examples/06-menu.c#L34-L42)).** One list of actions serves the whole program.
 
 ```c
-#define ACTION_OPEN	10U
-#define ACTION_QUIT	11U
-#define ACTION_GRID	12U
-#define ACTION_LIST	13U
-
-static const struct kl_menu_entry menu[] = {
-	/* id, parent, type, label, action, role, modifiers, keysym */
-	{ 1U, KL_MENU_ROOT, KL_MENU_ITEM_SUBMENU, "File", 0U, KL_MENU_ROLE_NONE, 0U, 0U },
-	{ 2U, 1U, KL_MENU_ITEM_NORMAL, "Open...", ACTION_OPEN, KL_MENU_ROLE_OPEN, KL_MENU_CTRL, 'o' },
-	{ 3U, 1U, KL_MENU_ITEM_SEPARATOR, "", 0U, KL_MENU_ROLE_NONE, 0U, 0U },
-	{ 4U, 1U, KL_MENU_ITEM_NORMAL, "Quit", ACTION_QUIT, KL_MENU_ROLE_QUIT, KL_MENU_CTRL, 'q' },
-	{ 5U, KL_MENU_ROOT, KL_MENU_ITEM_SUBMENU, "View", 0U, KL_MENU_ROLE_NONE, 0U, 0U },
-	{ 6U, 5U, KL_MENU_ITEM_RADIO, "Grid", ACTION_GRID, KL_MENU_ROLE_NONE, 0U, 0U },
-	{ 7U, 5U, KL_MENU_ITEM_RADIO, "List", ACTION_LIST, KL_MENU_ROLE_NONE, 0U, 0U }
-};
-
-kl_window_set_menu(window, menu, sizeof(menu) / sizeof(menu[0]));
-kl_window_set_action_state(window, ACTION_GRID, KL_ACTION_CHECKED);
+#define ACTION_QUIT	1U
+#define ACTION_COPY	2U
+/* ... */
+#define ACTION_MORE	5U
+#define ACTION_RESET	6U
 ```
 
-- Items are numbered by the program (not 0, unique in the table).
-  `KL_MENU_ROOT` is the parent of the top-level items; a submenu item is the
-  parent of the items under it, which follow it in the table.
-- The types are `KL_MENU_ITEM_NORMAL`, `_SEPARATOR`, `_CHECKBOX`, `_RADIO`
-  and `_SUBMENU`. A role (`KL_MENU_ROLE_*`) tells the desktop what an item
-  means (Quit, Undo, Copy ...) so that it can give it its usual place.
-- A shortcut is `KL_MENU_*` modifiers and an XKB keysym (`'q'`, or a key's
-  keysym such as `0xffc8` for F11); the compositor shows it and chooses the
-  item when the keys are pressed in the focused window.
-- A choice comes as `KL_WINDOW_ACTION` with the item's action in
-  `input.code` and its ID in `input.id`, in the queue among the window's
-  other inputs (so that typed text and then Ctrl+S keep their order).
-- The compositor never ticks a checkbox or a radio item by itself: the
-  program sets the state with `kl_window_set_action_state`
-  (`KL_ACTION_CHECKED`, `KL_ACTION_DISABLED`, `KL_ACTION_HIDDEN`), which
-  applies to every item and control of that action.
+What changed from the counter: the buttons no longer change `count` themselves. They call `counter_act` ([lines 307-319](keiland-examples/06-menu.c#L307-L319)), which does what an action asks, whichever menu, key or button asked it.
 
-A context menu is a table of top-level items shown once at a point of the
-window, for the last press:
+**The menu table ([lines 82-102](keiland-examples/06-menu.c#L82-L102)).** A **menu table** is a list of rows, one per item.
 
 ```c
-static const struct kl_menu_entry context[] = {
-	{ 1U, KL_MENU_ROOT, KL_MENU_ITEM_NORMAL, "Copy", ACTION_COPY, KL_MENU_ROLE_COPY, 0U, 0U },
-	{ 2U, KL_MENU_ROOT, KL_MENU_ITEM_NORMAL, "Paste", ACTION_PASTE, KL_MENU_ROLE_PASTE, 0U, 0U }
-};
-
-/* On a right press, or a long press from kl_ui_take. */
-kl_window_popup_menu(window, context, 2U, (int)input->x, (int)input->y);
+{ 1U, KL_MENU_ROOT, KL_MENU_ITEM_SUBMENU, "File", 0U, KL_MENU_ROLE_NONE, 0U, 0U },
+{ 2U, 1U, KL_MENU_ITEM_NORMAL, "Quit", ACTION_QUIT, KL_MENU_ROLE_QUIT, KL_MENU_CTRL, 'q' },
+{ 3U, KL_MENU_ROOT, KL_MENU_ITEM_SUBMENU, "Edit", 0U, KL_MENU_ROLE_NONE, 0U, 0U },
+{ 4U, 3U, KL_MENU_ITEM_NORMAL, "Copy", ACTION_COPY, KL_MENU_ROLE_COPY, KL_MENU_CTRL, 'c' },
 ```
 
-Its choice comes as a `KL_WINDOW_ACTION` like the window menu's.
+- An **item** is one row. Its `id` is not 0 and is unique in the table.
+- `parent` is `KL_MENU_ROOT` for the menu bar's items. A **submenu** is an item of type `KL_MENU_ITEM_SUBMENU`: its children are the rows whose parent is its ID, and they follow it in the table.
+- `type` is `KL_MENU_ITEM_*`: normal, separator, checkbox, radio or submenu.
+- `action` is the action the item queues.
+- `role` is `KL_MENU_ROLE_*`. A **menu role** tells the desktop what the item means (Quit, Copy, Paste, Undo), so that it can give the item its usual place.
+- The **shortcut** is the modifiers (`KL_MENU_CTRL`, `KL_MENU_SHIFT`, `KL_MENU_ALT`, `KL_MENU_SUPER`) and an XKB keysym: `'q'`, or a key's keysym such as `0xffc8` for F11. The compositor shows it and chooses the item when the keys are pressed in the focused window.
 
-Without the compositor's System Menu, `kl_window_set_menu` returns `ENOTSUP`
-and nothing is shown; the program's keys still work.
+**Giving the menu ([lines 143-149](keiland-examples/06-menu.c#L143-L149)).**
 
--->
+```c
+status = kl_window_set_menu(counter.window, menu_table, sizeof(menu_table) / sizeof(menu_table[0]));
+if (status != 0)
+	fprintf(stderr, "counter: no menu (%s)\n", strerror(status));
+/* ... */
+counter_states(&counter);
+```
+
+`kl_window_set_menu` gives the whole table. Without the compositor's System Menu it returns `ENOTSUP` and shows nothing; the keys and the buttons still work. Then `counter_states` gives the actions their states.
+
+**The action states ([lines 493-521](keiland-examples/06-menu.c#L493-L521), `counter_states`).** The program ticks the radio items and disables Reset with action states, as chapter 3 did for Back.
+
+```c
+small = KL_ACTION_CHECKED;
+large = 0U;
+if (counter->large) {
+	small = 0U;
+	large = KL_ACTION_CHECKED;
+}
+(void)kl_window_set_action_state(counter->window, ACTION_SMALL, small);
+(void)kl_window_set_action_state(counter->window, ACTION_LARGE, large);
+```
+
+The compositor never ticks an item by itself. The program does. The state applies to the menu and the context menu alike.
+
+**The inputs ([lines 357-402](keiland-examples/06-menu.c#L357-L402), `counter_input`).** A choice in the menu, by the pointer or by its shortcut, comes in the queue among the other inputs.
+
+```c
+case KL_WINDOW_ACTION:
+	/* An item of the window's menu or the context menu, chosen by the pointer or its shortcut. */
+	counter_act(counter, input->code);
+	break;
+```
+
+`KL_WINDOW_ACTION` arrives in order with the keys and clicks. Typed text followed by Ctrl+S therefore keeps its order.
+
+A right press opens the context menu.
+
+```c
+case KL_WINDOW_BUTTON:
+	/* A right press opens the context menu there; the widgets take the main button. */
+	if (input->code == KL_BUTTON_RIGHT && input->pressed) {
+		status = kl_window_popup_menu(counter->window, context_table, sizeof(context_table) / sizeof(context_table[0]), (int)input->x, (int)input->y);
+		if (status != 0)
+			fprintf(stderr, "counter: no context menu (%s)\n", strerror(status));
+		break;
+	}
+```
+
+A **context menu** is a table of top-level items shown once at a point of the window. `kl_window_popup_menu` shows the one in `context_table` ([lines 104-109](keiland-examples/06-menu.c#L104-L109)) at the press's place. It acts on the window's last press, so call it when the press arrives. The program checks for a right press *before* it calls `kl_ui_window_input`, since that call takes every `KL_WINDOW_BUTTON`.
+
+A finger has no right button. A long press arrives as `KL_EVENT_LONG_PRESS` from `kl_ui_take`, and opens the same menu ([lines 421-425](keiland-examples/06-menu.c#L421-L425)).
+
+**One place for the actions ([lines 435-491](keiland-examples/06-menu.c#L435-L491), `counter_act`).** Quit, Copy, Paste, Less, More, Reset and the two sizes are done here.
+
+```c
+case ACTION_COPY:
+	/* Puts the number on the clipboard as text. */
+	snprintf(number, sizeof(number), "%d", counter->count);
+	kl_window_copy(counter->window, number, strlen(number));
+	break;
+```
+
+Copy and Paste use `kl_window_copy` and `kl_window_paste`; chapter 7 says more about the clipboard. At the end the function gives the menus the new states and sets `dirty` ([lines 488-490](keiland-examples/06-menu.c#L488-L490)).
+
+### The rules
+
+- The menu is declarative and retained, like the titlebar. Give the whole table whenever it changes ([line 144](keiland-examples/06-menu.c#L144)).
+- IDs belong to the program: not 0, unique in the table.
+- An action is shared by menu items, controls, buttons and context menus. A choice comes as `KL_WINDOW_ACTION`, with the item's action in `input.code` and its ID in `input.id` ([lines 379-382](keiland-examples/06-menu.c#L379-L382)).
+- The types are `KL_MENU_ITEM_NORMAL`, `_SEPARATOR`, `_CHECKBOX`, `_RADIO` and `_SUBMENU`.
+- A checkbox or radio item is ticked only by `kl_window_set_action_state` with `KL_ACTION_CHECKED` ([lines 506-514](keiland-examples/06-menu.c#L506-L514)).
+- The window's menu shows in the titlebar, and in the system bar while the window is maximized.
+- A context menu shows once. It goes when an item is chosen or the user clicks elsewhere. Its choice comes as `KL_WINDOW_ACTION`, like the window menu's.
+
+The headers are [keiland_menu.h](../../userland/desktop/include/keiland/keiland_menu.h) and the declarative calls in [keiland_window.h](../../userland/desktop/include/keiland/keiland_window.h).
+
+### Pitfalls
+
+- Expecting a radio item to tick itself.
+- Numbering two items alike.
+- Giving a right press to `kl_ui_window_input` first. It swallows the press.
+- Opening a context menu later than the press it belongs to.
+
+The last chapter covers the desktop's other services.
 
 ## 7. Other services
 
-<!-- WRITE (chapter 7, summary): One program, 07-services.c, uses several services at once: glass, the appearance,
-translations, the file chooser and the recent list, the clipboard and notifications.  Say that this chapter's
-sections can be read in any order and each points at the lines of the program it explains.  Screenshot
-keiland-examples/07-services.png: the card on the desktop's glass (the blurred wallpaper shows through it); and
-keiland-examples/07-services-chooser.png: the file chooser opened by Open..., hanging from the window's titlebar.  The settings, the system and sound have no
-example here; keep them short with links to their headers.  Terms first defined here: see-through, glass panel,
-appearance, accent, catalog, domain, settings dispatch, file chooser, recent list. -->
+The last program uses several services of the desktop at once: glass, the appearance, translations, the file chooser and the recent list, the clipboard and notifications. The sections of this chapter can be read in any order. Each one points at the lines of the program that it explains.
+
+The window is a card with three buttons: Open..., Copy Path and Notify. Open... opens the desktop's file chooser; the card tells how many files were opened.
+
+![The window of 07-services.c standing on the desktop's glass](keiland-examples/07-services.png)
+
+*The card on the desktop's glass: the blurred wallpaper shows through it.*
+
+![The file chooser opened by Open... from 07-services.c](keiland-examples/07-services-chooser.png)
+
+*The file chooser, opened by Open... and hanging from the window's titlebar.*
 
 <!-- example: keiland-examples/07-services.c -->
 ```c
@@ -4227,140 +4178,134 @@ services_language(
 }
 ```
 
-<!-- WRITE (chapter 7), one subsection each, in this order, each with: what the service is, the lines of the program,
-the rules, pitfalls.
-### Appearance, theme and accent: KL_APP_THEME (line 167) makes the frame draw again; kl_theme_default gives the
-current colours each frame (lines 271-273); kl_appearance_get(NULL) (lines 294-298); kl_theme_choose for the program's own
-two colours (OLD TEXT).
-### Glass: lines 138-143 (kl_window_see_through after the first resize; only KL_PRESENT_VULKAN can be see-through),
-lines 276-292 (clear the ground instead of painting it; kl_panel draws the veil), lines 360-374 (the panel's rectangle
-and radius after each frame that moved it; ENOTSUP or another error: draw opaque from the next frame).
-### Text in the user's language: lines 107-113 (kl_settings_open and kl_tr_follow), line 158 (kl_settings_dispatch
-after every kl_app_dispatch: the watch that rereads the catalogs runs there; the earlier version left this call out,
-and without it the language never changes while the program runs), lines 472-490 (the callback draws again and sets
-the title), lines 294-305 (kl_tr, kl_trn, kl_tr_format with {1}).  Catalog files and the domain naming rule from the OLD
-TEXT.
-### Opening files: lines 416-441 (kl_file_chooser_open over the window, one at a time, the Open button disabled while
-it is open), lines 443-470 (the answer comes once through the listener during a dispatch; kl_recent_add), lines
-175-181 (the chooser destroyed by the loop after the answer; it may also be destroyed in the callback).
-### Clipboard: line 330 (kl_window_copy); chapter 6's Paste; fields use the clipboard by themselves once
-kl_ui_window_text tied them (chapter 5).
-### Notifications: line 337 (kl_app_notify; kl_app_notify_lock for what the lock screen shows).
-### The desktop's settings and system, and sound: no example; keep the OLD TEXT's two paragraphs and links.
--->
-
-<!-- OLD TEXT (chapter 7; reuse, then delete.  Its translation snippet lacks kl_settings_dispatch; its snippets are
-replaced by the program):
-## 7. Other services
-
 ### Appearance, theme and accent
 
-`kl_theme_default()` gives the colours and sizes every widget draws with. They
-follow the desktop's appearance (light or dark) and the accent the user chose;
-when either changes, a `KL_APP_THEME` event comes and the program draws its
-windows again. `kl_appearance_get(NULL)` tells which appearance is shown
-(`KL_APPEARANCE_LIGHT`, `KL_APPEARANCE_DARK`), and `kl_theme_choose(light,
-dark)` picks one of two colours of the program's own.
+`kl_theme_default()` gives the colours and sizes that every widget draws with. They follow the desktop's **appearance**, light or dark, and the **accent**, the colour the user chose to mark selections and main buttons. When either changes, a `KL_APP_THEME` event comes and the program draws its windows again ([lines 166-168](keiland-examples/07-services.c#L166-L168)). The program asks for the theme afresh in every frame ([lines 271-274](keiland-examples/07-services.c#L271-L274)).
+
+`kl_appearance_get(NULL)` tells which appearance is shown ([lines 294-301](keiland-examples/07-services.c#L294-L301)):
+
+```c
+shown = kl_appearance_get(NULL);
+appearance = kl_tr("Light");
+if (shown == KL_APPEARANCE_DARK)
+	appearance = kl_tr("Dark");
+```
+
+`kl_theme_choose(light, dark)` picks one of two colours of the program's own by the appearance.
 
 ### Glass
 
-On a see-through window (`kl_window_see_through(window)` is 1, with
-`KL_PRESENT_VULKAN`), the compositor blurs what is under the panels the
-program names. The program sets `style.glass`, clears the frame's ground
-(`kl_canvas_clear`) instead of painting it, and gives the panels' rectangles
-after each frame that moved them:
+On a see-through window, the compositor blurs what is under the **glass panels** that the program names. The program asks whether the window is see-through after the first frame is made, and gives that to the style:
 
 ```c
-struct kl_glass_panel panels[2];
-
-panels[0] = (struct kl_glass_panel){ sidebar.x, sidebar.y, sidebar.width, sidebar.height, 12, KL_GLASS_CARD };
-panels[1] = (struct kl_glass_panel){ content.x, content.y, content.width, content.height, 12, KL_GLASS_CARD };
-kl_window_set_glass(window, panels, 2U);
+see_through = kl_window_see_through(services.window);
+services.style.glass = see_through;
 ```
 
-`kl_panel` draws the panels' veil in the same places.
+A window is see-through when its frames are blended by their alpha: always for `KL_PRESENT_SHM`, and for `KL_PRESENT_VULKAN` when its swapchain is premultiplied. `kl_window_see_through` tells which. Then the program changes its drawing in two ways. It clears the ground to nothing, because the compositor draws the glass there. And it draws the card with `kl_panel`, which draws the veil over the glass ([lines 276-292](keiland-examples/07-services.c#L276-L292)):
+
+```c
+if (services->style.glass) {
+	kl_canvas_clear(&services->canvas);
+} else {
+	kl_canvas_gradient(&services->canvas, &whole, theme->ground_top, theme->ground_bottom);
+}
+/* ... */
+kl_panel(&services->style, card, 0);
+```
+
+After each frame it says where the panel is ([lines 360-374](keiland-examples/07-services.c#L360-L374)):
+
+```c
+panel.radius = CARD_RADIUS;
+panel.kind = KL_GLASS_CARD;
+status = kl_window_set_glass(services->window, &panel, 1U);
+```
+
+The panel's rectangle and radius go to the compositor with `kl_window_set_glass`. If it fails, with `ENOTSUP` or another error, the program stops using glass: the next frame is drawn opaque ([lines 369-373](keiland-examples/07-services.c#L369-L373)). The header is [keiland_glass.h](../../userland/desktop/include/keiland/keiland_glass.h).
 
 ### Text in the user's language
 
-The program writes its texts in English and looks each up in its catalogs
-(`domain`, a name of lower-case letters, digits, `-` and `_`, and the
-desktop's shared `KL_TR_SHARED_DOMAIN`). `kl_tr_follow` reads them in the
-language the user chose in Settings, and again whenever it changes, calling
-the program back so that it draws its windows again:
+The program writes its texts in English and looks each one up in its **catalog**, a file of translations. The English text is the key: `kl_tr("Open")` gives the text in the user's language, or `"Open"` itself when the catalog has none. A catalog belongs to a **domain**, a name of lower-case letters, digits, `-` and `_`. Each program has its own domain, and the desktop's programs share `KL_TR_SHARED_DOMAIN`. The catalog files are `KEILAND_DATADIR/keiland/locale/LANGUAGE/DOMAIN.tr`.
+
+The program follows the language the user chose in Settings:
 
 ```c
-static void
-language_changed(void *data, const char *language)
-{
-	struct counter *c = data;
-
-	c->dirty = 1;
-}
-
-settings = kl_settings_open(kl_app_display(app), "counter");
-kl_tr_follow(settings, "counter", language_changed, &c);
-
-/* in a frame */
-label = kl_tr("More");
-kl_tr_format(line, sizeof(line), kl_trn("{1} file", "{1} files", count), number, (const char *)NULL);
+services.settings = kl_settings_open(kl_app_display(services.app), NULL);
+if (services.settings == NULL)
+	return 1;
+status = kl_tr_follow(services.settings, DOMAIN, services_language, &services);
+if (status != 0)
+	fprintf(stderr, "services: the texts stay in English (%s)\n", strerror(status));
 ```
 
-`kl_trn` chooses the singular or a plural for a count; `kl_tr_format` fills
-`{1}` to `{9}` with the strings that follow, in any order the language needs.
-A language other than the desktop's is read with `kl_tr_open(domain,
-language)`.
-
-### Clipboard
-
-`kl_window_copy(window, text, length)` puts text on the clipboard;
-`kl_window_paste(window, buffer, size)` reads it, and
-`kl_window_can_paste(window)` tells whether there is text. The text widgets
-use the window's clipboard by themselves once `kl_ui_window_text` tied them
-to it.
-
-### Opening and saving files
-
-The file chooser is the desktop's shared Open and Save window:
+`kl_tr_follow` reads the catalogs in that language now, and again whenever the language changes. After each change it calls back, so that the program can draw again ([lines 472-490](keiland-examples/07-services.c#L472-L490)):
 
 ```c
-static void
-chosen(void *data, struct kl_file_chooser *chooser, unsigned result, const char *path, size_t filter)
-{
-	if (result == KL_FILE_CHOOSER_CHOSEN)
-		open_file(data, path);
-	kl_file_chooser_destroy(chooser);
-}
+services = data;
+if (services->window != NULL)
+	kl_window_set_title(services->window, kl_tr("Services"));
+services->dirty = 1;
+```
 
-static const struct kl_file_chooser_listener listener = { chosen };
-struct kl_file_chooser_options options;
+The watch that notices the change runs inside `kl_settings_dispatch`. A program must call it after every `kl_app_dispatch`, or the language never changes while the program runs ([lines 157-158](keiland-examples/07-services.c#L157-L158)):
 
+```c
+status = kl_app_dispatch(services.app, timeout);
+/* ... */
+(void)kl_settings_dispatch(services.settings);
+```
+
+In a frame, `kl_tr` gives a text ([lines 294-306](keiland-examples/07-services.c#L294-L306)). `kl_trn` chooses the singular or a plural for a count. `kl_tr_format` fills `{1}` to `{9}` with the strings that follow, in any order the language needs, and a `NULL` ends them:
+
+```c
+(void)kl_tr_format(line, sizeof(line), kl_trn("{1} file opened", "{1} files opened", services->opened), count, (const char *)NULL);
+```
+
+A language other than the desktop's is read with `kl_tr_open(domain, language)`. The header is [keiland_tr.h](../../userland/desktop/include/keiland/keiland_tr.h).
+
+### Opening files
+
+The file chooser is the desktop's shared Open and Save window.
+
+```c
 memset(&options, 0, sizeof(options));
 options.mode = KL_FILE_CHOOSER_OPEN;
-options.title = "Open";
-kl_file_chooser_open(kl_app_display(app), kl_window_toplevel(window), &options, &listener, state);
+options.title = kl_tr("Open");
+options.application = APPLICATION;
+options.font = FONT;
+options.fallback_font = FALLBACK_FONT;
+services->chooser = kl_file_chooser_open(kl_app_display(services->app), kl_window_toplevel(services->window), &options, &services_chooser_listener, services);
 ```
 
-The answer comes once, through the listener, while the program dispatches its
-application. `kl_recent_add(path, application)` puts an opened file on the
-desktop's recent list.
+The program asks for it over its window with `kl_file_chooser_open`, and passes a **listener**: a structure of callbacks ([lines 82-84](keiland-examples/07-services.c#L82-L84)). Only one chooser is open at a time, and the Open button is disabled while it is ([lines 316-317](keiland-examples/07-services.c#L316-L317), [427-429](keiland-examples/07-services.c#L427-L429)).
+
+The program keeps running. The answer comes once, through the listener, during a dispatch:
+
+```c
+if (result == KL_FILE_CHOOSER_CHOSEN) {
+	snprintf(services->path, sizeof(services->path), "%s", path);
+	services->opened++;
+	(void)kl_recent_add(path, APPLICATION);
+}
+/* ... */
+services->answered = 1;
+```
+
+The callback keeps the path and adds it to the desktop's **recent list** with `kl_recent_add`. The chooser must be destroyed afterwards. Here the main loop does it, once it sees that the answer came ([lines 175-181](keiland-examples/07-services.c#L175-L181)). The callback may destroy it too. The headers are [keiland_file_chooser.h](../../userland/desktop/include/keiland/keiland_file_chooser.h) and [keiland_recent.h](../../userland/desktop/include/keiland/keiland_recent.h).
+
+### The clipboard
+
+`kl_window_copy(window, text, length)` puts text on the clipboard ([line 330](keiland-examples/07-services.c#L330)). `kl_window_paste(window, buffer, size)` reads it, as the Paste action does in chapter 6, and `kl_window_can_paste(window)` tells whether there is text. The text widgets of chapter 5 use the window's clipboard by themselves, once `kl_ui_window_text` has tied them to it.
 
 ### Notifications
 
-`kl_app_notify(app, title, body)` shows a notification under the program's
-name.
+`kl_app_notify(app, title, body)` shows a notification under the program's application ID ([line 337](keiland-examples/07-services.c#L337)). `kl_app_notify_lock` also says what the lock screen shows of it.
 
 ### The desktop's settings and system
 
-`kl_settings_open(kl_app_display(app), name)` reads, watches and asks to
-change the desktop's settings (`kl_settings_get`, `kl_settings_watch`,
-`kl_settings_set`). `kl_app_system(app)` gives
-the desktop's system (`kl_system_*`): the network, the sound, the power, the
-removable devices, the displays, the printers. Each of these is asked of the
-compositor; the program reads no system file and talks to no daemon itself.
+`kl_settings_open(kl_app_display(app), name)` reads, watches and asks to change the desktop's settings (`kl_settings_get`, `kl_settings_watch`, `kl_settings_set`). `kl_app_system(app)` gives the desktop's system, `kl_system_*`: the network, the sound, the power, the removable devices, the displays and the printers. Each of these is asked of the compositor. The program reads no system file and talks to no daemon itself. The headers are [keiland_settings.h](../../userland/desktop/include/keiland/keiland_settings.h) and [keiland_system.h](../../userland/desktop/include/keiland/keiland_system.h).
 
 ### Sound
 
-A program plays sound through a stream of the desktop
-(`kl_audio_stream_open`, `kl_audio_stream_write`, `kl_audio_stream_dispatch`):
-see `<keiland/keiland_audio.h>`.
--->
+A program plays sound through a stream of the desktop: `kl_audio_stream_open`, `kl_audio_stream_write` and `kl_audio_stream_dispatch`. See [keiland_audio.h](../../userland/desktop/include/keiland/keiland_audio.h).
