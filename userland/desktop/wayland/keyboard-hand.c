@@ -22,15 +22,23 @@
  * hand_recognize_framed).  It also measures the ink (its strokes, points
  * and bounds) for the log.
  *
- * The templates are read on a thread of their own, started when the
- * handwriting face is first shown (kwl_hand_preload), so that the first
- * recognition does not wait for the file on the event loop; ink too
- * little to have a shape, and missing or broken templates, are said in
- * the note (ws177-p009).
+ * The recognitions run on a pool of threads of their own (hand-1 to
+ * hand-N), started when the handwriting face is first shown
+ * (kwl_hand_preload): the event loop gives a copy of the ink with its
+ * generation (kwl_hand_submit) and takes the answers on its next pass
+ * (kwl_hand_take); a newer ink replaces one not started yet, and the
+ * answer of an older one is the caller's to drop.  The templates are read
+ * once by the first of the pool's threads to need them, the others
+ * waiting; so neither the file nor the matching waits on the event loop.
+ * Without the pool the event loop recognizes, and reads the templates,
+ * itself.  Ink too little to have a shape, and missing or broken
+ * templates, are said in the note (ws177-p009).
  */
 
 #include "keyboard.h"
 #include "hand-cloud.h"
+#include "lane.h"
+#include "threads.h"
 
 #include "userland/desktop/paths.h"
 
@@ -39,9 +47,6 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-
-/* Marks a parameter a function takes but does not use. */
-#define UNUSED_PARAMETER(name)	((void)(name))
 
 /* The templates' file (the package hand-hershey), and the largest one read. */
 #define HAND_TEMPLATES_PATH	KEILAND_DATADIR "/keiland/hand/hershey.txt"
@@ -54,6 +59,19 @@
 /* The share of the writing area's height under which ink is small, and the most candidates looked at. */
 #define HAND_SMALL_SHARE	0.40f
 #define HAND_LOOKED		8U
+
+/*
+ * The pool's threads: one fewer than the processors (one at least, the
+ * event loop keeps its own), four at most.
+ */
+#define HAND_POOL_MAX		4U
+
+/*
+ * The keys of the pool's jobs: the ink written now (a newer ink replaces
+ * the one not started yet) and the templates read ahead (one is enough).
+ */
+#define HAND_KEY_INK		1U
+#define HAND_KEY_TEMPLATES	2U
 
 /*
  * The pairs that differ only by size, the small one first (a small ink
@@ -71,28 +89,78 @@ static const uint32_t hand_sizes[][2] = {
 };
 
 /*
- * The templates, read once (hand_state: 0 not read yet, 1 read, -1 the
- * read failed).  The reader thread writes both while hand_loader_running
- * is set; the event loop touches them only when no reader runs, after
- * joining it (hand_join), which makes the thread's writes visible.
+ * The room a recognition puts the ink's points in, in the recognizer's
+ * form: each of the pool's jobs has its own, the event loop the one below.
  */
-static struct hand_templates hand_templates;
-static int hand_state;
+struct hand_scratch {
+	float xs[HAND_CLOUD_INPUT_MAX];
+	float ys[HAND_CLOUD_INPUT_MAX];
+	unsigned char starts[HAND_CLOUD_INPUT_MAX];
+};
 
 /*
- * The thread reading the templates (kwl_hand_preload) and whether it was
- * started and not joined yet.  Only the event loop starts and joins it,
- * so the flag needs no lock.
+ * One job of the pool: the templates read ahead (templates_only), or a
+ * recognition of a copy of the ink of a generation on its writing area,
+ * with its own room for the points and the answer the thread writes.  The
+ * main thread fills it before the submission and reads it after the take.
  */
-static pthread_t hand_loader;
-static int hand_loader_running;
+struct hand_job {
+	struct kwl_lane_job lane;
+	unsigned templates_only;
+	uint64_t generation;
+	struct hand_frame frame;
+	struct kwl_hand_ink ink;
+	struct hand_scratch scratch;
+	struct kwl_hand_result result;
+};
 
-static void hand_recognize_ink(const struct kwl_hand_ink *ink, const struct hand_frame *frame, int32_t area, size_t first_pair, struct kwl_hand_result *result);
+/* Whom kwl_hand_take gives the answers to (the lane's done is called with it). */
+struct hand_taker {
+	void (*answer)(void *context, const struct kwl_hand_answer *answer);
+	void *context;
+};
+
+/*
+ * The templates, read once.  hand_state says 0 not read yet, 1 read, -1
+ * the read failed; hand_reading says a thread reads them now, and
+ * hand_read is signaled when it has.  hand_lock guards the three.  Only
+ * the thread that set hand_reading writes hand_templates, and a thread
+ * reads them only after it saw hand_state 1 under the lock, which makes
+ * the reader's writes visible.
+ */
+static struct hand_templates hand_templates;
+static pthread_mutex_t hand_lock = PTHREAD_MUTEX_INITIALIZER;
+static pthread_cond_t hand_read = PTHREAD_COND_INITIALIZER;
+static int hand_state;
+static unsigned hand_reading;
+
+/*
+ * The pool recognizing the ink, and whether it runs: only the event loop
+ * starts it, gives to it, takes from it and stops it, so the flag needs
+ * no lock.
+ */
+static struct kwl_lane hand_pool;
+static unsigned hand_pool_running;
+
+/* The event loop's room for the points of the recognitions it runs itself (no pool). */
+static struct hand_scratch hand_main_scratch;
+
+/* The pool's jobs: run on a thread of the pool, done and dropped on the main thread. */
+static void hand_job_run(struct kwl_lane_job *job);
+static void hand_job_done(void *context, struct kwl_lane_job *job);
+static void hand_job_drop(struct kwl_lane_job *job);
+static const struct kwl_lane_ops hand_job_ops = {
+	hand_job_run,
+	hand_job_done,
+	hand_job_drop
+};
+
+static void hand_recognize_ink(const struct kwl_hand_ink *ink, const struct hand_frame *frame, int32_t area, size_t first_pair, struct hand_scratch *scratch, struct kwl_hand_result *result);
 static void hand_sized(uint32_t *codes, size_t *count, int small, size_t first_pair);
 static void hand_utf8(uint32_t code, char *text, size_t size);
+static int hand_templates_ready(void);
 static int hand_load(const char *path);
-static void *hand_loader_run(void *argument);
-static void hand_join(void);
+static unsigned hand_pool_size(void);
 static void hand_ink_input(const struct kwl_hand_ink *ink, struct hand_cloud_input *input, float *xs, float *ys, unsigned char *starts);
 
 /*
@@ -251,68 +319,157 @@ kwl_hand_bounds(
 }
 
 /*
- * Reads the templates from a file (the package hand-hershey's), after
- * any read under way on the reader thread.  Returns 0, or an errno value
- * (the recognition then answers no candidates but the note).
- */
-int
-kwl_hand_load(
-	const char *path)
-{
-	int error;
-
-	/* Waits for a read the reader thread may still be doing. */
-	hand_join();
-
-	/* Reads the file here. */
-	error = hand_load(path);
-	if (error != 0)
-		return error;
-
-	/* Succeeded: read. */
-	return 0;
-}
-
-/*
- * Starts reading the templates on a thread of their own, the first time
- * the handwriting face is shown, so that the first recognition finds them
- * read (backlog-p2 line 59).  When an earlier read failed, puts the note
- * that there is no data in result at once.
+ * Starts the pool recognizing the ink, the first time the handwriting face
+ * is shown, and has one of its threads read the templates ahead, so that
+ * the first recognition finds them read (backlog-p2 line 59).  wake is the
+ * write end of the main thread's wake pipe.  When an earlier read failed,
+ * puts the note that there is no data in result at once.  Without the
+ * pool the first recognition reads the file on the event loop.
  */
 void
 kwl_hand_preload(
-	struct kwl_hand_result *result)
+	struct kwl_hand_result *result,
+	int wake)
 {
+	struct hand_job *job;
+	unsigned count;
+	int state;
 	int error;
 
-	/* A read under way, or done, needs nothing more. */
-	if (hand_loader_running)
-		return;
-	if (hand_state == 1)
-		return;
+	/* The pool, once: its threads stay until kwl_hand_stop. */
+	if (!hand_pool_running) {
+		count = hand_pool_size();
+		error = kwl_lane_start(&hand_pool, "hand", count, wake);
+		if (error != 0) {
+			printf("KWL OSK hand pool error=%d the ink is recognized in the event loop\n", error);
+		} else {
+			hand_pool_running = 1U;
+			printf("KWL OSK hand pool threads=%u\n", count);
+			kwl_threads_report();
+		}
+	}
+
+	/* Whether the templates were read, or failed. */
+	pthread_mutex_lock(&hand_lock);
+
+	state = hand_state;
+
+	pthread_mutex_unlock(&hand_lock);
 
 	/* A read that failed: says so before anything is written. */
-	if (hand_state == -1) {
+	if (state == -1) {
 		(void)snprintf(result->note, sizeof(result->note), "%s", HAND_NO_DATA_NOTE);
 		return;
 	}
 
-	/* Starts the reader; without a thread the first recognition reads the file itself. */
-	error = pthread_create(&hand_loader, NULL, hand_loader_run, NULL);
-	if (error != 0) {
-		printf("KWL OSK hand templates thread error=%d\n", error);
+	/* Read already. */
+	if (state == 1)
 		return;
-	}
 
-	/* The reader runs until hand_join joins it. */
-	hand_loader_running = 1;
+	/* Without the pool the first recognition reads them. */
+	if (!hand_pool_running)
+		return;
+
+	/* The job reading them ahead (one not started yet is replaced: the read happens once). */
+	job = malloc(sizeof(*job));
+	if (job == NULL)
+		return;
+	memset(&job->lane, 0, sizeof(job->lane));
+	job->templates_only = 1U;
+	job->generation = 0U;
+
+	/* Given to the pool. */
+	kwl_lane_submit(&hand_pool, &job->lane, &hand_job_ops, HAND_KEY_TEMPLATES);
+}
+
+/*
+ * Gives the pool a recognition of the ink of a generation, written on an
+ * area (its top and height, as kwl_hand_recognize_on takes them): a copy
+ * of the ink goes, and a recognition of an older ink not started yet is
+ * replaced.  The answer comes from kwl_hand_take.  Returns 0, ENODEV when
+ * the pool does not run, or ENOMEM (the caller then recognizes the ink
+ * itself).
+ */
+int
+kwl_hand_submit(
+	const struct kwl_hand_ink *ink,
+	int32_t top,
+	int32_t height,
+	uint64_t generation)
+{
+	struct hand_job *job;
+
+	/* Without the pool the caller recognizes. */
+	if (!hand_pool_running)
+		return ENODEV;
+
+	/* The job, with the ink as it is now and its area. */
+	job = malloc(sizeof(*job));
+	if (job == NULL)
+		return ENOMEM;
+	memset(&job->lane, 0, sizeof(job->lane));
+	job->templates_only = 0U;
+	job->generation = generation;
+	job->frame.top = (float)top;
+	job->frame.height = (float)height;
+	memcpy(&job->ink, ink, sizeof(job->ink));
+
+	/* Given to the pool, in place of an older ink's not started yet. */
+	kwl_lane_submit(&hand_pool, &job->lane, &hand_job_ops, HAND_KEY_INK);
+
+	/* Succeeded: the answer comes with a later take. */
+	return 0;
+}
+
+/*
+ * Takes the pool's answers, on the main thread: answer is called for each
+ * recognition finished (with context), in the order they finished; the
+ * ink in the answer is the job's copy, valid during the call.  Returns how
+ * many jobs were taken.
+ */
+unsigned
+kwl_hand_take(
+	void (*answer)(void *context, const struct kwl_hand_answer *answer),
+	void *context)
+{
+	struct hand_taker taker;
+	unsigned taken;
+
+	/* Without the pool there is nothing to take. */
+	if (!hand_pool_running)
+		return 0U;
+
+	/* Each finished job given to the answer, and freed. */
+	taker.answer = answer;
+	taker.context = context;
+	taken = kwl_lane_take(&hand_pool, &taker);
+
+	/* Reports the jobs taken. */
+	return taken;
+}
+
+/*
+ * Stops the pool at the end of the session: the recognitions running are
+ * finished and every answer not taken is dropped.
+ */
+void
+kwl_hand_stop(void)
+{
+	/* A pool never started has nothing to stop. */
+	if (!hand_pool_running)
+		return;
+
+	/* Its threads end, the jobs left freed. */
+	kwl_lane_stop(&hand_pool);
+	hand_pool_running = 0U;
 }
 
 /*
  * Recognizes the ink: the candidates for the character written, the
  * likeliest first.  area is the writing area's height (0 when it is not
  * known: the sizes are then not used); the characters that differ only by
- * size are put in the order the ink's size says (ws165-p003).
+ * size are put in the order the ink's size says (ws165-p003).  Called on
+ * the main thread only (the pool's jobs have rooms of their own).
  */
 void
 kwl_hand_recognize(
@@ -320,8 +477,8 @@ kwl_hand_recognize(
 	int32_t area,
 	struct kwl_hand_result *result)
 {
-	/* By the shapes, then the sizes' order. */
-	hand_recognize_ink(ink, NULL, area, 0U, result);
+	/* By the shapes, then the sizes' order, in the event loop's room. */
+	hand_recognize_ink(ink, NULL, area, 0U, &hand_main_scratch, result);
 }
 
 /*
@@ -330,6 +487,7 @@ kwl_hand_recognize(
  * with its shape (hand_recognize_framed), so c and C, o and the degree
  * sign, . and the middle dot are told apart; a small kana (not among the
  * templates) is offered before its full size one when the ink is small.
+ * Called on the main thread only, when the pool does not run.
  */
 void
 kwl_hand_recognize_on(
@@ -343,13 +501,14 @@ kwl_hand_recognize_on(
 	/* The area, and the small kana by size (the rest is the area's). */
 	frame.top = (float)top;
 	frame.height = (float)height;
-	hand_recognize_ink(ink, &frame, height, HAND_SIZES_LATIN, result);
+	hand_recognize_ink(ink, &frame, height, HAND_SIZES_LATIN, &hand_main_scratch, result);
 }
 
 /*
  * Recognizes the ink, on an area when frame is not NULL; the pairs of
  * hand_sizes from the first one given are then put in the order the ink's
- * size on an area of a height (0: none) says.
+ * size on an area of a height (0: none) says.  The ink's points are put in
+ * scratch, the caller's own (one per thread).
  */
 static void
 hand_recognize_ink(
@@ -357,11 +516,9 @@ hand_recognize_ink(
 	const struct hand_frame *frame,
 	int32_t area,
 	size_t first_pair,
+	struct hand_scratch *scratch,
 	struct kwl_hand_result *result)
 {
-	static float xs[HAND_CLOUD_INPUT_MAX];
-	static float ys[HAND_CLOUD_INPUT_MAX];
-	static unsigned char starts[HAND_CLOUD_INPUT_MAX];
 	struct hand_cloud_input input;
 	uint32_t codes[HAND_LOOKED];
 	float distances[HAND_LOOKED];
@@ -370,6 +527,7 @@ hand_recognize_ink(
 	unsigned point;
 	int small;
 	int scant;
+	int state;
 
 	/* Nothing yet. */
 	memset(result, 0, sizeof(*result));
@@ -378,19 +536,17 @@ hand_recognize_ink(
 	if (ink->count == 0U)
 		return;
 
-	/* Takes the templates the reader thread read, or reads them here when no thread did. */
-	hand_join();
-	if (hand_state == 0)
-		(void)hand_load(HAND_TEMPLATES_PATH);
+	/* The templates, read by this thread when no other has or does. */
+	state = hand_templates_ready();
 
 	/* Without templates, says so instead of answering. */
-	if (hand_state != 1) {
+	if (state != 1) {
 		(void)snprintf(result->note, sizeof(result->note), "%s", HAND_NO_DATA_NOTE);
 		return;
 	}
 
 	/* Gives the recognizer the ink's points, all its strokes (backlog-p2 line 60). */
-	hand_ink_input(ink, &input, xs, ys, starts);
+	hand_ink_input(ink, &input, scratch->xs, scratch->ys, scratch->starts);
 
 	/* Ink too little to have a shape (a tap) is not read; says so (backlog-p2 line 55). */
 	scant = hand_ink_scant(&input, frame);
@@ -501,7 +657,54 @@ hand_utf8(
 }
 
 /*
- * Reads the templates from a file into hand_templates and hand_state.
+ * Makes sure the templates were read, reading them on this thread when no
+ * thread has: a read under way on another thread is waited for.  Returns
+ * 1 when they are there, or -1 when the read failed (it is not tried
+ * again).
+ */
+static int
+hand_templates_ready(void)
+{
+	int state;
+	int error;
+
+	/* After a read under way; this thread reads when none was done. */
+	pthread_mutex_lock(&hand_lock);
+
+	while (hand_reading)
+		pthread_cond_wait(&hand_read, &hand_lock);
+	state = hand_state;
+	if (state == 0)
+		hand_reading = 1U;
+
+	pthread_mutex_unlock(&hand_lock);
+
+	/* Read already, or failed. */
+	if (state != 0)
+		return state;
+
+	/* The file read outside the lock; the others wait on hand_read. */
+	error = hand_load(HAND_TEMPLATES_PATH);
+	state = 1;
+	if (error != 0)
+		state = -1;
+
+	/* The outcome for every thread, and the ones waiting woken. */
+	pthread_mutex_lock(&hand_lock);
+
+	hand_state = state;
+	hand_reading = 0U;
+	pthread_cond_broadcast(&hand_read);
+
+	pthread_mutex_unlock(&hand_lock);
+
+	/* Succeeded: the templates are there, or their read failed. */
+	return state;
+}
+
+/*
+ * Reads the templates from a file into hand_templates, on the thread that
+ * set hand_reading (hand_templates_ready says the outcome to the others).
  * Returns 0, or an errno value: the file is missing or unreadable, larger
  * than HAND_TEMPLATES_MAX (its end would be cut), or has no template that
  * reads (backlog-p2 line 56).
@@ -518,7 +721,6 @@ hand_load(
 
 	/* Forgets the templates read before; until the read succeeds there are none. */
 	hand_templates_free(&hand_templates);
-	hand_state = -1;
 
 	/* Opens the file. */
 	file = fopen(path, "r");
@@ -561,38 +763,93 @@ hand_load(
 	if (error != 0)
 		return error;
 
-	/* hand_state 1 tells the recognitions that the templates are there. */
-	hand_state = 1;
-
 	/* Succeeded: read. */
 	return 0;
 }
 
-/* Reads the templates on the reader thread (kwl_hand_preload). */
-static void *
-hand_loader_run(
-	void *argument)
+/*
+ * Works out the pool's threads from the processors online: one fewer than
+ * them, one at least and HAND_POOL_MAX at most.
+ */
+static unsigned
+hand_pool_size(void)
 {
-	UNUSED_PARAMETER(argument);
+	unsigned processors;
+	unsigned count;
 
-	/* Reads the file; the outcome is left in hand_state for the event loop. */
-	(void)hand_load(HAND_TEMPLATES_PATH);
+	/* The processors, the event loop's left to it. */
+	processors = kwl_cpu_count();
+	count = 1U;
+	if (processors > 1U)
+		count = processors - 1U;
 
-	/* The thread's work is done. */
-	return NULL;
+	/* Within the most the recognitions use. */
+	if (count > HAND_POOL_MAX)
+		count = HAND_POOL_MAX;
+
+	/* Succeeded: the pool's threads. */
+	return count;
 }
 
-/* Waits for the reader thread, if one runs, so that its templates can be used. */
+/*
+ * Runs a job of the pool on its thread: the templates read (waiting for
+ * another thread's read), then the ink's recognition into the job's answer.
+ */
 static void
-hand_join(void)
+hand_job_run(
+	struct kwl_lane_job *lane_job)
 {
-	/* No reader runs. */
-	if (!hand_loader_running)
-		return;
+	struct hand_job *job;
 
-	/* Waits for it; its writes are the event loop's from here. */
-	(void)pthread_join(hand_loader, NULL);
-	hand_loader_running = 0;
+	/* The job of its own kind. */
+	job = (struct hand_job *)lane_job;
+
+	/* A job of the templates alone reads them. */
+	if (job->templates_only) {
+		(void)hand_templates_ready();
+		return;
+	}
+
+	/* The ink's candidates on its area, in the job's own room. */
+	hand_recognize_ink(&job->ink, &job->frame, (int32_t)job->frame.height, HAND_SIZES_LATIN, &job->scratch, &job->result);
+}
+
+/*
+ * Applies a job the pool finished, on the main thread: a recognition's
+ * answer is given to the taker's answer; then the job is freed.
+ */
+static void
+hand_job_done(
+	void *context,
+	struct kwl_lane_job *lane_job)
+{
+	const struct hand_taker *taker;
+	struct kwl_hand_answer answer;
+	struct hand_job *job;
+
+	/* The taker, and the job of its own kind. */
+	taker = context;
+	job = (struct hand_job *)lane_job;
+
+	/* A recognition's answer, with its generation and ink. */
+	if (!job->templates_only) {
+		answer.generation = job->generation;
+		answer.ink = &job->ink;
+		answer.result = job->result;
+		taker->answer(taker->context, &answer);
+	}
+
+	/* The job's memory. */
+	free(job);
+}
+
+/* Frees a job not run or not applied (replaced by a newer one, or the pool stopped), on the main thread. */
+static void
+hand_job_drop(
+	struct kwl_lane_job *lane_job)
+{
+	/* The job's memory. */
+	free(lane_job);
 }
 
 /*

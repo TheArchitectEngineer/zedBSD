@@ -47,13 +47,13 @@ FAT16 from FAT32; use the validated BPB when that distinction matters.
 `%u` UID, `%g` GID, `%n` filename and `%%`. It prints one newline per operand.
 Unknown fields and a trailing percent sign are rejected before any record is
 printed. Like the original command it uses lstat: a symlink is reported as a
-symlink. For example, the installer reads `%d:%i:%f:%s:%a:%u:%g` and separately
-retains the operand, avoiding pathname delimiters in the identity record.
+symlink. For example, `%d:%i:%f:%s:%a:%u:%g` gives an identity record without
+pathname delimiters while the caller retains the operand separately.
 
 These commands propagate record-output failures. Their output is an observation,
-not a retained file descriptor or transaction-wide claim. Installer source
-provenance comes from the retained boot selectors described in
-[boot provenance](boot-provenance.md).
+not a retained file descriptor or transaction-wide claim. The disks the
+running system started from are named by the retained boot selectors described
+in [boot provenance](boot-provenance.md).
 
 ## Capacity observations
 
@@ -63,7 +63,7 @@ Without operands it observes `/`; it does not enumerate every mounted filesystem
 single-line layout and can be combined with `-k`. For example:
 
 ```sh
-df -Pk -- /run/zedinst/payload
+df -Pk -- /boot/efi
 ```
 
 Columns are the operand, total units, used units, available units, rounded-up

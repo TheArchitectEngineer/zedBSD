@@ -2,9 +2,9 @@
 
 # WS313: ODROID-C5（Amlogic S905X5M）の BSP と Mali の GPU で、起動して desktop を表示する
 
-Status: planning
+Status: incomplete
 Primary Milestone: MG008
-Resume point: p001 の design-reviewer、p003 の媒体と試験の script。配下 A（MMC・USB・Ethernet）と B（GPU・display）が実装中。担当は P7（q1675）。
+Resume point: 今夜のユーザーの実機の試験（[tests/README.md](tests/README.md)）の結果で各 Phase を直す。担当は P7（q1675-i03、2026-10-29: render pass の LOAD の pre-frame・display の import・gpu1 を待つ hw.gpu.attaching・compiler の cube・gather/compare・storage image・spill・bootloader の notice を実装、全て実機未試験）。変更ごとの確かめは `sh plan/ws313/tests/c5-build-check.sh <tag>`（5 つの vmunix の warning 0 と host の試験）。
 
 ## ユーザーの指示（原文、2026-10-29）
 
@@ -16,7 +16,7 @@ Resume point: p001 の design-reviewer、p003 の媒体と試験の script。配
 
 - 解釈（Q1 経由）: p001 の調べと設計は短く（起動の道・console・各 block の register と出典・GPU の世代・Phase の表）、design-reviewer は 1 回で、すぐ実装へ。
   実機の試験なしで、起動と console・割り込み・timer・SMP・MMC・USB・Ethernet・display・GPU（Mali と Vulkan）・desktop の config まで code を書いて揃える。
-  確かめは build（warning 0）と、書ける所の host の試験・QEMU の `virt` での起動まで。各 Phase は「実装済み・実機未試験」と記録し cleared にしない。
+  確かめは build（warning 0）と、書ける所の host の試験まで（この board の HAL は QEMU の `virt` では起動しないので QEMU の起動は無い。2026-10-29 design-reviewer）。各 Phase は「実装済み・実機未試験」と記録し cleared にしない。
   夜の実機の試験の手順（媒体への書き込み・UART の配線・確かめる順・判定）を phase.md と `plan/ws313/tests/` の script にまとめる。
 
 ## ユーザーの指示（原文、2026-10-29、並列化）
@@ -56,15 +56,17 @@ Resume point: p001 の design-reviewer、p003 の媒体と試験の script。配
 
 | Phase | 目的 | 状態 | 依存 |
 | --- | --- | --- | --- |
-| [p001](phase001/phase.md) | 調べと設計 | in-progress（design-reviewer 待ち） | — |
-| p002 | HAL の BSP（起動・UART・FDT・GIC・timer・PSCI）と build の配線・config | in-progress（build 通る、実機未試験） | p001 |
-| p003 | 媒体（DTB・boot.scr・SD の image）と夜の試験の手順・script | planned | p002 |
-| p004 | SD（meson の MMC）と root | in-progress（配下 A） | p002 |
-| p005 | USB（PHY・CRG の xHCI） | in-progress（配下 A） | p002 |
-| p006 | Ethernet（EQoS・RGMII の PHY） | in-progress（配下 A） | p002 |
-| p007 | display（U-Boot の mode の OSD1） | in-progress（配下 B） | p002 |
-| p008 | GPU（Mali-G310）と Vulkan の device | in-progress（配下 B） | p002 |
-| p009 | desktop（Keiland の config） | planned | p007・p008 |
+| [p001](phase001/phase.md) | 調べと設計 | in-progress（design-reviewer の 1 回） | — |
+| [p002](phase002/phase.md) | HAL の BSP（起動・UART・FDT・GIC・timer・PSCI）と build の配線・config | in-progress（実装済み・実機未試験） | p001 |
+| [p003](phase003/phase.md) | 媒体（DTB・boot.scr・SD の image）と夜の試験の手順・script | in-progress（image の build まで済み、bootloader の notice 済み・実機未試験） | p002 |
+| [p004](phase004/phase.md) | SD（meson の MMC）と root | in-progress（実装済み・実機未試験） | p002 |
+| [p005](phase005/phase.md) | USB（PHY・CRG の xHCI） | in-progress（実装済み・実機未試験） | p002 |
+| [p006](phase006/phase.md) | Ethernet（EQoS・RGMII の PHY） | in-progress（実装済み・実機未試験） | p002 |
+| [p007](phase007/phase.md) | display（U-Boot の mode の OSD1） | in-progress（実装済み・実機未試験） | p002 |
+| [p008](phase008/phase.md) | GPU（Mali-G310）と Vulkan の device | in-progress（kernel の driver は実装済み・実機未試験。Vulkan の段は設計だけ） | p002 |
+| [p010](phase010/phase.md) | Valhall の shader compiler（`src/drivers/gpu/mali/compiler/`、cube・gather/compare・storage image・spill を含む） | in-progress（実装済み・host の試験 PASS・実機未試験） | p008 |
+| [p011](phase011/phase.md) | render の node・scheduler・Vulkan の executor・CS の builder（LOAD の pre-frame・display の import を含む） | in-progress（実装済み・実機未試験） | p008・p010 |
+| p009 | desktop（Keiland の config） | planned | p007・p010・p011 |
 | 最後 | 規約の全文の見直し | planned | 全て |
 
 Audio（line-out）は desktop の表示の受け入れに要らないので Future Work の案（Q1 へ）。

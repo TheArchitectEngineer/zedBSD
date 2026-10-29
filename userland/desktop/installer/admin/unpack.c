@@ -100,16 +100,22 @@ unpack_read_whole(
 	uint8_t *buffer;
 	size_t offset;
 	size_t want;
+	size_t buffer_size;
 	ssize_t got;
+	int difference;
 	int error;
 
+	/* Clears the results until the file is read and checked. */
 	*data = NULL;
 	*length = 0;
 
 	/* A size the memory can hold, with the byte past it to see the end. */
 	if (expected_bytes > (uint64_t)SIZE_MAX - 1U)
 		return EFBIG;
-	buffer = malloc(expected_bytes == 0U ? 1U : (size_t)expected_bytes);
+	buffer_size = 1U;
+	if (expected_bytes != 0U)
+		buffer_size = (size_t)expected_bytes;
+	buffer = malloc(buffer_size);
 	if (buffer == NULL)
 		return ENOMEM;
 	command_sha256_init(&context);
@@ -127,11 +133,15 @@ unpack_read_whole(
 			free(buffer);
 			return EIO;
 		}
+
+		/* Takes the bytes into the digest. */
 		error = command_sha256_update(&context, buffer + offset, (size_t)got);
 		if (error != 0) {
 			free(buffer);
 			return EIO;
 		}
+
+		/* Counts the bytes taken. */
 		offset += (size_t)got;
 	}
 
@@ -144,11 +154,13 @@ unpack_read_whole(
 
 	/* The digest must be the index's. */
 	command_sha256_final(&context, digest);
-	if (memcmp(digest, expected, sizeof(digest)) != 0) {
+	difference = memcmp(digest, expected, sizeof(digest));
+	if (difference != 0) {
 		free(buffer);
 		return EBADMSG;
 	}
 
+	/* Hands the bytes to the caller. */
 	*data = buffer;
 	*length = (size_t)expected_bytes;
 
@@ -179,8 +191,9 @@ unpack_gunzip(
 	uLong crc;
 	uint8_t flags;
 	unsigned extra;
-	int result;
+	int inflate_status;
 
+	/* Clears the results until the archive is inflated and checked. */
 	*output = NULL;
 	*output_length = 0;
 
@@ -205,6 +218,8 @@ unpack_gunzip(
 			return EINVAL;
 		offset += extra;
 	}
+
+	/* The name ends at its NUL. */
 	if ((flags & UNPACK_GZIP_FNAME) != 0U) {
 		while (offset < stream_end && data[offset] != 0U)
 			offset++;
@@ -212,6 +227,8 @@ unpack_gunzip(
 			return EINVAL;
 		offset++;
 	}
+
+	/* The comment ends at its NUL. */
 	if ((flags & UNPACK_GZIP_FCOMMENT) != 0U) {
 		while (offset < stream_end && data[offset] != 0U)
 			offset++;
@@ -219,6 +236,8 @@ unpack_gunzip(
 			return EINVAL;
 		offset++;
 	}
+
+	/* The header's CRC-16 is two bytes. */
 	if ((flags & UNPACK_GZIP_FHCRC) != 0U) {
 		if (stream_end - offset < 2U)
 			return EINVAL;
@@ -238,21 +257,25 @@ unpack_gunzip(
 
 	/* Inflates the raw stream whole (libz-compat decodes it in one go). */
 	memset(&stream, 0, sizeof(stream));
-	result = inflateInit2(&stream, -15);
-	if (result != Z_OK) {
+	inflate_status = inflateInit2(&stream, -15);
+	if (inflate_status != Z_OK) {
 		free(buffer);
 		return ENOMEM;
 	}
+
+	/* Gives the stream its input and its room for the output. */
 	stream.next_in = (Bytef *)(uintptr_t)(data + offset);
 	stream.avail_in = (uInt)(stream_end - offset);
 	stream.next_out = buffer;
 	stream.avail_out = (uInt)expected_size + 1U;
-	result = inflate(&stream, Z_FINISH);
-	if (result != Z_STREAM_END || stream.total_out != expected_size) {
+	inflate_status = inflate(&stream, Z_FINISH);
+	if (inflate_status != Z_STREAM_END || stream.total_out != expected_size) {
 		(void)inflateEnd(&stream);
 		free(buffer);
 		return EINVAL;
 	}
+
+	/* Ends the stream. */
 	(void)inflateEnd(&stream);
 
 	/* The CRC-32 of what inflated must be the trailer's. */
@@ -263,6 +286,7 @@ unpack_gunzip(
 		return EINVAL;
 	}
 
+	/* Hands the archive to the caller. */
 	*output = buffer;
 	*output_length = expected_size;
 
@@ -299,23 +323,27 @@ unpack_tar(
 	size_t padded;
 	unsigned permissions;
 	int parent;
+	int zero;
+	int difference;
+	int linked;
 	int error;
 
-	offset = 0;
-
 	/* Walks the entries until the two zero blocks that end the archive. */
+	offset = 0;
 	for (;;) {
 		if (length - offset < UNPACK_BLOCK)
 			return EINVAL;
 		header = archive + offset;
-		if (unpack_zero_block(header))
+		zero = unpack_zero_block(header);
+		if (zero)
 			break;
 
 		/* The header's own checksum and the POSIX magic. */
 		error = unpack_header_checksum(header);
 		if (error != 0)
 			return error;
-		if (memcmp(header + UNPACK_MAGIC, "ustar\0" "00", 8U) != 0)
+		difference = memcmp(header + UNPACK_MAGIC, "ustar\0" "00", 8U);
+		if (difference != 0)
 			return EINVAL;
 
 		/* The kind: a regular file, a directory or a symbolic link, nothing else. */
@@ -378,9 +406,14 @@ unpack_tar(
 			error = 0;
 			if (target[0] == '\0')
 				error = EINVAL;
-			if (error == 0 && symlinkat(target, parent, leaf) != 0)
-				error = errno;
+			if (error == 0) {
+				linked = symlinkat(target, parent, leaf);
+				if (linked != 0)
+					error = errno;
+			}
 		}
+
+		/* Closes the directory the entry went in. */
 		(void)close(parent);
 		if (error != 0)
 			return error;
@@ -408,10 +441,9 @@ unpack_octal(
 	uint64_t result;
 	size_t i;
 
+	/* Skips the leading spaces, which are allowed. */
 	result = 0;
 	i = 0;
-
-	/* Leading spaces are allowed. */
 	while (i < size && field[i] == ' ')
 		i++;
 	if (i == size || field[i] < '0' || field[i] > '7')
@@ -432,6 +464,7 @@ unpack_octal(
 		i++;
 	}
 
+	/* Stores the value. */
 	*value = result;
 
 	/* Succeeded: the field is read. */
@@ -500,6 +533,7 @@ unpack_entry_path(
 	char name[UNPACK_NAME_SIZE + 1U];
 	char prefix[UNPACK_PREFIX_SIZE + 1U];
 	size_t size;
+	size_t name_size;
 	int error;
 
 	/* The name and the prefix, each NUL-terminated or filling its field. */
@@ -518,10 +552,13 @@ unpack_entry_path(
 		path[size] = '/';
 		path[size + 1U] = '\0';
 	}
+
+	/* Appends the name when it fits. */
 	size = strlen(path);
-	if (size + strlen(name) + 1U > capacity)
+	name_size = strlen(name);
+	if (size + name_size + 1U > capacity)
 		return EINVAL;
-	memcpy(path + size, name, strlen(name) + 1U);
+	memcpy(path + size, name, name_size + 1U);
 
 	/* A directory's name may end in one slash. */
 	size = strlen(path);
@@ -613,6 +650,7 @@ unpack_open_parent(
 		component = slash + 1;
 	}
 
+	/* Reports the last component. */
 	*leaf = component;
 
 	/* Succeeded: the parent is open. */
@@ -631,6 +669,8 @@ unpack_make_file(
 	uint64_t written;
 	ssize_t result;
 	int fd;
+	int changed;
+	int closed;
 	int error;
 
 	/* A new file only: a unit does not replace another unit's file. */
@@ -646,17 +686,31 @@ unpack_make_file(
 		if (result < 0 && errno == EINTR)
 			continue;
 		if (result <= 0) {
-			error = result < 0 ? errno : EIO;
+			/* A failed write reports why, one that took nothing is an I/O error. */
+			if (result < 0)
+				error = errno;
+			else
+				error = EIO;
 			break;
 		}
+
+		/* Counts the bytes written. */
 		written += (uint64_t)result;
 	}
 
 	/* The mode, set-ID bits included, once the data is in. */
-	if (error == 0 && fchmod(fd, (mode_t)mode) != 0)
+	if (error == 0) {
+		changed = fchmod(fd, (mode_t)mode);
+		if (changed != 0)
+			error = errno;
+	}
+
+	/* Closes the file, whose failure counts when nothing failed before. */
+	closed = close(fd);
+	if (closed != 0 && error == 0)
 		error = errno;
-	if (close(fd) != 0 && error == 0)
-		error = errno;
+
+	/* Reports why the file could not be made. */
 	if (error != 0)
 		return error;
 
@@ -672,10 +726,13 @@ unpack_make_directory(
 	unsigned mode)
 {
 	int fd;
+	int made;
+	int changed;
 	int error;
 
 	/* A new directory, or an existing one that is not a link. */
-	if (mkdirat(parent, leaf, 0700) != 0 && errno != EEXIST)
+	made = mkdirat(parent, leaf, 0700);
+	if (made != 0 && errno != EEXIST)
 		return errno;
 	fd = openat(parent, leaf, O_RDONLY | O_DIRECTORY | O_NOFOLLOW | O_CLOEXEC);
 	if (fd < 0)
@@ -683,7 +740,8 @@ unpack_make_directory(
 
 	/* The mode the unit gives it. */
 	error = 0;
-	if (fchmod(fd, (mode_t)mode) != 0)
+	changed = fchmod(fd, (mode_t)mode);
+	if (changed != 0)
 		error = errno;
 	(void)close(fd);
 	if (error != 0)

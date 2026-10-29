@@ -197,10 +197,20 @@ arm64_space_init(
 	/* Maps the peripherals the HAL itself uses, where the board has them. */
 	arm64_bsp_map_devices();
 
-	/* Splits the first GiB into 2 MiB blocks. */
+	/*
+	 * Splits the first GiB into 2 MiB blocks, leaving out the blocks of
+	 * memory the device tree says may not be mapped (the secure
+	 * monitor's), so that no speculative access reaches them.
+	 */
 	system_kernel_l1[0] = table_desc(system_kernel_l2_low);
-	for (index = 0; index < 512U; index++)
-		system_kernel_l2_low[index] = ((uint64_t)index << 21) | BLOCK_FLAGS | PTE_PXN | PTE_UXN;
+	for (index = 0; index < 512U; index++) {
+		physical = (uint64_t)index << 21;
+		if (index != 0 && rpi_boot_is_no_map(physical, (uint64_t)1 << 21)) {
+			system_kernel_l2_low[index] = 0;
+			continue;
+		}
+		system_kernel_l2_low[index] = physical | BLOCK_FLAGS | PTE_PXN | PTE_UXN;
+	}
 
 	/* Maps the first 2 MiB of RAM page by page: text read-only and executable, rodata read-only. */
 	system_kernel_l2_low[0] = table_desc(system_kernel_l3_low);

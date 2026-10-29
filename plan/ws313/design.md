@@ -32,10 +32,13 @@ wiki.odroid.com は HTTP 403 で読めず（その site は使うのを止めた
 **決め（推し、ユーザーの判断の対象は §8）**:
 - U-Boot は Hardkernel の物をそのまま使い（作り直さない）、zedBSD の既存の arm64 の vmunix（Linux の arm64 Image の header つき、text_offset 0x80000）を `booti` で載せる。DTB は x0。kernel は 0x80000 に置かれる（DRAM の先頭 0〜0x80000 は dmc_monitor の予約、kernel はその直後）。
 - DTB は Hardkernel の DTS（HK の s7d_s905x5m_odroidc5.dts）を build の時に cpp と dtc で作る（host で作れることを確かめた: `build/tmp/c5dtb/c5.dtb`、77,244 byte）。zedBSD の追加（/chosen の simple-framebuffer）を足した物を FAT に置く。
-- `boot.scr`（zedBSD が作る）: U-Boot の OSD を 32 bit で 0x7f800000（DTS の logo_reserved、8 MiB）に向け直し、kernel・DTB を読み、`booti`。fdt の命令が使えれば framebuffer の node をその場で足す。HAL は simple-framebuffer があればそれを console にし、無ければ UART だけで進む。
-- 媒体: microSD に zedBSD の image（MBR、part 1 FAT32 の boot、part 2 UFS の root）。bootloader の区画（sector 1〜、env 0x3f0000）を避けて part 1 は 8 MiB から。U-Boot の binary（`u-boot.bin.sd.bin`、Amlogic の blob を含む）は zedBSD の image に入れず、利用者が Hardkernel の物を書く（再配布の license は未確認、§8）。
+- `boot.scr`（zedBSD が作る）: U-Boot の OSD を 32 bit で 0x7f800000（DTS の予約 `linux,meson-fb`、8 MiB。U-Boot の OSD も同じ address を使う）に向け直し、kernel・DTB を読み、`booti`。fdt の命令が使えれば framebuffer の node をその場で足す。HAL は simple-framebuffer があればそれを console にし、無ければ UART だけで進む。
+- 媒体: microSD に zedBSD の image（MBR、part 1 FAT32 の boot、part 2 UFS の root）。bootloader の区画（sector 1〜、env 0x3f0000）を避けて part 1 は 8 MiB から。bootloader（Amlogic の BL2〜BL32 の blob と Hardkernel の U-Boot）は、ユーザーの判断（§8 の 2、2026-10-29「取得して image に入れる」）で取得して image に入れるが、公開の取得先が見つからない（dn.odroid.com は 403、github の hardkernel/u-boot に release が無い）ので、今は Hardkernel の image から bootloader の区画を写す（`ODROID_C5_BOOTLOADER_FROM`、無い時は `ODROID_C5_NO_BOOTLOADER=y` を明示しないと image を作らない）。取得先が分かれば pinned の SHA-256 で取る rule と、Amlogic の blob の再配布の条件の notice を作る（未作成）。
+- boot.scr は U-Boot の `powerset` で USB（domain 5）・SD（10）・Ethernet（11）の電源の domain を入れる（kernel は secure monitor の SMC を呼べないため。domain の番号は UB の arch-s7d の pwr_ctrl）。HDMI は `outputmode 1080p60hz` を明示する。
 
 ## 3. 各 block（register の値は出典の file から、code は写さない）
+
+割り込みの番号は DT の SPI の番号（GIC の INTID は SPI + 32）。
 
 | block | 場所・番号 | 使う物 | 出典 |
 | --- | --- | --- | --- |
@@ -51,7 +54,7 @@ wiki.odroid.com は HTTP 403 で読めず（その site は使うのを止めた
 | Ethernet | EQoS 0xfe368000 SPI 74、glue PRG_ETH0/1 0xfe364000、MDIO mux 0xfe360000、RGMII GPIOZ_0..12 func 6、MDC GPIOH_11、PHY reset GPIOH_9 | 既存の dw-eqos.c と glue | HK、UP dwmac-meson8b.c・mdio-mux-meson-g12a.c |
 | clock・reset・pin | clkc 0xfe000000（gate 0xfe000044/48）、reset 0xfe002000（pulse 0x00、level 0x40）、pinctrl 0xfe004000（GPIO 0xfe0040c0）、多くの clock は SCMI（smc） | SoC の小さい helper（U-Boot が既に起こした物を前提に最小限） | HK s7d.c・pinctrl-meson-s7d.c |
 | display | VPU 0xff900000（OSD_V4）、HDMI TX 0xff000000（amhdmitx-s7d）、VIU vsync SPI 197 | まず U-Boot の HDMI の mode を使い OSD1 の address だけを替える（scanout の規則に合う） | HK mesons7d_drm.dtsi |
-| GPU | Mali-G310 V2 0xfe400000（meson-valhall.dtsi） | 新しい driver `src/drivers/gpu/mali/` | HK、WEB |
+| GPU | Mali-G310 V2 0xfd000000（8 MiB。meson-valhall.dtsi の 0xfe400000 を meson-s7d.dtsi が上書き）、SPI 144/145/146（INTID 176/177/178） | 新しい driver `src/drivers/gpu/mali/` | HK、WEB |
 
 HAL の API（`include/hal/hal.h`）の変更は要らない: GIC v2・generic timer・PSCI・FDT・名前つきの handoff は既存の口で足りる。HAL の実装の変更は `bsp-rpi-common/framebuffer.c` から mailbox の部分を `framebuffer-mailbox.c` に分けた事と、`fdt.h` の記録に bootloader の framebuffer の欄を足した事（Pi の parser は 0 のまま）。
 
@@ -76,13 +79,15 @@ HAL の API（`include/hal/hal.h`）の変更は要らない: GIC v2・generic t
 | p007 | display（U-Boot の mode の OSD1 の flip） | 8 | 配下 B |
 | p008 | GPU（Mali-G310 の CSF、firmware、MMU、job）と Vulkan の device | 40 以上（一日では骨組みまで） | 配下 B |
 | p009 | desktop（Keiland の config、graphical login） | 6 | P7 |
-| p010 | Audio（line-out） | Future Work の案 | — |
+| p010 | Valhall の shader compiler（gpu.md §11 の G7） | 80 | 配下 C |
+| p011 | render の node・scheduler・Vulkan の executor・CS の builder（G6・G8） | 75 | 配下 D |
+| — | Audio（line-out） | Future Work の案（Phase にしない） | — |
 | 最後 | 規約の全文の見直し | 6 | — |
 
 ## 6. 夜の実機の試験（手順の本体は `plan/ws313/tests/README.md` と script）
 
 順: (1) U-Boot の prompt と boot.scr の実行 → (2) HAL の `ODROID-C5 ENTRY`・`FDT PASS`・SMP 4 core → (3) framebuffer の試しの模様（三色）が HDMI に出るか → (4) SD の root の mount と login prompt（UART）→ (5) USB の keyboard → (6) Ethernet の link と DHCP → (7) GPU_ID → (8) desktop。
-判定は UART の対話（AGENTS.md §9 の例外は ZYBO・RG350 にしか無いので、C5 の UART の対話を判定に使ってよいかは Q1 がユーザーに確かめる）と HDMI の画面の写真（ユーザー）。
+判定は UART の対話（ユーザーの判断 §8 の 5「許可する」で AGENTS.md §9 の例外を C5 に広げた）と HDMI の画面の写真（ユーザー）。desktop（8）は Vulkan の executor と Valhall の compiler（p010・p011）が要る。
 
 ## 7. ユーザーに準備を頼む物
 
@@ -94,8 +99,8 @@ HAL の API（`include/hal/hal.h`）の変更は要らない: GIC v2・generic t
 ## 8. 人の判断が要る点（推しつき）
 
 1. **起動の道**: Hardkernel の U-Boot + boot.scr + booti（推し。今の vmunix がそのまま載る）／ U-Boot の bootefi で zedBSD の UEFI の loader（amd64 の物を arm64 に移す作業が要る）／ U-Boot を作り直す（BL2 の署名で困難）。
-2. **bootloader の binary の扱い**: zedBSD の image に入れず、利用者が Hardkernel の物を書く（推し、license の確認まで）／ 取得・検証して image に入れる（Amlogic の blob の再配布の条件を確かめてから）。
+2. **bootloader の binary の扱い**: 決定（2026-10-29 ユーザー）「取得して image に入れる」。取得先は未定（§2）。
 3. **GPU の firmware**: G310 が CSF なら mali_csffw.bin（Arm の license の binary、linux-firmware で配布）が要る。他の firmware と同じく取得・検証・同意の形にする（推し）。
 4. **DTB の出所**: Hardkernel の DTS を build で取得して dtc で作る（推し）／ Hardkernel の Ubuntu の image の DTB を写す。
-5. **UART の対話を判定に使う**（§9 の例外を C5 に広げるか）。
+5. **UART の対話を判定に使う**: 決定（2026-10-29 ユーザー）「許可する」。
 6. **範囲**: eMMC・OTG・Audio・HDMI の mode の変更（U-Boot の mode を使うだけでよいか）は後回し（推し）。

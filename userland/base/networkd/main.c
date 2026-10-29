@@ -21,6 +21,7 @@
 #include "userland/base/networkd/lan-configure.h"
 #include "userland/base/networkd/managed-lan.h"
 #include "userland/base/networkd/managed-wlan.h"
+#include "userland/base/networkd/request-frame.h"
 #include "userland/base/networkd/sleep-state.h"
 #include "userland/base/networkd/wifi-child.h"
 
@@ -515,6 +516,7 @@ static void process_wifi_request(int, struct networkd_request *, const struct ke
 static int read_request(int descriptor, struct networkd_request *request);
 static int read_request_end(int descriptor);
 static int decode_request(struct networkd_request *request);
+static int decode_request_fields(struct networkd_request *request);
 static int copy_request_text(char *, size_t, const struct networkd_field *);
 static const char *operation_name(uint32_t opcode);
 static void send_response(int, uint32_t, uint32_t, uint32_t, int,
@@ -5870,16 +5872,16 @@ receive_wait_request(
 	enum networkd_client_role *role)
 {
 	struct networkd_control_input *input;
+	enum networkd_request_frame_state state;
 	struct pollfd ready;
 	struct timeval timeout;
-	unsigned char *newline;
 	size_t index;
 	size_t header_length;
 	size_t iteration;
 	ssize_t count;
 	int client;
 	int error;
-	int complete;
+	int closed;
 
 	/* Admits at most one new peer per callback under a fixed four-client bound. */
 	for (index = 0U; index < NETWORKD_CONTROL_INPUT_MAX; index++) {
@@ -5917,7 +5919,8 @@ receive_wait_request(
 		if (!input->active)
 			continue;
 		error = 0;
-		complete = 0;
+		closed = 0;
+		state = NETWORKD_REQUEST_FRAME_PARTIAL;
 		if (netutil_monotonic_us() >= input->deadline)
 			error = ETIMEDOUT;
 		for (iteration = 0U; error == 0 && iteration < 2U; iteration++) {
@@ -5929,7 +5932,7 @@ receive_wait_request(
 				break;
 			}
 			if (count == 0) {
-				complete = 1;
+				closed = 1;
 				break;
 			}
 			input->used += (size_t)count;
@@ -5937,29 +5940,27 @@ receive_wait_request(
 				error = EMSGSIZE;
 		}
 
-		/* Requires an exact header/payload and write-side EOF before admission. */
-		if (complete && error == 0) {
-			newline = memchr(input->bytes, '\n', input->used);
-			header_length = newline == NULL ? 0U :
-			    (size_t)(newline - input->bytes) + 1U;
-			if (header_length == 0U || header_length > NETWORKD_PROTOCOL_HEADER_MAX) {
-				error = EINVAL;
-			} else if (networkd_protocol_header_decode((char *)input->bytes,
-			    header_length, &request->header) != 0) {
+		/*
+		 * Tells whether the bytes make a whole request by the rule the
+		 * event loop's read follows: a request ends with the client's
+		 * close, and a subscription, which stays open, with its frame.
+		 */
+		if (error == 0) {
+			state = networkd_request_frame_parse(input->bytes,
+			    input->used, closed, &request->header, &header_length,
+			    &error);
+		}
+
+		/* Decodes a whole request's fields as the event loop would. */
+		if (error == 0 && state == NETWORKD_REQUEST_FRAME_COMPLETE) {
+			memcpy(request->payload, input->bytes + header_length,
+			    request->header.payload_length);
+			if (decode_request_fields(request) != 0)
 				error = errno != 0 ? errno : EINVAL;
-			} else if (request->header.payload_length > NETWORKD_REQUEST_MAX ||
-			    request->header.payload_length != input->used - header_length) {
-				error = EMSGSIZE;
-			} else {
-				memcpy(request->payload, input->bytes + header_length,
-				    request->header.payload_length);
-				if (decode_request(request) != 0)
-					error = errno != 0 ? errno : EINVAL;
-			}
 		}
 
 		/* Detaches complete transport before any dispatcher can invoke another wait. */
-		if (complete && error == 0) {
+		if (error == 0 && state == NETWORKD_REQUEST_FRAME_COMPLETE) {
 			client = input->descriptor;
 			memcpy(peer, &input->peer, sizeof(*peer));
 			*role = input->role;
@@ -5994,6 +5995,7 @@ service_wifi_wait(
 	int parked;
 	int interrupts;
 	int supersedes;
+	int retained;
 	uint64_t cleanup_deadline;
 
 	/*
@@ -6013,6 +6015,21 @@ service_wifi_wait(
 	client = receive_wait_request(&request, &peer, &role);
 	if (client < 0)
 		return 0;
+
+	/*
+	 * A watcher is taken on here as the event loop would take it on.  It
+	 * changes nothing the running work depends on, and a watcher left
+	 * unanswered would keep its connection in the wait's slots until it
+	 * timed out, sending every other client through this wait meanwhile.
+	 */
+	if (request.header.opcode == NETWORKD_OP_SUBSCRIBE) {
+		retained = accept_subscriber(client, role,
+		    request.header.request_id);
+		if (!retained)
+			(void)close(client);
+		networkd_protocol_clear(&request, sizeof(request));
+		return 0;
+	}
 	deferred = 0;
 	parked = 0;
 	supersedes = 0;
@@ -6387,6 +6404,8 @@ read_request(
 	struct networkd_request *request)
 {
 	struct timeval timeout;
+	int ends;
+	int error;
 
 	/* Installs a finite transport deadline before consuming bytes. */
 	if (request == NULL) {
@@ -6410,31 +6429,49 @@ read_request(
 	/*
 	 * Every request but a subscription ends with the client closing its
 	 * direction, which is what proves there is nothing more behind it.
-	 *
-	 * A watcher must not do that.  Once one direction of a stream is
-	 * closed the kernel reports the socket hung up on every poll, and the
-	 * daemon would either spin on it or drop it at once.  A watcher keeps
-	 * both directions open for as long as it watches, and its closing the
-	 * connection is how the daemon learns that it has gone.
+	 * A watcher keeps both directions open for as long as it watches, and
+	 * its closing the connection is how the daemon learns that it has gone.
 	 */
-	if (request->header.opcode != NETWORKD_OP_SUBSCRIBE &&
-	    read_request_end(descriptor) != 0)
-		return -1;
-	if (request->header.opcode == NETWORKD_OP_SUBSCRIBE)
-		return 0;
+	ends = networkd_request_ends_with_close(request->header.opcode);
+	if (ends) {
+		error = read_request_end(descriptor);
+		if (error != 0)
+			return -1;
+	}
 
-	/*
-	 * A wired-management request carries one record per interface, so it
-	 * does not fit the decoder for operations that name a single one.
-	 * It is read where it is acted on.
-	 */
-	if (request->header.opcode == NETWORKD_OP_LAN_ENABLE ||
-	    request->header.opcode == NETWORKD_OP_LAN_DISABLE)
-		return 0;
-	if (decode_request(request) != 0)
+	/* Decodes the fields by the rule the background wait shares. */
+	error = decode_request_fields(request);
+	if (error != 0)
 		return -1;
 
-	/* Reports successful completion. */
+	/* Succeeded: the request is whole and its fields are read. */
+	return 0;
+}
+
+/*
+ * Decodes the fields of a whole request, if its kind carries them.
+ *
+ * Both reading paths come here, so a request is decoded by the same rule
+ * whether the event loop or the wait inside long work read it.
+ */
+static int
+decode_request_fields(
+	struct networkd_request *request)
+{
+	int decoded;
+	int error;
+
+	/* Leaves a request whose payload is read where it is acted on. */
+	decoded = networkd_request_fields_decoded(request->header.opcode);
+	if (!decoded)
+		return 0;
+
+	/* Decodes the interface and options the request names. */
+	error = decode_request(request);
+	if (error != 0)
+		return -1;
+
+	/* Succeeded: the fields are in the request. */
 	return 0;
 }
 

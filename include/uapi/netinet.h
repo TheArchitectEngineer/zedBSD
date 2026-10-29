@@ -45,6 +45,16 @@ extern "C" {
 #define TCP_NODELAY		1
 #define TCP_MAXUNACKTIME	68
 
+/*
+ * TCP_CONGESTION (FreeBSD's name and number) names a connection's
+ * congestion control: "reno" (RFC 5681) or "cubic" (RFC 9438), at most
+ * TCP_CA_NAME_MAX - 1 bytes, a NUL after it not needed.  Setting a name
+ * this kernel does not have fails with ESRCH.  Reading gives the name and
+ * its NUL, cut to the length given.
+ */
+#define TCP_CONGESTION		64
+#define TCP_CA_NAME_MAX		16
+
 #define INADDR_ANY		0x00000000U
 #define INADDR_BROADCAST	0xffffffffU
 #define INADDR_LOOPBACK		0x7f000001U

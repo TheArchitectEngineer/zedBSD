@@ -7,7 +7,7 @@ Status: incomplete（すぐ取り組む物。2026-10-27 ユーザー「すぐ取
 Primary Milestone: MG006
 Parent: [Master](../master.md)
 Related: [WS037](../ws037/ws.md)（nvrtx の本体、RTX 2070 で desktop）、[WS240](../ws240/ws.md)（RTX 50、まだ開始しない）
-Resume point（2026-10-29 P5、q1666）: 残りの設計 [design.md](design.md)（p003〜p007、24 LW、問い Q242-1・Q242-2、design-reviewer 待ち）。旧: [p001](phase001/phase.md) の「再開点」1〜4（driver が chip の SM を compiler に渡す、Ampere/Ada の QMD V03_00、host 試験の追従）に、ユーザーの決定（GTX 16・RTX 30・40 を既定で有効）を足して次の round（Queue の承認が要る）。[p002](phase002/phase.md) は実装・host 試験・build まで済み（3efc2fe08、実機の確かめは無し）。
+Resume point（2026-10-29 P5、q1678-i02）: p003〜p008 は cleared（RTX 2070 の実機の回帰、[phase008](phase008/phase.md)。mview scene-5000 49.39 fps、WS250 の hang は不変、止めの道の故意の失敗 3 点）。p008 で試験だけの boot word `nvrtx.fail=frts|booter|gsp-init` と `plan/ws242/tests/rtx-regress.sh` を足し、hold の印の切れを直した。p009（規約の全文と出典の監査）も cleared。p003〜p009 が cleared。残り: p001・p002 の古い in-progress の扱い（Q1）、WS の受け入れ（RTX 30・40・GTX 16 は実機なし）、main への merge（Q1、p007 の既定の起動を含む）。
 <!-- awesome-plan-current:end -->
 
 ## ユーザーの指示（原文、2026-10-15）
@@ -28,8 +28,14 @@ Resume point（2026-10-29 P5、q1666）: 残りの設計 [design.md](design.md)�
 nvrtx が RTX 20（Turing、GTX 16xx を含む）・30（Ampere）・40（Ada）の全モデルを認識し、30・40 でも GSP の起動・display・Vulkan の描画（SM86・SM89 の shader）が動く形にする。30/40 は実機の確かめなし（host 試験と build まで）。RTX 2070 の今の動きを壊さない。
 
 ## Phase
-| ID | 内容 | 担当 |
-| --- | --- | --- |
-| ws242-p001 | driver: 全 chip の PCI id・chip id の認識、chip の世代の表、firmware の package（GA10x・AD10x）、起動・RM・class・QMD の差 | P2 |
-| ws242-p002 | compiler: SM86・SM89 の encode・latency・規則（SM75 の出力は不変） | P4 |
-| ws242-p003〜p007 | host 試験の復元、SM・QMD 3.0・PCAS2_B、既定で起動と段ごとの諦め、RTX 2070 の回帰、規約の全文（[design.md](design.md) §5。旧 p003 の規約の全文は p007 へ） | 未定 |
+| ID | 内容 | 状態 | 依存 | 担当 |
+| --- | --- | --- | --- | --- |
+| ws242-p001 | driver: 全 chip の PCI id・chip id の認識、chip の世代の表、firmware の package（GA10x・AD10x）、起動・RM・class・QMD の差 | in-progress（残り＝再開点 1〜3 は p003〜p005 へ移した。uncleared で閉じる案は Q1） | — | P2 |
+| ws242-p002 | compiler: SM86・SM89 の encode・latency・規則（SM75 の出力は不変） | in-progress（実装・host 試験・build まで） | — | P4 |
+| ws242-p003 | [host 試験の復元と追従、identify・profile・製品・起動の判断](phase003/phase.md) | cleared（2026-10-29、実機は p008） | — | P2（q1678-i01） |
+| ws242-p004 | [SM を compiler に、QMD 3.0・class・PCAS2_B、HBLANK_DELAY](phase004/phase.md) | cleared（2026-10-29、RTX 2070 で SM75 の道。SM86・89 は host だけ。HBLANK_DELAY は入れない判断） | p003 | P2（q1678-i01） |
+| ws242-p005 | [scrub 済みの末尾 256 MiB の検査、firmware の package の確かめ](phase005/phase.md) | cleared（2026-10-29、RTX 2070 で layout ok） | p003 | P2（q1678-i01） |
+| ws242-p006 | [段ごとに諦めて firmware の画面に戻す道](phase006/phase.md) | cleared（2026-10-29、RTX 2070 で故意の失敗 3 点、印の切れを p008 で直した） | p004 | P2（q1678-i01） |
+| ws242-p007 | [GTX 16・RTX 30・40 を既定で起動](phase007/phase.md) | cleared（2026-10-29、RTX 2070 の既定は不変。未検証の family は host だけ） | p004・p006 | P2（q1678-i01） |
+| ws242-p008 | [RTX 2070 の実機の回帰](phase008/phase.md)（RDNA と差し替え、Q242-4） | cleared（2026-10-29、RTX 2070、q1678-i02） | p004〜p007 | P5（q1678-i02） |
+| ws242-p009 | [規約の全文と出典の監査](phase009/phase.md) | cleared（2026-10-29、書き方の直しは vmunix が byte で不変） | p003〜p008 | P5（q1678-i02） |

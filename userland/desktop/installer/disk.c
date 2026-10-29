@@ -32,7 +32,7 @@
 /* The most partitions one disk's table holds that diskpart edits. */
 #define DISK_ENTRIES_MAX	16U
 
-/* A disk smaller than this has a swap partition of 1 GiB (spec 5.7). */
+/* A disk smaller than this has a swap partition of 1 GiB. */
 #define DISK_SMALL_BYTES	(32ULL * INST_GIB)
 
 /* The swap partition of the whole disk's layout: as large as the memory, within these. */
@@ -80,26 +80,36 @@ inst_probe_line(
 	unsigned i;
 	uint32_t registration;
 	unsigned slot;
+	int same;
 
-	/* The fields, and the end of the probe. */
+	/* Splits the line into its fields. */
 	count = disk_split(line, field, DISK_FIELDS_MAX);
-	if (strcmp(field[0], "end") == 0)
+
+	/* The end of the probe. */
+	same = strcmp(field[0], "end");
+	if (same == 0)
 		return 1;
 
-	/* The firmware and the memory. */
-	if (strcmp(field[0], "firmware") == 0 && count >= 2U) {
+	/* The firmware, which says whether the machine boots by UEFI. */
+	same = strcmp(field[0], "firmware");
+	if (same == 0 && count >= 2U) {
 		probe->uefi = 0;
-		if (strcmp(field[1], "uefi") == 0)
+		same = strcmp(field[1], "uefi");
+		if (same == 0)
 			probe->uefi = 1;
 		return 0;
 	}
-	if (strcmp(field[0], "memory") == 0 && count >= 2U) {
+
+	/* The memory, in bytes. */
+	same = strcmp(field[0], "memory");
+	if (same == 0 && count >= 2U) {
 		probe->memory = strtoull(field[1], NULL, 10);
 		return 0;
 	}
 
 	/* A disk. */
-	if (strcmp(field[0], "disk") == 0 && count >= 12U) {
+	same = strcmp(field[0], "disk");
+	if (same == 0 && count >= 12U) {
 		if (probe->disk_count >= INST_DISKS_MAX)
 			return 0;
 		disk = &probe->disk[probe->disk_count];
@@ -122,7 +132,8 @@ inst_probe_line(
 	}
 
 	/* A partition of the disk before it. */
-	if (strcmp(field[0], "part") == 0 && count >= 15U) {
+	same = strcmp(field[0], "part");
+	if (same == 0 && count >= 15U) {
 		if (probe->disk_count == 0U || probe->part_count >= INST_PARTS_MAX)
 			return 0;
 		disk = &probe->disk[probe->disk_count - 1U];
@@ -151,7 +162,8 @@ inst_probe_line(
 	}
 
 	/* What a FAT holds, for the partition it is on. */
-	if (strcmp(field[0], "fat") == 0 && count >= 7U) {
+	same = strcmp(field[0], "fat");
+	if (same == 0 && count >= 7U) {
 		registration = (uint32_t)strtoul(field[1], NULL, 10);
 		slot = (unsigned)strtoul(field[2], NULL, 10);
 		for (i = 0; i < probe->part_count; i++) {
@@ -164,6 +176,8 @@ inst_probe_line(
 			part->boot_loader = disk_answer(field[5]);
 			part->zedbsd_loader = disk_answer(field[6]);
 		}
+
+		/* The record is taken. */
 		return 0;
 	}
 
@@ -257,6 +271,7 @@ inst_disk_refusal(
 	const struct inst_disk *disk)
 {
 	uint64_t needed;
+	uint64_t disk_bytes;
 
 	/* The running system's own. */
 	if (disk->live)
@@ -274,7 +289,8 @@ inst_disk_refusal(
 
 	/* Room for the ESP, the swap partition and the base system. */
 	needed = INST_ESP_BYTES + DISK_SWAP_LOW + inst_root_needed(app, 1) + 3U * INST_MIB;
-	if (inst_disk_bytes(disk) < needed)
+	disk_bytes = inst_disk_bytes(disk);
+	if (disk_bytes < needed)
 		return "This disk is too small.";
 
 	/* The disk can take the installation. */
@@ -295,9 +311,12 @@ inst_chosen_refusal(
 	const struct inst_part *part;
 	unsigned i;
 	int esps;
+	int same;
+	int is_esp;
 
 	/* GPT, as diskpart edits it. */
-	if (strcmp(disk->table, "gpt") != 0)
+	same = strcmp(disk->table, "gpt");
+	if (same != 0)
 		return "The disk has no GPT partition table.";
 	if (disk->restrictions != 0U)
 		return "The disk's partition table cannot be edited here.";
@@ -310,7 +329,10 @@ inst_chosen_refusal(
 		part = &app->probe.part[disk->first_part + i];
 		if (part->fat && part->cfg != INST_NO)
 			return "Another installation of this system may be on this disk.";
-		if (inst_part_esp(part)) {
+
+		/* An ESP must have been looked into. */
+		is_esp = inst_part_esp(part);
+		if (is_esp) {
 			esps++;
 			if (!part->fat)
 				return "The disk's EFI system partition cannot be read.";
@@ -473,6 +495,8 @@ inst_largest_gap(
 		*start = gap_start[i];
 		*sectors = gap_sectors[i];
 	}
+
+	/* A disk with no gap has no room. */
 	if (*sectors == 0U)
 		return ENOSPC;
 
@@ -529,7 +553,7 @@ inst_place(
 }
 
 /*
- * Gives the swap partition of the whole disk's layout (spec 5.7): as large
+ * Gives the swap partition of the whole disk's layout: as large
  * as the memory, 1 to 8 GiB, 1 GiB on a disk smaller than 32 GiB.
  */
 uint64_t
@@ -538,9 +562,11 @@ inst_whole_swap_bytes(
 	const struct inst_disk *disk)
 {
 	uint64_t bytes;
+	uint64_t disk_bytes;
 
 	/* A small disk's. */
-	if (inst_disk_bytes(disk) < DISK_SMALL_BYTES)
+	disk_bytes = inst_disk_bytes(disk);
+	if (disk_bytes < DISK_SMALL_BYTES)
 		return DISK_SWAP_LOW;
 
 	/* The memory's, within the bounds, on the MiB. */
@@ -552,7 +578,7 @@ inst_whole_swap_bytes(
 	return bytes / INST_MIB * INST_MIB;
 }
 
-/* Gives the swap file's size (spec 5.5): the memory's, at most 2 GiB less 4 KiB, whole pages. */
+/* Gives the swap file's size: the memory's, at most 2 GiB less 4 KiB, whole pages. */
 uint64_t
 inst_swapfile_bytes(
 	const struct inst_app *app)
@@ -567,7 +593,7 @@ inst_swapfile_bytes(
 }
 
 /*
- * Gives the smallest root (spec 5.6): the units' size and a tenth, the
+ * Gives the smallest root: the units' size and a tenth, the
  * swap file when one is to be made, and 1 GiB to spare.  base_only counts
  * the base system alone (S2 and S5, before the units are chosen).
  */
@@ -654,6 +680,7 @@ disk_split(
 {
 	unsigned count;
 	char *tab;
+	int same;
 
 	/* Each field up to the next TAB ("-" is an empty one). */
 	count = 0;
@@ -663,7 +690,8 @@ disk_split(
 		tab = strchr(line, '\t');
 		if (tab != NULL)
 			*tab = '\0';
-		if (strcmp(field[count - 1U], "-") == 0)
+		same = strcmp(field[count - 1U], "-");
+		if (same == 0)
 			field[count - 1U] = (char *)"";
 		if (tab == NULL)
 			break;
@@ -690,16 +718,22 @@ static enum inst_answer
 disk_answer(
 	const char *text)
 {
+	int same;
+
 	/* The two answers; anything else is not known. */
-	if (strcmp(text, "no") == 0)
+	same = strcmp(text, "no");
+	if (same == 0)
 		return INST_NO;
-	if (strcmp(text, "yes") == 0)
+	same = strcmp(text, "yes");
+	if (same == 0)
 		return INST_YES;
+
+	/* Anything else is not known. */
 	return INST_UNKNOWN;
 }
 
 /*
- * Reports whether an existing ESP is enough (spec 5.4): a FAT the helper
+ * Reports whether an existing ESP is enough: a FAT the helper
  * looked into, without zedbsd.cfg or \EFI\ZEDBSD\BOOTX64.EFI, whose
  * fallback loader is known, with room for the loader and 16 MiB.
  */
@@ -710,11 +744,16 @@ disk_esp_enough(
 	const struct inst_part *part)
 {
 	int same;
+	int is_esp;
 
+	/* The disk is part of the signature the callers share; the partition decides. */
 	(void)disk;
 
 	/* An ESP holding a FAT. */
-	if (!inst_part_esp(part) || !part->fat)
+	is_esp = inst_part_esp(part);
+	if (!is_esp)
+		return 0;
+	if (!part->fat)
 		return 0;
 	same = strcmp(part->fstype, "vfat");
 	if (same != 0)
@@ -786,6 +825,8 @@ disk_gaps(
 				next_end = part->start + part->sectors;
 			}
 		}
+
+		/* A partition that began before the cursor leaves no gap before it. */
 		if (next < cursor)
 			next = cursor;
 

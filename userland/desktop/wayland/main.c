@@ -1160,6 +1160,8 @@ event_loop(
 			kwl_scanout_ended(server);
 		kwl_compose_poll(server);
 		kwl_glass_glyphs_poll(server);
+		kwl_glass_blur_take(server);
+		kwl_keyboard_hand_take(server);
 		server->perf.frame_done_cycles += kwl_cycles() - part;
 
 		/*
@@ -1318,6 +1320,9 @@ service_cleanup(
 	/* The input thread lets go of every device; then, no client remaining to hear from the seat, they close quietly. */
 	kwl_input_threads_stop(server);
 	kwl_input_cleanup(server);
+
+	/* The handwriting's recognition pool ends (keyboard.c). */
+	kwl_keyboard_hand_stop();
 
 	/* The device I/O thread ends; the devices it opened and the closes it was given are closed (io.c). */
 	kwl_io_stop(server);

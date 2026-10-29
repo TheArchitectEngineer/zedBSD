@@ -101,6 +101,20 @@ nvrtx_vk_heap_bytes(void *owner)
 	return 240ULL << 20;
 }
 
+uint32_t
+nvrtx_vk_shader_model(void *owner)
+{
+	(void)owner;
+	return 75U;
+}
+
+uint32_t
+nvrtx_vk_threed_class(void *owner)
+{
+	(void)owner;
+	return 0xc597U;
+}
+
 /* The node's other parts the dispatcher's later handlers reach (the D3 test covers them). */
 void
 kern_logf(const char *format, ...)

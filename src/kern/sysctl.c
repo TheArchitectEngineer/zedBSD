@@ -65,6 +65,7 @@ static const struct sysctl_leaf leaves[] = {
 	{{ CTL_KERN, KERN_BOOT_LOGIN, 0 }, 2, "kern.boot.login"},
 	{{ CTL_KERN, KERN_BOOT_KMSG, 0 }, 2, "kern.boot.kmsg"},
 	{{ CTL_NET, NET_TCPSTATS, 0 }, 2, "net.tcpstats"},
+	{{ CTL_NET, NET_TCP, NET_TCP_CONGESTION }, 3, "net.tcp.congestion"},
 	{{ CTL_VFS, VFS_BUFCACHE, VFS_BUFCACHE_MAX_BYTES }, 3,
 	 "vfs.bufcache.max_bytes"},
 	{{ CTL_VFS, VFS_BUFCACHE, VFS_BUFCACHE_CURRENT_BYTES }, 3,
@@ -168,6 +169,7 @@ static int sysctl_usb_trace(void *oldp, size_t *oldlenp, const void *newp, size_
 static int sysctl_cputimes(void *oldp, size_t *oldlenp, const void *newp, size_t newlen);
 static int sysctl_diskstats(void *oldp, size_t *oldlenp, const void *newp, size_t newlen);
 static int sysctl_tcpstats(void *oldp, size_t *oldlenp, const void *newp, size_t newlen, int superuser);
+static int sysctl_tcp_congestion(void *oldp, size_t *oldlenp, const void *newp, size_t newlen, int superuser);
 static int sysctl_gputelemetry(void *oldp, size_t *oldlenp, const void *newp, size_t newlen);
 static int sysctl_writeback(const int *name, void *oldp, size_t *oldlenp, const void *newp, size_t newlen, int superuser);
 static int oid_compare(const int *a, unsigned alen, const int *b, unsigned blen);
@@ -474,6 +476,12 @@ kern_sysctl(
 	/* Reports each TCP socket's state and counts. */
 	if (namelen == 2 && name[0] == CTL_NET && name[1] == NET_TCPSTATS) {
 		error = sysctl_tcpstats(oldp, oldlenp, newp, newlen, superuser);
+		return error;
+	}
+
+	/* Reports or sets the congestion control new TCP sockets start with. */
+	if (namelen == 3 && name[0] == CTL_NET && name[1] == NET_TCP && name[2] == NET_TCP_CONGESTION) {
+		error = sysctl_tcp_congestion(oldp, oldlenp, newp, newlen, superuser);
 		return error;
 	}
 
@@ -1030,6 +1038,53 @@ sysctl_tcpstats(
 		return error;
 
 	/* Succeeded: the value (or its length) is given. */
+	return 0;
+}
+
+/*
+ * Reads or sets net.tcp.congestion: the name of the congestion control new
+ * TCP sockets start with, and its NUL.  Only the superuser sets one, by its
+ * name (a NUL after it not needed).
+ */
+static int
+sysctl_tcp_congestion(
+	void *oldp,
+	size_t *oldlenp,
+	const void *newp,
+	size_t newlen,
+	int superuser)
+{
+	const char *name;
+	unsigned cc;
+	int error;
+
+	/* A length without a value asks for nothing that can be written. */
+	if (newp == NULL && newlen != 0)
+		return EINVAL;
+
+	/* Sets the control by its name. */
+	if (newp != NULL) {
+		/* Only the superuser chooses it for every new socket. */
+		if (!superuser)
+			return EPERM;
+
+		/* A name this kernel has. */
+		error = tcp_cc_lookup(newp, newlen, &cc);
+		if (error != 0)
+			return error;
+
+		/* Has new sockets start with it. */
+		tcp_cc_set_default(cc);
+	}
+
+	/* Reports the name in force, with its NUL. */
+	cc = tcp_cc_default();
+	name = tcp_cc_name(cc);
+	error = sysctl_output(oldp, oldlenp, name, kern_strlen(name) + 1U);
+	if (error != 0)
+		return error;
+
+	/* Succeeded: the name is reported. */
 	return 0;
 }
 

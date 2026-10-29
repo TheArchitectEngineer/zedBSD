@@ -57,9 +57,16 @@
 /* A blob's VRAM is on this boundary (a window's surface address is a multiple of 256). */
 #define NODE_BLOB_ALIGN			0x10000ULL
 
-/* How long each turn of the message drain takes messages, and its pause after a failed turn. */
-#define NODE_DRAIN_TURN_US		1000000U
+/*
+ * How long each turn of the message drain takes messages (it holds the
+ * GSP's lock through a turn, so a call waits at most this long), its pause
+ * after a failed turn, its yield to a thread waiting for the lock (at least
+ * a scheduler tick) and how often it looks at the refresh count.
+ */
+#define NODE_DRAIN_TURN_US		20000U
 #define NODE_DRAIN_PAUSE_US		1000000U
+#define NODE_DRAIN_YIELD_US		1000U
+#define NODE_DRAIN_SAMPLE_US		1000000U
 
 /* How often the drain writes the counts nvrtx.vk.perf=1 asks for. */
 #define NODE_PERF_PERIOD_US		5000000U
@@ -454,6 +461,36 @@ nvrtx_vk_heap_bytes(
 	return memory->bar1_window - memory->bar1_cpu_from;
 }
 
+/*
+ * Gives the shader model the executor compiles the owner's programs for.
+ */
+uint32_t
+nvrtx_vk_shader_model(
+	void *owner)
+{
+	struct nvrtx_session *session;
+
+	session = owner;
+
+	/* The generation's model from its family record. */
+	return session->node->gpu->identity.chip.profile->sm;
+}
+
+/*
+ * Gives the 3D class the executor's push buffers bind.
+ */
+uint32_t
+nvrtx_vk_threed_class(
+	void *owner)
+{
+	struct nvrtx_session *session;
+
+	session = owner;
+
+	/* The generation's class from its family record. */
+	return session->node->gpu->identity.chip.profile->class_threed;
+}
+
 /* Opens a session: it names its node and has an executor session of its own. */
 static int
 node_open(
@@ -463,10 +500,11 @@ node_open(
 	struct nvrtx_session *opened;
 	int error;
 
-	/* Allocates the session. */
+	/* Allocates the session, with the lock of its executor. */
 	opened = kern_calloc(1U, sizeof(*opened));
 	if (opened == NULL)
 		return ENOMEM;
+	(void)mutex_init(&opened->exec_lock, LOCK_RANK_DEVICE, "nvrtx session executor");
 
 	/* Opens its executor session. */
 	error = nvrtx_vk_session_open(opened, &opened->vk);
@@ -481,7 +519,7 @@ node_open(
 	return 0;
 }
 
-/* Closes a session: its lease ends (the console surface comes back), its executor session closes, then it goes. */
+/* Closes a session: its lease ends (the console surface comes back), its executor session and its channel close, then it goes. */
 static void
 node_close(
 	void *private_data,
@@ -497,15 +535,20 @@ node_close(
 	/* Ends the session's lease, if it holds it. */
 	nvrtx_present_session_close(node, session);
 
-	/* Closes the executor session; a payload still held keeps it (and is shown). */
+	/* Closes the executor session holding it; a payload still held keeps it (and is shown). */
+	mutex_lock(&closing->exec_lock);
 	mutex_lock(&node->lock);
 
 	error = nvrtx_vk_session_close(&closing->vk);
 
 	mutex_unlock(&node->lock);
+	mutex_unlock(&closing->exec_lock);
 
 	if (error != 0)
 		nvrtx_stage_mark("gpu-device: an executor session closed with %d", error);
+
+	/* Frees the session's channel, its runs being over. */
+	nvrtx_runtime_session_close(node, closing);
 
 	/* Frees the session. */
 	kern_free(session);
@@ -892,13 +935,15 @@ node_free(
 /*
  * Takes the messages the GSP sends while the device is up, a turn at a
  * time, until the stop for the reboot asks it to end.  The worker that
- * made the device has ended, and the device's operations make no calls to
- * the GSP, so this thread is the channel's only reader.  The wait shows
- * the channel errors it meets.
+ * made the device has ended; a turn holds the GSP's lock, which the
+ * device's own calls (a session's channel, the recovery) take too, so one
+ * thread reads the channel at a time.  Between turns the lock is free, and
+ * the drain sleeps a tick when a thread waits for it (the lock is not
+ * handed over).  The wait shows the channel errors it meets.
  *
- * After each turn (about a second) it also reads the head's frame counter,
- * so the refresh count keeps up even while nobody waits for a boundary
- * (the 16-bit counter wraps after about 18 minutes at 60 Hz).
+ * About every second it also reads the head's frame counter, so the
+ * refresh count keeps up even while nobody waits for a boundary (the
+ * 16-bit counter wraps after about 18 minutes at 60 Hz).
  */
 static void
 node_drain(
@@ -907,20 +952,42 @@ node_drain(
 	struct nvrtx_node *node;
 	uint64_t count;
 	uint64_t time_ns;
+	uint64_t now;
+	uint64_t sampled;
+	uint32_t wanted;
 	size_t length;
 	int error;
 
 	node = argument;
+	sampled = 0U;
 
 	/* Takes messages turn after turn; a turn ends when its time is spent, and the stop ends the turns. */
 	for (;;) {
+		/* Holds the GSP's lock through one turn. */
+		nvrtx_rpc_lock(node->gpu);
+
 		error = nvrtx_rpc_wait(node->gpu, NODE_DRAIN_NO_FUNCTION, 0U, NODE_DRAIN_TURN_US, &length);
+
+		nvrtx_rpc_unlock(node->gpu);
+
+		/* A failed turn is followed by a pause. */
 		if (error != 0 && error != ETIMEDOUT)
 			kern_usleep_range(NODE_DRAIN_PAUSE_US, NODE_DRAIN_PAUSE_US);
 
 		/* The stop for the reboot reads the GSP's replies itself from here on. */
 		if (node->drain_stop != 0)
 			break;
+
+		/* A thread waiting for the lock takes it while the drain sleeps a tick. */
+		wanted = __atomic_load_n(&node->gpu->rpc_wanted, __ATOMIC_ACQUIRE);
+		if (wanted != 0U)
+			kern_usleep_range(NODE_DRAIN_YIELD_US, NODE_DRAIN_YIELD_US * 2U);
+
+		/* The refresh count and the counts about every second, not every turn. */
+		now = nvrtx_now_us();
+		if (now - sampled < NODE_DRAIN_SAMPLE_US)
+			continue;
+		sampled = now;
 
 		/* Brings the refresh count up to date. */
 		nvrtx_present_refresh_sample(node, &count, &time_ns);
@@ -987,6 +1054,11 @@ node_perf_report(
 	taken.streams = __atomic_exchange_n(&node->counts.streams, 0U, __ATOMIC_RELAXED);
 	taken.stream_bytes = __atomic_exchange_n(&node->counts.stream_bytes, 0U, __ATOMIC_RELAXED);
 	taken.stream_us = __atomic_exchange_n(&node->counts.stream_us, 0U, __ATOMIC_RELAXED);
+	taken.cursor_sets = __atomic_exchange_n(&node->counts.cursor_sets, 0U, __ATOMIC_RELAXED);
+	taken.cursor_same = __atomic_exchange_n(&node->counts.cursor_same, 0U, __ATOMIC_RELAXED);
+	taken.cursor_set_us = __atomic_exchange_n(&node->counts.cursor_set_us, 0U, __ATOMIC_RELAXED);
+	taken.cursor_moves = __atomic_exchange_n(&node->counts.cursor_moves, 0U, __ATOMIC_RELAXED);
+	taken.cursor_move_us = __atomic_exchange_n(&node->counts.cursor_move_us, 0U, __ATOMIC_RELAXED);
 	node->perf_since_us = now;
 
 	/* The runs and the frames, each line within the log's 79 columns: the runs a wait saw end, from their submission. */
@@ -1025,6 +1097,14 @@ node_perf_report(
 	    (unsigned long long)taken.streams,
 	    (unsigned long long)(taken.stream_bytes / 1024U),
 	    (unsigned long long)taken.stream_us);
+
+	/* The cursor's images and moves, each with the average time it held the node's lock. */
+	nvrtx_stage_mark("perf: cursor sets %llu same %llu avg %lluus, moves %llu avg %lluus",
+	    (unsigned long long)taken.cursor_sets,
+	    (unsigned long long)taken.cursor_same,
+	    (unsigned long long)node_perf_average(taken.cursor_set_us, taken.cursor_sets),
+	    (unsigned long long)taken.cursor_moves,
+	    (unsigned long long)node_perf_average(taken.cursor_move_us, taken.cursor_moves));
 
 	/* The CPU's window: what is mapped now, the most at once, and its size. */
 	nvrtx_bo_window_use(node->gpu, &used, &peak, &size);

@@ -1,6 +1,7 @@
-# Boot, root storage and installation status
+# Boot, root storage and installation
 
-Status: current; accepted amd64 installation and PC98 FAT installation.
+Status: how-to; boot and root modes on x86, and installing amd64 UEFI PCs
+with the graphical installer.
 
 Start with the [build guide](build-from-source.md) and select a BIOS-capable
 amd64 image for the following disposable QEMU example. Commands run in the
@@ -30,17 +31,23 @@ QEMU fork and its own image, not this PC machine command.
 | amd64 BIOS | PBR → BOOTZBSD.EXE → payload FAT `/zedbsd.cfg` |
 | amd64 UEFI | BOOTX64.EFI → same-physical-disk FAT configuration discovery |
 
-Exactly one `kernel=` directive selects the kernel relative to the chosen
-configuration filesystem. Remaining lines become kernel parameters. Missing
-configuration, invalid kernel or over-limit records stop visibly; a missing
-file does not select a hidden direct-kernel fallback. UEFI LoadOptions does
-not replace the configuration file. See the exact
+Exactly one `kernel=` directive selects the kernel, as a path relative to the
+chosen configuration filesystem. On amd64 UEFI the path may instead carry the
+`rootpart:` prefix, which names an absolute path on the UFS root partition
+that `rootpart=PARTUUID=` selects (`kernel=rootpart:/boot/vmunix`); `logo=`
+takes the same prefix. The BIOS loaders do not read UFS and stop on such a
+path. Remaining lines become kernel parameters. Missing configuration, invalid
+kernel or over-limit records stop visibly; a missing file does not select a
+hidden direct-kernel fallback. UEFI LoadOptions does not replace the
+configuration file. See the exact
 [parameter contract](../reference/kernel-boot-parameters.md).
 
 UEFI may execute the loader from an ESP while reading configuration and kernel
 from another FAT partition; the amd64 native image does so, with only the loader
 on the ESP and `vmunix`, `zedbsd.cfg` and the logo on a FAT32 partition of the
-Basic Data type labelled `ZEDBSD`. The FAT the configuration came from is
+Basic Data type labelled `ZEDBSD`. A system the installer installed instead has
+the loader and `zedbsd.cfg` on its ESP and the kernel and logo in `/boot` of its
+UFS root. The FAT the configuration came from is
 `boot0` and is shown at `/boot/boot0`; the ESP the firmware started the loader
 from is shown at `/boot/efi` (the same mount twice when one partition is both).
 After boot, inspect:
@@ -53,8 +60,9 @@ sysctl kern.boot.config_matches
 
 The [provenance reference](../reference/boot-provenance.md) explains PARTUUID,
 `unavailable` and ambiguity. `boot0` is a kernel boot-filesystem selection;
-it is not proof of which ESP firmware used. Multiple configurations can boot
-by discovery order but are not acceptable installer admission evidence.
+it is not proof of which ESP firmware used. Multiple configurations on one disk
+boot by discovery order: the loader uses the first `zedbsd.cfg` it finds, which
+is why the installer does not add a second zedBSD to a disk that has one.
 
 ## File-backed overlay root
 
@@ -76,10 +84,11 @@ implied. Aliasing, recursion and conflicting root selectors are errors.
 Persistence belongs to `data.img` and the containing medium, not to the
 immutable lower image. Do not format or replace an active data/swap backing
 file. [mkfs/mkswap](../reference/image-formatters.md) take reserved regular
-files in their image mode; the installer also uses explicit block-formatting
-modes on inactive target partitions. Partition creation is owned by `diskpart`. `--verify-pristine` is read-only but
-intentionally rejects a previously used filesystem or swap payload, even if
-it is otherwise valid.
+files in their image mode, and have block-device modes for inactive
+partitions. Partition creation is owned by
+[diskpart](../reference/block-administration.md). `--verify-pristine` is
+read-only but intentionally rejects a previously used filesystem or swap
+payload, even if it is otherwise valid.
 
 ## Native root
 
@@ -98,13 +107,28 @@ arrangement and required runtime files. Formatting an empty UFS image alone
 does not populate a bootable root. The supported filesystem is the single
 64-bit `ufs` implementation, with no selectable UFS1 alternative.
 
-The dedicated installer below populates this native root and writes its GPT
-PARTUUID selector. It creates `/swapfile` on UFS and an `/etc/fstab` swap entry;
-normal startup activates the file after mounting root. There is no separate
-swap partition or FAT `swap0` setting in this mode.
+The [installer](#install-zedbsd-with-the-installer) populates this native root,
+selects it by a GPT PARTUUID it generates, and keeps the kernel in its `/boot`.
+Swap is either a swap partition, selected by `swap0=PARTUUID=`, or a
+`/swapfile` on the UFS root with an `/etc/fstab` entry that normal startup
+activates after mounting root.
 
-Those historical gates do not constitute acceptance of a new native installer
-or every hardware storage controller.
+### Replacing the kernel of an installed system
+
+The loader reads the kernel from the UFS root without replaying the journal,
+so the new kernel must be written to its final place on the disk before the
+next boot. Copy it under a new name, flush it, rename it over the old one and
+synchronize:
+
+```sh
+cp vmunix.new /boot/vmunix.tmp
+sync
+mv /boot/vmunix.tmp /boot/vmunix
+sync
+```
+
+Keep the old kernel under another name (for example `/boot/vmunix.old`) until
+the new one has booted, and keep a recovery medium.
 
 ## Mount paths
 
@@ -127,8 +151,8 @@ check preserves the contents for retry.
 
 ## USB trial and installation boundary
 
-A prepared USB boot medium can be selected through the machine's firmware
-boot menu. Match the image's BIOS/UEFI Variant to the firmware path and retain
+A prepared USB boot medium, such as the installer's image, can be selected
+through the machine's firmware boot menu. Match the image's BIOS/UEFI Variant to the firmware path and retain
 a separate recovery boot medium. This guide intentionally has no raw-device
 write command: image creation, destructive media preparation and installing
 onto an existing disk have different effects. Read-only
@@ -137,82 +161,161 @@ device identity before any separately authorized media preparation.
 
 Shut down through `halt`; wait for completed shutdown before removing the
 medium. A failed storage sync or controller quiesce is an error to
-investigate, not permission to report a clean halt. These tests are not a new
-physical USB acceptance campaign.
+investigate, not permission to report a clean halt.
 
-## Install from the running installation disk
+## Install zedBSD with the installer
 
-Boot the installation medium, log in as `root`, and run one frontend from an
-interactive console:
+The installer is a Keiland application on its own USB image. It installs
+zedBSD on an amd64 PC that has UEFI and ACPI and was started through UEFI.
+BIOS, PC-98 and other architectures have no installer. It installs to a
+writable physical disk the kernel registers: NVMe (also behind Intel VMD),
+SATA, or USB Mass Storage, with 512-byte or 4096-byte logical sectors.
+The [installer reference](../reference/installer.md) defines the image, the
+screens and the helper `install-admin` exactly.
+
+### The rule of the installer's image
+
+**The installer's image is for installing only. Do not use it as your system.**
+Do not keep starting the computer from it, copy it to an internal disk, offer
+network services from it or keep your files on it.
+
+A system started from the installer's image logs in automatically as the
+default user `user`, whose password is the published default `user`. Treat
+that start as a start as root: the installer's helper writes any disk without
+asking for a password, so every program in that session, including web
+content in a browser, has the same power as root. This is intended, as with
+any installer that runs as root, and the image is safe only because of the
+rule above. Closing the installer and using the desktop to finish an
+installation is part of installing; using it afterwards is not.
+
+### Build the installer's image
 
 ```sh
-/sbin/zedinst
+make -j16 ZEDBSD_CONFIG=config/ci/config-amd64.mk installer-image
 ```
 
-For the BeUI frontend, use:
+The configuration must be amd64 with the `native` variant, and
+`installer-image` cannot share the command line with another image goal such
+as `disk-image`. `make menuconfig` configures only the kernel and the loader
+for this image. The programs and packages are a fixed selection: all of the
+base, the Keiland desktop, the firmware the kernel's drivers name, and every
+amd64 package under `userland/packages/`; tests and X11 are left out.
+
+The result is `build/amd64/installer-image.img`. It holds an ESP with the
+loader, a FAT32 partition labelled `ZEDBSD` with the kernel, the logo and a
+`zedbsd.cfg` that names the image's root and swap by PARTUUIDs new for each
+build, a UFS root with the installer and `/opt/installer`, and a swap
+partition. `/opt/installer` holds the units an installed system is made of,
+their index, and the loader, kernel and logo the installed system receives.
+
+Write the image to a USB drive whose contents you can lose, using the host's
+disk-image writer on the whole drive (not one of its partitions). Check the
+drive's identity before writing; this guide gives no raw-device command.
+
+### Install
+
+1. Back up anything on the target disk that you want to keep.
+2. Start the PC from the USB drive through the firmware's boot menu, choosing
+   its UEFI entry. The desktop starts and opens the installer instead of the
+   Welcome. If the PC was not started through UEFI, the first screen says so
+   and the installer does not continue.
+3. **Welcome**: read the warning and the image's rule, then **Next**.
+4. **Disk**: choose the target disk. Disks the running system uses (the USB
+   drive itself, its boot FAT, its swap), read-only disks, file-backed disks
+   and disks too small are shown greyed with the reason. **Reload** reads the
+   disks again after plugging one in. Names such as `nvme0n1` and `sda` are
+   not persistent: check the kind and size.
+5. **Partitions**: choose one:
+   - **Use the whole disk** erases every partition, which the screen lists.
+     The installer makes a 512 MiB ESP, a swap partition (the size of the
+     memory, from 1 GiB to 8 GiB; 1 GiB on a disk under 32 GiB) and a UFS root
+     on the rest.
+   - **Choose partitions** keeps the existing partitions. It is offered only on
+     a GPT disk that `diskpart` can edit, with fewer than 16 used entries, no
+     `zedbsd.cfg` on any of its FAT filesystems (another zedBSD), and either no
+     ESP or an ESP with enough free space and no file the installer would
+     overwrite. A FAT that cannot be read counts as one with `zedbsd.cfg`.
+6. With **Choose partitions**:
+   - **Edit**: **Delete** and **Create** write the partition table **at once,
+     when pressed**; **Cancel** later does not undo them. Delete asks first.
+     Create asks only for a size and puts the partition, aligned to 1 MiB, in
+     the first free space that holds it, with the type `zedBSD-unassigned`.
+     When the disk has no ESP, Create first makes a 512 MiB ESP in the same
+     free space. A partition of the target disk that is mounted (for example
+     by Files) is unmounted first; if it cannot be, nothing is written.
+   - **Root**: choose the partition for the UFS root; it must be large enough
+     for what you install. Choosing a partition that is not unassigned asks
+     first, showing its type and label, because its contents are erased.
+   - **Swap**: choose a swap partition, or none. With none, the installer makes
+     `/swapfile` on the root (the memory's size, at most 2 GiB − 4 KiB) after
+     asking.
+7. **Install**: choose what to install. Base System is required. Keiland
+   Desktop and Firmware are on; leaving either out asks first (without the
+   desktop the system has only the console login; without firmware some Wi-Fi
+   and GPU devices may not work). Firmware is installed only after accepting
+   the licences that **Read the licences** shows. Packages: OpenSSH, OpenSSL with CA
+   certificates and Fonts are on; Clang, GTK4, libavcodec, curl, Python and
+   the other packages are off. What a choice depends on is added and shown
+   greyed. The page shows the total size against the root's room.
+8. **User**: the login name, its display name and password, the root
+   password, automatic login (on by default, off without the desktop) and the
+   hostname (default `zedbsd`). The user is an administrator (groups `wheel`
+   and `network`).
+9. **Confirm**: check the disk, the partition table before and after, which
+   partitions are formatted, what is installed and where the loader goes. With
+   the whole disk, tick that its data may be erased. **Install** asks once
+   more and starts writing.
+10. **Progress**: do not turn the PC off or restart it. **Cancel** stops at the
+    end of the current step (or between files while unpacking).
+11. **Finished**: it says how to start the installed system. Restart, remove
+    the USB drive, and choose the installed disk in the firmware's boot menu.
+    When the disk already had `\EFI\BOOT\BOOTX64.EFI`, it was kept and the
+    loader is `\EFI\ZEDBSD\BOOTX64.EFI`: choose that in the boot menu. The
+    installer adds a `zedBSD` boot entry at the end of the boot order, so the
+    firmware's default does not change; the firmware's settings can move it
+    first. Until the USB drive is removed the firmware may start from it again.
+
+The installed system starts from its own disk alone. It logs in to the desktop
+automatically when that was chosen, and otherwise shows `login:`; log in with
+the name and password you chose. Check the root and swap:
 
 ```sh
-/sbin/zedinst-graphic
+mount
+sysctl kern.boot.config_partition
+cat /boot/boot0/zedbsd.cfg /etc/fstab
 ```
 
-Both launch `/bin/noct` and share the installation backend in `/lib/zedinst`.
-They are included in the amd64 and PC98 installer packages. The graphical
-frontend requires a 640x480 true-color framebuffer and keyboard or pointer
-input. On amd64 UEFI, `video=640x480` in the selected boot configuration
-requests the mode; the supplied configuration already includes it. RGB24
-artwork can be displayed on the accepted QEMU XRGB32 framebuffer. On PC98,
-use a supported 640x480 true-color CoreGraph configuration; the ordinary
-low-color display is not sufficient.
+`/` is the UFS root and the configuration partition is the target disk's ESP.
+The configuration names the root (and a swap partition) by PARTUUID; with a
+swap file, `/etc/fstab` has its `/swapfile` line instead. When the swap file
+could not be used, the last screen said the system has no swap. OpenSSH, when installed,
+refuses root logins.
 
-1. Select **Installation disk**. HTTP is displayed as unavailable; there is
-   no network-download installation path yet. The installer requires a mounted
-   `rootfs.img` from that installation disk and checks its identity. Starting
-   from a native installed root without that image produces an error.
-2. Choose the installation mode, then the destination disk. The installation
-   source is excluded. Read the displayed disk name and capacity; enumeration
-   names alone are not persistent identities.
-3. Review the selected destination and confirm using the frontend's prompt.
-   Dedicated installation starts at **NO** and requires selecting **YES** to
-   erase. Graphical coexistence and PC98 also require explicit confirmation.
-   Text-mode amd64 coexistence asks for the displayed `INSTALL DISK PARTITION`
-   phrase instead of the dedicated mode's NO/YES menu.
-4. Wait for copy and verification to finish. Image copies show byte progress.
-   Native-root copying counts files first and reports copied-file progress,
-   preserving attributes. The source installation's writable data and active
-   swap contents are not cloned: fresh destination data/swap are initialized.
-5. After **Installation complete**, close the frontend and run `halt`. Once
-   shutdown completes, remove the installation source and select the target
-   disk in firmware. Log in on the target-only boot; inspect `mount` for the selected root and the boot console
-   `swap: active sources=...` message for active swap.
+### Cancel, failure and starting over
 
-### amd64 coexistence
+Every screen's **Cancel**, after a question, and any failure lead to the failure
+screen. It names the step and the reason and lists what was written to the
+target disk: the partitions created or deleted on the edit screen, a changed
+table, formatted partitions. When nothing was written it says so. The
+`zedbsd.cfg` is written last, so a target whose installation did not finish
+does not boot. Nothing is rolled back. **Start over** reads the disks again: a
+whole-disk installation remakes the table, and partitions made on the edit
+screen stay `zedBSD-unassigned` and can be chosen as root or swap.
 
-Select **Coexist with an existing FAT filesystem**, then a destination payload
-partition. The target needs a healthy supported GPT, exactly one usable FAT32
-ESP and a separate writable FAT32 payload partition with enough free space.
-Existing partition geometry and unrelated files are preserved. The installer
-publishes `EFI/BOOT/BOOTX64.EFI` on the ESP and `vmunix`, `rootfs.img`, fresh
-`data.img`, `swapfile` and `zedbsd.cfg` on the payload FAT filesystem. It selects
-the installed files by partition identity and publishes configuration last.
-It is not an arbitrary overwrite/update tool: conflicting existing managed
-files are reported rather than silently replaced.
+When the table was written but the kernel could not reload it (a partition of
+the target disk was in use), the new partitions cannot be used until a
+restart. Restart from the USB drive and start over.
 
-### amd64 dedicated disk
+### Tools for manual work
 
-Select **Dedicated disk (erase all contents)** and the whole destination disk.
-This destroys the selected disk's existing contents after explicit confirmation.
-The current path requires a writable disk with 512-byte logical sectors.
-Partitioning is automatic: a FAT32 EFI System Partition sized for the boot
-files (at least 64 MiB), then a UFS root partition using the remaining aligned
-space. There is no partition editor, separate home partition or swap partition.
+The installer's work is done by base tools you can also use as root:
+[`diskpart`](../reference/block-administration.md) for GPT tables,
+[`mkfs` and `mkswap`](../reference/image-formatters.md) for FAT32, native UFS
+and swap partitions, and [`efiboot`](../reference/installer.md#6-efiboot) for
+UEFI boot entries. Each destructive command asks for the exact phrase that names
+the device and its registration.
 
-The ESP receives `EFI/BOOT/BOOTX64.EFI`, `vmunix` and `zedbsd.cfg`. The installer
-copies the mounted lower `rootfs.img` tree into UFS, preserving file attributes,
-creates the native swap file, and configures startup swap activation. This path
-installs a UEFI loader; it does not provision a new BIOS boot chain. Use the
-firmware's target-disk boot entry or select `EFI/BOOT/BOOTX64.EFI` manually.
-
-#### Kernel image placement (amd64 UEFI)
+## Kernel image placement (amd64 UEFI)
 
 `vmunix` is linked for physical 2 MiB, but firmware may already own memory
 there (OVMF keeps its own data from 8 MiB, so a kernel image larger than about
@@ -234,39 +337,6 @@ When placement fails the loader lists the firmware memory descriptors below
 1 GiB (`A64 KERN MAP t=<type> <start> +<pages>`). The BIOS loader always
 loads at the linked address and ignores this setting.
 
-### PC98 FAT installation
-
-PC98 is detected from `uname -a`. Use two IDE HDDs: the installation source
-and a target with an existing PC98 partition layout, a working boot entry and
-FAT16. Select the existing FAT partition. Its size must be at most 4 GiB and
-every managed payload file at most 2 GiB; the UI also checks available space.
-
-`BOOTZBSD.EXE`, `vmunix`, `rootfs.img`, fresh `data.img`, `swapfile` and
-`BOOTZBSD.CFG` go on that FAT partition. No ESP or GPT is used. The existing
-bootstrap and unrelated files are retained. Blank-disk bootstrap creation and
-native-root installation are not implemented for PC98 in this installer.
-The accepted QEMU run used a 486, 64 MiB, CoreGraph and two IDE disks, then
-booted and logged in with the target alone. This does not resolve the separate
-physical PC-9821V13 CF boot failure.
-
-### Shell and recovery
-
-**Open shell** leaves the wizard for `/bin/sh`; exiting it restarts source
-admission and disk discovery. `diskpart` remains available for manual work;
-the installer has no arbitrary partition-editing screen. Returning from a
-shell does not preserve an old destination approval.
-
-If installation reports failure or cleanup problems, retain the console's
-`Published`, `Publication requires inspection` and `Preserved staging object`
-paths. Inspect them before retrying. Do not delete staging or overwrite a
-managed file merely to suppress a conflict. Dedicated formatting cannot restore
-the previous disk contents. Cancellation before confirmation leaves installation
-unauthorized; a later I/O failure is not equivalent to cancellation.
-
-There is no longer a one-controller NVMe limit; current support remains one
-active namespace per controller, bounded by resources and the shared disk
-registry.
-
 ## Failure diagnosis
 
 - No loader under SeaBIOS: check whether the image is UEFI-only.
@@ -279,13 +349,15 @@ registry.
   [kernel boot parameters](../reference/kernel-boot-parameters.md) Section 7c.
 - Configuration/kernel error before the kernel banner: inspect the selected
   FAT file, exact path, required directive and firmware path.
+- `A64 KERN UFS <reason>` before the kernel banner: the UEFI loader could not
+  read a `rootpart:` path. `duplicate PARTUUID` means another attached disk
+  has a partition with the root's PARTUUID (for example a copy of the
+  installed disk): detach it. Other reasons name a missing root partition, an
+  unreadable UFS volume or a missing `/boot/vmunix`; start from a recovery
+  medium and inspect the installed root.
 - Root-selection failure: check the complete parameter record, unique selectors,
   both overlay files and absence of conflicting `rootpart`.
 - Init failure: check the target executable and ABI; `init=/bin/sh` is an
   explicit rescue selection, not an automatic fallback.
 - A boot-device or storage error: retain the console log and test a disposable
   copy with the matching controller. Do not repair by formatting the live root.
-
-q190 updates these instructions against current installer sources and retained
-normal-path producer evidence. This documentation update performs no new
-physical installation or exhaustive installer fault campaign. 

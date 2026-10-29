@@ -22,8 +22,20 @@
 /* The passes a list's summary describes one by one (KWL PASSES); the rest are only counted. */
 #define KWL_LIST_PASS_DETAIL	8U
 
-/* A host-written image whose staging a frame copies first (compose.h). */
-struct kwl_import;
+/*
+ * A host-written image's copy that a frame records first (shm.c): its
+ * staging and sampled images, its width, and the rows (first to last,
+ * excluded; none when first equals last), written by the main thread when
+ * the drawing takes the image, so that the replay on the render thread
+ * reads no image record (one may be let go meanwhile).
+ */
+struct kwl_list_copy {
+	VkImage staging;
+	VkImage image;
+	uint32_t width;
+	uint32_t first;
+	uint32_t last;
+};
 
 /* The kinds of operation a list holds, one for each Vulkan command the drawing records. */
 enum kwl_list_kind {
@@ -166,7 +178,7 @@ struct kwl_list {
 	unsigned char *vertices;
 	uint32_t vertex_used;
 	uint32_t vertex_capacity;
-	struct kwl_import **copies;
+	struct kwl_list_copy *copies;
 	unsigned copy_count;
 	unsigned copy_capacity;
 	unsigned draws;
@@ -206,7 +218,7 @@ void kwl_list_replay(const struct kwl_list *list, VkCommandBuffer command);
 unsigned kwl_list_things(const struct kwl_list *list);
 void kwl_list_count_passes(const struct kwl_list *list, const VkRenderPass *loading, unsigned loading_count, unsigned job_draws, struct kwl_list_passes *passes);
 void kwl_list_add_vertices(struct kwl_list *list, const void *vertices, uint32_t bytes);
-void kwl_list_add_copy(struct kwl_list *list, struct kwl_import *import);
+void kwl_list_add_copy(struct kwl_list *list, const struct kwl_list_copy *copy);
 void kwl_list_begin_render_pass(struct kwl_list *list, const VkRenderPassBeginInfo *begin, VkSubpassContents contents);
 void kwl_list_end_render_pass(struct kwl_list *list);
 void kwl_list_set_viewport(struct kwl_list *list, uint32_t first, uint32_t count, const VkViewport *viewports);

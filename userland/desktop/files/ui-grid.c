@@ -39,7 +39,7 @@
 /* The panel's corner radius. */
 #define GRID_RADIUS		16.0f
 
-/* The faint mark over an empty place's words, in pixels a side (ws035-p108). */
+/* The faint mark over an empty place's words, in pixels a side. */
 #define GRID_MARK		72
 
 static void grid_panel(struct fm_app *app, struct kl_canvas *canvas, const struct kl_rect *area);
@@ -406,7 +406,7 @@ grid_message(
 {
 	int width;
 
-	/* The mark, faint, above the words (ws035-p108). */
+	/* The mark, faint, above the words. */
 	fm_mark_draw(canvas, inner->x + (inner->width - GRID_MARK) / 2, inner->y + inner->height / 2 - 44 - GRID_MARK, (unsigned)GRID_MARK, 0.45f);
 
 	/* Centred, faint. */

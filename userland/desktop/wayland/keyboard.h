@@ -168,6 +168,17 @@ struct kwl_hand_result {
 };
 
 /*
+ * A recognition's answer from the pool (kwl_hand_take): the generation it
+ * was given with, the ink it read (the job's copy, valid during the
+ * call) and what it answered.
+ */
+struct kwl_hand_answer {
+	uint64_t generation;
+	const struct kwl_hand_ink *ink;
+	struct kwl_hand_result result;
+};
+
+/*
  * The kinds of field the keyboard follows (q893), from the text input's
  * purpose (text-input-v3's numbers): text, digits (digits, a number, a
  * phone number), an email address and a web address.  A text field keeps
@@ -210,8 +221,10 @@ int kwl_hand_begin(struct kwl_hand_ink *ink, int32_t x, int32_t y);
 int kwl_hand_add(struct kwl_hand_ink *ink, int32_t x, int32_t y);
 unsigned kwl_hand_points(const struct kwl_hand_ink *ink);
 void kwl_hand_bounds(const struct kwl_hand_ink *ink, int32_t *rect);
-int kwl_hand_load(const char *path);
-void kwl_hand_preload(struct kwl_hand_result *result);
+void kwl_hand_preload(struct kwl_hand_result *result, int wake);
+int kwl_hand_submit(const struct kwl_hand_ink *ink, int32_t top, int32_t height, uint64_t generation);
+unsigned kwl_hand_take(void (*answer)(void *context, const struct kwl_hand_answer *answer), void *context);
+void kwl_hand_stop(void);
 void kwl_hand_recognize(const struct kwl_hand_ink *ink, int32_t area, struct kwl_hand_result *result);
 void kwl_hand_recognize_on(const struct kwl_hand_ink *ink, int32_t top, int32_t height, struct kwl_hand_result *result);
 unsigned kwl_emoji_count(unsigned category);

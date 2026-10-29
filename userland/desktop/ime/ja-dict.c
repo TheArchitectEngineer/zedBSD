@@ -18,7 +18,7 @@
  * adjective's candidate conjugates; any other annotation says nothing to
  * the engine.
  *
- * The system's own dictionary is one file of two parts (ws095-p017, SKK-JISYO.ja):
+ * The system's own dictionary is one file of two parts (SKK-JISYO.ja):
  * the supplement, then the system dictionary from the comment line
  * DICT_PART_SYSTEM on.  ja_dict_load_parts reads such a file once and
  * indexes each part as a dictionary of its own.

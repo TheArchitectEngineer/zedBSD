@@ -8,8 +8,8 @@ include both the expected success observation and a diagnostic path.
 
 ## Guides
 
-- [Boot, root storage and installation status](boot-and-storage.md): disposable
-  boot, root modes, amd64 coexistence/native installation and PC98 FAT installation.
+- [Boot, root storage and installation](boot-and-storage.md): disposable
+  boot, root modes, and installing amd64 UEFI PCs with the graphical installer.
 
 - [Build zedBSD from source](build-from-source.md): host prerequisites,
   toolchain bootstrap, target selection, parallel image builds, QEMU launch,

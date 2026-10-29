@@ -1086,7 +1086,7 @@ udp_input(
 	}
 
 	checksum = wire_get16(udp->checksum);
-	if (checksum != 0 &&
+	if (checksum != 0 && (packet->flags & PACKET_BUF_RX_CSUM_L4) == 0 &&
 	    net_checksum_pseudo(source, destination, IPPROTO_UDP,
 	    packet->data, udp_length) != 0) {
 		packet_buf_free(packet);
@@ -1205,7 +1205,13 @@ udp6_input(
 		return EINVAL;
 	}
 
-	checksum = net_checksum_pseudo6(source->s6_addr, destination->s6_addr, IPPROTO_UDP, packet->data, udp_length);
+	/* Checks the checksum, unless the device found it right. */
+	checksum = 0;
+	if ((packet->flags & PACKET_BUF_RX_CSUM_L4) == 0) {
+		checksum = net_checksum_pseudo6(source->s6_addr, destination->s6_addr, IPPROTO_UDP, packet->data,
+		    udp_length);
+	}
+
 	if (checksum != 0) {
 		packet_buf_free(packet);
 		return EINVAL;

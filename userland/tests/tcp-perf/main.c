@@ -10,8 +10,8 @@
  * stream on the host and moves bytes one
  * way for a number of seconds.
  *
- *   tcp-perf send|recv ADDRESS PORT SECONDS [CHUNK]
- *   tcp-perf serve ADDRESS PORT SECONDS [CHUNK]
+ *   tcp-perf [--cc NAME] send|recv ADDRESS PORT SECONDS [CHUNK]
+ *   tcp-perf [--cc NAME] serve ADDRESS PORT SECONDS [CHUNK]
  *
  * The first byte on the connection tells the peer the direction: 'S' when
  * this program sends (the peer reads to the end), 'R' when it receives
@@ -19,8 +19,11 @@
  * address in dotted form or an IPv6 address, a link-local one followed by
  * %INTERFACE; CHUNK is the bytes of one read or write (default 131072).  Every second a line "t=SECONDS bytes=N mbps=RATE" gives the
  * second's rate; the last line is "TCP-PERF DIRECTION seconds=S bytes=N
- * mbps=RATE" over the whole transfer.  It exits 0, 1 when the transfer
- * failed, or 2 for a bad command line.  The source also builds on Linux.
+ * mbps=RATE" over the whole transfer.  --cc NAME sets the connection's
+ * congestion control (TCP_CONGESTION, "reno" or "cubic"; on serve the
+ * listener's, which the accepted connection takes) before it connects.
+ * It exits 0, 1 when the transfer failed, or 2 for a bad command line.
+ * The source also builds on Linux.
  *
  * serve is the other end, so that this machine's accepted connections are
  * measured too: it listens on ADDRESS (:: or 0.0.0.0 for any) and PORT,
@@ -39,6 +42,7 @@
 #include <errno.h>
 #include <net/if.h>
 #include <netinet/in.h>
+#include <netinet/tcp.h>
 #include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -73,6 +77,9 @@
  */
 static volatile sig_atomic_t perf_ticks;
 
+/* The congestion control --cc names (NULL: the system's), set once by main before any socket. */
+static const char *perf_cc;
+
 /*
  * The rate of each second and of the whole transfer.
  *
@@ -91,6 +98,7 @@ static int perf_address(const char *address_text, uint16_t port, struct sockaddr
 static int perf_connect(const char *address_text, const char *port_text, int *descriptor);
 static int perf_accept(const char *address_text, const char *port_text, int *descriptor);
 static int perf_open(int mode, const char *address_text, const char *port_text, int *descriptor, int *sending);
+static int perf_set_cc(int descriptor);
 static double perf_now(void);
 static void perf_tick(int signal_number);
 static int perf_start_timer(void);
@@ -117,6 +125,17 @@ main(
 	int sending;
 	int mode;
 	int error;
+	int compare;
+
+	/* The congestion control, when --cc comes first. */
+	compare = 1;
+	if (argc >= 3)
+		compare = strcmp(argv[1], "--cc");
+	if (compare == 0) {
+		perf_cc = argv[2];
+		argc -= 2;
+		argv += 2;
+	}
 
 	/* The mode, the duration and the chunk. */
 	error = perf_parse(argc, argv, &mode, &seconds, &chunk);
@@ -256,7 +275,7 @@ perf_parse(
 
 	/* Refuses a command line without the mode, the address, the port and the duration. */
 	if (argc != 5 && argc != 6) {
-		fprintf(stderr, "usage: tcp-perf send|recv|serve ADDRESS PORT SECONDS [CHUNK]\n");
+		fprintf(stderr, "usage: tcp-perf [--cc NAME] send|recv|serve ADDRESS PORT SECONDS [CHUNK]\n");
 		return EINVAL;
 	}
 
@@ -392,6 +411,13 @@ perf_connect(
 		return error;
 	}
 
+	/* Its congestion control, when one is named. */
+	error = perf_set_cc(*descriptor);
+	if (error != 0) {
+		close(*descriptor);
+		return error;
+	}
+
 	/* The connection, waited for. */
 	error = connect(*descriptor, (struct sockaddr *)&address, length);
 	if (error != 0) {
@@ -446,6 +472,13 @@ perf_accept(
 	if (listener < 0) {
 		error = errno;
 		fprintf(stderr, "tcp-perf: socket: %s\n", strerror(error));
+		return error;
+	}
+
+	/* Its congestion control, which the accepted connection takes. */
+	error = perf_set_cc(listener);
+	if (error != 0) {
+		close(listener);
 		return error;
 	}
 
@@ -666,5 +699,28 @@ perf_receive(
 	}
 
 	/* Succeeded: the duration passed or the peer ended the stream. */
+	return 0;
+}
+
+/* Sets a socket's congestion control to the one --cc named; reports 0, or the error. */
+static int
+perf_set_cc(
+	int descriptor)
+{
+	int error;
+
+	/* None named: the system's. */
+	if (perf_cc == NULL)
+		return 0;
+
+	/* The name, without its NUL. */
+	error = setsockopt(descriptor, IPPROTO_TCP, TCP_CONGESTION, perf_cc, (socklen_t)strlen(perf_cc));
+	if (error != 0) {
+		error = errno;
+		fprintf(stderr, "tcp-perf: TCP_CONGESTION %s: %s\n", perf_cc, strerror(error));
+		return error;
+	}
+
+	/* Succeeded: the socket uses it. */
 	return 0;
 }

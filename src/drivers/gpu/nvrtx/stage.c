@@ -33,6 +33,12 @@
  *   nvrtx.disp=0          the driver stops after the display's readout
  *                         (display-client) instead of taking the firmware's
  *                         head over
+ *   nvrtx.fail=<point>    a test of the way back to the firmware's picture:
+ *                         the GSP boot gives up at that point as if a
+ *                         program there had not answered (frts: after
+ *                         FWSEC-FRTS, booter: after booter_load, gsp-init:
+ *                         200 ms into the firmware's init); the GPU is then
+ *                         held until a power cycle
  *   nvrtx.resident=0      after the takeover the GSP is stopped instead of
  *                         staying up as a GPU device (gpu-device)
  *   nvrtx.disp.own=1      the takeover shows the driver's own surface (the
@@ -112,12 +118,24 @@
 #define STAGE_VK_PERF_TOKEN		"nvrtx.vk.perf=1"
 
 /*
+ * The whole token that puts every session's work on the one work channel
+ * instead of a channel of its own.
+ */
+#define STAGE_CHANNELS_OFF_TOKEN	"nvrtx.channels=0"
+
+/*
+ * The whole token that keeps a session's channel on the GPU when its work
+ * did not end (the loss is only reported), to watch what the GSP does.
+ */
+#define STAGE_KILL_OFF_TOKEN		"nvrtx.kill=0"
+
+/*
  * The whole token that stops the GSP after the takeover instead of keeping the
  * GPU device.
  */
 #define STAGE_RESIDENT_OFF_TOKEN	"nvrtx.resident=0"
 
-/* The longest stop token: "nvrtx.stop=" and a stage name. */
+/* The longest stop or fail token: "nvrtx.stop=" or "nvrtx.fail=" and a name. */
 #define STAGE_TOKEN_CAPACITY		32U
 
 static const char *stage_command_line(void);
@@ -378,6 +396,43 @@ nvrtx_stage_vk_perf_wanted(void)
 }
 
 /*
+ * Reports whether each session gets a channel of its own (nvrtx.channels=0
+ * puts every session's work on the one work channel instead; on by default).
+ */
+bool
+nvrtx_stage_channels_wanted(void)
+{
+	bool present;
+
+	/* Looks for nvrtx.channels=0 among the boot parameters. */
+	present = stage_token_present(STAGE_CHANNELS_OFF_TOKEN);
+	if (present)
+		return false;
+
+	/* Without it every session gets its own channel. */
+	return true;
+}
+
+/*
+ * Reports whether a session's channel whose work did not end is stopped on
+ * the GPU (nvrtx.kill=0 keeps it running and only reports the loss; on by
+ * default).
+ */
+bool
+nvrtx_stage_kill_wanted(void)
+{
+	bool present;
+
+	/* Looks for nvrtx.kill=0 among the boot parameters. */
+	present = stage_token_present(STAGE_KILL_OFF_TOKEN);
+	if (present)
+		return false;
+
+	/* Without it a channel whose work did not end is stopped. */
+	return true;
+}
+
+/*
  * Reports whether a stage may run; nvrtx.stop=<stage> stops before it.
  *
  * The driver then stops before that stage and every later one.
@@ -402,6 +457,32 @@ nvrtx_stage_allowed(
 
 	/* Succeeded: nothing stops the stage. */
 	return true;
+}
+
+/*
+ * Reports whether the boot asks the GSP boot to give up at a point on purpose
+ * (nvrtx.fail=<point>).
+ */
+bool
+nvrtx_stage_fail_wanted(
+	const char *point)
+{
+	char token[STAGE_TOKEN_CAPACITY];
+	int length;
+	bool present;
+
+	/* Spells the token of this point; a name too long to spell never matches. */
+	length = kern_snprintf(token, sizeof(token), "nvrtx.fail=%s", point);
+	if (length < 0 || (size_t)length >= sizeof(token))
+		return false;
+
+	/* Looks for the token among the boot parameters. */
+	present = stage_token_present(token);
+	if (present)
+		return true;
+
+	/* The boot gives up only where a program does not answer. */
+	return false;
 }
 
 /*

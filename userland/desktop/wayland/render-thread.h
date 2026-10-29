@@ -268,9 +268,7 @@ struct kwl_render_ops {
  * parked) and whether the output's may be acquired ahead (a frame's
  * acquire succeeded since the output was last forgotten); the numbers of the last ready and the last completion posted
  * (for kwl_render_status); the tasks given and not submitted yet, oldest
- * first, and the number of the last task whose completion was posted
- * (task_done); and sequence, which counts every change the thread waits
- * for.
+ * first; and sequence, which counts every change the thread waits for.
  * The thread's own: the operations and their context, where it is in the
  * pull (state), the number of the ready it waits to have answered, the
  * completion message of the next job (made before the job is taken, so
@@ -303,7 +301,6 @@ struct kwl_render_thread {
 	uint64_t last_completed;
 	struct kwl_render_message *tasks;
 	struct kwl_render_message *tasks_tail;
-	uint64_t task_done;
 	struct kwl_render_ops ops;
 	void *context;
 	enum kwl_render_state state;
@@ -332,7 +329,6 @@ int kwl_render_park(struct kwl_render_thread *render, unsigned wait_ms);
 void kwl_render_unpark(struct kwl_render_thread *render);
 void kwl_render_forget(struct kwl_render_thread *render, unsigned output, unsigned heads_mask);
 void kwl_render_task(struct kwl_render_thread *render, struct kwl_render_message *task);
-int kwl_render_wait_task(struct kwl_render_thread *render, uint64_t number, unsigned wait_ms);
 int kwl_render_running(struct kwl_render_thread *render);
 void kwl_render_status(struct kwl_render_thread *render, struct kwl_render_status *status);
 

@@ -73,6 +73,7 @@ main(void)
 	unsigned numbers[8];
 	VkResult results[8];
 	unsigned count;
+	unsigned index;
 	unsigned ready;
 	uint64_t number;
 	int pipes[2];
@@ -113,15 +114,11 @@ main(void)
 	steps(&render, 3U);
 	count = take_tasks(&render, numbers, results, 8U, &ready);
 	check(count == 0U, "A: task 2 waits for task 1");
-	error = kwl_render_wait_task(&render, 1U, 10U);
-	check(error == ETIMEDOUT, "A: wait_task times out before the fence");
 	signal_fence(1U);
 	steps(&render, 3U);
 	count = take_tasks(&render, numbers, results, 8U, &ready);
 	check(count == 2U, "A: both completions");
 	check(numbers[0] == 1U && numbers[1] == 2U, "A: completions in order");
-	error = kwl_render_wait_task(&render, 2U, 10U);
-	check(error == 0, "A: wait_task after the completion");
 
 	/* B: a failed submission is told in its turn, after the task before it. */
 	fail_submit[4] = 1U;
@@ -145,10 +142,12 @@ main(void)
 	kwl_render_task(&render, task_new(5U));
 	sleep_ms(20U);
 	signal_fence(5U);
-	error = kwl_render_wait_task(&render, 5U, 1000U);
-	check(error == 0, "C: task 5 completed while parked");
-	count = take_tasks(&render, numbers, results, 8U, &ready);
-	check(count == 1U && numbers[0] == 5U, "C: its completion told");
+	count = 0U;
+	for (index = 0U; index < 100U && count == 0U; index++) {
+		sleep_ms(10U);
+		count = take_tasks(&render, numbers, results, 8U, &ready);
+	}
+	check(count == 1U && numbers[0] == 5U, "C: task 5 completed and told while parked");
 	kwl_render_unpark(&render);
 
 	/* D: a stop waits for the task in flight. */
@@ -162,8 +161,8 @@ main(void)
 	check(submitted[submitted_count - 1U] == 6U, "D: task 6 submitted");
 
 	pthread_mutex_unlock(&test_lock);
-	error = kwl_render_wait_task(&render, 6U, 0U);
-	check(error == ETIMEDOUT, "D: task 6 not complete before its fence");
+	count = take_tasks(&render, numbers, results, 8U, &ready);
+	check(count == 0U, "D: task 6 not complete before its fence");
 	signal_fence(6U);
 	(void)pthread_join(stopper, NULL);
 	count = take_tasks(&render, numbers, results, 8U, &ready);

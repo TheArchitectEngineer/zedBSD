@@ -1964,6 +1964,7 @@ load_selected_configuration(
 	size_t split_size;
 	enum zbl_uefi_kern_config_result config_result;
 	enum zbl_uefi_root_config_result root_result;
+	const char *root_reason;
 
 	/* Refuses a volume without an open configuration file. */
 	if (discovered == 0 || discovered->config == 0 || configuration == 0)
@@ -1993,8 +1994,9 @@ load_selected_configuration(
 						 &split_size,
 						 &discovered->root_files);
 	if (root_result != ZBL_UEFI_ROOT_CONFIG_OK) {
+		root_reason = zbl_uefi_root_config_result_name(root_result);
 		console_ascii(context, "zedbsd.cfg rejected: ");
-		console_ascii(context, zbl_uefi_root_config_result_name(root_result));
+		console_ascii(context, root_reason);
 		console_ascii(context, "\n");
 		return EFI_LOAD_ERROR;
 	}
@@ -3059,17 +3061,21 @@ fail_root(
 	static const char prefix[] = "A64 KERN UFS ";
 	UINTN index;
 
-	/* Builds "A64 KERN UFS <reason>". */
+	/* Copies the prefix of the message. */
 	index = 0;
 	while (prefix[index] != 0) {
 		message[index] = prefix[index];
 		index++;
 	}
+
+	/* Appends the reason, as much of it as fits. */
 	while (*reason != 0 && index + 1U < sizeof(message)) {
 		message[index] = *reason;
 		index++;
 		reason++;
 	}
+
+	/* Ends the message. */
 	message[index] = 0;
 
 	/* Reports it over the logo and stops. */
@@ -3103,10 +3109,12 @@ open_root_volume(
 	UINTN byte;
 	enum zbl_uefi_device_path_result path_result;
 	enum zbl_ufs_result mounted;
+	const char *mount_reason;
 	unsigned same_disk_matches;
 	unsigned other_disk_matches;
 	int same_disk;
 	int equal;
+	int connect;
 
 	/* Opens the root once; later files reuse it. */
 	if (root_partition.mounted)
@@ -3121,10 +3129,19 @@ open_root_volume(
 	handles = 0;
 	handle_count = 0;
 	status = boot->LocateHandleBuffer(AllHandles, 0, 0, &handle_count, &handles);
-	if (!EFI_ERROR(status) && handles != 0 && boot->ConnectController != 0) {
+	connect = 1;
+	if (EFI_ERROR(status))
+		connect = 0;
+	if (handles == 0)
+		connect = 0;
+	if (boot->ConnectController == 0)
+		connect = 0;
+	if (connect) {
 		for (index = 0; index < handle_count; index++)
 			(void)boot->ConnectController(handles[index], 0, 0, 1);
 	}
+
+	/* Releases the list of every handle. */
 	if (handles != 0)
 		(void)boot->FreePool(handles);
 
@@ -3159,6 +3176,8 @@ open_root_volume(
 				break;
 			}
 		}
+
+		/* Passes over a partition with another PARTUUID. */
 		if (!equal)
 			continue;
 
@@ -3171,6 +3190,8 @@ open_root_volume(
 			other_disk_matches++;
 		}
 	}
+
+	/* Releases the list of block devices. */
 	(void)boot->FreePool(handles);
 
 	/* Requires exactly one root on the boot disk and none elsewhere. */
@@ -3184,7 +3205,13 @@ open_root_volume(
 	/* Takes the partition's block device, which has to hold a medium of usable blocks. */
 	block = 0;
 	status = boot->HandleProtocol(found, &EFI_BLOCK_IO_PROTOCOL_GUID, (void **)&block);
-	if (EFI_ERROR(status) || block == 0 || block->Media == 0 || block->ReadBlocks == 0)
+	if (EFI_ERROR(status))
+		fail_root(context, discovered, "no block device");
+	if (block == 0)
+		fail_root(context, discovered, "no block device");
+	if (block->Media == 0)
+		fail_root(context, discovered, "no block device");
+	if (block->ReadBlocks == 0)
 		fail_root(context, discovered, "no block device");
 	media = block->Media;
 	if (!media->MediaPresent || !media->LogicalPartition)
@@ -3205,8 +3232,10 @@ open_root_volume(
 	device.block_count = media->LastBlock + 1U;
 	device.read = root_block_read;
 	mounted = zbl_ufs_mount(&root_partition.ufs, &device, &root_work);
-	if (mounted != ZBL_UFS_OK)
-		fail_root(context, discovered, zbl_ufs_result_name(mounted));
+	if (mounted != ZBL_UFS_OK) {
+		mount_reason = zbl_ufs_result_name(mounted);
+		fail_root(context, discovered, mount_reason);
+	}
 
 	/* Succeeded: the root partition is open for reads. */
 	root_partition.mounted = 1;
@@ -3231,6 +3260,7 @@ boot_file_open(
 	static CHAR16 wide[KERNEL_PATH_CHAR16_STORAGE];
 	static char absolute[ZBL_KERN_CONFIG_KERNEL_PATH_STORAGE_SIZE + 1U];
 	enum zbl_ufs_result looked_up;
+	const char *lookup_reason;
 	EFI_STATUS status;
 	UINTN index;
 	UINTN at;
@@ -3246,11 +3276,15 @@ boot_file_open(
 		converted = kernel_path_utf16(path, wide);
 		if (!converted || discovered->root == 0)
 			return EFI_INVALID_PARAMETER;
+
+		/* Opens the file the path names. */
 		status = discovered->root->Open(discovered->root, &file->fat, wide, EFI_FILE_MODE_READ, 0U);
 		if (EFI_ERROR(status))
 			return status;
 		if (file->fat == 0)
 			return EFI_INVALID_PARAMETER;
+
+		/* Takes the file's size, closing a file that has none. */
 		status = regular_file_size(file->fat, &file->size);
 		if (EFI_ERROR(status)) {
 			(void)close_file(file->fat);
@@ -3268,17 +3302,23 @@ boot_file_open(
 		absolute[at] = '/';
 		at++;
 	}
+
+	/* Copies the path, as much of it as fits. */
 	for (index = 0; path[index] != 0 && at + 1U < sizeof(absolute); index++) {
 		absolute[at] = path[index];
 		at++;
 	}
+
+	/* Ends the path. */
 	absolute[at] = 0;
 
 	/* Finds the file on the root partition. */
 	open_root_volume(context, discovered);
 	looked_up = zbl_ufs_lookup(&root_partition.ufs, absolute, &file->ufs);
-	if (looked_up != ZBL_UFS_OK)
-		fail_root(context, discovered, zbl_ufs_result_name(looked_up));
+	if (looked_up != ZBL_UFS_OK) {
+		lookup_reason = zbl_ufs_result_name(looked_up);
+		fail_root(context, discovered, lookup_reason);
+	}
 
 	/* Succeeded: the file on the root is found. */
 	file->size = file->ufs.size;

@@ -1058,8 +1058,8 @@ burst_bit(
 }
 
 /*
- * Identifies the PHY, resets it, writes a YT8531's board settings and
- * starts autonegotiation.
+ * Identifies the PHY, resets it, writes a YT8531's board settings or has
+ * the board set up another PHY, and starts autonegotiation.
  */
 static int
 bring_up_phy(
@@ -1097,6 +1097,13 @@ bring_up_phy(
 	/* Writes a YT8531's delays and drive strengths. */
 	if (device->phy_is_yt8531) {
 		error = drv_yt8531_configure(&device->mdio, phy, &device->config.yt8531);
+		if (error != 0)
+			return error;
+	}
+
+	/* Lets the board set up any other PHY it knows, such as its RGMII delays. */
+	if (!device->phy_is_yt8531 && device->config.configure_phy != NULL) {
+		error = device->config.configure_phy(device->config.phy_context, &device->mdio, phy, identity);
 		if (error != 0)
 			return error;
 	}

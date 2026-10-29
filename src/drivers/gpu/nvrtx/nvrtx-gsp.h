@@ -389,6 +389,24 @@ struct nvrtx_falcon_bl {
 	uint32_t start_tag;
 };
 
+/*
+ * A point where the GSP boot is left with a program that may still run:
+ * FWSEC-FRTS did not halt, booter_load did not halt, the firmware never
+ * said it was up, the firmware did not unload, or a program of the
+ * region's teardown did not halt.
+ */
+enum nvrtx_gsp_hold {
+	NVRTX_GSP_HOLD_FWSEC = 0,
+	NVRTX_GSP_HOLD_BOOTER,
+	NVRTX_GSP_HOLD_INIT,
+	NVRTX_GSP_HOLD_UNLOAD,
+	NVRTX_GSP_HOLD_TEAR_DOWN
+};
+
+/* The falcons nvrtx_gsp_hold_falcons() names: the GSP's and the secure processor's. */
+#define NVRTX_GSP_HOLD_GSP_FALCON	0x1U
+#define NVRTX_GSP_HOLD_SEC2_FALCON	0x2U
+
 /* One section of an ELF file, by offset into the file. */
 struct nvrtx_section {
 	size_t at;
@@ -710,6 +728,18 @@ struct nvrtx_fwsec {
 #define NVRTX_CTL_SCHEDULE		0xa06f0103U
 
 /*
+ * A channel's stop (off its runlist, preempted at once when asked) and its
+ * reset (the channel and its engine).
+ *
+ * Values referenced: NVIDIA open-gpu-kernel-modules 570.144
+ * src/common/sdk/nvidia/inc/ctrl/ctrla06f/ctrla06fgpfifo.h
+ * (NVA06F_CTRL_CMD_STOP_CHANNEL) and
+ * src/common/sdk/nvidia/inc/ctrl/ctrl906f.h (NV906F_CTRL_CMD_RESET_CHANNEL).
+ */
+#define NVRTX_CTL_STOP_CHANNEL		0xa06f0112U
+#define NVRTX_CTL_RESET_CHANNEL		0x906f0102U
+
+/*
  * The classes of address-space and copy-channel on Turing (a generation's own
  * are its profile's).
  *
@@ -885,10 +915,13 @@ uint64_t nvrtx_vram_size(uint32_t value);
 uint64_t nvrtx_vram_size_mib(uint32_t value);
 uint64_t nvrtx_vga_workspace(uint64_t vram_size, uint32_t value);
 int nvrtx_wpr_layout(uint64_t vram_size, uint64_t vga, uint64_t boot_size, uint64_t image_size, uint64_t heap_os, uint64_t heap_min, struct nvrtx_wpr_layout *layout);
+int nvrtx_wpr_scrubbed(const struct nvrtx_wpr_layout *layout);
 void nvrtx_wpr_record(uint8_t *record, const struct nvrtx_wpr_layout *layout, const struct nvrtx_wpr_sources *sources);
 void nvrtx_libos_region(uint8_t *page, unsigned index, const char *name, uint64_t address, uint64_t size);
 void nvrtx_log_buffer(uint8_t *buffer, uint64_t bus, size_t size);
 void nvrtx_rmargs(uint8_t *args, uint64_t queue_pages, uint32_t pte_count);
+
+uint32_t nvrtx_gsp_hold_falcons(enum nvrtx_gsp_hold point);
 
 size_t nvrtx_radix3_pages(size_t image_pages);
 int nvrtx_radix3_fill(const struct nvrtx_pages *image, const struct nvrtx_pages *table);
@@ -935,6 +968,7 @@ int nvrtx_mmu_gr_map_system(uint8_t *image, uint64_t va_base, uint64_t va_bytes,
 int nvrtx_mmu_gr_map_vram(uint8_t *image, uint64_t va_base, uint64_t va_bytes, uint64_t va, uint64_t physical, uint64_t size);
 size_t nvrtx_mmu_gr_pte_offset(uint64_t va_base, uint64_t va_bytes, uint64_t va);
 void nvrtx_mmu_gr_entries_vram(uint8_t *entries, uint64_t physical, uint64_t pages);
+void nvrtx_mmu_gr_entries_privileged(uint8_t *entries, uint64_t physical, uint64_t pages, int read_only);
 void nvrtx_mmu_gr_entries_system(uint8_t *entries, const uint64_t *pages, size_t count);
 
 int nvrtx_vbios_walk(const uint8_t *rom, size_t size, struct nvrtx_vbios *vbios);

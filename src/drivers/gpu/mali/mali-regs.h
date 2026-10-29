@@ -119,6 +119,20 @@
 #define MALI_CACHE_INVALIDATE		2U
 
 /*
+ * The power manager's key and its override: a write of the key lets the
+ * next write of an override register take effect.
+ *
+ * Values referenced:
+ * hardkernel/kernel_common_drivers odroids7d-6.12.y 34daba9
+ * drivers/gpu/arm/midgard/hw_access/mali_kbase_hw_access_regmap_legacy.h
+ * (PWR_KEY, PWR_OVERRIDE1); drivers/gpu/arm/midgard/platform/devicetree/
+ * mali_kbase_runtime_pm.c (mali_hw_init: the key's value).
+ */
+#define MALI_REG_POWER_KEY		0x050U
+#define MALI_REG_POWER_OVERRIDE1	0x058U
+#define MALI_POWER_KEY			0x2968a819U
+
+/*
  * The power registers of the three kinds of core: which are ready, the
  * requests to power them on and off, and which are changing.  Each is a
  * 64-bit mask with one bit per core.

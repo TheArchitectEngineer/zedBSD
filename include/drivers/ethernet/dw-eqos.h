@@ -22,6 +22,8 @@
 
 #include <stdint.h>
 
+struct drv_mii_bus;
+
 /* How many burst lengths an AXI description lists at most. */
 #define DRV_DW_EQOS_BURST_LENGTHS	7U
 
@@ -34,6 +36,10 @@
  * YT8531; another PHY is run on its standard registers alone.  set_speed,
  * when present, is called from thread context before the controller runs
  * at a new link speed, for a board whose transmit clock must follow it.
+ * configure_phy, when present, is called from thread context after the
+ * reset of a PHY other than a YT8531, with the PHY's identity, for a board
+ * whose PHY needs settings of its own (its RGMII delays) before it
+ * negotiates; it returns 0 or an errno, and an errno fails the attach.
  */
 struct drv_dw_eqos_config {
 	const char *name;
@@ -61,6 +67,8 @@ struct drv_dw_eqos_config {
 	uint8_t mac[6];
 	int (*set_speed)(void *context, unsigned speed_mbps);
 	void *context;
+	int (*configure_phy)(void *context, const struct drv_mii_bus *bus, unsigned phy, uint32_t identity);
+	void *phy_context;
 };
 
 /*

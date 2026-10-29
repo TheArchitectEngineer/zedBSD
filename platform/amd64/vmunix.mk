@@ -176,7 +176,7 @@ AMD64_NVRTX_SOURCES += src/drivers/gpu/nvrtx/products.c
 # The GSP boot path's parts that touch no hardware (ws037-p004 4a).
 AMD64_NVRTX_SOURCES += src/drivers/gpu/nvrtx/wire.c src/drivers/gpu/nvrtx/image.c \
 	src/drivers/gpu/nvrtx/layout.c src/drivers/gpu/nvrtx/radix3.c src/drivers/gpu/nvrtx/queue.c \
-	src/drivers/gpu/nvrtx/vbios.c
+	src/drivers/gpu/nvrtx/vbios.c src/drivers/gpu/nvrtx/hold.c
 # P0 of the GSP boot: firmware files, DMA memory, VBIOS (ws037-p004 4b).
 AMD64_NVRTX_SOURCES += src/drivers/gpu/nvrtx/file.c src/drivers/gpu/nvrtx/memory.c \
 	src/drivers/gpu/nvrtx/rom.c src/drivers/gpu/nvrtx/gsp.c
@@ -220,7 +220,7 @@ ifneq ($(CONFIG_DRIVER_PCI_I915),y)
 AMD64_NVRTX_SOURCES += src/drivers/gpu/i915/vk/vk-codec.c
 endif
 # P9w: the work channel the GPU device keeps (ws037-p007 stage D1, nvrtx.work=1).
-AMD64_NVRTX_SOURCES += src/drivers/gpu/nvrtx/work-records.c src/drivers/gpu/nvrtx/work.c
+AMD64_NVRTX_SOURCES += src/drivers/gpu/nvrtx/work-records.c src/drivers/gpu/nvrtx/work.c src/drivers/gpu/nvrtx/recover.c
 # The video decoder's channel (nvrtx.video=1).
 AMD64_NVRTX_SOURCES += src/drivers/gpu/nvrtx/nvdec-records.c src/drivers/gpu/nvrtx/nvdec.c
 # P9p: the GPU's performance state, and its boost with nvrtx.boost=1 (ws241-p001).

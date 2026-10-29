@@ -48,11 +48,15 @@
  * The channel's handles: the channel in the channel family with its
  * number, the decoder's object in the decoder's family.
  */
-#define NVDEC_HANDLE_CHANNEL		0xf1f00010U
-#define NVDEC_HANDLE_OBJECT		0xc4b00010U
+#define NVDEC_HANDLE_CHANNEL		0xf1f00030U
+#define NVDEC_HANDLE_OBJECT		0xc4b00030U
 
-/* The channel's number (the graphics channels take 1 to 4, the first copy channel 8). */
-#define NVDEC_CHID			16U
+/*
+ * The channel's number, after the driver's channels (the graphics ones 1
+ * to 4, the copy channel 8) and the sessions' (NVRTX_WORK_SESSION_CHID_FIRST
+ * onward).
+ */
+#define NVDEC_CHID			(NVRTX_WORK_SESSION_CHID_FIRST + NVRTX_WORK_SESSION_CHANNELS)
 
 /* The VRAM block: the instance block, then USERD; its size and alignment. */
 #define NVDEC_BLOCK_BYTES		0x10000ULL

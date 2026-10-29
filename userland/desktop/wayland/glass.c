@@ -38,6 +38,7 @@
 
 #include "glass.h"
 #include "glyph-worker.h"
+#include "lane.h"
 #include "../artwork/mark.h"
 #include "../picture/color-glyph.h"
 #include "../picture/wallpaper.h"
@@ -165,6 +166,14 @@
 
 /* The blurred wallpaper is this many times smaller than the output. */
 #define GLASS_BLUR_SCALE	4U
+
+/*
+ * How long a drawing the blur thread made waits, in milliseconds, for a
+ * pass where no frame in flight copies a host image's staging, so that it
+ * is written into the images there are: past it new images are made
+ * (which is slower than writing, but waits for nothing).
+ */
+#define GLASS_BLUR_HOLD_MS	200U
 #define GLASS_BLUR_RADIUS	6U
 #define GLASS_BLUR_PASSES	3U
 
@@ -202,29 +211,60 @@ struct glass_prefetch {
  * landscape), the picture or the error once the thread is
  * done, and whether it runs or has not been joined yet.  lock guards done;
  * only the event loop starts it (kwl_glass_wallpaper_begin,
- * kwl_glass_landscape) and joins it (kwl_glass_wallpaper_poll,
- * kwl_glass_close).
+ * kwl_glass_landscape, kwl_glass_resize) and joins it
+ * (kwl_glass_blur_take, kwl_glass_close).
  *
- * The thread also draws the picture at the output's size (width and
- * height, taken at the start) into rows and the frosted glass into blurred
- * (the work thread W: the pixels and the blur are not the
- * event loop's work), both packed at their widths; the event loop only
- * copies them into the look's images.  rows is NULL when they could not be
- * made, and the event loop then draws the picture itself.
+ * The picture is drawn at the output's size and blurred on the blur
+ * thread (struct glass_blur_job); answer says the settings' request waits
+ * for it, resize that it is the output's new size's (only logged), and
+ * started_ms when it was asked for.
  */
 struct glass_loader {
 	pthread_t thread;
 	pthread_mutex_t lock;
 	char path[256];
 	unsigned landscape;
-	uint32_t width;
-	uint32_t height;
+	unsigned answer;
+	unsigned resize;
+	uint64_t started_ms;
 	struct wallpaper_picture picture;
-	uint32_t *rows;
-	uint32_t *blurred;
 	int error;
 	int done;
 	int started;
+};
+
+/*
+ * A wallpaper's drawing at an output's size and its frosted glass's blur,
+ * on the blur thread (glass_blur, the event loop does not draw or blur
+ * pictures): the decoded picture (the job's; data NULL for the landscape),
+ * the size, the rows of both packed at their widths (made by the thread),
+ * the error, and what the event loop does with it (answer, resize,
+ * started_ms and path as in struct glass_loader).  The picture is kept,
+ * so that a result of an output's old size is drawn again at the new one.
+ */
+struct glass_blur_job {
+	struct kwl_lane_job lane;
+	struct wallpaper_picture picture;
+	uint32_t width;
+	uint32_t height;
+	uint32_t *rows;
+	uint32_t *blurred;
+	int error;
+	unsigned answer;
+	unsigned resize;
+	uint64_t started_ms;
+	char path[256];
+};
+
+/*
+ * The settings' request for a wallpaper (one at a time): waiting from its
+ * begin to its result, done with the result's error until
+ * kwl_glass_wallpaper_poll tells it.
+ */
+struct glass_answer {
+	unsigned waiting;
+	unsigned done;
+	int error;
 };
 
 /*
@@ -355,6 +395,9 @@ static int glass_shadow_picture(struct kwl_server *server, const struct glass_sh
 static int glass_ring_hollow(struct kwl_server *server, struct kwl_list *command, const struct glass_shape *shape);
 static unsigned glass_count_kind_of(const float *constants);
 static int wallpaper_create(struct kwl_server *server, struct kwl_glass *glass, uint32_t width, uint32_t height);
+static int wallpaper_target(struct kwl_server *server, struct kwl_glass *glass, uint32_t width, uint32_t height, unsigned *renewed);
+static int wallpaper_renew(struct kwl_server *server, struct kwl_glass *glass, uint32_t width, uint32_t height);
+static int glass_image_renew(struct kwl_server *server, struct kwl_import *place, uint32_t width, uint32_t height, VkSampler sampler);
 static int glass_size_make(struct kwl_server *server, uint32_t width, uint32_t height, struct kwl_glass_size *size);
 static int wallpaper_fill(struct kwl_glass *glass, const char *path, uint32_t width, uint32_t height);
 static int wallpaper_draw(struct kwl_glass *glass, struct wallpaper_picture *given, uint32_t width, uint32_t height);
@@ -367,8 +410,15 @@ static void blur_add(const uint32_t *line, uint32_t *sums, uint32_t small_width)
 static void blur_average(uint32_t *sums, float *small, uint32_t small_width);
 static void blur_fill(float *small, float *scratch, uint32_t width, uint32_t height, unsigned char *blurred, size_t blurred_pitch);
 static int wallpaper_render(const struct wallpaper_picture *picture, uint32_t width, uint32_t height, unsigned char *rows, size_t pitch, unsigned char *blurred, size_t blurred_pitch);
-static int loader_start(struct kwl_server *server, const char *path);
-static void loader_copy(struct kwl_glass *glass);
+static int loader_start(struct kwl_server *server, const char *path, unsigned answer, unsigned resize);
+static void blur_submit(struct kwl_server *server, struct wallpaper_picture *picture, const char *path, unsigned answer, unsigned resize, uint64_t started_ms);
+static void blur_run(struct kwl_lane_job *lane);
+static void blur_done(void *context, struct kwl_lane_job *lane);
+static void blur_drop(struct kwl_lane_job *lane);
+static void blur_apply(struct kwl_server *server, struct glass_blur_job *job);
+static void blur_copy(struct kwl_glass *glass, const struct glass_blur_job *job);
+static void blur_free(struct glass_blur_job *job);
+static void blur_answer(unsigned answer, int error);
 static void blur_pass(float *pixels, float *scratch, uint32_t width, uint32_t height, int horizontal);
 static uint32_t pack_pixel(const float *rgb);
 static int atlas_create(struct kwl_server *server, struct kwl_glass *glass);
@@ -416,6 +466,20 @@ static struct glass_prefetch glass_prefetch;
  * starts and joins it); its lock is made with the first one.
  */
 static struct glass_loader glass_loader;
+
+/* The blur thread's operations, the thread (once the look opened it) and the settings' request. */
+static const struct kwl_lane_ops blur_ops = {
+	blur_run,
+	blur_done,
+	blur_drop
+};
+static struct kwl_lane glass_blur;
+static unsigned glass_blur_running;
+
+/* A drawing waiting for a pass where the images may be written (GLASS_BLUR_HOLD_MS), and since when. */
+static struct glass_blur_job *glass_blur_held;
+static uint64_t glass_blur_held_ms;
+static struct glass_answer glass_answer;
 
 /* Whether glass_loader's lock has been made (once, by the first begin). */
 static int glass_loader_ready;
@@ -482,6 +546,15 @@ kwl_glass_open(
 	/* The glyph worker renders the glyphs drawn from now on; without it the event loop renders them. */
 	if (glass->text)
 		glass_worker_start(server, glass);
+
+	/* The blur thread draws and blurs the wallpapers chosen from now on; without it the event loop does. */
+	if (!glass_blur_running) {
+		error = kwl_lane_start(&glass_blur, "blur", 1U, server->wake[1]);
+		if (error != 0)
+			printf("KWL GLASS blur unavailable errno=%d the wallpaper is drawn in the event loop\n", error);
+		else
+			glass_blur_running = 1U;
+	}
 	printf("KWL STARTUP step=glyphs ms=%llu\n", (unsigned long long)(kwl_milliseconds() - started));
 
 	/* The applications' tiles; without them the marks are drawn without pictures. */
@@ -506,14 +579,19 @@ kwl_glass_close(
 	struct kwl_glass *glass;
 	unsigned face;
 
-	/* A wallpaper still being read is waited for, and its picture let go. */
+	/* A wallpaper still being read is waited for, and its picture let go; the blur thread ends, its jobs let go. */
 	loader_join();
 	free(glass_loader.picture.data);
 	glass_loader.picture.data = NULL;
-	free(glass_loader.rows);
-	free(glass_loader.blurred);
-	glass_loader.rows = NULL;
-	glass_loader.blurred = NULL;
+	if (glass_blur_running) {
+		kwl_lane_stop(&glass_blur);
+		glass_blur_running = 0U;
+	}
+	if (glass_blur_held != NULL) {
+		blur_free(glass_blur_held);
+		glass_blur_held = NULL;
+	}
+	memset(&glass_answer, 0, sizeof(glass_answer));
 
 	/* A picture read ahead that the look never took is let go too. */
 	prefetch_drop();
@@ -547,13 +625,14 @@ kwl_glass_close(
 
 /*
  * Draws the landscape into the look again (the desktop's
- * preferences going back to no picture).  The wallpaper's thread draws it
- * like a picture and kwl_glass_wallpaper_poll shows it; while
- * the thread reads another picture the event loop draws it at once.
+ * preferences going back to no picture).  The blur thread draws it like a
+ * picture, kwl_glass_blur_take shows it and kwl_glass_wallpaper_poll tells
+ * it; without that thread the event loop draws it.
  *
- * The images keep their size and their descriptors, so only their pixels
- * change; the device finishes what it is drawing from them first.  The
- * whole output is drawn again.  Returns 0 or an errno value.
+ * It is drawn into the images, or into new ones of the same size while a
+ * frame in flight copies a staging (the old ones go once the frames given
+ * before have completed), so nothing waits.  The whole output is drawn
+ * again.  Returns 0 or an errno value (the wallpaper shown stays).
  */
 int
 kwl_glass_landscape(
@@ -561,6 +640,7 @@ kwl_glass_landscape(
 {
 	struct wallpaper_picture picture;
 	uint64_t started;
+	unsigned renewed;
 	int error;
 
 	/* Without the look there is no wallpaper. */
@@ -568,23 +648,30 @@ kwl_glass_landscape(
 		return ENODEV;
 
 	/*
-	 * The wallpaper's thread draws it when it is free, and
-	 * kwl_glass_wallpaper_poll shows it; while it reads a picture the
-	 * event loop draws the landscape itself, as before.
+	 * The blur thread draws it (nothing is read), and
+	 * kwl_glass_wallpaper_poll tells it shown; without the thread the
+	 * loader's thread hands it on when it is free, and while it reads a
+	 * picture the event loop draws the landscape itself, as before.
 	 */
+	memset(&picture, 0, sizeof(picture));
+	if (glass_blur_running) {
+		glass_answer.waiting = 1U;
+		blur_submit(server, &picture, "-", 1U, 0U, kwl_milliseconds());
+		return 0;
+	}
 	if (!glass_loader.started) {
-		error = loader_start(server, NULL);
-		if (error == 0)
+		error = loader_start(server, NULL, 1U, 0U);
+		if (error == 0) {
+			glass_answer.waiting = 1U;
 			return 0;
+		}
 	}
 
-	/* The frames in flight read the images; they end first. */
+	/* The images to draw into: the same, or new ones while a frame in flight copies a staging. */
 	started = kwl_milliseconds();
-	kwl_compose_quiesce(server);
-	kwl_device_wait_idle(server->compose);
-
-	/* The landscape is a picture without pixels. */
-	memset(&picture, 0, sizeof(picture));
+	error = wallpaper_target(server, server->compose->glass, server->width, server->height, &renewed);
+	if (error != 0)
+		return error;
 
 	/* Draws it into the wallpaper's image and its blurred copy, at the output's size. */
 	error = wallpaper_draw(server->compose->glass, &picture, server->width, server->height);
@@ -595,7 +682,7 @@ kwl_glass_landscape(
 	server->dirty = 1;
 
 	/* The log names the landscape ("-") and how long it took. */
-	printf("KWL GLASS wallpaper path=- ms=%llu\n", (unsigned long long)(kwl_milliseconds() - started));
+	printf("KWL GLASS wallpaper path=- ms=%llu images=%s\n", (unsigned long long)(kwl_milliseconds() - started), renewed ? "new" : "same");
 
 	/* Succeeded: the landscape is shown from the next frame. */
 	return 0;
@@ -604,9 +691,9 @@ kwl_glass_landscape(
 /*
  * Makes the look's output-sized images again for an output of another size:
  * the wallpaper and its blurred copy, with the picture the
- * settings hold now.  The device finishes what it is drawing from them
- * first.  Returns 0 or an errno value (the look is then drawn without its
- * wallpaper until the next change).
+ * settings hold now.  The old ones go once the frames given before have
+ * completed, with no wait.  Returns 0 or an errno value (the look is then
+ * drawn without its wallpaper until the next change).
  */
 int
 kwl_glass_resize(
@@ -621,12 +708,22 @@ kwl_glass_resize(
 		return 0;
 	glass = server->compose->glass;
 
-	/* The frames in flight read the images; they end first. */
-	started = kwl_milliseconds();
-	kwl_compose_quiesce(server);
-	kwl_device_wait_idle(server->compose);
+	/*
+	 * With the blur thread the picture is read again and drawn there, and
+	 * the old images are shown (stretched) until it is (a picture being
+	 * read already is drawn at the new size when it comes).
+	 */
+	if (glass_blur_running) {
+		if (glass_loader.started)
+			return 0;
+		error = loader_start(server, server->wallpaper_path, 0U, 1U);
+		if (error == 0)
+			return 0;
+		printf("KWL GLASS resize loader errno=%d the picture is drawn in the event loop\n", error);
+	}
 
-	/* The images of the old size go. */
+	/* The images of the old size go once the frames given before have completed. */
+	started = kwl_milliseconds();
 	kwl_host_image_release(server->compose, &glass->wallpaper);
 	kwl_host_image_release(server->compose, &glass->blurred);
 
@@ -697,7 +794,7 @@ kwl_glass_size_prepare(
  * made, and lets its old ones go (the device is idle: an output turning
  * with the render thread parked).  A wallpaper being read for the
  * old size is drawn again at the new one when it comes
- * (kwl_glass_wallpaper_poll compares the sizes).
+ * (the blur thread's result compares the sizes).
  */
 void
 kwl_glass_size_swap(
@@ -745,9 +842,9 @@ kwl_glass_size_drop(
 
 /*
  * Starts reading a wallpaper chosen during the session on a thread of its
- * own: the event loop goes on, and kwl_glass_wallpaper_poll shows
- * the picture once it is read.  Returns 0, EBUSY while another is being
- * read, EINVAL for a path that is not an ordinary file (a FIFO, a device,
+ * own: the event loop goes on, the blur thread draws it, and
+ * kwl_glass_wallpaper_poll tells it shown.  Returns 0, EBUSY while another
+ * is being read or drawn, EINVAL for a path that is not an ordinary file (a FIFO, a device,
  * a folder) or too long, ENODEV without the look, or the errno value of
  * looking at the file or of the thread.
  */
@@ -767,7 +864,7 @@ kwl_glass_wallpaper_begin(
 		return ENODEV;
 
 	/* One picture at a time. */
-	if (glass_loader.started)
+	if (glass_loader.started || glass_answer.waiting)
 		return EBUSY;
 
 	/* A path that fits. */
@@ -791,111 +888,291 @@ kwl_glass_wallpaper_begin(
 	if (!regular)
 		return EINVAL;
 
-	/* The thread that reads, decodes and draws the picture. */
-	error = loader_start(server, path);
+	/* The thread that reads and decodes the picture; the blur thread draws it. */
+	error = loader_start(server, path, 1U, 0U);
 	if (error != 0)
 		return error;
+	glass_answer.waiting = 1U;
 
 	/* Succeeded: the picture is being read. */
 	return 0;
 }
 
 /*
- * Shows a wallpaper kwl_glass_wallpaper_begin read, once its thread is
- * done.  Returns 0 while there is none or it is still being read, or 1
- * with *error 0 (the picture is shown) or the errno value of reading or
- * drawing it (the wallpaper shown stays).
+ * Tells the result of the settings' request for a wallpaper once the blur
+ * thread's drawing of it is shown.  Returns 0 while there is none or it is
+ * still being read or drawn, or 1 with *error 0 (the picture is shown) or
+ * the errno value of reading or drawing it (the wallpaper shown stays).
  */
 int
 kwl_glass_wallpaper_poll(
 	struct kwl_server *server,
 	int *error)
 {
+	/* Nothing told yet. */
+	(void)server;
+	if (!glass_answer.done)
+		return 0;
+
+	/* Told once; another request may come from now on. */
+	*error = glass_answer.error;
+	memset(&glass_answer, 0, sizeof(glass_answer));
+	return 1;
+}
+
+/*
+ * Takes the wallpaper's work done on its threads, once a pass of the event
+ * loop: a picture the loader read goes to the blur thread (or, without it,
+ * is drawn here), and a drawing the blur thread made is shown.
+ */
+void
+kwl_glass_blur_take(
+	struct kwl_server *server)
+{
 	struct wallpaper_picture picture;
-	uint64_t started;
+	struct glass_blur_job *job;
+	int writable;
 	int done;
 
-	/* Nothing is being read. */
-	if (!glass_loader.started)
-		return 0;
+	/* A picture read (or not) by the loader. */
+	if (glass_loader.started) {
+		(void)pthread_mutex_lock(&glass_loader.lock);
 
-	/* Samples whether the thread is done. */
-	(void)pthread_mutex_lock(&glass_loader.lock);
+		done = glass_loader.done;
 
-	done = glass_loader.done;
+		(void)pthread_mutex_unlock(&glass_loader.lock);
 
-	(void)pthread_mutex_unlock(&glass_loader.lock);
+		/* Joined (it is done), and the picture is the event loop's. */
+		if (done) {
+			(void)pthread_join(glass_loader.thread, NULL);
+			glass_loader.started = 0;
+			picture = glass_loader.picture;
+			memset(&glass_loader.picture, 0, sizeof(glass_loader.picture));
+			if (glass_loader.error != 0) {
+				printf("KWL GLASS no wallpaper: path=%s errno=%d\n", glass_loader.path, glass_loader.error);
+				blur_answer(glass_loader.answer, glass_loader.error);
+			} else {
+				blur_submit(server, &picture, glass_loader.path, glass_loader.answer, glass_loader.resize, glass_loader.started_ms);
+			}
+		}
+	}
 
-	/* Still reading. */
-	if (!done)
-		return 0;
+	/* The drawings made. */
+	if (glass_blur_running)
+		(void)kwl_lane_take(&glass_blur, server);
+
+	/* One that waited for the images: now that they may be written, or new ones once it waited long enough. */
+	job = glass_blur_held;
+	if (job == NULL)
+		return;
+	writable = kwl_compose_host_writable(server);
+	if (!writable && kwl_milliseconds() - glass_blur_held_ms < GLASS_BLUR_HOLD_MS)
+		return;
+	glass_blur_held = NULL;
+	blur_apply(server, job);
+	blur_free(job);
+}
+
+/*
+ * Gives the blur thread a picture to draw at the output's size (taken:
+ * data NULL afterwards), for the request given; without the thread or the
+ * memory of its job it is drawn here as before.
+ */
+static void
+blur_submit(
+	struct kwl_server *server,
+	struct wallpaper_picture *picture,
+	const char *path,
+	unsigned answer,
+	unsigned resize,
+	uint64_t started_ms)
+{
+	struct glass_blur_job *job;
+	struct glass_blur_job inline_job;
+
+	/* The job, the picture its own. */
+	job = NULL;
+	if (glass_blur_running)
+		job = calloc(1, sizeof(*job));
+	if (job == NULL) {
+		memset(&inline_job, 0, sizeof(inline_job));
+		job = &inline_job;
+	}
+	job->picture = *picture;
+	memset(picture, 0, sizeof(*picture));
+	job->width = server->width;
+	job->height = server->height;
+	job->answer = answer;
+	job->resize = resize;
+	job->started_ms = started_ms;
+	(void)snprintf(job->path, sizeof(job->path), "%s", path);
+
+	/* On the thread. */
+	if (job != &inline_job) {
+		kwl_lane_submit(&glass_blur, &job->lane, &blur_ops, 0U);
+		return;
+	}
+
+	/* Here, as before the thread. */
+	blur_run(&job->lane);
+	blur_apply(server, job);
+	free(job->picture.data);
+	free(job->rows);
+	free(job->blurred);
+}
+
+/* Draws a job's picture at its size and blurs its frosted glass, on the blur thread. */
+static void
+blur_run(
+	struct kwl_lane_job *lane)
+{
+	struct glass_blur_job *job;
+	uint32_t small_width;
+	uint32_t small_height;
+	int drawn;
+
+	/* The rows of the wallpaper and of the frosted glass, packed at their widths. */
+	job = (struct glass_blur_job *)lane;
+	small_width = job->width / GLASS_BLUR_SCALE;
+	small_height = job->height / GLASS_BLUR_SCALE;
+	job->rows = malloc((size_t)job->width * job->height * sizeof(*job->rows) + 1U);
+	job->blurred = malloc((size_t)small_width * small_height * sizeof(*job->blurred) + 1U);
+	job->error = 0;
+	if (job->rows == NULL || job->blurred == NULL) {
+		job->error = ENOMEM;
+		return;
+	}
+
+	/* The picture drawn into them. */
+	drawn = wallpaper_render(&job->picture, job->width, job->height, (unsigned char *)job->rows, (size_t)job->width * sizeof(*job->rows), (unsigned char *)job->blurred,
+	    (size_t)small_width * sizeof(*job->blurred));
+	if (drawn != 0)
+		job->error = drawn;
+}
+
+/* Shows a drawing the blur thread made, on the event loop's thread, and lets its job go. */
+static void
+blur_done(
+	void *context,
+	struct kwl_lane_job *lane)
+{
+	struct kwl_server *server;
+	struct glass_blur_job *job;
+
+	/* A drawing of an output's old size is made again at the new one, from the same picture. */
+	server = context;
+	job = (struct glass_blur_job *)lane;
+	if (job->error == 0 && (job->width != server->width || job->height != server->height)) {
+		free(job->rows);
+		free(job->blurred);
+		job->rows = NULL;
+		job->blurred = NULL;
+		job->width = server->width;
+		job->height = server->height;
+		kwl_lane_submit(&glass_blur, &job->lane, &blur_ops, 0U);
+		return;
+	}
 
 	/*
-	 * Joins the finished thread; clearing started lets the next begin in,
-	 * and the picture is the event loop's now.
+	 * Held for a pass where the images it fits may be written (instead of
+	 * new ones made); one held already is shown first, as it is older.
 	 */
-	(void)pthread_join(glass_loader.thread, NULL);
-	glass_loader.started = 0;
-	picture = glass_loader.picture;
-	memset(&glass_loader.picture, 0, sizeof(glass_loader.picture));
-
-	/* A picture that could not be read is not shown. */
-	*error = glass_loader.error;
-	if (*error != 0) {
-		printf("KWL GLASS no wallpaper: path=%s errno=%d\n", glass_loader.path, *error);
-		free(glass_loader.rows);
-		free(glass_loader.blurred);
-		glass_loader.rows = NULL;
-		glass_loader.blurred = NULL;
-		return 1;
+	if (job->error == 0 &&
+	    server->compose != NULL &&
+	    server->compose->glass != NULL &&
+	    server->compose->glass->wallpaper.width == job->width &&
+	    server->compose->glass->wallpaper.height == job->height &&
+	    !kwl_compose_host_writable(server)) {
+		if (glass_blur_held != NULL) {
+			blur_apply(server, glass_blur_held);
+			blur_free(glass_blur_held);
+		}
+		glass_blur_held = job;
+		glass_blur_held_ms = kwl_milliseconds();
+		return;
 	}
+
+	/* Shown, then let go. */
+	blur_apply(server, job);
+	blur_free(job);
+}
+
+/* Lets go of a job never run (the look's end). */
+static void
+blur_drop(
+	struct kwl_lane_job *lane)
+{
+	/* Its picture, its rows and itself. */
+	blur_free((struct glass_blur_job *)lane);
+}
+
+/*
+ * Puts a drawing into the look's images (the same, or new ones of its size,
+ * wallpaper_target), draws the output again and answers its request.
+ */
+static void
+blur_apply(
+	struct kwl_server *server,
+	struct glass_blur_job *job)
+{
+	struct kwl_glass *glass;
+	unsigned renewed;
+	int error;
 
 	/* The look went meanwhile. */
-	if (server->compose == NULL || server->compose->glass == NULL) {
-		free(picture.data);
-		free(glass_loader.rows);
-		free(glass_loader.blurred);
-		glass_loader.rows = NULL;
-		glass_loader.blurred = NULL;
-		*error = ENODEV;
-		return 1;
+	error = job->error;
+	if (server->compose == NULL || server->compose->glass == NULL)
+		error = ENODEV;
+	glass = NULL;
+	if (error == 0)
+		glass = server->compose->glass;
+
+	/* The images to write into, then the rows. */
+	renewed = 0U;
+	if (error == 0)
+		error = wallpaper_target(server, glass, job->width, job->height, &renewed);
+	if (error == 0) {
+		blur_copy(glass, job);
+		server->dirty = 1;
 	}
 
-	/* The frames in flight read the images; they end first. */
-	started = kwl_milliseconds();
-	kwl_compose_quiesce(server);
-	kwl_device_wait_idle(server->compose);
+	/* The log names the picture ("-" for the landscape), or the new size, and how long since it was asked for. */
+	if (error != 0)
+		printf("KWL GLASS no wallpaper: path=%s errno=%d\n", job->path, error);
+	else if (job->resize)
+		printf("KWL GLASS resize width=%u height=%u ms=%llu images=%s\n", job->width, job->height, (unsigned long long)(kwl_milliseconds() - job->started_ms), renewed ? "new" : "same");
+	else
+		printf("KWL GLASS wallpaper path=%s ms=%llu images=%s\n", job->path, (unsigned long long)(kwl_milliseconds() - job->started_ms), renewed ? "new" : "same");
 
-	/*
-	 * The rows the thread drew at the output's size are copied in;
-	 * for an output of another size by now, or rows that
-	 * could not be made, the event loop draws the picture itself.
-	 */
-	if (glass_loader.rows != NULL &&
-	    glass_loader.width == server->width &&
-	    glass_loader.height == server->height) {
-		loader_copy(server->compose->glass);
-		free(picture.data);
-	} else {
-		*error = wallpaper_draw(server->compose->glass, &picture, server->width, server->height);
-	}
+	/* The settings' request is answered. */
+	blur_answer(job->answer, error);
+}
 
-	/* The thread's rows are let go either way. */
-	free(glass_loader.rows);
-	free(glass_loader.blurred);
-	glass_loader.rows = NULL;
-	glass_loader.blurred = NULL;
-	if (*error != 0)
-		return 1;
+/* Frees a blur job, its picture and its rows. */
+static void
+blur_free(
+	struct glass_blur_job *job)
+{
+	/* Each part, then the job. */
+	free(job->picture.data);
+	free(job->rows);
+	free(job->blurred);
+	free(job);
+}
 
-	/* Redraws the output, since everything on it stands on the wallpaper. */
-	server->dirty = 1;
+/* Keeps the result of the settings' request, when the work was one (kwl_glass_wallpaper_poll tells it). */
+static void
+blur_answer(
+	unsigned answer,
+	int error)
+{
+	/* Not the settings' request. */
+	if (!answer)
+		return;
 
-	/* Logs how long the drawing took, for the tests. */
-	printf("KWL GLASS wallpaper path=%s ms=%llu\n", glass_loader.path, (unsigned long long)(kwl_milliseconds() - started));
-
-	/* Succeeded: the new wallpaper is shown from the next frame. */
-	return 1;
+	/* Told at the next poll. */
+	glass_answer.done = 1U;
+	glass_answer.error = error;
 }
 
 /*
@@ -933,6 +1210,111 @@ wallpaper_create(
 		return error;
 
 	/* Succeeded: the wallpaper is drawn. */
+	return 0;
+}
+
+/*
+ * Readies the wallpaper's images for a new picture of a size written by
+ * the caller, with no wait: the images themselves when they have the size
+ * and no frame in flight copies a host image's staging (the frames in
+ * flight sample the images the copies fill, and the next copy comes after
+ * them in the queue), otherwise new ones (wallpaper_renew; *renewed says
+ * which).  Returns 0, or EIO with the old images kept.
+ */
+static int
+wallpaper_target(
+	struct kwl_server *server,
+	struct kwl_glass *glass,
+	uint32_t width,
+	uint32_t height,
+	unsigned *renewed)
+{
+	int writable;
+	int error;
+
+	/* Their stagings may be written now. */
+	*renewed = 0U;
+	writable = kwl_compose_host_writable(server);
+	if (writable && glass->wallpaper.width == width && glass->wallpaper.height == height && glass->blurred.image != VK_NULL_HANDLE)
+		return 0;
+
+	/* New ones, the old ones let go after the frames given before. */
+	error = wallpaper_renew(server, glass, width, height);
+	if (error == 0)
+		*renewed = 1U;
+	return error;
+}
+
+/*
+ * Gives the wallpaper and its frosted glass new images of a size for a
+ * new picture (written by the caller), the old ones let go once the
+ * frames given before have completed.  Returns 0, or EIO with the old
+ * images kept.
+ */
+static int
+wallpaper_renew(
+	struct kwl_server *server,
+	struct kwl_glass *glass,
+	uint32_t width,
+	uint32_t height)
+{
+	struct kwl_import blurred;
+	VkResult result;
+	int error;
+
+	/* The frosted glass's first, aside, so that a failure of either keeps both old ones. */
+	memset(&blurred, 0, sizeof(blurred));
+	result = kwl_host_image_create(server->compose, width / GLASS_BLUR_SCALE, height / GLASS_BLUR_SCALE, server->compose->linear_sampler, &blurred);
+	if (result != VK_SUCCESS) {
+		kwl_host_image_release(server->compose, &blurred);
+		return EIO;
+	}
+	error = glass_image_renew(server, &glass->wallpaper, width, height, server->compose->sampler);
+	if (error != 0) {
+		kwl_host_image_release(server->compose, &blurred);
+		return error;
+	}
+
+	/* The new frosted glass takes the old one's place, which goes after the frames given before. */
+	blurred.version = glass->blurred.version + 1U;
+	blurred.draw = glass->blurred.draw;
+	kwl_host_image_release(server->compose, &glass->blurred);
+	kwl_host_image_move(server->compose, &blurred, &glass->blurred);
+	return 0;
+}
+
+/*
+ * Puts a new host image of a size in place of the one there (none, or one
+ * frames given before may still sample): the old one is let go after
+ * them (kwl_compose_bury), the new one keeps its way of drawing and a
+ * later version (the pictures that show it are told apart).  Its staging
+ * is the caller's to write.  Returns 0, or EIO with the old image kept.
+ */
+static int
+glass_image_renew(
+	struct kwl_server *server,
+	struct kwl_import *place,
+	uint32_t width,
+	uint32_t height,
+	VkSampler sampler)
+{
+	struct kwl_import fresh;
+	VkResult result;
+
+	/* The new image, aside. */
+	memset(&fresh, 0, sizeof(fresh));
+	result = kwl_host_image_create(server->compose, width, height, sampler, &fresh);
+	if (result != VK_SUCCESS) {
+		kwl_host_image_release(server->compose, &fresh);
+		return EIO;
+	}
+
+	/* It follows the old one, which goes once nothing given uses it; then it takes the place. */
+	fresh.version = place->version + 1U;
+	fresh.draw = place->draw;
+	if (place->image != VK_NULL_HANDLE || place->staging != VK_NULL_HANDLE)
+		kwl_host_image_release(server->compose, place);
+	kwl_host_image_move(server->compose, &fresh, place);
 	return 0;
 }
 
@@ -1824,24 +2206,15 @@ wallpaper_read(
 	return 0;
 }
 
-/*
- * Reads and decodes the wallpaper glass_loader names (or takes the
- * landscape), and draws it at the output's size into rows of its own,
- * away from the event loop.
- */
+/* Reads and decodes the wallpaper chosen (the landscape has nothing to read) on the loader's thread; the blur thread draws it. */
 static void *
 loader_run(
 	void *argument)
 {
 	struct wallpaper_picture picture;
-	uint32_t *rows;
-	uint32_t *blurred;
-	uint32_t small_width;
-	uint32_t small_height;
-	int drawn;
 	int error;
 
-	/* The thread needs nothing passed: glass_loader names the file and the size. */
+	/* The thread needs nothing passed: glass_loader names the file. */
 	(void)argument;
 
 	/* Reads the file and decodes the picture; the landscape is a picture without pixels. */
@@ -1850,38 +2223,10 @@ loader_run(
 	if (!glass_loader.landscape)
 		error = wallpaper_read(glass_loader.path, &picture);
 
-	/* The rows of the wallpaper and of the frosted glass, packed at their widths. */
-	rows = NULL;
-	blurred = NULL;
-	small_width = glass_loader.width / GLASS_BLUR_SCALE;
-	small_height = glass_loader.height / GLASS_BLUR_SCALE;
-	if (error == 0) {
-		rows = malloc((size_t)glass_loader.width * glass_loader.height * sizeof(*rows) + 1U);
-		blurred = malloc((size_t)small_width * small_height * sizeof(*blurred) + 1U);
-	}
-
-	/* The picture drawn into them; without them the event loop draws it. */
-	if (rows != NULL && blurred != NULL) {
-		drawn = wallpaper_render(&picture, glass_loader.width, glass_loader.height, (unsigned char *)rows, (size_t)glass_loader.width * sizeof(*rows), (unsigned char *)blurred, (size_t)small_width * sizeof(*blurred));
-		if (drawn != 0) {
-			free(rows);
-			free(blurred);
-			rows = NULL;
-			blurred = NULL;
-		}
-	} else {
-		free(rows);
-		free(blurred);
-		rows = NULL;
-		blurred = NULL;
-	}
-
-	/* Publishes the result; done tells poll that the thread can be joined. */
+	/* Publishes the result; done tells the event loop that the thread can be joined. */
 	(void)pthread_mutex_lock(&glass_loader.lock);
 
 	glass_loader.picture = picture;
-	glass_loader.rows = rows;
-	glass_loader.blurred = blurred;
 	glass_loader.error = error;
 	glass_loader.done = 1;
 
@@ -1899,7 +2244,9 @@ loader_run(
 static int
 loader_start(
 	struct kwl_server *server,
-	const char *path)
+	const char *path,
+	unsigned answer,
+	unsigned resize)
 {
 	int error;
 
@@ -1920,17 +2267,17 @@ loader_start(
 		path = "-";
 	}
 
-	/* The path, the output's size now, and nothing read yet. */
+	/* The path, what its result is for, and nothing read yet. */
+	(void)server;
 	(void)snprintf(glass_loader.path, sizeof(glass_loader.path), "%s", path);
-	glass_loader.width = server->width;
-	glass_loader.height = server->height;
+	glass_loader.answer = answer;
+	glass_loader.resize = resize;
+	glass_loader.started_ms = kwl_milliseconds();
 	memset(&glass_loader.picture, 0, sizeof(glass_loader.picture));
-	glass_loader.rows = NULL;
-	glass_loader.blurred = NULL;
 	glass_loader.error = 0;
 	glass_loader.done = 0;
 
-	/* Starts the thread that reads, decodes and draws the picture. */
+	/* Starts the thread that reads and decodes the picture. */
 	error = pthread_create(&glass_loader.thread, NULL, loader_run, NULL);
 	if (error != 0)
 		return error;
@@ -1945,26 +2292,27 @@ loader_start(
 	return 0;
 }
 
-/* Copies the rows the wallpaper's thread drew into the look's images, which the next frame copies again. */
+/* Copies the rows the blur thread drew into the look's images (of the job's size), which the next frame copies again. */
 static void
-loader_copy(
-	struct kwl_glass *glass)
+blur_copy(
+	struct kwl_glass *glass,
+	const struct glass_blur_job *job)
 {
 	uint32_t small_width;
 	uint32_t small_height;
 	uint32_t y;
 
 	/* The frosted glass's size. */
-	small_width = glass_loader.width / GLASS_BLUR_SCALE;
-	small_height = glass_loader.height / GLASS_BLUR_SCALE;
+	small_width = job->width / GLASS_BLUR_SCALE;
+	small_height = job->height / GLASS_BLUR_SCALE;
 
 	/* The wallpaper's rows, at the image's pitch. */
-	for (y = 0; y < glass_loader.height; y++)
-		memcpy((unsigned char *)glass->wallpaper.map + (size_t)y * glass->wallpaper.row_pitch, glass_loader.rows + (size_t)y * glass_loader.width, (size_t)glass_loader.width * sizeof(uint32_t));
+	for (y = 0; y < job->height; y++)
+		memcpy((unsigned char *)glass->wallpaper.map + (size_t)y * glass->wallpaper.row_pitch, job->rows + (size_t)y * job->width, (size_t)job->width * sizeof(uint32_t));
 
 	/* The frosted glass's rows. */
 	for (y = 0; y < small_height; y++)
-		memcpy((unsigned char *)glass->blurred.map + (size_t)y * glass->blurred.row_pitch, glass_loader.blurred + (size_t)y * small_width, (size_t)small_width * sizeof(uint32_t));
+		memcpy((unsigned char *)glass->blurred.map + (size_t)y * glass->blurred.row_pitch, job->blurred + (size_t)y * small_width, (size_t)small_width * sizeof(uint32_t));
 
 	/* The next frame copies both into their sampled images. */
 	kwl_host_image_written(&glass->wallpaper);
@@ -2961,17 +3309,20 @@ glass_large_prepare(
 		return EINVAL;
 
 	/*
-	 * The image the first time; later the frames in flight that read it end
-	 * before the event loop draws it again (the glyph worker's digits are
-	 * written at the start of a walk, when no frame is in flight).
+	 * The image the first time; later the event loop draws into it again
+	 * when no frame in flight copies a host image's staging, otherwise into
+	 * a new one, the frames in flight going on with the old one, let go
+	 * after them (the glyph worker's digits are written at the start of a
+	 * walk, when no frame in flight copies one either).
 	 */
 	if (glass->large.image == VK_NULL_HANDLE) {
 		result = kwl_host_image_create(server->compose, GLASS_LARGE_WIDTH, GLASS_LARGE_HEIGHT, server->compose->sampler, &glass->large);
 		if (result != VK_SUCCESS)
 			return EIO;
-	} else if (!glass->worker_running) {
-		kwl_compose_quiesce(server);
-		kwl_device_wait_idle(server->compose);
+	} else if (!glass->worker_running && !kwl_compose_host_writable(server)) {
+		error = glass_image_renew(server, &glass->large, GLASS_LARGE_WIDTH, GLASS_LARGE_HEIGHT, server->compose->sampler);
+		if (error != 0)
+			return error;
 	}
 
 	/*
