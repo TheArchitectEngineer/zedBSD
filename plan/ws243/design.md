@@ -42,7 +42,7 @@ Parent: [WS243](ws.md)、Phase [p001](phase001/phase.md)
   3. VRAM の allocator から 64 KiB（instance 0x0、USERD 0x1000）と context の buffer（ctxBufferSize を 4 KiB に切り上げ、0 で埋める）を取る。
      instance block は work の空間の root を指す（`nvrtx_mmu_instance`）。context の buffer は `nvrtx_work_map_vram` で work の空間に map する。
   4. system memory の ring（512 entry）・semaphore の page・fence の slot と push の page を取り、`nvrtx_work_map_system` で map する。method buffer も取る。
-  5. channel の確保（class は profile の `class_channel`、engine 0x13、空間 `NVRTX_HANDLE_WORK_SPACE`、chid **16**）→ BIND（engine 0x13）→ SCHEDULE。
+  5. channel の確保（class は profile の `class_channel`、engine 0x13、空間 `NVRTX_HANDLE_WORK_SPACE`、chid **48**）→ BIND（engine 0x13）→ SCHEDULE。
   6. `NV2080_CTRL_CMD_GPU_PROMOTE_CTX`（0x2080012b、subdevice）: engineType 0x13、hClient・hChanClient = driver の client、ChID、hObject = channel、
      virtAddress・size = context の buffer、entryCount 0。
   7. NVDEC の object（`NV_BSP_ALLOCATION_PARAMETERS`: size 12、prohibitMultipleInstances 0、engineInstance 0）。
@@ -50,7 +50,7 @@ Parent: [WS243](ws.md)、Phase [p001](phase001/phase.md)
 - submit と待ち: `nvrtx_nvdec_submit()`（push の segment + host の semaphore release、WFI つき）、`nvrtx_nvdec_wait()`。GR の work channel と同じ形の
   ring・fence の slot（`nvrtx_push_fence`）。doorbell は `(runlist << 16) | chid`。lock は channel ごと。
 - 停止: work channel の停止の前に SCHEDULE off → object → channel の free、release で buffer を返す（`gsp.c` の stop・release に 1 行ずつ）。
-- chid 16 は GR の 1〜4・copy の 8 と重ならない（USERD の page 2 の index 0）。
+- chid 48（handle 0xf1f00030・0xc4b00030）は GR の 1〜4・copy の 8・session の channel の 16〜47（WS250、`NVRTX_WORK_SESSION_CHID_FIRST` から 32 本）と重ならない。2026-10-29 の main の取り込みで 16 から直した（16 と handle 0xf1f00010 は session の最初の channel と同じだった）。
 
 ## 3. 1 回の decode の push（`nvdec-records.c`、host 試験）
 
@@ -157,8 +157,10 @@ p001 の表の byte・bit の位置（host で測った物）で書く。値:
 
 ### copy engine（GRCE）での de-tile
 
-- work channel を作る時に copy の class（profile の `class_copy`）の object を GR の runlist の copy engine で確保し（`NVC5B5` の params: version 1、
-  engine type = GR の runlist にある COPYn）、最初の push で subchannel 4 に SET_OBJECT。
+- GR の channel を作る時に copy の class（profile の `class_copy`）の object を GR の runlist の copy engine で確保し（`NVC5B5` の params: version 1、
+  engine type = GR の runlist にある COPYn）、最初の push で subchannel 4 に SET_OBJECT。WS250 の session ごとの channel の後は、driver の work channel と
+  session の channel のそれぞれに作る（`handle_copy`、session は 0xc5b50010 + 番号、free は 3D・copy・compute の順）。video の可否は driver の channel の
+  copy の object（node）と session の channel の copy の object（session、channel が出来た後）。
 - NV12 の image の plane を buffer へ写す時（`vkCmdCopyImageToBuffer`、aspect PLANE_0・PLANE_1）:
   OFFSET_IN = plane の address、OFFSET_OUT = buffer の address、PITCH_OUT = bufferRowLength（0 なら幅）× pixel の byte、
   LINE_LENGTH_IN = 幅 × pixel の byte、LINE_COUNT = 高さ、SET_SRC_BLOCK_SIZE（幅 1 GOB、高さ 2 GOB、深さ 1、GOB_HEIGHT_FERMI_8）、

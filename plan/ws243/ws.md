@@ -8,7 +8,7 @@ Primary Milestone: MG006
 Related Milestones: MG002
 Parent: [Master](../master.md)
 Related: [WS037](../ws037/ws.md)（nvrtx、GSP-RM・channel・Vulkan の executor）、[WS083](../ws083/ws.md)（Vulkan Video の拡張と i915 の H.264、`src/drivers/gpu/i915/vk/vk-video.c`）、[WS236](../ws236/ws.md)（Pi 4 の Vulkan Video、`src/drivers/gpu/bcm2711/vulkan-video.c`）、[WS202](../ws202/ws.md)（libmedia の `media_vkvideo_ops`）、[WS242](../ws242/ws.md)（RTX 20/30/40）
-Resume point: p001〜p003 は実装済み・試験未実施（2026-10-29 q1677-i01、branch agent/p6-ws243c、[p003](phase003/phase.md) の「未実施・残り」）。次は p004（実機、WS241 の後）。host 試験は `plan/ws243/tests/nvdec-host-test.sh`・`wire-host-test.sh`。
+Resume point: 2026-10-29 q1677-i02 P5（worktree p5-ws243、branch agent/p5-ws243）: main を取り込み P6 の hook を WS250 の session ごとの channel に合わせた（f422d14ae）。p004 は実機の script（`plan/ws243/tests/rtx-p004.sh`）まで、10.0.10.3 の枠待ち（[p004](phase004/phase.md)）。host 試験は `plan/ws243/tests/nvdec-host-test.sh`・`wire-host-test.sh`。
 <!-- awesome-plan-current:end -->
 
 ## ユーザーの指示（原文、2026-10-15）
@@ -36,7 +36,7 @@ Resume point: p001〜p003 は実装済み・試験未実施（2026-10-29 q1677-i
 | [p001](phase001/phase.md) | 設計: NVDEC の channel の取り方（RM の alloc、class、firmware）、picture の parameter の組み立て、DPB と出力の image の layout、Vulkan Video の object と executor の口（WS083・WS236 の共通の部分の再利用）、license の監査、試験の道 | in-progress（設計済み・review 1 回済み） |
 | [p002](phase002/phase.md) | 実装: NVDEC の channel と engine の起動、work channel の copy の object（code のみ、host 試験） | in-progress（実装済み・試験未実施） |
 | [p003](phase003/phase.md) | 実装: Vulkan Video の object（profile・capability・session・parameters・DPB）、RESULT_STATUS の query pool、H.264 の decode の命令、NV12 の image と copy engine での readback（code のみ、host 試験） | in-progress（実装済み・試験未実施） |
-| p004 | 実機の debug（WS241 の完了の後、RTX 2070 の素の起動、T の試験）。1080p30 の readback の速さもここで測る | planned |
+| [p004](phase004/phase.md) | 実機の debug（RTX 2070 の素の起動、10.0.10.3）。main の取り込み、1080p30 の readback の速さもここで測る | in-progress（2026-10-29 q1677-i02 P5、実機は未実施） |
 | p005 | 規約の全文の見直し | planned |
 | p006（案） | GPU の道: SAMPLED の NV12（plane の R8・R8G8 の view、BL GOB 2 段の texture header）と memory の export、libmedia の gpu pictures の道を本線に | planned（案） |
 
