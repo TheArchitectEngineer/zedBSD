@@ -82,6 +82,13 @@
 #define DRV_USB_HCD_CAP_SHARED_STAGING		(1U << 2)
 /* Advertise only with configured stream rings, completion and checked cancel. */
 #define DRV_USB_HCD_CAP_BULK_STREAMS		(1U << 3)
+/*
+ * The HCD keeps several URBs of one bulk endpoint on the bus at once, up to
+ * the endpoint's queue depth (drv_usb_endpoint_set_queue_depth).
+ */
+#define DRV_USB_HCD_CAP_QUEUED_BULK		(1U << 4)
+/* The most URBs a class driver may ask one bulk endpoint to queue. */
+#define DRV_USB_ENDPOINT_QUEUE_MAX		4U
 #define DRV_USB_TRANSFER_RESERVE_MAX_SIZE	(64U * 1024U)
 
 #define DRV_USB_DETACH_FORCE			(1U << 0)
@@ -370,7 +377,10 @@ struct drv_usb_hcd_ops {
 	 * Zero retires the HCD request and transfers terminal publication and
 	 * ownership release to the core, so the HCD must not complete it afterward.
 	 * A nonzero return leaves the accepted request under the normal completion
-	 * contract.
+	 * contract.  On an endpoint with a queue depth above one, a dequeue
+	 * retires every URB queued there: the HCD completes the others itself
+	 * (CANCELLED, or DISCONNECTED in a teardown), and the core publishes
+	 * the one asked for after them.
 	 */
 	int (*urb_dequeue)(struct drv_usb_hcd *, struct drv_usb_urb *);
 
@@ -884,6 +894,25 @@ drv_usb_endpoint_set_hcd_data(
 
 int drv_usb_endpoint_configure_streams(struct drv_usb_endpoint *endpoint,
     unsigned maximum_stream_id);
+
+/*
+ * Lets a bound class driver keep up to depth URBs of one bulk endpoint on
+ * the bus at once (1 to DRV_USB_ENDPOINT_QUEUE_MAX).  An HCD with
+ * DRV_USB_HCD_CAP_QUEUED_BULK completes them in submission order; a STALL
+ * or other halt of one ends those behind it, and a cancel of one cancels
+ * them all (see urb_dequeue).  *granted receives the depth the HCD gives,
+ * 1 without that capability.  The depth returns to 1 when the interface's
+ * driver is unbound.
+ */
+int
+drv_usb_endpoint_set_queue_depth(
+	struct drv_usb_endpoint *endpoint,
+	unsigned depth,
+	unsigned *granted);
+
+unsigned
+drv_usb_endpoint_queue_depth(
+	const struct drv_usb_endpoint *endpoint);
 
 int
 drv_usb_endpoint_clear_halt(

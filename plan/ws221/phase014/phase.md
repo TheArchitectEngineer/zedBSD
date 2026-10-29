@@ -1,7 +1,7 @@
 <!-- awesome-plan project=zedbsd record=ws221-p014 -->
 # ws221-p014: xHCI の bulk endpoint に転送を重ねる（opt-in の queue depth）
 
-Status: planned（2026-10-30 P3: 設計。実装は次の起動）
+Status: cleared（2026-10-30 03:35 P3 q1689-i01: 957ddf795・c5d728353・c4b52d61b・989d84fa2。5330 の NCM send 1512 → 2064〜2097、recv 1399 → 1449〜1453 Mbit/s（Linux r8152 2353・2354）、host・QEMU・内蔵 USB の非退行 PASS、全 platform の build warning 0。camcap は未実施（image の build が firmware の license の確認で止まる、Q1 の判断 (c)））
 Parent: [WS221](../ws.md)
 Queue: q1689 / q1689-i01（P3）
 依存: p013（NCM の NTB の複数の datagram・RX の 2 つの buffer）
@@ -33,6 +33,30 @@ Queue: q1689 / q1689-i01（P3）
 6. 純粋な部分を `include/drivers/pci/pci-xhci-queue.h`（列の push・頭の取り外し・TRB による照合・ring の空きの計算）に出し、host 試験（`plan/ws221/tests/xhci-queue-test.c`、ASan・UBSan）: 順の完了、TRB の address の照合（頭・後ろ・ring の wrap）、空きの不足、cancel で全てが順に、STALL の頭と残り。
 7. NCM: RX の URB を 4（buffer 4 つ、完了の順に parse、空いた buffer で出し直す）、TX の URB を 2（組み立てた block を順に）。cancel は全ての URB を出した順に（HCD は 1 つの cancel で全てを返す）。
 
+## design-reviewer の指摘と反映（2026-10-30 P3）
+
+review（致命 2・重大 6・中 8・軽微 7）。実装は上の設計を次のとおり直した形:
+
+| 指摘 | 反映 |
+| --- | --- |
+| C1 submit の組み立ての排他（`recovering`）と STALL の trap | `recovering` を持ち主の数に（submit の組み立てと STALL の公開が重なってよい）。`xhci_recovery_leave_locked` は数を減らすだけ。組み立ての後、他の TD がある時は lock の下で endpoint の状態を読み直し、Running でなければ（`stall_publishing` も）EIO |
+| C2 cancel の間の admission | 頭が `cancelling`（1 か 2）なら submit は EBUSY（1 回目と 2 回目の確かめ）。cancel の開始で queue の全てに印を付ける（`xhci_queue_mark_cancelling_locked`） |
+| S1 取り消しの契約と順 | `xhci_cancel_request(c, d, r, others)`: r は呼び手が公開（dequeue は core、teardown は DISCONNECTED）、他は `xhci_queue_abort_locked` で completion の列の末尾に（`completions_busy`・`completion_busy` を数える）、command が無ければ cancel の thread が `xhci_completion_drain`。順は「列に先にある物、他を queue の順、頼まれた物は core が後で」。usb.h の `urb_dequeue` の comment に契約を書いた |
+| S2 二重の cancel | 開始の時に全てに印。`xhci_urb_dequeue` は queue を探し、無ければ EBUSY、頭が cancelling なら EALREADY。device の drain の `attempted` は dci の bit のまま（1 回で全て退く） |
+| S3 頭の Halted | 成功・short 以外で、code が 3・4・6・36 か output context が Halted なら、後ろを頭の直後に IO_ERROR で退ける（`aborted`: 完了の log を出さない）。Reset Endpoint の後は既存の `xhci_endpoint_recover` が Set TR Dequeue（producer へ）を打つ |
+| S4 depth の不許可 | `drv_usb_endpoint_set_queue_depth(endpoint, depth, &granted)`（core の endpoint に持つ、HCD は `DRV_USB_HCD_CAP_QUEUED_BULK` で）。NCM は認められた数だけ URB を作る（1 なら今と同じ 1 本と buffer 2 つ） |
+| S5 RX の buffer | URB 数 + 1（spare）。完了した block の URB は spare で直ちに出し直し、parse の後にその buffer が spare になる |
+| S6 `->active` の全ての利用 | `active` は queue の頭の写し（publish・unlink で更新）。queue 全体が要る所: event の照合、cancel、request の解放の確かめ（`queued` の flag）、`active_count`（要求ごと）。頭で足りる所: endpoint_reset・streams・disable の admission、busy の確かめ、suspend の `xhci_transfer_busy_locked`（同じ endpoint の要求は同じ種類）、controller の drain（頭を繰り返し外す） |
+| M1 ring の空き | `drv_xhci_queue_admit`: 1 つ空けて、他の TD の後ろでは更に 32（`DRV_XHCI_QUEUE_SLACK`、short packet の後に controller が辿る退いた TD の残り）。depth 1（列が空）は今と同じ上限 |
+| M2 頭より後ろに合う event | 無視して最初の 8 回を log（古い pointer が再利用の slot に合う誤りを避ける。Q1 了承） |
+| M3 depth の寿命 | core の `drv_usb_endpoint` に持ち、interface の driver を外す時（claim した sibling も）1 に戻す。stream・control・interrupt は 1 |
+| M4 cycle bit の順 | 他の TD の後ろの TD は最初の TRB の cycle bit を最後に渡す（`hold_first`・`ring_release_held`） |
+| M5 一時の EBUSY | NCM は submit を endpoint ごとに 1 本に直列にする（RX は rearm の権利、TX は pump）ので組み立ての排他の EBUSY は出ない。ring の空きは NCM の TD（2 TRB 以下）× 4 に十分 |
+| M7 QEMU で depth > 1 | 範囲の外（ECM に opt-in を足さない）。5330 の実機で確かめる（Q1 了承） |
+| M8 Phase の分割 | 1 つのまま（Q1 2026-10-30） |
+| L3 Stopped - Short Packet（28） | Q1 の指示で p014 で直した: suspend の時の「ring に残す」に 28 を加えた（`drv_xhci_completion_stopped`）。他の経路は変えない。host 試験 `test_stopped` |
+| L4 TX の sequence | TX は pump 1 本が組み立てと submit を続けて行い、URB ごとに block の buffer |
+
 ## 確かめ
 
 - host: 上の xhci-queue の試験、`plan/ws197/tests/run-xhci-isoch-test.sh`（isochronous の非退行）、NCM の codec の試験。
@@ -44,6 +68,39 @@ Queue: q1689 / q1689-i01（P3）
 
 - xHCI は全ての USB 機器が使う。depth 1 の経路を変えない事を host 試験と QEMU と実機で確かめる。cancel・STALL の複数の要求は NCM だけが使う。
 
-## 結果
+## 結果（2026-10-30 P3 q1689-i01）
 
-（未。記録する事: p014 の後の 5330 の NCM の send・recv（30 s、`NO_VF2=1 5330-ncm.sh`）、同じ 5330 の Debian の r8152 で同じ道具（tcp-perf と perf-peer.py、相手 centris）の send・recv を向きごとに。WS315（vendor の mode）の根拠）
+実装（commit）: 957ddf795（xHCI の queue・core の opt-in・NCM の RX 4・TX 2・`pci-xhci-queue.h` と host 試験）、c5d728353（Stopped - Short Packet を suspend の時の Stopped に、L3、Q1 の指示）、c4b52d61b（試験の script）、989d84fa2（規約の短い見直し、動作は変えない）。
+
+| 場所 | 変えた事 |
+| --- | --- |
+| `include/drivers/pci/pci-xhci-queue.h`（新規） | 純粋な判断: 要求の FIFO（最大 4、途中の取り出し）、ring の使用量と admission（1 つ空き、他の後ろは 32 の余白）、TRB の address による照合（頭・後ろ・無し）、Halted にする完了（3・4・6・36 か context の Halted）、Stopped の 3 つの code |
+| `src/drivers/pci/pci-xhci.c` | endpoint の queue と `active`（頭の写し）、要求の `queued`・`aborted`、`recovering` の数、submit の admission（depth・cancel 中・組み立ての後の状態の読み直し）、最初の TRB の cycle bit を最後に、event の照合を queue 全体で（後ろに合う event は無視して最初の 8 回を log）、頭が Halted の時の後ろの退け、cancel・teardown で queue 全体（他は completion の列で CANCELLED・DISCONNECTED）、`DRV_USB_HCD_CAP_QUEUED_BULK` |
+| `include/drivers/usb/usb.h`・`src/drivers/usb/usb.c` | `drv_usb_endpoint_set_queue_depth`（bulk、1〜4、認められた値を返す）・`drv_usb_endpoint_queue_depth`、driver を外す時に 1 に戻す、`urb_dequeue` の契約の comment。HAL（`include/hal/hal.h`）は変えていない |
+| `src/drivers/usb/usb-cdc-ncm-net.c` | RX は認められた数（4）の URB と buffer 5（spare）、submit の順の列で完了を順に取る、rearm は全ての空いた URB。TX は認められた数（2）の URB と block、pump 1 本が組み立てと submit（sequence の順）。attach の行に `urbs=RX/TX` |
+
+確かめ:
+
+- host: `plan/ws221/tests/run-xhci-queue-test.sh` PASS（-O2 と ASan・UBSan。FIFO・途中の取り出し・ring の空きと余白・照合（Link TRB を跨ぐ・後ろ・遅れた event）・Halted の code・Stopped の 3 つの code（suspend の code 28 を含む `test_stopped`）・20 万手の乱数の model）、`plan/ws197/tests/run-xhci-isoch-test.sh` all PASS、`run-ncm-ntb-frames-test.sh` PASS。
+- build: amd64・pcat・rpi4・rpi5・zybo・VF2（config-visionfive2）・5330（config-5330-jumbo）・RTL8127（plan/tools/rtl8127/config-amd64-rtl8127.mk）の vmunix の warning 0（規約の見直しの後に amd64・5330・zybo を build し直して warning 0）。`git diff --check` 無し。
+- QEMU（KVM、image は `plan/ws221/tests/config-amd64-usb.mk`、c4b52d61b の src。989d84fa2 の書き方の変更の前の image）:
+  - `qemu-usb-xhci.sh`（新規）PASS: `-name p3-ws221`、usb-storage から起動、lsusb で hub・stick・ECM・HID 3 つ（kbd・hub の下の mouse・tablet）、16 MiB の乱数の file を ECM で入れ、stick の上で copy と cmp、ECM で出して host で一致。
+  - `qemu-tcp.sh` inet PASS（send 47.1・recv 48.6 Mbit/s、ECM、depth 1 の経路）。
+  - `qemu-usb-idle.sh` PASS（hub と mouse、CPU の busy 1 % 未満）。
+  - cache=unsafe は `guest.py` に口が無く付けていない。port は `guest.py` が空きを選ぶ。
+- 実機 5330（`MODE=--nvme-kernel NO_VF2=1 5330-ncm.sh`、userland は NVMe の物、相手はこの host 10.0.10.2、30 s。下の表）: 5330-run PASS、ping 1472 が通る、ue0 の errors 0。
+- 内蔵の USB の非退行（5330 の kernel log、bff52ee82 と p014 を比べた）: Broadcom 58200 は usb-ccid、AX211 は usb-bt、RTL8156 は usb-cdc-ncm で同じ。webcam は p014 の kernel では uvc が付き cam0 ができた（bff52ee82 の kernel には UVC の driver が無かった。main の merge で入った物で、p014 とは関係が無い）。AX211 の `xhci: transfer completion=4 … slot=3 endpoint=5 port=10`（の後の usb-bt の clear halt）は p014 の前の run（i02・p012・p013）にもあり、p014 に固有でない。
+- 未実施: camcap による camera の stream（5330 の NVMe の userland に camcap が無い。image の build は amd-navi-firmware・i915-firmware の license の確認で止まり、承諾はユーザーの判断なので作らない、Q1 の判断 (c)）。USB の stick と USB の HID は 5330 に無いので、storage と HID は QEMU だけ。depth > 1 の cancel・STALL・抜き差し・suspend の経路は確かめていない（5330-run の終わりの再起動で NCM の stop の cancel が走るはずだが、その結果は観察していない。STALL・suspend は起こしていない）。
+
+### NCM の到達点と Linux（WS315 の vendor の mode の根拠）
+
+| kernel | send Mbit/s | recv Mbit/s | 記録 |
+| --- | --- | --- | --- |
+| bff52ee82（p013 の最後、URB 1 つ） | 1512.1 | 1398.8 | build/ws221-5330/p014-base-bff52 |
+| p013 の実験の版（RX 64 KB、NVMe にあった物） | 1516.4 | 1309.6 | build/ws221-5330/p014-base-p013 |
+| p014 c5d728353（RX 4・TX 2） | 2064.0 | 1453.4 | build/ws221-5330/p014-k1 |
+| p014 989d84fa2（同じ、規約の見直しの後） | 2097.0 | 1449.0 | build/ws221-5330/p014-k2 |
+| Debian の r8152（6.19.13、2500、同じ tcp-perf を Linux に build） | 2353.4 | 2353.6 | build/ws221-5330/p014-linux-1（`plan/ws221/tests/5330-linux-r8152.sh`） |
+
+送りは Linux の 89 %、受けは 62 %。受けは URB を 4 本にしても 1399 → 1453 で、xHCI の要求 1 つは受けの天井ではなかった。残りの候補（測っていない）: RX の block の parse と packet への copy・poll の往復の CPU、NCM の device 側の NTB の詰め方（Linux の r8152 は NCM でなく vendor の mode）。
+

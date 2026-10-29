@@ -15,6 +15,7 @@
 #include <drivers/pci/pci-xhci-control.h>
 #include <drivers/pci/pci-xhci-isoch.h>
 #include <drivers/pci/pci-xhci-lifecycle.h>
+#include <drivers/pci/pci-xhci-queue.h>
 #include <drivers/usb/usb.h>
 #include <kern/kcrt.h>
 
@@ -161,6 +162,15 @@ struct xhci_ring {
 	struct drv_dma_buffer dma;
 	struct xhci_trb *trbs;
 	unsigned enqueue, cycle;
+
+	/*
+	 * A TD put behind others on a running ring is handed over whole: with
+	 * hold_first set, ring_push writes the next TRB with the cycle bit the
+	 * controller reads as empty and notes it in held_index (held set), and
+	 * ring_release_held gives that bit last, once every later TRB of the TD
+	 * is in place.  Under active_lock, like the producer.
+	 */
+	unsigned hold_first, held, held_index;
 };
 
 struct xhci_endpoint {
@@ -169,6 +179,15 @@ struct xhci_endpoint {
 	struct drv_dma_buffer stream_contexts;
 	struct xhci_ring streams[3];
 	unsigned maximum_stream_id;
+
+	/*
+	 * The requests whose TDs are on the ring, in the order they were put
+	 * there (pci-xhci-queue.h), and active, the head of that queue (NULL
+	 * when it is empty).  An endpoint has one request at a time unless its
+	 * class driver asked for more (drv_usb_endpoint_set_queue_depth, bulk
+	 * only).  Under active_lock.
+	 */
+	struct drv_xhci_queue queue;
 	struct xhci_request *active;
 	unsigned dci;
 	unsigned enabled, recovering, stall_publishing;
@@ -221,6 +240,14 @@ struct xhci_request {
 	int input;
 	unsigned cancelling, transfer_seen, completion_code;
 	unsigned short_seen;
+
+	/*
+	 * queued: the request is in its endpoint's queue.  aborted: it was
+	 * retired without an event of its own, behind a head that halted the
+	 * endpoint or with a cancel of its endpoint, so its completion is not
+	 * logged as a transfer error.  Under active_lock.
+	 */
+	unsigned queued, aborted;
 	unsigned stall_publication;
 	unsigned reserved;
 	struct xhci_urb_reservation *reservation;
@@ -262,6 +289,9 @@ struct xhci_controller {
 	void *irq_cookie;
 	struct xhci_device *devices;
 	struct xhci_request *completion_head, *completion_tail;
+
+	/* Events naming a queued TD behind its head, which are ignored; the first few are logged.  Under active_lock. */
+	unsigned queue_events_ignored;
 	struct xhci_request transfer_request;
 	struct drv_dma_buffer transfer_reserve;
 	struct spinlock active_lock;
@@ -284,8 +314,9 @@ struct xhci_controller {
 	unsigned interrupter_enabled;
 
 	/*
-	 * Protected by active_lock.  Each endpoint remains queue-depth one,
-	 * while these counts provide bounded controller teardown barriers.
+	 * Protected by active_lock.  active_count counts the requests queued on
+	 * every endpoint; these counts provide bounded controller teardown
+	 * barriers.
 	 */
 	unsigned active_count;
 	unsigned endpoint_recoveries_busy;
@@ -402,6 +433,7 @@ static int xhci_endpoint_dequeue_all(struct xhci_controller *, struct xhci_devic
 static int ring_alloc(struct xhci_controller *c, struct xhci_ring *r);
 static void ring_free(struct xhci_controller *c, struct xhci_ring *r);
 static uint64_t ring_push(struct xhci_ring *r, uint64_t parameter, uint32_t status, uint32_t control);
+static void ring_release_held(struct xhci_ring *r);
 static void xhci_event_dequeue_publish_locked(struct xhci_controller *c, unsigned clear_busy);
 static void xhci_irq_fail(struct xhci_controller *c, uint32_t status);
 static int event_take(struct xhci_controller *c, struct xhci_trb *out);
@@ -420,8 +452,11 @@ static void fill_slot(struct xhci_controller *c, struct xhci_device *d, void *co
 static void fill_endpoint(struct xhci_controller *c, void *context, struct xhci_endpoint *ep, const struct drv_xhci_endpoint_context_words *encoded);
 static struct xhci_device *xhci_usb_device(struct drv_usb_device *u);
 static struct xhci_device *xhci_slot_device_locked(struct xhci_controller *c, unsigned slot);
-static struct xhci_request * xhci_event_request_locked(struct xhci_controller *c, const struct xhci_trb *event, unsigned *trb_offset);
-static int xhci_request_publish_locked(struct xhci_controller *c, struct xhci_request *request);
+static struct xhci_request * xhci_event_request_locked(struct xhci_controller *c, const struct xhci_trb *event, unsigned *trb_offset, unsigned *position);
+static int xhci_request_publish_locked(struct xhci_controller *c, struct xhci_request *request, unsigned depth);
+static void xhci_queue_abort_locked(struct xhci_controller *c, struct xhci_endpoint *endpoint, enum drv_usb_urb_status terminal);
+static void xhci_queue_mark_cancelling_locked(struct xhci_endpoint *endpoint, unsigned cancelling);
+static unsigned xhci_queue_depth(const struct xhci_endpoint *endpoint, struct drv_usb_urb *urb);
 static int xhci_request_unlink_locked(struct xhci_controller *c, struct xhci_request *request);
 static void xhci_recovery_leave_locked(struct xhci_controller *c, struct xhci_endpoint *endpoint);
 static int xhci_device_recovery_busy_locked(const struct xhci_device *device);
@@ -451,7 +486,7 @@ static int xhci_operation_enter(struct xhci_controller *c);
 static void xhci_operation_leave(struct xhci_controller *c);
 static void xhci_submission_leave(struct xhci_controller *c);
 static int xhci_urb_enqueue(struct drv_usb_hcd *h, struct drv_usb_urb *u);
-static int xhci_cancel_request(struct xhci_controller *c, struct xhci_device *d, struct xhci_request *r);
+static int xhci_cancel_request(struct xhci_controller *c, struct xhci_device *d, struct xhci_request *r, enum drv_usb_urb_status others);
 static void xhci_cancel_diagnose(struct xhci_controller *c, const struct xhci_request *r);
 static int xhci_urb_dequeue(struct drv_usb_hcd *h, struct drv_usb_urb *u);
 static int xhci_endpoint_quiesce(struct xhci_controller *c, struct xhci_device *d, unsigned dci);
@@ -1102,13 +1137,25 @@ ring_push(
 	struct xhci_trb *t = &r->trbs[r->enqueue];
 	uint64_t trb_address =
 		r->dma.device_address + (uint64_t)r->enqueue * sizeof(*t);
+	uint32_t cycle;
+
+	/* The producer's cycle bit, or, for a held first TRB, the one that reads as empty. */
+	cycle = 0;
+	if (r->cycle)
+		cycle = XHCI_TRB_CYCLE;
+	if (r->hold_first) {
+		cycle ^= XHCI_TRB_CYCLE;
+		r->hold_first = 0;
+		r->held = 1;
+		r->held_index = r->enqueue;
+	}
 
 	/* Fills the block before the cycle bit hands it over. */
 	t->parameter_low = (uint32_t)parameter;
 	t->parameter_high = (uint32_t)(parameter >> 32);
 	t->status = status;
 	kern_io_write_barrier();
-	t->control = control | (r->cycle ? XHCI_TRB_CYCLE : 0);
+	t->control = control | cycle;
 	kern_io_write_barrier();
 
 	/* Handles the r condition. */
@@ -1127,6 +1174,29 @@ ring_push(
 
 	/* Returns the computed result. */
 	return trb_address;
+}
+
+/*
+ * Hands over a TD whose first TRB ring_push held back: every later TRB is
+ * already in place, so flipping the first one's cycle bit gives the
+ * controller the whole TD at once (as Linux's giveback_first_trb does).
+ */
+static void
+ring_release_held(
+	struct xhci_ring *r)
+{
+	struct xhci_trb *t;
+
+	/* Nothing was held. */
+	if (!r->held)
+		return;
+
+	/* Orders the TD's later TRBs before the bit that hands the first over. */
+	t = &r->trbs[r->held_index];
+	kern_io_write_barrier();
+	t->control ^= XHCI_TRB_CYCLE;
+	kern_io_write_barrier();
+	r->held = 0;
 }
 
 /* Publishes the protected event cursor and ends a batch only when requested. */
@@ -1778,99 +1848,175 @@ xhci_slot_device_locked(
 	return NULL;
 }
 
-/* Finds the request an event belongs to. */
+/*
+ * Finds the queued request an event belongs to, by the TRB it names, and
+ * where that request stands in its endpoint's queue (0: the head).
+ */
 static struct xhci_request *
 xhci_event_request_locked(
 	struct xhci_controller *c,
 	const struct xhci_trb *event,
-	unsigned *trb_offset)
+	unsigned *trb_offset,
+	unsigned *position)
 {
+	struct drv_xhci_queue_td tds[DRV_XHCI_QUEUE_MAX];
+	enum drv_xhci_queue_match match;
 	struct xhci_device *device;
 	struct xhci_endpoint *endpoint;
 	struct xhci_request *request;
+	struct xhci_request *head;
+	struct xhci_ring *ring;
 	uint64_t pointer = (uint64_t)event->parameter_low |
 			   ((uint64_t)event->parameter_high << 32);
 	unsigned slot = event->control >> 24;
 	unsigned dci = (event->control >> 16) & 31U;
+	unsigned index;
 
-	/* Handles the dci condition. */
+	/* Only a transfer endpoint's event names a request. */
+	*trb_offset = 0;
+	*position = 0;
 	if (dci == 0 || dci >= 32U)
 		return NULL;
 
-	/* Handles the device availability. */
+	/* The slot's device and its endpoint. */
 	device = xhci_slot_device_locked(c, slot);
 	if (device == NULL)
 		return NULL;
 	endpoint = &device->endpoints[dci];
 
-	/* Checks the drv xhci transfer event matches result. */
-	request = endpoint->active;
-	if (request == NULL || request->device != device ||
-	    request->endpoint != endpoint || request->ring == NULL ||
-	    request->ring != xhci_stream_ring(endpoint, request->stream_id) ||
-	    !drv_xhci_transfer_event_matches(
-		    request->ring->dma.device_address, XHCI_RING_TRBS,
-		    request->slot, request->dci, request->first_trb,
-		    request->trb_count, pointer, slot, dci, trb_offset)) {
-		/* Reports that no result is available. */
+	/* An endpoint with nothing queued, or a head not on its own ring, has no request for the event. */
+	head = endpoint->active;
+	if (head == NULL || head->device != device ||
+	    head->endpoint != endpoint || head->ring == NULL)
 		return NULL;
+	ring = xhci_stream_ring(endpoint, head->stream_id);
+	if (head->ring != ring)
+		return NULL;
+
+	/* Lists where the queued TDs lie, from the head; they share the head's ring. */
+	for (index = 0; index < endpoint->queue.count; index++) {
+		request = drv_xhci_queue_at(&endpoint->queue, index);
+		if (request == NULL || request->ring != head->ring)
+			return NULL;
+		tds[index].first_trb = request->first_trb;
+		tds[index].trb_count = request->trb_count;
 	}
 
-	/* Returns the computed result. */
+	/* Matches the event's slot, endpoint and TRB against them. */
+	match = drv_xhci_queue_match(
+		head->ring->dma.device_address,
+		XHCI_RING_TRBS,
+		head->slot,
+		head->dci,
+		tds,
+		endpoint->queue.count,
+		pointer,
+		slot,
+		dci,
+		position,
+		trb_offset);
+	if (match == DRV_XHCI_QUEUE_MATCH_NONE)
+		return NULL;
+
+	/* Succeeded: the request at that position. */
+	request = drv_xhci_queue_at(&endpoint->queue, *position);
 	return request;
 }
 
-/* Publishes a request so events can be matched against it. */
+/*
+ * Puts a request behind those queued on its endpoint so that events can
+ * be matched against it; EBUSY when the endpoint already has depth
+ * requests or its ring has no room for the request's TD.
+ */
 static int
 xhci_request_publish_locked(
 	struct xhci_controller *c,
-	struct xhci_request *request)
+	struct xhci_request *request,
+	unsigned depth)
 {
-	/* Handles the active availability. */
-	if (request->endpoint->active != NULL)
+	struct xhci_endpoint *endpoint = request->endpoint;
+	enum drv_xhci_queue_admission admission;
+	unsigned used;
+	int pushed;
+
+	/* The TRB places the TDs already queued take. */
+	used = 0;
+	if (endpoint->active != NULL) {
+		used = drv_xhci_queue_ring_used(
+			XHCI_RING_TRBS,
+			endpoint->active->first_trb,
+			request->ring->enqueue,
+			endpoint->queue.count);
+	}
+
+	/* Admits the TD by the endpoint's depth and the ring's room. */
+	admission = drv_xhci_queue_admit(
+		XHCI_RING_TRBS,
+		endpoint->queue.count,
+		depth,
+		used,
+		request->trb_count);
+	if (admission != DRV_XHCI_QUEUE_ADMIT)
 		return EBUSY;
 
-	/* Classifies the current input character. */
+	/* The count of queued requests can never wrap. */
 	if (c->active_count == UINT_MAX)
 		__builtin_trap();
-	request->endpoint->active = request;
+
+	/* Queues the request; the head stays the oldest. */
+	pushed = drv_xhci_queue_push(&endpoint->queue, request);
+	if (pushed != 0)
+		__builtin_trap();
+	request->queued = 1U;
+	endpoint->active = drv_xhci_queue_at(&endpoint->queue, 0);
 	c->active_count++;
 
 	/* Succeeded. */
 	return 0;
 }
 
-/* Takes a request back out of the published list. */
+/* Takes a request out of its endpoint's queue, wherever it stands; 1 when it was queued. */
 static int
 xhci_request_unlink_locked(
 	struct xhci_controller *c,
 	struct xhci_request *request)
 {
-	/* Handles the request condition. */
-	if (request->endpoint->active != request)
+	struct xhci_endpoint *endpoint = request->endpoint;
+	int removed;
+
+	/* A request not queued has nothing to take out. */
+	if (!request->queued)
 		return 0;
 
-	/* Classifies the current input character. */
-	if (c->active_count == 0)
+	/* The queue and the count must agree that it is there. */
+	removed = drv_xhci_queue_remove(&endpoint->queue, request);
+	if (!removed || c->active_count == 0)
 		__builtin_trap();
-	request->endpoint->active = NULL;
+
+	/* The next request, if any, becomes the head. */
+	request->queued = 0;
+	endpoint->active = drv_xhci_queue_at(&endpoint->queue, 0);
 	c->active_count--;
 
-	/* Reports operation failure. */
+	/* Succeeded: it was queued. */
 	return 1;
 }
 
-/* Ends the recovery an endpoint was being held in. */
+/*
+ * Ends one owner's hold of an endpoint.  recovering counts the owners: one
+ * at a time, except that a STALL of a queued endpoint's head may join a
+ * submit still building a TD behind it.
+ */
 static void
 xhci_recovery_leave_locked(
 	struct xhci_controller *c,
 	struct xhci_endpoint *endpoint)
 {
-	/* Handles the endpoint condition. */
-	if (!endpoint->recovering || endpoint->stall_publishing ||
+	/* A leave without a hold is a broken ownership. */
+	if (endpoint->recovering == 0 ||
 	    c->endpoint_recoveries_busy == 0)
 		__builtin_trap();
-	endpoint->recovering = 0;
+	endpoint->recovering--;
 	c->endpoint_recoveries_busy--;
 }
 
@@ -2720,8 +2866,13 @@ transfer_claim(
 	unsigned code = (event->status >> 24) & 0xffU;
 	size_t residual = event->status & 0x00ffffffU, actual;
 	unsigned trb_offset;
+	unsigned position;
+	unsigned state;
+	unsigned ignored;
 	int normal_short_valid = 1;
 	int isochronous;
+	int halts;
+	int stopped;
 
 	/* An isochronous endpoint's event follows its own rules. */
 	isochronous = xhci_isoch_event_locked(c, event);
@@ -2730,8 +2881,8 @@ transfer_claim(
 
 	irq = spin_lock_irqsave(&c->active_lock);
 
-	/* Handles the request availability. */
-	request = xhci_event_request_locked(c, event, &trb_offset);
+	/* Finds the queued request whose TD the event names. */
+	request = xhci_event_request_locked(c, event, &trb_offset, &position);
 	if (request == NULL) {
 		spin_unlock_irqrestore(&c->active_lock, irq);
 
@@ -2745,11 +2896,11 @@ transfer_claim(
 	/*
 	 * During a suspend, a request that Stop Endpoint stopped stays on its
 	 * ring: the resume rings the endpoint and the controller runs it on
-	 * from where it stopped.
+	 * from where it stopped.  That includes a TD stopped after a short
+	 * packet (Stopped - Short Packet).
 	 */
-	if (c->suspend_state != XHCI_SUSPEND_NONE &&
-	    (code == XHCI_COMPLETION_STOPPED ||
-	     code == XHCI_COMPLETION_STOPPED_LENGTH)) {
+	stopped = drv_xhci_completion_stopped(code);
+	if (c->suspend_state != XHCI_SUSPEND_NONE && stopped) {
 		spin_unlock_irqrestore(&c->active_lock, irq);
 		return 0;
 	}
@@ -2777,6 +2928,29 @@ transfer_claim(
 
 		/* Reports operation failure. */
 		return 1;
+	}
+
+	/*
+	 * The controller runs an endpoint's TDs in order, so only the head
+	 * finishes.  An event naming a TD behind it is left alone, and the
+	 * first few are told: the head is kept until its own event or a cancel.
+	 */
+	if (position != 0) {
+		ignored = c->queue_events_ignored;
+		if (c->queue_events_ignored != UINT_MAX)
+			c->queue_events_ignored++;
+		spin_unlock_irqrestore(&c->active_lock, irq);
+		if (ignored < 8U) {
+			kern_logf("xhci: event for queued TD %u behind the head "
+				  "slot=%u endpoint=%u completion=%u ignored\n",
+				  position,
+				  request->slot,
+				  request->dci,
+				  code);
+		}
+
+		/* Not claimed. */
+		return 0;
 	}
 
 	control_request = drv_usb_urb_control_request(request->urb);
@@ -2834,13 +3008,14 @@ transfer_claim(
 		 * latched the STALL in the USB core.  Once the active request
 		 * is unlinked, this marker is the only HCD-side barrier against
 		 * a same-endpoint TD slipping into the completion-publication
-		 * window.
+		 * window.  A submit may already hold a queued endpoint while it
+		 * builds a TD; it finds the endpoint halted and gives up.
 		 */
-		if (request->endpoint->recovering ||
-		    request->endpoint->stall_publishing ||
+		if (request->endpoint->stall_publishing ||
+		    request->endpoint->recovering == UINT_MAX ||
 		    c->endpoint_recoveries_busy == UINT_MAX)
 			__builtin_trap();
-		request->endpoint->recovering = 1U;
+		request->endpoint->recovering++;
 		request->endpoint->stall_publishing = 1U;
 		c->endpoint_recoveries_busy++;
 		request->stall_publication = 1U;
@@ -2864,10 +3039,133 @@ transfer_claim(
 		c->completion_head = request;
 	c->completion_tail = request;
 
+	/*
+	 * A head that ended in error may have halted its endpoint; a halted
+	 * endpoint runs no TD until Reset Endpoint, whose Set TR Dequeue then
+	 * skips the TDs behind it, so they are retired behind the head now
+	 * rather than left waiting for events that never come.
+	 */
+	if (request->terminal_status != DRV_USB_URB_COMPLETE &&
+	    request->endpoint->active != NULL) {
+		state = xhci_endpoint_state(c, device, request->dci);
+		halts = drv_xhci_queue_completion_halts(
+			code,
+			(enum drv_xhci_endpoint_state)state);
+		if (halts)
+			xhci_queue_abort_locked(c, request->endpoint, DRV_USB_URB_IO_ERROR);
+	}
+
 	spin_unlock_irqrestore(&c->active_lock, irq);
 
 	/* Reports operation failure. */
 	return 1;
+}
+
+/*
+ * Retires every request still queued on an endpoint without an event of
+ * its own, in queue order, onto the completion list behind those already
+ * there, ending each with terminal.  The caller has made sure the
+ * controller no longer runs them (a halted endpoint, or Stop Endpoint and
+ * Set TR Dequeue).  Called under active_lock.
+ */
+static void
+xhci_queue_abort_locked(
+	struct xhci_controller *c,
+	struct xhci_endpoint *endpoint,
+	enum drv_usb_urb_status terminal)
+{
+	struct xhci_request *request;
+	struct xhci_device *device;
+	unsigned busy;
+	int unlinked;
+
+	/* Takes the head again and again until the queue is empty. */
+	for (;;) {
+		request = endpoint->active;
+		if (request == NULL)
+			break;
+		device = request->device;
+
+		/* Each one counts as a completion in flight, like one from an event. */
+		if (device->completions_busy == UINT_MAX)
+			__builtin_trap();
+		busy = atomic_raw_fetch_add_relaxed(&c->completion_busy, 1U);
+		if (busy == UINT_MAX)
+			__builtin_trap();
+		unlinked = xhci_request_unlink_locked(c, request);
+		if (!unlinked)
+			__builtin_trap();
+		device->completions_busy++;
+
+		/* Ends it without data and without a logged error of its own. */
+		request->aborted = 1U;
+		request->terminal_status = terminal;
+		request->completion_actual = 0;
+		request->completion_residual = request->length;
+		request->completion_next = NULL;
+
+		/* Queues it behind the completions already waiting. */
+		if (c->completion_tail != NULL)
+			c->completion_tail->completion_next = request;
+		else
+			c->completion_head = request;
+		c->completion_tail = request;
+	}
+}
+
+/* Marks every request queued on an endpoint with a cancel's state (1 running, 2 failed). */
+static void
+xhci_queue_mark_cancelling_locked(
+	struct xhci_endpoint *endpoint,
+	unsigned cancelling)
+{
+	struct xhci_request *request;
+	unsigned position;
+
+	/* Marks each queued request. */
+	for (position = 0; position < endpoint->queue.count; position++) {
+		request = drv_xhci_queue_at(&endpoint->queue, position);
+		request->cancelling = cancelling;
+	}
+}
+
+/*
+ * Returns how many requests an URB's endpoint may have queued: what its
+ * class driver asked for (drv_usb_endpoint_queue_depth) for a bulk
+ * endpoint without streams, one for any other.
+ */
+static unsigned
+xhci_queue_depth(
+	const struct xhci_endpoint *endpoint,
+	struct drv_usb_urb *urb)
+{
+	const struct drv_usb_control_request *control;
+	struct drv_usb_endpoint *usb_endpoint;
+	enum drv_usb_transfer_type type;
+	unsigned depth;
+
+	/* A control transfer and an endpoint with streams keep one request. */
+	control = drv_usb_urb_control_request(urb);
+	if (control != NULL)
+		return 1;
+	if (endpoint->maximum_stream_id != 0)
+		return 1;
+
+	/* Only a bulk endpoint queues more. */
+	usb_endpoint = drv_usb_urb_endpoint(urb);
+	type = drv_usb_endpoint_type(usb_endpoint);
+	if (type != DRV_USB_TRANSFER_BULK)
+		return 1;
+
+	/* What the class driver asked for, within the queue's capacity. */
+	depth = drv_usb_endpoint_queue_depth(usb_endpoint);
+	if (depth == 0)
+		depth = 1;
+	if (depth > DRV_XHCI_QUEUE_MAX)
+		depth = DRV_XHCI_QUEUE_MAX;
+
+	/* Succeeded. */
+	return depth;
 }
 
 /* Completes one request and hands it back to its caller. */
@@ -2886,10 +3184,11 @@ xhci_completion_finish(
 	size_t completion_actual = request->completion_actual;
 	unsigned long irq;
 
-	/* Handles the request condition. */
-	if (request->terminal_status != DRV_USB_URB_COMPLETE ||
-	    (request->completion_residual != 0 &&
-	     request->completion_code != 13U)) {
+	/* Logs a transfer that ended in error, but not one retired behind another or with a cancel. */
+	if (!request->aborted &&
+	    (request->terminal_status != DRV_USB_URB_COMPLETE ||
+	     (request->completion_residual != 0 &&
+	      request->completion_code != 13U))) {
 		/* Handles the control request availability. */
 		if (control_request != NULL) {
 			kern_logf(
@@ -3793,8 +4092,7 @@ xhci_request_release(
 		if (!reservation->busy ||
 		    request->reservation_generation !=
 			    reservation->generation ||
-		    (request->endpoint != NULL &&
-		     request->endpoint->active == request)) {
+		    request->queued) {
 			spin_unlock_irqrestore(&c->active_lock, irq);
 			__builtin_trap();
 		}
@@ -3818,7 +4116,7 @@ xhci_request_release(
 
 	/* Handles the endpoint availability. */
 	irq = spin_lock_irqsave(&c->active_lock);
-	if (request->endpoint != NULL && request->endpoint->active == request) {
+	if (request->queued) {
 		spin_unlock_irqrestore(&c->active_lock, irq);
 		__builtin_trap();
 	}
@@ -4106,6 +4404,7 @@ xhci_urb_enqueue(
 	size_t length = drv_usb_urb_length(u);
 	uint64_t dma;
 	unsigned dci, maximum_packet_size = 0, normal_count = 0;
+	unsigned depth, queued, state;
 	unsigned long irq;
 	int e, input, zero_packet = 0;
 
@@ -4157,11 +4456,19 @@ xhci_urb_enqueue(
 		}
 	}
 
+	/* How many requests the endpoint may have queued. */
+	depth = xhci_queue_depth(ep, u);
+
 	irq = spin_lock_irqsave(&c->active_lock);
 
-	/* Handles the active availability. */
+	/*
+	 * The endpoint takes another request while it has fewer than its
+	 * depth, no other submit builds a TD on it (recovering), and no cancel
+	 * of its queue runs or has failed.
+	 */
 	if (!ep->enabled || d->quiescing || c->controller_stopping ||
-	    ep->active != NULL || ep->recovering) {
+	    ep->queue.count >= depth || ep->recovering ||
+	    (ep->active != NULL && ep->active->cancelling != 0)) {
 		e = !ep->enabled || d->quiescing || c->controller_stopping
 			    ? ENODEV
 			    : EBUSY;
@@ -4306,9 +4613,21 @@ xhci_urb_enqueue(
 									  : EIO;
 	irq = spin_lock_irqsave(&c->active_lock);
 
-	/* Handles the active availability. */
-	if (e != 0 || ep->active != NULL || d->quiescing ||
-	    c->controller_stopping) {
+	/*
+	 * Behind other TDs the head may have halted the endpoint while this TD
+	 * was built: its event has been taken by now, and the endpoint's
+	 * context says Halted, so the state is read again under the lock.
+	 */
+	if (e == 0 && q == NULL && ep->queue.count != 0) {
+		state = xhci_endpoint_state(c, d, dci);
+		if (ep->stall_publishing || state != DRV_XHCI_ENDPOINT_RUNNING)
+			e = EIO;
+	}
+
+	/* The endpoint state, the depth or a cancel may have changed while the TD was built. */
+	if (e != 0 || ep->queue.count >= depth || d->quiescing ||
+	    c->controller_stopping ||
+	    (ep->active != NULL && ep->active->cancelling != 0)) {
 		/* Handles the e condition. */
 		if (e == 0) {
 			e = d->quiescing || c->controller_stopping ? ENODEV
@@ -4328,9 +4647,28 @@ xhci_urb_enqueue(
 	r->trb_count = q != NULL ? (length ? 3U : 2U)
 				 : normal_count + (zero_packet ? 1U : 0U);
 
-	/* Checks the xhci request publish locked result. */
-	if (xhci_request_publish_locked(c, r) != 0)
-		__builtin_trap();
+	/*
+	 * Queues the request behind those on the ring; a ring without room
+	 * for its TD refuses it, and the class driver submits it again later.
+	 */
+	queued = ep->queue.count;
+	e = xhci_request_publish_locked(c, r, depth);
+	if (e != 0) {
+		xhci_recovery_leave_locked(c, ep);
+		spin_unlock_irqrestore(&c->active_lock, irq);
+		xhci_request_release(c, r);
+		xhci_submission_leave(c);
+
+		/* Failed: no room. */
+		return e;
+	}
+
+	/*
+	 * Behind other TDs the controller may already be running the ring, so
+	 * the TD's first TRB is handed over last (ring_release_held).
+	 */
+	if (queued != 0)
+		r->ring->hold_first = 1U;
 
 	/*
 	 * Publish the request, its URB association, the complete TD, and its
@@ -4374,6 +4712,9 @@ xhci_urb_enqueue(
 					     maximum_packet_size, zero_packet);
 		}
 	}
+
+	/* Hands over a first TRB held back. */
+	ring_release_held(r->ring);
 
 	/* Rings the endpoint, unless a suspend holds it: the resume rings every endpoint. */
 	if (c->suspend_state == XHCI_SUSPEND_NONE)
@@ -4489,11 +4830,20 @@ xhci_cancel_diagnose(
 		   __atomic_load_n(&c->irq_busy, __ATOMIC_ACQUIRE));
 }
 
+/*
+ * Cancels a request, and with it every other request queued on its
+ * endpoint (the caller has marked them all cancelling): Stop Endpoint and
+ * Set TR Dequeue to the producer empty the ring.  On success r is detached
+ * and released for the caller to publish, and the others are completed
+ * with others, in queue order, through the completion list.  On failure
+ * every request stays queued with its DMA.
+ */
 static int
 xhci_cancel_request(
 	struct xhci_controller *c,
 	struct xhci_device *d,
-	struct xhci_request *r)
+	struct xhci_request *r,
+	enum drv_usb_urb_status others)
 {
 	struct xhci_endpoint *ep = r->endpoint;
 	enum drv_xhci_cancel_action action;
@@ -4504,8 +4854,11 @@ xhci_cancel_request(
 		(enum drv_xhci_endpoint_state)UINT32_MAX;
 	uint64_t dequeue;
 	unsigned attempt, completion = 0;
+	unsigned busy;
 	unsigned long irq;
 	int error = EIO, releasable = 0;
+	int unlinked;
+	int aborted;
 
 	/* Process each element required by the operation. */
 	for (attempt = 0; attempt < 8U; attempt++) {
@@ -4543,11 +4896,11 @@ xhci_cancel_request(
 			break;
 		case DRV_XHCI_CANCEL_SET_TR_DEQUEUE:
 			/*
-			 * Queue depth is one per endpoint.  The producer is the
-			 * first safe dequeue position after this endpoint's
-			 * cancelled TD.  Keep the owner published until this
-			 * command completes so the same ring slots cannot be
-			 * reused after a software-only unlink.
+			 * Every TD queued on the endpoint is cancelled with
+			 * it, so the producer is the first safe dequeue
+			 * position after them all.  Keep the owners published
+			 * until this command completes so the same ring slots
+			 * cannot be reused after a software-only unlink.
 			 */
 			dequeue = r->ring->dma.device_address +
 				  (uint64_t)r->ring->enqueue *
@@ -4613,10 +4966,11 @@ xhci_cancel_request(
 
 retain:
 
-	/* Handles the r condition. */
+	/* Every request still queued keeps its DMA, marked as a failed cancel. */
 	irq = spin_lock_irqsave(&c->active_lock);
-	if (r->endpoint->active == r)
-		r->cancelling = 2U;
+
+	if (r->queued)
+		xhci_queue_mark_cancelling_locked(ep, 2U);
 
 	spin_unlock_irqrestore(&c->active_lock, irq);
 
@@ -4636,19 +4990,30 @@ release:
 	if (!releasable)
 		goto retain;
 
-	/* Checks the xhci request unlink locked result. */
+	/* Takes the request out of the queue; the ring no longer holds its TD. */
 	irq = spin_lock_irqsave(&c->active_lock);
-	if (!xhci_request_unlink_locked(c, r)) {
+	unlinked = xhci_request_unlink_locked(c, r);
+	if (!unlinked) {
 		spin_unlock_irqrestore(&c->active_lock, irq);
 
 		/* Failed. */
 		return EBUSY;
 	}
 
+	/* The others queued with it go to the completion list, their TDs gone with its. */
+	aborted = ep->active != NULL;
+	xhci_queue_abort_locked(c, ep, others);
+
 	spin_unlock_irqrestore(&c->active_lock, irq);
 
+	/* Detaches the request and gives its DMA back. */
 	drv_usb_urb_set_hcd_data(r->urb, NULL);
 	xhci_request_release(c, r);
+
+	/* Publishes the others now, unless a command holds the ring: its end drains the list. */
+	busy = __atomic_load_n(&c->command_busy, __ATOMIC_ACQUIRE);
+	if (aborted && busy == 0U)
+		xhci_completion_drain(c);
 
 	/* Succeeded. */
 	return 0;
@@ -4668,6 +5033,7 @@ xhci_urb_dequeue(
 	const struct drv_usb_control_request *control;
 	unsigned dci;
 	unsigned long irq;
+	int position;
 
 	/* Handles the d availability. */
 	d = xhci_usb_device(drv_usb_urb_device(u));
@@ -4694,32 +5060,38 @@ xhci_urb_dequeue(
 		return error;
 	}
 
-	/* Any other endpoint's single request. */
+	/* Any other endpoint's queued requests. */
 	irq = spin_lock_irqsave(&c->active_lock);
 
-	/* Handles the r availability. */
-	r = endpoint->active;
-	if (r == NULL || r->urb != u || r->device != d || r->dci != dci) {
+	/* The URB's request must be queued on this endpoint. */
+	r = drv_usb_urb_hcd_data(u);
+	position = drv_xhci_queue_find(&endpoint->queue, r);
+	if (r == NULL || position < 0 || r->urb != u || r->device != d ||
+	    r->dci != dci) {
 		spin_unlock_irqrestore(&c->active_lock, irq);
 
-		/* Failed. */
+		/* Failed: not queued here (it may be completing). */
 		return EBUSY;
 	}
 
-	/* Handles the r condition. */
-	if (r->cancelling == 1U) {
+	/* One cancel of the endpoint's queue at a time; every request is marked by it. */
+	if (endpoint->active->cancelling == 1U) {
 		spin_unlock_irqrestore(&c->active_lock, irq);
 
 		/* Failed. */
 		return EALREADY;
 	}
 
-	r->cancelling = 1U;
+	/*
+	 * Cancelling one request cancels every request queued on the
+	 * endpoint: the marks close submission until the cancel ends.
+	 */
+	xhci_queue_mark_cancelling_locked(endpoint, 1U);
 
 	spin_unlock_irqrestore(&c->active_lock, irq);
 
-	/* Obtains the xhci cancel request result. */
-	error = xhci_cancel_request(c, d, r);
+	/* Empties the ring; the others end CANCELLED, this one is published by the core. */
+	error = xhci_cancel_request(c, d, r, DRV_USB_URB_CANCELLED);
 
 	/* Returns the computed result. */
 	return error;
@@ -4890,7 +5262,8 @@ xhci_device_quiesce(
 				continue;
 			}
 
-			candidate->cancelling = 1U;
+			/* Cancels the endpoint's whole queue: every request is marked. */
+			xhci_queue_mark_cancelling_locked(&d->endpoints[dci], 1U);
 			attempted |= 1U << dci;
 			r = candidate;
 			urb = candidate->urb;
@@ -4902,7 +5275,7 @@ xhci_device_quiesce(
 		/* Handles the r availability. */
 		if (r != NULL) {
 			/* Checks the operation status. */
-			error = xhci_cancel_request(c, d, r);
+			error = xhci_cancel_request(c, d, r, DRV_USB_URB_DISCONNECTED);
 			if (error != 0) {
 				/* Checks the operation status. */
 				if (first_error == 0)
@@ -6439,7 +6812,8 @@ xhci_attach(
 	c->hcd.root_port_count = c->ports;
 	c->hcd.capabilities = DRV_USB_HCD_CAP_CONCURRENT_URBS |
 			      DRV_USB_HCD_CAP_TRANSFER_RESERVE |
-			      DRV_USB_HCD_CAP_SHARED_STAGING;
+			      DRV_USB_HCD_CAP_SHARED_STAGING |
+			      DRV_USB_HCD_CAP_QUEUED_BULK;
 	if (((rd32(c->capability, 0x10U) >> 12) & 15U) != 0)
 		c->hcd.capabilities |= DRV_USB_HCD_CAP_BULK_STREAMS;
 	c->hcd.private_data[0] = (uintptr_t)c;

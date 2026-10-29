@@ -4,7 +4,7 @@
 
 <!-- awesome-plan-current:start -->
 Status: incomplete（すぐ取り組む物。2026-10-27 ユーザー「Jumbo Frameはすぐやるものの一つにします。」）。旧: incomplete・保留（ユーザーの判断待ち）（2026-10-27 P3 の精査 q1608、ユーザー「…masterとWSを修正して、completedやcanceledにしてください。」: p001 第 2 版の設計の後、design-reviewer の review-2 とユーザーの判断 §9 Q1〜Q13…
-Resume point: 2026-10-30 P3 q1679-i02・q1689-i01 返却: p010・p012 cleared、p013 in-progress（5330 の NCM send 272 → 1513、recv 1225 → 1411、Linux r8152 2353）、p014 planned（xHCI の bulk endpoint に転送を重ねる、Q1 承認、設計は phase014）。次: P3 の新しい起動で p014 の design-reviewer → 実装。10.0.10.3 は返した（Debian、NVMe は vmunix-va1）。VF2 は使わない（/boot/boot0/vmunix は be5651cd）。5330 の NVMe の zedBSD は build/i02-5330 の image（bff52ee82 の tree）、Debian に戻した
+Resume point: 2026-10-30 03:35 P3 q1689-i01 返却: p014 cleared（957ddf795〜989d84fa2、5330 の NCM send 2064〜2097・recv 1449〜1453、Linux r8152 2353・2354、[phase014](phase014/phase.md)）。p013 は in-progress のまま（Q1 の判断）。5330 は Debian に戻り、NVMe の zedBSD の kernel は p014 の 989d84fa2 の build（vmunix.old は bff52ee82 の build）、userland は build/i02-5330 の image。10.0.10.3・VF2 は使っていない。camcap の確かめは firmware の license の扱いが決まってから
 Primary Milestone: MG005
 Related Milestones: なし
 <!-- awesome-plan-current:end -->
@@ -127,7 +127,7 @@ p001 の設計の要点（第 2 版）: QEMU の usb-net（CDC ECM）は descrip
 | Phase | 目的 | 状態 | 依存 |
 | --- | --- | --- | --- |
 | [p013](phase013/phase.md) | USB CDC NCM の送受信の速さ（5330 の RTL8156）: NTB に複数の datagram、RX の 2 つの buffer | in-progress（2026-10-30 P3: 17dd7f7d0・bff52ee82、5330 で send 272 → 1513、recv 1225 → 1411 Mbit/s（Linux 2353）。残り: xHCI の endpoint ごとの要求 1 つ（HCD の変更は Q1 の判断）） | p003、p012 |
-| [p014](phase014/phase.md) | xHCI の bulk endpoint に転送を重ねる（opt-in の queue depth、NCM の RX 4・TX 2） | planned（2026-10-30 P3: 設計。Q1 の承認と条件は phase.md） | p013 |
+| [p014](phase014/phase.md) | xHCI の bulk endpoint に転送を重ねる（opt-in の queue depth、NCM の RX 4・TX 2） | cleared（2026-10-30 P3 q1689-i01: 957ddf795〜989d84fa2。5330 の NCM send 1512 → 2064〜2097、recv 1399 → 1449〜1453（Linux r8152 send 2353・recv 2354）、host・QEMU・内蔵 USB の非退行 PASS、build warning 0。camcap は未実施） | p013 |
 
 ## ユーザーの指示（2026-10-29、IPv6）
 
