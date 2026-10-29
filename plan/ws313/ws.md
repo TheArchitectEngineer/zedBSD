@@ -4,7 +4,7 @@
 
 Status: planning
 Primary Milestone: MG008
-Resume point: p001 の design-reviewer、p003 の媒体と試験の script。配下 A（MMC・USB・Ethernet）と B（GPU・display）が実装中。担当は P7（q1675）。
+Resume point: 今夜のユーザーの実機の試験（[tests/README.md](tests/README.md)）の結果で各 Phase を直す。desktop（p009）は Vulkan の段（[gpu.md](gpu.md) §11、約 155 LW）が無いと出ない。担当は P7（q1675-i02）。
 
 ## ユーザーの指示（原文、2026-10-29）
 
@@ -50,14 +50,14 @@ Resume point: p001 の design-reviewer、p003 の媒体と試験の script。配
 
 | Phase | 目的 | 状態 | 依存 |
 | --- | --- | --- | --- |
-| [p001](phase001/phase.md) | 調べと設計 | in-progress（design-reviewer 待ち） | — |
-| p002 | HAL の BSP（起動・UART・FDT・GIC・timer・PSCI）と build の配線・config | in-progress（build 通る、実機未試験） | p001 |
-| p003 | 媒体（DTB・boot.scr・SD の image）と夜の試験の手順・script | planned | p002 |
-| p004 | SD（meson の MMC）と root | in-progress（配下 A） | p002 |
-| p005 | USB（PHY・CRG の xHCI） | in-progress（配下 A） | p002 |
-| p006 | Ethernet（EQoS・RGMII の PHY） | in-progress（配下 A） | p002 |
-| p007 | display（U-Boot の mode の OSD1） | in-progress（配下 B） | p002 |
-| p008 | GPU（Mali-G310）と Vulkan の device | in-progress（配下 B） | p002 |
+| [p001](phase001/phase.md) | 調べと設計 | in-progress（design-reviewer の 1 回） | — |
+| [p002](phase002/phase.md) | HAL の BSP（起動・UART・FDT・GIC・timer・PSCI）と build の配線・config | in-progress（実装済み・実機未試験） | p001 |
+| [p003](phase003/phase.md) | 媒体（DTB・boot.scr・SD の image）と夜の試験の手順・script | in-progress（image の build まで済み・実機未試験） | p002 |
+| [p004](phase004/phase.md) | SD（meson の MMC）と root | in-progress（実装済み・実機未試験） | p002 |
+| [p005](phase005/phase.md) | USB（PHY・CRG の xHCI） | in-progress（実装済み・実機未試験） | p002 |
+| [p006](phase006/phase.md) | Ethernet（EQoS・RGMII の PHY） | in-progress（実装済み・実機未試験） | p002 |
+| [p007](phase007/phase.md) | display（U-Boot の mode の OSD1） | in-progress（実装済み・実機未試験） | p002 |
+| [p008](phase008/phase.md) | GPU（Mali-G310）と Vulkan の device | in-progress（kernel の driver は実装済み・実機未試験。Vulkan の段は設計だけ） | p002 |
 | p009 | desktop（Keiland の config） | planned | p007・p008 |
 | 最後 | 規約の全文の見直し | planned | 全て |
 
