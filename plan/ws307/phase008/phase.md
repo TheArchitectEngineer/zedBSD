@@ -56,3 +56,8 @@
   - `sh plan/ws307/tests/p008-4k-boot.sh build/ws307i-ssh/hdd-image.img` → **PASS**（`build/ws307-test/p008-4k.we1BKe/boot/login.png`、p4-ws307i の worktree）。4Kn の NVMe の ESP（FAT32、sector 4096）の loader と cfg、root の native UFS（fragment 4 KiB）の kernel から起動し、kernel が `boot0 UUID=8E18-C5F3 -> /dev/nvme0n1p1 (private FAT)`・`rootpart … resolved to /dev/nvme0n1p2` で login prompt まで（画面で確かめた）。
   - 512 の回帰: 同じ image の `plan/tools/boot-test.sh`（uefi-nvme）login prompt PASS（`build/ws307-test/p006-boot512.yjgnrB/boot/login.png`）。
 - これで 4096 の段の受け入れ（4Kn の ESP＋root の UFS で起動）を満たした（判定は Q1）。残り: 512 の disk の j3 の sync の確かめ（p009 の QEMU の試験で）、`video=640x480` の観察（Q1 の判断）。
+
+## q1665-i07（2026-10-29、P4、worktree p4-ws307k）: 512 の disk の j3 の sync
+
+- p009 の段 7 の QEMU（`plan/ws307/tests/p009-install.sh`、installer の image から SATA の 512 の disk に導入した後）: live の system で導入した root（native UFS、j3）を mount し、`/boot/p009-sync.new` に 2,867,200 byte を書き、`mv` で `/boot/p009-sync.bin` に rename、`sync`、mount のまま QEMU を止めた（SIGTERM）。host で loader の UFS の reader（`plan/ws307/tests/host/ufs-cat.c`＋`bootloader/common/ufs-read.c`、512 byte の block）が同じ cksum で読んだ（`HOST j3-sync ok`）。2 回（`build/ws307-test/p009.Gdm7dW`・`p009.hCvrjA`）とも ok。spec §5.10 の 6 の「書く→fsync→rename→sync で home の位置まで書かれる」を 512 でも確かめた（4096 は i04 の p006-4k）。
+- これで p008 の残りの j3 の確かめは済み（判定は Q1）。`video=640x480` の観察は Q1 の判断のまま。
