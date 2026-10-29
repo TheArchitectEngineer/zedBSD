@@ -247,3 +247,19 @@ file の並び（案）:
 | 計 | 約 155 | 40〜58 時間（実機の試験と bisect を除く） |
 
 危険: Valhall の ISA の encode と scheduling の誤りは GPU の hang として見えるので、命令の encode の host 試験（Mesa の ISA の表との照合）と、firmware の CS の fault の値（`CS_FAULT`・`CS_FATAL`、exception type）を log に出す道具を G6 の最初に作る。
+
+## 12. compiler（G7、Valhall の shader compiler）
+
+担当: P7 の配下 C。記録の本体は [phase010](phase010/phase.md)。2026-10-29、実機未試験。
+
+- 場所: `src/drivers/gpu/mali/compiler/`（`shader.h` が口と shader の ABI の本体、`va-isa.h`・`va-encode.c`・`va-schedule.c`・
+  `va-compile.c`）。共通の front end `src/drivers/gpu/compiler/` の IR から。
+- 参照: Mesa 26.2.6（MIT）`src/panfrost/compiler/bifrost/valhall/ISA.xml`・`va_pack.c`・`va_insert_flow.c`・
+  `bifrost_compile.c`・`pan_nir_lower_*.c`。値は block ごとの出典、code・構造は写していない。
+- ABI の要点: FAU = push constants、vertex は viewport の 6 float、buffer の 64 bit の address。resource table 0 texture・
+  1 sampler・2 attribute・3 vertex buffer。vertex は position program（offset 0）と varying program（`varying_offset`）、
+  出力は table 61 entry 0 の LEA_BUF（r59）、varying location L は byte 16L。fragment は ATEST の後 BLEND（descriptor L）。
+- host の試験: `plan/ws313/tests/mali-compiler-host-test.sh`（ISA.xml から生成した表 `tests/mali-compiler-isa-table.inc`、
+  生成の tool `plan/ws313/tests/mali-compiler-isa-table.py`、encode の既知の語、assembler-cases の decode、1 lane の模型
+  `tests/mali-compiler-model.c` と IR の参照）、`plan/ws313/tests/mali-compiler-desktop-test.sh`（desktop の全 60 module）。
+  2026-10-29 両方 PASS（host のみ、GPU の証拠ではない）。
