@@ -34,7 +34,8 @@ uniform buffer（FAU の address からの LOAD）、storage buffer と shared m
 predicate は前への branch で迂回）、barrier、compute の local id・workgroup id、vertex attribute（LD_ATTR_IMM）、
 IDVS の position program（viewport の変換、1/w、point size）と varying program（LEA_BUF_IMM と STORE）、
 fragment の varying（LD_VAR_BUF_IMM、flat、NoPerspective）、FragCoord・FrontFacing・PointCoord・PrimitiveID、
-texture（TEX_SINGLE・TEX_FETCH、2D・3D・array、bias・explicit lod、定数の texel offset）、微分（CLPER、coarse・fine）、
+texture（TEX_SINGLE・TEX_FETCH、2D・3D・array、bias・explicit lod、定数の texel offset、compute の sampled image）、
+texture の大きさと level 数・storage buffer の長さ（driver が FAU に書く語から）、微分（CLPER、coarse・fine）、
 ATEST と各 render target への BLEND。
 
 ## 判断（推しで進めた所、夜の試験で確かめる）
@@ -53,6 +54,10 @@ ATEST と各 render target への BLEND。
   pan_nir_lower_noperspective と同じ）。
 - **fixed function の blend だけ**（blend shader は無い）。BLEND は f32 の v4、最後の BLEND が end。color の無い fragment は
   ATEST と end だけ。
+- **texture の大きさ・level 数、storage buffer の長さ**は descriptor を shader で読まず、driver が FAU に書く
+  （`size_fau_word`、読む物だけに語を割り当てる）。Mesa は descriptor を読むが、口を簡単にするため。
+- TEX の register type の field（bits 27:26）は float（1）にした。Mesa 26.2.6 の va_pack.c は書かず 0 のまま、
+  assembler-cases（DDK の出力）は 1。DDK の形に合わせた（夜に TEX が壊れたら最初に疑う所）。
 - **定数**は register を持たず、ISA の定数表にある値は表から、他は読む命令ごとに IADD_IMM で作る（register の圧迫を避ける）。
 - register は stage の preload の下（compute r0〜r54、fragment r0〜r56、vertex r0〜r58）。r48（blend shader の link）は
   blend shader を使わないので使う。spill は無い（足りなければ ENOSPC）。
@@ -66,7 +71,8 @@ ATEST と各 render target への BLEND。
 - `sh plan/ws313/tests/mali-compiler-host-test.sh 200`（2026-10-29）: PASS。ISA.xml から生成した表が tree の物と一致、
   encoder の既知の語 24 個が Mesa の `valhall/test/assembler-cases.txt` と一致、assembler-cases の 246 語を自前の decoder が
   全部名前どおりに decode、16 module（`plan/ws313/tests/mali-compiler-shaders/` の 3、nvrtx の sm75 の 8、gpu-compute の
-  3、compositor の quad の 2）が compile・decode・1 lane の模型と IR の参照で 200 試行ずつ一致。
+  3、compositor の quad の 2）が compile・decode・1 lane の模型と IR の参照で 200 試行ずつ一致（2026-10-29 の最後の回は
+  `plan/ws313/tests/mali-compiler-shaders/` が 4 本で 17 module）。
 - `sh plan/ws313/tests/mali-compiler-desktop-test.sh 200`（2026-10-29）: PASS、desktop の全 60 module（vert 19・frag 41）。
 - 模型が誤りを捕まえる事の確かめ: FSUB の符号・SELECT の入れ替え・wait の削除・varying の offset・viewport の word の
   5 つの突然変異が全部 FAIL になった（2026-10-29、手で流した。script には入れていない）。
@@ -82,8 +88,8 @@ ATEST と各 render target への BLEND。
   TEX の結果（模型は決まった関数）、CLPER（模型は 1 lane なので微分は 0 でしか試していない）、DISCARD が lane を終える事。
 - preload の register 番号（r55〜r61）は Mesa の bi_preload_reg（v9 以降）の値で、v10 の CSF の driver 側の設定（shader
   program descriptor の preload の mask）と合わせる必要がある（D）。
-- 無い物: cube・buffer・multisample の texture、texture の大きさの問い合わせ（RESINFO）・gather・compare、storage image・
-  texel buffer・input attachment、STORAGE_SIZE（OpArrayLength）、geometry shader、dual source の第 2 color、FragDepth・
+- 無い物: cube・buffer・multisample の texture、gather・compare、storage image・texel buffer・input attachment、
+  geometry shader、dual source の第 2 color、FragDepth・
   SampleMask、spill、UBO の vector の load（今は 1 語ずつ）、helper の lane の discard の flow（最適化）、register の
   last-use の bit（hint）。
 
@@ -98,5 +104,6 @@ ATEST と各 render target への BLEND。
 
 - 夜の実機の結果で直す（GPU の fault・CS の fault の値と、どの program か）。疑わしい順: wait の flow（message の結果の
   待ち）、preload の register、varying の offset、viewport の FAU の位置、TEX の handle の table と index。
-- 余裕があれば: cube texture（CUBEFACE1/2）、RESINFO（texture descriptor の読み）、STORAGE_SIZE（FAU に size の語を足す、
-  口の変更）、UBO の vector load。
+- 余裕があれば: cube texture（CUBEFACE1/2）、gather・compare、UBO の vector load。
+- 規約: 明らかな違反（条件の中の関数呼び出し、まとめた確保の検査、三項演算子）は直した。全部の if の前の comment など
+  規約の全文の見直しは WS の最後の Phase に残す（va-compile.c が大きい）。

@@ -433,6 +433,7 @@ compile_variant(
 	struct drv_gpu_shader_ir optimized;
 	struct va_compiler *c;
 	size_t written;
+	size_t bound;
 	uint32_t highest;
 	int error;
 
@@ -479,9 +480,10 @@ compile_variant(
 		return error;
 	}
 
-	/* Schedules and writes the program. */
+	/* Schedules and writes the program, when its bound fits the room. */
 	written = 0U;
-	if (va_schedule_bound(&c->code) <= room)
+	bound = va_schedule_bound(&c->code);
+	if (bound <= room)
 		written = va_schedule_write(&c->code, out, room);
 	if (written == 0U) {
 		va_code_release(&c->code);
@@ -707,19 +709,34 @@ lower(
 	uint32_t component;
 	int error;
 
-	/* Allocates the per-value and per-instruction tables. */
+	/* Allocates each value's register, a value with none being VA_NO_REG. */
+	error = ENOMEM;
 	value_count = c->ir->value_count + 1U;
 	c->reg = kern_malloc(value_count);
-	c->is_constant = kern_calloc(value_count, 1U);
-	c->constant = kern_calloc(value_count, sizeof(*c->constant));
-	c->last_use = kern_malloc((size_t)value_count * sizeof(*c->last_use));
-	c->defined_at = kern_malloc((size_t)value_count * sizeof(*c->defined_at));
-	c->done = kern_calloc((size_t)c->ir->instruction_count + 1U, 1U);
-	if (c->reg == NULL || c->is_constant == NULL || c->constant == NULL || c->last_use == NULL || c->defined_at == NULL || c->done == NULL) {
-		error = ENOMEM;
+	if (c->reg == NULL)
 		goto out;
-	}
 	kern_memset(c->reg, VA_NO_REG, value_count);
+
+	/* Allocates each value's constant mark and constant. */
+	c->is_constant = kern_calloc(value_count, 1U);
+	if (c->is_constant == NULL)
+		goto out;
+	c->constant = kern_calloc(value_count, sizeof(*c->constant));
+	if (c->constant == NULL)
+		goto out;
+
+	/* Allocates each value's last use and first definition. */
+	c->last_use = kern_malloc((size_t)value_count * sizeof(*c->last_use));
+	if (c->last_use == NULL)
+		goto out;
+	c->defined_at = kern_malloc((size_t)value_count * sizeof(*c->defined_at));
+	if (c->defined_at == NULL)
+		goto out;
+
+	/* Allocates the marks of the instructions lowered with an earlier one. */
+	c->done = kern_calloc((size_t)c->ir->instruction_count + 1U, 1U);
+	if (c->done == NULL)
+		goto out;
 
 	/*
 	 * Starts with every register below the stage's preloads free (r48, the
@@ -962,16 +979,18 @@ lower_alu(
 	uint32_t s;
 	uint32_t t;
 	uint32_t zero;
+	uint32_t count;
 
 	/* Reads the sources the operation has, then defines its result. */
 	a = VA_OPERAND_NONE;
 	b = VA_OPERAND_NONE;
 	s = VA_OPERAND_NONE;
-	if (ir_sources(inst, NULL) >= 1U)
+	count = ir_sources(inst, NULL);
+	if (count >= 1U)
 		a = value_operand(c, inst->src[0]);
-	if (ir_sources(inst, NULL) >= 2U)
+	if (count >= 2U)
 		b = value_operand(c, inst->src[1]);
-	if (ir_sources(inst, NULL) >= 3U)
+	if (count >= 3U)
 		s = value_operand(c, inst->src[2]);
 	if (c->error != 0)
 		return;
@@ -3685,12 +3704,18 @@ emit_alu(
 	uint32_t third)
 {
 	uint64_t reads;
+	int immediates;
+
+	/* Counts the operands read from the constant table. */
+	immediates = is_immediate(a);
+	immediates += is_immediate(b);
+	immediates += is_immediate(third);
 
 	/*
 	 * An instruction reads at most two words of the constant table and
-	 * the FAU: a third constant is made in a temporary.
+	 * the FAU: a third distinct constant is made in a temporary.
 	 */
-	if (is_immediate(a) && is_immediate(b) && is_immediate(third) && a != b && b != third && a != third)
+	if (immediates == 3 && a != b && b != third && a != third)
 		a = constant_temp(c, va_immediate_value(a & 0x1FU));
 
 	/* Places the operands and the destination. */
