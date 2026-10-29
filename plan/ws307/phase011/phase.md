@@ -3,7 +3,7 @@
 # ws307-p011 通しの試験
 
 - 親: [WS307](../ws.md)。仕様: [spec.md](../spec.md) §12。Queue: q1665 / q1665-i08（担当 P4、2026-10-29、worktree p4-ws307l）、q1665-i10（P4、2026-10-29、worktree p4-ws307n、基点 main 8ba9bdbbb: BUG-356・357 の直しを含む）。
-- Status: in-progress（q1665-i10: 12 回目で p011-install.py PASS。日本語の画面の後に Q1 の判定）
+- Status: in-progress（q1665-i10: p011-install.py PASS（12 回目）・日本語の画面 PASS（p010-screens.py --language ja の 5 回目）。Q1 の判定待ち）
 - 承認: q1665-i01 と同じ（Q1 の中継）。2026-10-29 Q1 の判断: p004 抜きで進める（GTK4 の app の build の確かめだけを p004 の後に残す）。
 - 前提: p010（installer の app）、p009（install-admin）、p006・p008 の 4096。
 
@@ -62,7 +62,9 @@
 - `python3 plan/ws307/tests/p010-screens.py --language ja build/q1688-img/installer-image.img`。live の利用者として Settings の言語の設定 `ui.language` を 1 にする。設定の client（`userland/tests/keiland-settings`）は image に入っていないので、build の `bin/keiland-settings` を guest に写して使う（635ee8306）。その後、installer が再起動なしで `INSTALLER LANGUAGE language=ja` を出す。
 - 1 回目（`p010s-ja.3w3y17pt`）: keiland-settings が image に無く 127 で止まった（上の 635ee8306 で直した）。2 回目（`p010s-ja.5qnw_lx0`）: 21 枚を日本語で撮れたが、最後の導入が unpack 中に errno 42 で S10 になった（host の load 25〜27、boot.img の写しに 9 分）。p010 の disk も cache=unsafe にした（c5a8f4f79）。
 - 3 回目（`p010s-ja.0h0x1im2`）: **PASS**（`p010-screens: PASS`、21 枚: S1・S2・S2 で選んだ所・S3・S4 の注意・S4・S4 で作った後・S5・S6・swap 無しの dialog・S7・S7 の下・license・キャンセルの dialog・S10（キャンセル）・S3（全体）・S7a・S8・導入の dialog・S9・S11）。PNG を目で見て確かめた。窓の題名「Installer」が英語のままだった（題名は窓を作る時だけ付けていた）ので、言語が変わった時に付け直すよう直した（f703b3f28）。3 回目の画面で「インストーラ」になったことを確かめた。英語で残った所が 2 つあった: S10 の副題「Nothing was installed」（catalog に無かった）と S2 の「パーティションテーブル: none」。訳を足した（4a587ed1f、`tools/i18n/tr.py check --strict` は 241/241）。disk の label（"EFI system partition" など、他の OS が付けた物）は data なので、そのまま出す。
-- 4 回目（4a587ed1f の image）: 下に書く。
+- 4 回目（`p010s-ja.5_a96zmo`、4a587ed1f の image）: S2 で「パーティションテーブル: none」のままだった（probe が表の無い disk に `none` を返し、それを訳さず出していた）。S2 を見た所で止め、`screens.c` で `none` も訳す形に直した（c9662274b）。
+- 5 回目（`p010s-ja.7p9co8ca`、その image）: **PASS**（`p010-screens: PASS`、21 枚）。題名「インストーラ」、S2「パーティションテーブル: なし」、S10 の副題「何もインストールしていません」を PNG で確かめた。
+- p011 の通し（12 回目 PASS）は 01b12baa6 の image で流した。その後の installer の変更（題名・訳・`none`）は表示だけで、p011 は流し直していない。
 
 ## 未実施・残り
 
