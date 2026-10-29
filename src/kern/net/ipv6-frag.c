@@ -987,8 +987,8 @@ static unsigned
 ipv6_fragment_shortage_locked(
 	int jumbo)
 {
-	/* The jumbo packets kept are at their bound. */
-	if (jumbo && ipv6_fragment_held_jumbo >= IPV6_FRAGMENT_HELD_JUMBO)
+	/* The jumbo packets kept are at their bound (a board without jumbo packets has a bound of 0). */
+	if (jumbo && ipv6_fragment_held_jumbo + 1U > IPV6_FRAGMENT_HELD_JUMBO)
 		return IPV6_FRAGMENT_SHORT_JUMBO;
 
 	/* The fragments kept in all are at their bound. */
