@@ -44,6 +44,9 @@
 #if CONFIG_DRIVER_PCI_INTEL_AX211
 #include <drivers/wifi/intel-ax211/pci-intel-ax211.h>
 #endif
+#if CONFIG_DRIVER_PCI_RTL8125
+#include <drivers/ethernet/rtl8125.h>
+#endif
 #if CONFIG_DRIVER_PCI_VENUS
 #include <drivers/pci/pci-venus.h>
 #endif
@@ -394,6 +397,10 @@ kern_platform_init(
 #if CONFIG_DRIVER_PCI_INTEL_AX211
 	if (drv_pci_intel_ax211_driver_register() != 0)
 		kern_logf("wlan: Intel AX211 PCI driver registration failed\n");
+#endif
+#if CONFIG_DRIVER_PCI_RTL8125
+	if (drv_pci_rtl8125_driver_register() != 0)
+		kern_logf("pci: RTL8125 driver registration failed\n");
 #endif
 #if CONFIG_DRIVER_GRAPHICS_DEVICE
 	if (drv_pcat_graphics_pci_register() != 0)

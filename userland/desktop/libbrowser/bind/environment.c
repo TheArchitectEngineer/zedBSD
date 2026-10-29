@@ -25,6 +25,8 @@
 #include "js/builtin.h"
 #include "net/net.h"
 
+#include "include/kern/os-name.h"
+
 #include <errno.h>
 #include <float.h>
 #include <stdio.h>
@@ -223,7 +225,7 @@ static const struct environment_part environment_location_parts[] = {
 static const struct environment_string environment_navigator_strings[] = {
 	{ "appCodeName", "Mozilla" },
 	{ "appName", "Netscape" },
-	{ "platform", "Kei " ENVIRONMENT_MACHINE },
+	{ "platform", ZEDBSD_OS_NAME " " ENVIRONMENT_MACHINE },
 	{ "product", "Gecko" },
 	{ "productSub", "20030107" },
 	{ "vendor", "" },

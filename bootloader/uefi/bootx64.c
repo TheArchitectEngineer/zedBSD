@@ -22,6 +22,8 @@
 #include "memory-map.h"
 #include "volume-discovery.h"
 #include "zedbsd-config.h"
+#include "root-config.h"
+#include "bootloader/common/ufs-read.h"
 #include "boot-keys.h"
 #include "bootloader/common/boot-override.h"
 #include "bootloader/include/amd64-handoff.h"
@@ -42,7 +44,7 @@
 #define CONFIG_READ_BUFFER		(ZBL_KERN_CONFIG_FILE_MAX + 1U)
 #define FILE_INFO_BUFFER		1024U
 
-/* The GOP mode a boot with a logo asks for: the Kei splash's size. */
+/* The GOP mode a boot with a logo asks for: the boot splash's size. */
 #define SPLASH_MODE_WIDTH		1920U
 #define SPLASH_MODE_HEIGHT		1080U
 
@@ -118,6 +120,36 @@ struct discovered_volume {
 	char uuid[ZBL_UEFI_FAT_UUID_SIZE];
 	size_t order;
 	size_t match_count;
+
+	/* Which files zedbsd.cfg puts on the root partition (kernel=rootpart:...). */
+	struct zbl_uefi_root_config root_files;
+};
+
+/*
+ * The UFS root partition the kernel or the logo is read from.
+ *
+ * It is opened on first use, when zedbsd.cfg puts a file on it, and read
+ * through the firmware's block device until the kernel is loaded.
+ */
+struct root_volume {
+	int mounted;
+	EFI_BLOCK_IO_PROTOCOL *block;
+	UINT32 media_id;
+	UINT32 block_size;
+	struct zbl_ufs_volume ufs;
+};
+
+/*
+ * A file the loader reads: on the FAT volume that holds zedbsd.cfg, or on
+ * the UFS root partition.
+ *
+ * Exactly one of fat and on_root describes it; size is its length.
+ */
+struct boot_file {
+	EFI_FILE_PROTOCOL *fat;
+	int on_root;
+	struct zbl_ufs_file ufs;
+	UINT64 size;
 };
 
 /*
@@ -151,6 +183,20 @@ static uint8_t boot_sector[BOOT_SECTOR_BUFFER] __attribute__((aligned(BOOT_SECTO
 
 /* The buffer zedbsd.cfg is read into, one byte larger than the parser takes so a longer file is seen. */
 static uint8_t config_buffer[CONFIG_READ_BUFFER];
+
+/* zedbsd.cfg with the rootpart: prefixes taken off, which the parser reads. */
+static uint8_t config_split_buffer[CONFIG_READ_BUFFER];
+
+/*
+ * The UFS reader's block and indirect-block storage.
+ *
+ * Page alignment meets any block device's IoAlign, so the firmware reads
+ * straight into it.  It is used only while the root partition is read.
+ */
+static struct zbl_ufs_work root_work __attribute__((aligned(4096)));
+
+/* The root partition, opened when zedbsd.cfg first needs a file on it. */
+static struct root_volume root_partition;
 
 /* The buffer GetInfo fills with a file's information. */
 static uint8_t file_info_buffer[FILE_INFO_BUFFER] __attribute__((aligned(8)));
@@ -205,6 +251,11 @@ static EFI_STATUS allocate_kernel_at(EFI_BOOT_SERVICES *boot, EFI_PHYSICAL_ADDRE
 static EFI_STATUS place_kernel_at(struct loader_context *context, struct zbl_elf64_plan *plan, EFI_PHYSICAL_ADDRESS wanted, UINTN pages);
 static EFI_STATUS place_kernel(struct loader_context *context, struct zbl_elf64_plan *plan, const struct kernel_placement_policy *policy, EFI_PHYSICAL_ADDRESS *address, UINTN pages);
 static void build_bootstrap(uint64_t low_base, const struct zbl_elf64_plan *plan, const struct zbl6_framebuffer *framebuffer, const struct zbl_uefi_framebuffer_mapping *framebuffer_mapping, uint32_t boot_volume_serial, uint8_t partition_scheme, const struct kern_boot_parameter_record *parameters, const struct kern_boot_provenance *provenance);
+static int root_block_read(void *device_context, uint64_t block, uint32_t count, void *buffer);
+static void __attribute__((noreturn)) fail_root(struct loader_context *context, struct discovered_volume *discovered, const char *reason);
+static void open_root_volume(struct loader_context *context, struct discovered_volume *discovered);
+static EFI_STATUS boot_file_open(struct loader_context *context, struct discovered_volume *discovered, const char *path, int on_root, struct boot_file *file);
+static EFI_STATUS boot_file_read(struct boot_file *file, UINT64 position, void *buffer, UINTN size);
 static void load_kernel(struct loader_context *context, struct discovered_volume *discovered, const struct zbl_uefi_kern_config *configuration, struct zbl_elf64_plan *plan, EFI_PHYSICAL_ADDRESS *kernel_address, UINTN *kernel_pages);
 
 /*
@@ -332,7 +383,7 @@ efi_main(
 	 * Applies the optional display request before retaining framebuffer
 	 * addresses.  When there is no video=, a boot with Ctrl held wishes for
 	 * 640x480, where the early console's 80 columns fill the screen, and a
-	 * boot with a logo (logo=) for the GOP's 1920x1080, the Kei splash's
+	 * boot with a logo (logo=) for the GOP's 1920x1080, the boot splash's
 	 * size.
 	 */
 	logo_named = zbl_logo_path(configuration.parameter_record.text,
@@ -1910,7 +1961,10 @@ load_selected_configuration(
 	EFI_STATUS read_status;
 	EFI_STATUS close_status;
 	UINTN config_size;
+	size_t split_size;
 	enum zbl_uefi_kern_config_result config_result;
+	enum zbl_uefi_root_config_result root_result;
+	const char *root_reason;
 
 	/* Refuses a volume without an open configuration file. */
 	if (discovered == 0 || discovered->config == 0 || configuration == 0)
@@ -1932,10 +1986,25 @@ load_selected_configuration(
 	if (EFI_ERROR(close_status))
 		return close_status;
 
+	/* Takes the rootpart: prefixes off, noting which files are on the root partition. */
+	root_result = zbl_uefi_root_config_split(config_buffer,
+						 config_size,
+						 config_split_buffer,
+						 sizeof(config_split_buffer),
+						 &split_size,
+						 &discovered->root_files);
+	if (root_result != ZBL_UEFI_ROOT_CONFIG_OK) {
+		root_reason = zbl_uefi_root_config_result_name(root_result);
+		console_ascii(context, "zedbsd.cfg rejected: ");
+		console_ascii(context, root_reason);
+		console_ascii(context, "\n");
+		return EFI_LOAD_ERROR;
+	}
+
 	/* Parses the file against the selected volume's UUID. */
 	config_result = zbl_uefi_kern_config_parse(configuration,
-						   config_buffer,
-						   config_size,
+						   config_split_buffer,
+						   split_size,
 						   discovered->uuid,
 						   sizeof(discovered->uuid));
 	if (config_result != ZBL_UEFI_KERN_CONFIG_OK) {
@@ -1945,8 +2014,10 @@ load_selected_configuration(
 		return EFI_LOAD_ERROR;
 	}
 
-	/* Reports the kernel path and the parameters. */
+	/* Reports the kernel path, its volume and the parameters. */
 	console_ascii(context, "A64 KERNEL ");
+	if (discovered->root_files.kernel_on_root)
+		console_ascii(context, "rootpart:/");
 	console_ascii(context, configuration->kernel_path);
 	console_ascii(context, "\n");
 	console_ascii(context, "A64 PARAMS ");
@@ -2277,9 +2348,8 @@ show_logo(
 	const struct zbl_uefi_kern_config *configuration,
 	const struct zbl6_framebuffer *framebuffer)
 {
-	static CHAR16 wide[KERNEL_PATH_CHAR16_STORAGE];
 	char path[ZBL_LOGO_PATH_MAX + 1U];
-	EFI_FILE_PROTOCOL *file;
+	struct boot_file file;
 	EFI_STATUS status;
 	UINT64 size;
 	void *buffer;
@@ -2299,25 +2369,18 @@ show_logo(
 	if (found <= 0)
 		return 0;
 
-	/* The file, on the volume the kernel is on. */
-	found = kernel_path_utf16(path, wide);
-	if (!found || discovered->root == 0)
-		return 0;
-
-	/* Opens the logo file. */
-	file = 0;
-	status = discovered->root->Open(discovered->root, &file, wide, EFI_FILE_MODE_READ, 0U);
+	/* Opens the logo file, on the FAT volume or on the root partition. */
+	status = boot_file_open(context, discovered, path, discovered->root_files.logo_on_root, &file);
 	failed = EFI_ERROR(status);
-	if (failed || file == 0) {
+	if (failed) {
 		console_ascii(context, "A64 LOGO missing\n");
 		return 0;
 	}
 
 	/* Its size, bounded. */
-	status = regular_file_size(file, &size);
-	failed = EFI_ERROR(status);
-	if (failed || size == 0U || size > ZBL_UEFI_LOGO_FILE_MAX) {
-		(void)file->Close(file);
+	size = file.size;
+	if (size == 0U || size > ZBL_UEFI_LOGO_FILE_MAX) {
+		(void)close_file_pair(file.fat, 0);
 		return 0;
 	}
 
@@ -2326,14 +2389,14 @@ show_logo(
 	status = context->boot->AllocatePool(EfiLoaderData, (UINTN)size, &buffer);
 	failed = EFI_ERROR(status);
 	if (failed || buffer == 0) {
-		(void)file->Close(file);
+		(void)close_file_pair(file.fat, 0);
 		return 0;
 	}
 
 	/* The logo on the screen when the whole file was read. */
-	status = read_exact(file, 0U, buffer, (UINTN)size);
+	status = boot_file_read(&file, 0U, buffer, (UINTN)size);
 	failed = EFI_ERROR(status);
-	(void)file->Close(file);
+	(void)close_file_pair(file.fat, 0);
 	drawn = 0;
 	if (!failed)
 		drawn = zbl_uefi_logo_draw(buffer, (size_t)size, framebuffer);
@@ -2871,16 +2934,14 @@ load_kernel(
 	UINTN *kernel_pages)
 {
 	static uint8_t first_sector[ZBL_ELF_HEADER_BYTES];
-	static CHAR16 kernel_file_path[KERNEL_PATH_CHAR16_STORAGE];
+	static struct boot_file kernel_file;
 	const struct zbl_elf64_segment *segment;
 	struct kernel_placement_policy placement;
 	EFI_FILE_PROTOCOL *kernel;
 	EFI_STATUS status;
-	EFI_STATUS reported;
 	UINT64 kernel_file_size;
 	unsigned index;
 	int kernel_pages_allocated;
-	int converted;
 	int planned;
 	int parsed;
 
@@ -2888,37 +2949,23 @@ load_kernel(
 	kernel = 0;
 	kernel_pages_allocated = 0;
 
-	/* Converts the kernel path for the firmware. */
-	converted = kernel_path_utf16(configuration->kernel_path, kernel_file_path);
-	if (!converted)
-		fail_discovered(context, discovered, "Prepare kernel path", EFI_INVALID_PARAMETER);
-
-	/* Opens the kernel on the selected volume. */
-	status = discovered->root->Open(discovered->root, &kernel, kernel_file_path, EFI_FILE_MODE_READ, 0U);
-	if (EFI_ERROR(status) || kernel == 0) {
-		/* Reports the firmware's error, or an open that gave no file. */
-		reported = EFI_INVALID_PARAMETER;
-		if (EFI_ERROR(status))
-			reported = status;
-
-		fail_kernel_load(context, discovered, kernel, "Open configured kernel", reported, 0U, 0U, 0);
-	}
+	/* Opens the kernel on the selected volume or on the root partition. */
+	status = boot_file_open(context,
+				discovered,
+				configuration->kernel_path,
+				discovered->root_files.kernel_on_root,
+				&kernel_file);
+	if (EFI_ERROR(status))
+		fail_kernel_load(context, discovered, 0, "Open configured kernel", status, 0U, 0U, 0);
+	kernel = kernel_file.fat;
 
 	/* Refuses a kernel file shorter than its headers or larger than the bound. */
-	status = regular_file_size(kernel, &kernel_file_size);
-	if (EFI_ERROR(status) ||
-	    kernel_file_size < sizeof(first_sector) ||
-	    kernel_file_size > MAX_KERNEL_FILE) {
-		/* Reports the firmware's error, or a file of an unusable size. */
-		reported = EFI_BAD_BUFFER_SIZE;
-		if (EFI_ERROR(status))
-			reported = status;
-
-		fail_kernel_load(context, discovered, kernel, "Validate kernel file", reported, 0U, 0U, 0);
-	}
+	kernel_file_size = kernel_file.size;
+	if (kernel_file_size < sizeof(first_sector) || kernel_file_size > MAX_KERNEL_FILE)
+		fail_kernel_load(context, discovered, kernel, "Validate kernel file", EFI_BAD_BUFFER_SIZE, 0U, 0U, 0);
 
 	/* Reads the headers. */
-	status = read_exact(kernel, 0, first_sector, sizeof(first_sector));
+	status = boot_file_read(&kernel_file, 0, first_sector, sizeof(first_sector));
 	if (EFI_ERROR(status))
 		fail_kernel_load(context, discovered, kernel, "Read ELF header", status, 0U, 0U, 0);
 
@@ -2948,7 +2995,7 @@ load_kernel(
 	/* Reads each segment's file part into its place. */
 	for (index = 0; index < plan->segment_count; index++) {
 		segment = &plan->segment[index];
-		status = read_exact(kernel, segment->offset, (void *)(uintptr_t)segment->physical, (UINTN)segment->file_size);
+		status = boot_file_read(&kernel_file, segment->offset, (void *)(uintptr_t)segment->physical, (UINTN)segment->file_size);
 		if (EFI_ERROR(status)) {
 			fail_kernel_load(context,
 					 discovered,
@@ -2975,6 +3022,335 @@ load_kernel(
 				 *kernel_pages,
 				 kernel_pages_allocated);
 	}
+}
+
+/* Reads blocks of the root partition through the firmware; 0 on success. */
+static int
+root_block_read(
+	void *device_context,
+	uint64_t block,
+	uint32_t count,
+	void *buffer)
+{
+	struct root_volume *root;
+	EFI_STATUS status;
+
+	/* Reads the blocks with the medium the partition was opened on. */
+	root = device_context;
+	status = root->block->ReadBlocks(root->block, root->media_id, block, (UINTN)count * root->block_size, buffer);
+	if (EFI_ERROR(status))
+		return 1;
+
+	/* Succeeded: the buffer holds the blocks. */
+	return 0;
+}
+
+/*
+ * Reports why the root partition cannot be read and stops the machine.
+ *
+ * There is no fallback to a kernel on the FAT volume: the configuration
+ * names the root, and a boot from somewhere else would hide the fault.
+ */
+static void __attribute__((noreturn))
+fail_root(
+	struct loader_context *context,
+	struct discovered_volume *discovered,
+	const char *reason)
+{
+	static char message[80];
+	static const char prefix[] = "A64 KERN UFS ";
+	UINTN index;
+
+	/* Copies the prefix of the message. */
+	index = 0;
+	while (prefix[index] != 0) {
+		message[index] = prefix[index];
+		index++;
+	}
+
+	/* Appends the reason, as much of it as fits. */
+	while (*reason != 0 && index + 1U < sizeof(message)) {
+		message[index] = *reason;
+		index++;
+		reason++;
+	}
+
+	/* Ends the message. */
+	message[index] = 0;
+
+	/* Reports it over the logo and stops. */
+	fail_discovered(context, discovered, message, EFI_LOAD_ERROR);
+}
+
+/*
+ * Finds the root partition zedbsd.cfg names and checks its UFS volume.
+ *
+ * The partition is the one GPT partition of the boot disk whose PARTUUID
+ * is rootpart=PARTUUID=.  No other disk may have a partition of the same
+ * PARTUUID: the kernel would then refuse to mount the root, so the loader
+ * stops first and says why.
+ */
+static void
+open_root_volume(
+	struct loader_context *context,
+	struct discovered_volume *discovered)
+{
+	struct zbl_uefi_partition_path path;
+	struct zbl_ufs_device device;
+	EFI_BOOT_SERVICES *boot;
+	EFI_DEVICE_PATH_PROTOCOL *device_path;
+	EFI_BLOCK_IO_PROTOCOL *block;
+	EFI_BLOCK_IO_MEDIA *media;
+	EFI_HANDLE *handles;
+	EFI_HANDLE found;
+	EFI_STATUS status;
+	UINTN handle_count;
+	UINTN index;
+	UINTN byte;
+	enum zbl_uefi_device_path_result path_result;
+	enum zbl_ufs_result mounted;
+	const char *mount_reason;
+	unsigned same_disk_matches;
+	unsigned other_disk_matches;
+	int same_disk;
+	int equal;
+	int connect;
+
+	/* Opens the root once; later files reuse it. */
+	if (root_partition.mounted)
+		return;
+
+	/*
+	 * Connects every controller, so that each disk's partitions have block
+	 * devices: a firmware that connected only the boot disk would hide a
+	 * second disk that carries the same PARTUUID.
+	 */
+	boot = context->boot;
+	handles = 0;
+	handle_count = 0;
+	status = boot->LocateHandleBuffer(AllHandles, 0, 0, &handle_count, &handles);
+	connect = 1;
+	if (EFI_ERROR(status))
+		connect = 0;
+	if (handles == 0)
+		connect = 0;
+	if (boot->ConnectController == 0)
+		connect = 0;
+	if (connect) {
+		for (index = 0; index < handle_count; index++)
+			(void)boot->ConnectController(handles[index], 0, 0, 1);
+	}
+
+	/* Releases the list of every handle. */
+	if (handles != 0)
+		(void)boot->FreePool(handles);
+
+	/* Asks for every block device: the firmware puts no file system on UFS. */
+	handles = 0;
+	handle_count = 0;
+	status = boot->LocateHandleBuffer(ByProtocol, &EFI_BLOCK_IO_PROTOCOL_GUID, 0, &handle_count, &handles);
+	if (EFI_ERROR(status) || handles == 0)
+		fail_root(context, discovered, "no block devices");
+
+	/* Compares each GPT partition's PARTUUID with the root's. */
+	found = 0;
+	same_disk_matches = 0;
+	other_disk_matches = 0;
+	for (index = 0; index < handle_count; index++) {
+		/* Reads the handle's device path; one that names no partition is passed over. */
+		device_path = 0;
+		status = boot->HandleProtocol(handles[index], &EFI_DEVICE_PATH_PROTOCOL_GUID, (void **)&device_path);
+		if (EFI_ERROR(status) || device_path == 0)
+			continue;
+		path_result = zbl_uefi_partition_path_parse(device_path, ZBL_UEFI_DEVICE_PATH_MAX_BYTES, &path);
+		if (path_result != ZBL_UEFI_DEVICE_PATH_OK)
+			continue;
+		if (path.style != ZBL_UEFI_PARTITION_GPT)
+			continue;
+
+		/* Compares the HD() node's signature, which is the PARTUUID. */
+		equal = 1;
+		for (byte = 0; byte < sizeof(discovered->root_files.partuuid); byte++) {
+			if (path.bytes[path.partition_offset + 24U + byte] != discovered->root_files.partuuid[byte]) {
+				equal = 0;
+				break;
+			}
+		}
+
+		/* Passes over a partition with another PARTUUID. */
+		if (!equal)
+			continue;
+
+		/* Counts the match on the boot disk apart from one on another disk. */
+		same_disk = zbl_uefi_partition_paths_same_disk(&discovered->path, &path);
+		if (same_disk) {
+			same_disk_matches++;
+			found = handles[index];
+		} else {
+			other_disk_matches++;
+		}
+	}
+
+	/* Releases the list of block devices. */
+	(void)boot->FreePool(handles);
+
+	/* Requires exactly one root on the boot disk and none elsewhere. */
+	if (other_disk_matches != 0)
+		fail_root(context, discovered, "duplicate PARTUUID");
+	if (same_disk_matches == 0)
+		fail_root(context, discovered, "root partition not found");
+	if (same_disk_matches > 1)
+		fail_root(context, discovered, "duplicate PARTUUID");
+
+	/* Takes the partition's block device, which has to hold a medium of usable blocks. */
+	block = 0;
+	status = boot->HandleProtocol(found, &EFI_BLOCK_IO_PROTOCOL_GUID, (void **)&block);
+	if (EFI_ERROR(status))
+		fail_root(context, discovered, "no block device");
+	if (block == 0)
+		fail_root(context, discovered, "no block device");
+	if (block->Media == 0)
+		fail_root(context, discovered, "no block device");
+	if (block->ReadBlocks == 0)
+		fail_root(context, discovered, "no block device");
+	media = block->Media;
+	if (!media->MediaPresent || !media->LogicalPartition)
+		fail_root(context, discovered, "no partition medium");
+	if (media->BlockSize != 512U && media->BlockSize != 4096U)
+		fail_root(context, discovered, "unsupported block size");
+	if (media->IoAlign > 4096U)
+		fail_root(context, discovered, "unsupported alignment");
+	if (media->LastBlock == UINT64_MAX)
+		fail_root(context, discovered, "unsupported size");
+
+	/* Checks the UFS volume on it. */
+	root_partition.block = block;
+	root_partition.media_id = media->MediaId;
+	root_partition.block_size = media->BlockSize;
+	device.context = &root_partition;
+	device.block_size = media->BlockSize;
+	device.block_count = media->LastBlock + 1U;
+	device.read = root_block_read;
+	mounted = zbl_ufs_mount(&root_partition.ufs, &device, &root_work);
+	if (mounted != ZBL_UFS_OK) {
+		mount_reason = zbl_ufs_result_name(mounted);
+		fail_root(context, discovered, mount_reason);
+	}
+
+	/* Succeeded: the root partition is open for reads. */
+	root_partition.mounted = 1;
+	console_ascii(context, "A64 ROOT UFS\n");
+}
+
+/*
+ * Opens a file the configuration names, on the FAT volume or the root.
+ *
+ * A path on the root is absolute there; the parser gives the kernel's
+ * without its leading slash, which is put back.  A file that cannot be
+ * found or read on the root stops the machine with the reason.
+ */
+static EFI_STATUS
+boot_file_open(
+	struct loader_context *context,
+	struct discovered_volume *discovered,
+	const char *path,
+	int on_root,
+	struct boot_file *file)
+{
+	static CHAR16 wide[KERNEL_PATH_CHAR16_STORAGE];
+	static char absolute[ZBL_KERN_CONFIG_KERNEL_PATH_STORAGE_SIZE + 1U];
+	enum zbl_ufs_result looked_up;
+	const char *lookup_reason;
+	EFI_STATUS status;
+	UINTN index;
+	UINTN at;
+	int converted;
+
+	/* Starts with no file. */
+	file->fat = 0;
+	file->on_root = on_root;
+	file->size = 0;
+
+	/* Opens a file on the FAT volume through the firmware. */
+	if (!on_root) {
+		converted = kernel_path_utf16(path, wide);
+		if (!converted || discovered->root == 0)
+			return EFI_INVALID_PARAMETER;
+
+		/* Opens the file the path names. */
+		status = discovered->root->Open(discovered->root, &file->fat, wide, EFI_FILE_MODE_READ, 0U);
+		if (EFI_ERROR(status))
+			return status;
+		if (file->fat == 0)
+			return EFI_INVALID_PARAMETER;
+
+		/* Takes the file's size, closing a file that has none. */
+		status = regular_file_size(file->fat, &file->size);
+		if (EFI_ERROR(status)) {
+			(void)close_file(file->fat);
+			file->fat = 0;
+			return status;
+		}
+
+		/* Succeeded: the FAT file is open. */
+		return EFI_SUCCESS;
+	}
+
+	/* Makes the path absolute on the root. */
+	at = 0;
+	if (path[0] != '/') {
+		absolute[at] = '/';
+		at++;
+	}
+
+	/* Copies the path, as much of it as fits. */
+	for (index = 0; path[index] != 0 && at + 1U < sizeof(absolute); index++) {
+		absolute[at] = path[index];
+		at++;
+	}
+
+	/* Ends the path. */
+	absolute[at] = 0;
+
+	/* Finds the file on the root partition. */
+	open_root_volume(context, discovered);
+	looked_up = zbl_ufs_lookup(&root_partition.ufs, absolute, &file->ufs);
+	if (looked_up != ZBL_UFS_OK) {
+		lookup_reason = zbl_ufs_result_name(looked_up);
+		fail_root(context, discovered, lookup_reason);
+	}
+
+	/* Succeeded: the file on the root is found. */
+	file->size = file->ufs.size;
+	return EFI_SUCCESS;
+}
+
+/* Reads exactly size bytes of a boot file from a position. */
+static EFI_STATUS
+boot_file_read(
+	struct boot_file *file,
+	UINT64 position,
+	void *buffer,
+	UINTN size)
+{
+	enum zbl_ufs_result read_result;
+	EFI_STATUS status;
+
+	/* Reads a FAT file through the firmware. */
+	if (!file->on_root) {
+		status = read_exact(file->fat, position, buffer, size);
+		if (EFI_ERROR(status))
+			return status;
+		return EFI_SUCCESS;
+	}
+
+	/* Reads a file of the root through the UFS reader. */
+	read_result = zbl_ufs_read(&root_partition.ufs, &file->ufs, position, buffer, size);
+	if (read_result != ZBL_UFS_OK)
+		return EFI_DEVICE_ERROR;
+
+	/* Succeeded: the buffer holds the bytes. */
+	return EFI_SUCCESS;
 }
 
 /* The handoff must fit between its offset and the memory ranges in the low block. */

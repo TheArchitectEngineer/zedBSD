@@ -59,6 +59,7 @@ static int64_t timing_offset = INT64_MIN;
 static VkResult sync_create(struct VkDevice_T *device, enum vulkan_object_kind kind, uint32_t opcode, uint32_t destroy_opcode, uint32_t structure, VkFlags flags, const VkAllocationCallbacks *allocator, struct vulkan_sync **result);
 static void sync_destroy(struct VkDevice_T *device, struct vulkan_sync *sync, uint32_t opcode, const VkAllocationCallbacks *allocator);
 static VkResult sync_event_operation(VkDevice device, VkEvent event, uint32_t opcode);
+static struct vulkan_notification *sync_notification_find(struct vulkan_context *context, uint64_t sequence);
 static VkResult sync_notifications_reap(struct vulkan_context *context, unsigned *retired);
 static VkResult sync_notifications_reap_if(struct vulkan_context *context, unsigned *retired, int force);
 static VkResult sync_notification_wait(struct vulkan_context *context, uint64_t sequence, uint64_t timeout_ns);
@@ -586,6 +587,7 @@ vulkan_sync_job_reserve(
 	int descriptor;
 	int error;
 	int saved_error;
+	unsigned attempt;
 	uint64_t mark;
 
 	/* A failed reservation cannot leave a caller with partially published job storage. */
@@ -615,41 +617,59 @@ vulkan_sync_job_reserve(
 	if (notification == NULL)
 		return VK_ERROR_OUT_OF_HOST_MEMORY;
 
-	/* Native preparation precedes this snapshot so its own CPU0 completion cannot spuriously wake admission. */
-	status = vulkan_sync_capacity_query(queue, &observed_sequence);
+	/* A local or context failure must not be hidden by an otherwise healthy kernel reservation. */
+	status = __atomic_load_n(&queue->device->error, __ATOMIC_ACQUIRE);
+	if (status == VK_SUCCESS)
+		status = __atomic_load_n(&context->error, __ATOMIC_ACQUIRE);
 	if (status != VK_SUCCESS) {
 		free(notification);
 		return status;
 	}
 
-	/* Reclaims only previously terminal jobs before reserving another bounded kernel slot. */
-	pthread_mutex_lock(&context->mutex);
-
-	status = sync_notifications_reap_if(context, &retired, 0);
-	if (status != VK_SUCCESS) {
-		pthread_mutex_unlock(&context->mutex);
-		free(notification);
-		return status;
-	}
-
-	/* One reservation pins both the exact generation and all later marker publication resources. */
-	memset(&request, 0, sizeof(request));
-	request.version = GPU_ABI_VERSION;
-	request.size = sizeof(request);
-	request.fd = descriptor;
-	request.generation = generation;
-	request.timeline = queue->timeline_index;
-	error = ioctl(context->fd, GPU_JOB_RESERVE, &request);
-	saved_error = errno;
-	if (error != 0) {
-		pthread_mutex_unlock(&context->mutex);
-		free(notification);
-
-		/* Backpressure asks the caller to release producer locks before waiting for capacity. */
-		if (saved_error == EAGAIN) {
-			*capacity_sequence = observed_sequence;
-			return VK_NOT_READY;
+	/*
+	 * Reserves at once; only a full queue takes the capacity snapshot,
+	 * then tries once more, so that capacity freed between the refusal
+	 * and the snapshot is taken by the second try and capacity freed after
+	 * the snapshot wakes the caller's wait.
+	 */
+	observed_sequence = 0;
+	for (attempt = 0U; attempt < 2U; attempt++) {
+		/* The snapshot a refused first try waits from. */
+		if (attempt != 0U) {
+			status = vulkan_sync_capacity_query(queue, &observed_sequence);
+			if (status != VK_SUCCESS) {
+				free(notification);
+				return status;
+			}
 		}
+
+		/* Reclaims only previously terminal jobs before reserving another bounded kernel slot. */
+		pthread_mutex_lock(&context->mutex);
+
+		status = sync_notifications_reap_if(context, &retired, 0);
+		if (status != VK_SUCCESS) {
+			pthread_mutex_unlock(&context->mutex);
+			free(notification);
+			return status;
+		}
+
+		/* One reservation pins both the exact generation and all later marker publication resources. */
+		memset(&request, 0, sizeof(request));
+		request.version = GPU_ABI_VERSION;
+		request.size = sizeof(request);
+		request.fd = descriptor;
+		request.generation = generation;
+		request.timeline = queue->timeline_index;
+		error = ioctl(context->fd, GPU_JOB_RESERVE, &request);
+		saved_error = errno;
+		if (error == 0)
+			break;
+		pthread_mutex_unlock(&context->mutex);
+
+		/* A full queue tries again after the snapshot; another failure ends the reservation. */
+		if (saved_error == EAGAIN)
+			continue;
+		free(notification);
 
 		/* Actual allocation failure remains distinct from temporarily occupied job slots. */
 		if (saved_error == ENOMEM)
@@ -658,6 +678,13 @@ vulkan_sync_job_reserve(
 		/* A negotiated backend that cannot reserve its promised contract is unusable. */
 		vulkan_context_error(context, VK_ERROR_DEVICE_LOST);
 		return VK_ERROR_DEVICE_LOST;
+	}
+
+	/* Backpressure on both tries asks the caller to release producer locks before waiting for capacity. */
+	if (error != 0) {
+		free(notification);
+		*capacity_sequence = observed_sequence;
+		return VK_NOT_READY;
 	}
 
 	/* A successful reservation must have an observable, nonzero lifetime identity. */
@@ -1040,15 +1067,19 @@ vulkan_sync_job_status(
 
 	/* Another reaper may publish loss between the initial sample and this lock acquisition. */
 	status = __atomic_load_n(&context->error, __ATOMIC_ACQUIRE);
-	if (status == VK_SUCCESS)
-		status = sync_notifications_reap_if(context, &retired, 0);
 
 	/* The protected ledger snapshot cannot precede the terminal error just sampled. */
-	notification = context->notifications;
+	notification = sync_notification_find(context, sequence);
 
-	/* Searches only while the context owns every ledger pointer. */
-	while (notification != NULL && notification->sequence != sequence)
-		notification = notification->next;
+	/*
+	 * Only a record the ledger still holds is worth a reap (a grown ledger
+	 * is reaped, which may consume this one): a consumed one stays consumed,
+	 * and its native fence is free without a system call.
+	 */
+	if (status == VK_SUCCESS && notification != NULL) {
+		status = sync_notifications_reap_if(context, &retired, 0);
+		notification = sync_notification_find(context, sequence);
+	}
 
 	pthread_mutex_unlock(&context->mutex);
 
@@ -1102,6 +1133,74 @@ vulkan_sync_job_status(
 	}
 
 	/* Succeeded: the strict host marker has ended every access to this native fence. */
+	return VK_SUCCESS;
+}
+
+/*
+ * Reclaims every ended job on the ledger, however short it is: one system
+ * call for each record without a waiter, which each ended record needs
+ * once anyway.
+ */
+VkResult
+vulkan_sync_ledger_reap(
+	struct vulkan_context *context)
+{
+	VkResult status;
+	unsigned retired;
+
+	/* The reap consumes kernel records only while the context owns every ledger pointer. */
+	pthread_mutex_lock(&context->mutex);
+
+	status = sync_notifications_reap_if(context, &retired, 1);
+
+	pthread_mutex_unlock(&context->mutex);
+
+	/* A consumed failed record has published the device loss. */
+	if (status != VK_SUCCESS)
+		return status;
+
+	/* Succeeded: the ledger holds only records not yet known to have ended. */
+	return VK_SUCCESS;
+}
+
+/*
+ * Tells from the local ledger alone whether a supervised job has ended: one
+ * whose record a reap consumed is over (and its native fence free), one whose
+ * record the ledger still holds is taken as pending, whatever the GPU did
+ * since, until a later reap; no native status command is issued.
+ */
+VkResult
+vulkan_sync_job_retired(
+	struct vulkan_sync *sync)
+{
+	struct vulkan_context *context;
+	struct vulkan_notification *notification;
+	VkResult status;
+	uint64_t sequence;
+
+	/* Unsubmitted and synchronously acquired fences have no native marker borrowing their identity. */
+	sequence = sync->notification;
+	if (sequence == 0)
+		return VK_SUCCESS;
+
+	/* A reaper publishes a failed record's loss under the same lock as its removal from the ledger. */
+	context = sync->object.context;
+	pthread_mutex_lock(&context->mutex);
+
+	status = __atomic_load_n(&context->error, __ATOMIC_ACQUIRE);
+	notification = sync_notification_find(context, sequence);
+
+	pthread_mutex_unlock(&context->mutex);
+
+	/* Device loss stays terminal even when the failing record is already consumed. */
+	if (status != VK_SUCCESS)
+		return status;
+
+	/* A record still on the ledger may yet be in use by the GPU. */
+	if (notification != NULL)
+		return VK_NOT_READY;
+
+	/* Succeeded: a reap consumed the job's terminal record, so no native access remains. */
 	return VK_SUCCESS;
 }
 
@@ -1247,6 +1346,7 @@ vulkan_timing_report(
 	static const char *const names[VULKAN_TIMING_PARTS] = {
 		"submit", "quiesce", "queue_lock", "device_lock", "prepare", "reserve", "execute", "finish",
 		"capacity", "context_wait", "context_hold", "present_prepare", "present_record", "present_submit", "present",
+		"private_fence", "reap", "command_ran", "command_deferred",
 	};
 	uint64_t now;
 	unsigned part;
@@ -1591,6 +1691,23 @@ sync_fences_wait(
 	return VK_SUCCESS;
 }
 
+/* Finds a sequence's record on the ledger; the caller owns the context mutex. */
+static struct vulkan_notification *
+sync_notification_find(
+	struct vulkan_context *context,
+	uint64_t sequence)
+{
+	struct vulkan_notification *notification;
+
+	/* Walks from the newest record; NULL when a reap consumed the sequence's record. */
+	notification = context->notifications;
+	while (notification != NULL && notification->sequence != sequence)
+		notification = notification->next;
+
+	/* Succeeded: the record, or NULL for an ended and consumed job. */
+	return notification;
+}
+
 /*
  * How many pending records the ledger may hold before a reap asks the
  * kernel about them.  Every question is a system call, and the kernel keeps
@@ -1609,6 +1726,7 @@ sync_notifications_reap_if(
 	struct vulkan_notification *notification;
 	unsigned pending;
 	VkResult status;
+	uint64_t mark;
 
 	/* Counts the ledger; a short one is left for a later reap. */
 	pending = 0;
@@ -1619,7 +1737,9 @@ sync_notifications_reap_if(
 		return VK_SUCCESS;
 
 	/* Asks the kernel about every record without a waiter. */
+	mark = vulkan_timing_start();
 	status = sync_notifications_reap(context, retired);
+	vulkan_timing_add(VULKAN_TIMING_REAP, mark, 0);
 
 	/* Succeeded, or the device is lost. */
 	return status;

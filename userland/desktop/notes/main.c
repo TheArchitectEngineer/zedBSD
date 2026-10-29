@@ -146,7 +146,7 @@
 #define MAIN_CIRCLE_POINTS	40U
 
 /*
- * The desk around the page: a soft wash like Kei's blurred landscape --
+ * The desk around the page: a soft wash like the desktop's blurred landscape --
  * pale sky at the top, a light haze a little below the middle, pale leaf
  * green at the bottom; in the dark appearance the same wash at night,
  * ws089-p017; the page stays white paper) -- and the page's slate shadow: its
@@ -186,7 +186,7 @@
  * The Select tool (ws175-p008): no object chosen; what a drag does (no
  * drag, the object moved, sized by a corner's handle); the handles' size
  * and how close a press must be to one, in pixels; the colour of the
- * chosen object's frame (Kei's blue); how often a drag draws the page
+ * chosen object's frame (the desktop's blue); how often a drag draws the page
  * again with the object where the drag has it, in milliseconds; the
  * smallest side an object is sized to and how many times the page's size
  * it may reach; how far the arrow keys move it (Shift: ten times), in
@@ -4421,7 +4421,7 @@ app_place_image(
 
 /*
  * Draws the chosen object's frame -- its corners where a drag has them --
- * and a handle on each corner, in Kei's blue.
+ * and a handle on each corner, in the desktop's blue.
  */
 static void
 app_selection_draw(

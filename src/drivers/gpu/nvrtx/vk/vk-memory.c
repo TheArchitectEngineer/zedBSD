@@ -38,6 +38,7 @@ static int memory_bind(struct nvrtx_vk_session *session, struct i915_wire_reader
 static int memory_bind_to(struct nvrtx_vk_session *session, struct nvrtx_vk_object *memory, uint64_t resource, uint64_t offset, bool image);
 static int memory_requirements(struct nvrtx_vk_session *session, struct i915_wire_reader *reader, struct i915_wire_writer *reply, bool image);
 static int memory_destroy(struct nvrtx_vk_session *session, void *payload);
+static int memory_cpu(struct nvrtx_vk_session *session, struct nvrtx_vk_object *object, uint64_t offset, uint8_t **cpu);
 
 /*
  * Runs an allocation, binding or requirements command; *handled stays
@@ -151,9 +152,11 @@ nvrtx_vk_buffer_address(
 	if (!memory->attached)
 		return EIO;
 
-	/* The memory's addresses moved by the buffer's offset. */
+	/* The memory's addresses moved by the buffer's offset (no CPU view while the storage is out of the window). */
 	*va = memory->va + buffer->offset;
-	*cpu = memory->cpu + buffer->offset;
+	*cpu = NULL;
+	if (memory->cpu != NULL)
+		*cpu = memory->cpu + buffer->offset;
 
 	/* Succeeded: the buffer's addresses. */
 	return 0;
@@ -178,12 +181,44 @@ nvrtx_vk_image_address(
 	if (!memory->attached)
 		return EIO;
 
-	/* The memory's addresses moved by the image's offset. */
+	/* The memory's addresses moved by the image's offset (no CPU view while the storage is out of the window). */
 	*va = memory->va + image->offset;
-	*cpu = memory->cpu + image->offset;
+	*cpu = NULL;
+	if (memory->cpu != NULL)
+		*cpu = memory->cpu + image->offset;
 
 	/* Succeeded: the image's addresses. */
 	return 0;
+}
+
+/*
+ * Gives the CPU's view of a bound buffer's first byte, putting its memory's
+ * storage into the CPU's window when it has no place there yet.  EIO when
+ * the buffer is not bound or its memory has no storage, ENOSPC when the
+ * window is full.
+ */
+int
+nvrtx_vk_buffer_cpu(
+	struct nvrtx_vk_session *session,
+	const struct nvrtx_vk_buffer *buffer,
+	uint8_t **cpu)
+{
+	/* The buffer's memory and its offset there. */
+	return memory_cpu(session, buffer->memory, buffer->offset, cpu);
+}
+
+/*
+ * Gives the CPU's view of a bound image's first byte, as
+ * nvrtx_vk_buffer_cpu() does for a buffer.
+ */
+int
+nvrtx_vk_image_cpu(
+	struct nvrtx_vk_session *session,
+	const struct nvrtx_vk_image *image,
+	uint8_t **cpu)
+{
+	/* The image's memory and its offset there. */
+	return memory_cpu(session, image->memory, image->offset, cpu);
 }
 
 /*
@@ -355,9 +390,11 @@ memory_bind_to(
 	struct nvrtx_vk_object **holder;
 	uint64_t *place;
 	uint64_t bytes;
+	uint64_t align;
 	int error;
 
-	/* The resource's size and where it keeps its binding. */
+	/* The resource's size, its boundary (a GOB for a block-linear image) and where it keeps its binding. */
+	align = NVRTX_VK_RESOURCE_ALIGN;
 	if (image) {
 		picture = nvrtx_vk_payload(session, I915_VK_OBJ_IMAGE, resource);
 		if (picture == NULL)
@@ -365,6 +402,8 @@ memory_bind_to(
 		bytes = picture->bytes;
 		holder = &picture->memory;
 		place = &picture->offset;
+		if (picture->depth || picture->tiled)
+			align = NVRTX_VK_GOB_BYTES;
 	} else {
 		buffer = nvrtx_vk_payload(session, I915_VK_OBJ_BUFFER, resource);
 		if (buffer == NULL)
@@ -380,7 +419,7 @@ memory_bind_to(
 
 	/* On the boundary, wholly inside the allocation. */
 	storage = memory->payload;
-	if ((offset % NVRTX_VK_RESOURCE_ALIGN) != 0U)
+	if ((offset % align) != 0U)
 		return EINVAL;
 	if (offset > storage->bytes)
 		return EINVAL;
@@ -415,6 +454,7 @@ memory_requirements(
 	const struct nvrtx_vk_buffer *buffer;
 	const struct nvrtx_vk_image *picture;
 	uint64_t resource;
+	uint64_t align;
 	uint64_t bytes;
 
 	/* The resource between the device and the output's presence word. */
@@ -424,22 +464,25 @@ memory_requirements(
 	if (reader->error != 0)
 		return EINVAL;
 
-	/* How many bytes the resource occupies. */
+	/* How many bytes the resource occupies, and its boundary (a GOB for a block-linear image). */
 	bytes = 0U;
+	align = NVRTX_VK_RESOURCE_ALIGN;
 	if (image) {
 		picture = nvrtx_vk_payload(session, I915_VK_OBJ_IMAGE, resource);
 		if (picture != NULL)
 			bytes = picture->bytes;
+		if (picture != NULL && (picture->depth || picture->tiled))
+			align = NVRTX_VK_GOB_BYTES;
 	} else {
 		buffer = nvrtx_vk_payload(session, I915_VK_OBJ_BUFFER, resource);
 		if (buffer != NULL)
 			bytes = buffer->size;
 	}
 
-	/* Whole runs of the resource boundary, on that boundary, of the one memory type. */
+	/* Whole runs of the boundary, on that boundary, of the one memory type. */
 	kern_memset(&requirements, 0, sizeof(requirements));
-	requirements.size = (bytes + NVRTX_VK_RESOURCE_ALIGN - 1U) & ~(uint64_t)(NVRTX_VK_RESOURCE_ALIGN - 1U);
-	requirements.alignment = NVRTX_VK_RESOURCE_ALIGN;
+	requirements.size = (bytes + align - 1U) & ~(align - 1U);
+	requirements.alignment = align;
 	requirements.memoryTypeBits = 0U;
 	if (bytes != 0U)
 		requirements.memoryTypeBits = 1U << NVRTX_VK_MEMORY_TYPE;
@@ -470,5 +513,38 @@ memory_destroy(
 	kern_free(memory);
 
 	/* Succeeded: the allocation is gone. */
+	return 0;
+}
+
+/*
+ * Gives the CPU's view of the byte at offset in a memory object's storage,
+ * mapping the storage into the window the first time (vk-node.c).
+ */
+static int
+memory_cpu(
+	struct nvrtx_vk_session *session,
+	struct nvrtx_vk_object *object,
+	uint64_t offset,
+	uint8_t **cpu)
+{
+	struct nvrtx_vk_memory *memory;
+	int error;
+
+	/* A memory with storage. */
+	if (object == NULL)
+		return EIO;
+	memory = object->payload;
+	if (!memory->attached)
+		return EIO;
+
+	/* The storage's place in the window, kept for the next time. */
+	if (memory->cpu == NULL) {
+		error = nvrtx_vk_memory_cpu(session->owner, memory->backing, &memory->cpu);
+		if (error != 0)
+			return error;
+	}
+
+	/* Succeeded: the byte's place. */
+	*cpu = memory->cpu + offset;
 	return 0;
 }

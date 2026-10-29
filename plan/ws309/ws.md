@@ -4,7 +4,7 @@
 
 - Master: [plan/master.md](../master.md)（2026-10-29 作成）。Primary Milestone: MG006。前身の調べ: [WS291](../ws291/ws.md) の
   [keiland-blocking.md](../ws291/keiland-blocking.md)（P2 q1661 の点検、branch `agent/p2-ws291i` にあり main に未 merge）。
-- Status: planning（pool の N は決定、2026-10-29 q1662 P1 が設計の確定 → Phase の分割 → 実装）
+- Status: incomplete（2026-10-29 q1662 P1: 設計 [design.md](design.md) 確定、p001〜p011・p019 cleared、p012〜p018 planned）
 - 目標: Keiland の compositor の main loop が frame を止める同期の待ちを持たないよう、thread を下の構成に整理する。ゲームモードの
   direct scanout は Vulkan display（`VK_KHR_display`）の仕様の中で実装する。
 
@@ -25,6 +25,13 @@
    （(b) = ゲームモードもアプリは buffer を compositor に送り、compositor が flip に積み、buffer が画面から外れたら release をアプリに返す。アプリは acquire で空きを待つ）
 8. 「そうすると、ゲームモードについてはバックエンドがカーネルを呼んでもいいことにします。でも、せっかくならVulkan displayの仕様内で実装したいです。工数が多くてもかまいません。Vulkan displayをOSの正式APIに採用しているのが、このOSのウリの1つでもあるので。」
 
+9. （2026-10-29 P1 の設計の判断の点への回答、Q1 経由）J1 game mode の Vulkan の形: ユーザーの回答（クリック）「V2 swapchain 共有 (推し)」。
+   J4（Linux・FreeBSD の seat 経由の入力の open）: 推しのとおり当面は同期のまま残し、WS309 の後の Phase に置く（別の WS にしない）。J2・J3 は Q1 が「推しで OK（技術の判断）」。
+   （Q1 の解釈: V2 = compositor が display の swapchain の image を external memory で export して client に渡し、client が直接描く。copy なし。libvulkan の WSI・display の部分を WS309 の範囲に含め P1 の所有に足す。）
+
+- （Q1 の決定、2026-10-29、ユーザーの原文ではない）J5: 下の表の「spawner の process」は Q1 の解釈だったので取り下げ、io-file の thread から `posix_spawn`、pid・kill・`waitpid(WNOHANG)` は main（ユーザーには Q1 が伝え、覆れば P1 に知らせる）。
+  J6: daemon の thread は main で blocking の I/O をする接続だけ（audiod・networkd・bluetoothd・phone・volumed の 5 本）。
+
 ## 決まった構成（解釈。上の原文が正）
 
 | 種類 | thread | 持つ仕事 |
@@ -42,7 +49,7 @@
 | 常駐 | daemon ×5 | audiod、networkd、bluetoothd、bluetoothd（電話）、volumed。接続ごとに 1 本、blocking の I/O |
 | pool | 手書きの照合 | N 本（N の決め方は未決）。同じ文字は最新の 1 件だけ |
 | その都度 | 壁紙・画像の decode | 1 回ごと |
-| process | spawner | Vulkan を開く前に fork しておき、アプリの起動を頼まれる（main は fork しない） |
+| process | （取り下げ、J5） | 起動は io-file の thread から posix_spawn（main は fork しない） |
 
 - fd の event を kernel に足す案は取らない（GPU の完了は VkFence、client の完了は明示の同期の fence、present は thread が同期で待つ）。
 - ゲームモード: 当面は backend（`libkeiland-backend-zedbsd/scanout-zedbsd.c`）が GPU の ioctl を直に呼んでよい（決定 8）。目標は
@@ -59,6 +66,50 @@
 - P2 の q1661（`agent/p2-ws291i` 3d9306f02 の backend の入力の検出の worker、467f1cabc・1a0ead286 の記録）: アドホックにしない決定 2 により
   main に merge せず保留。この WS の I/O-1 の実装で置き換える。main には b574fbf6a（開けなかった node を覚える）が入っている。
 
+## 設計
+
+- [design.md](design.md)（2026-10-29 P1、thread の一覧・本数・待ちの点・queue と通知・ゲームモード・判断の点 J1〜J4）。
+
+## Resume point
+
+- 2026-10-29 14:3x P1（q1662-i08、branch `agent/p1-ws309h`、ラップアップ）: p012 は調べと実装の手順まで（[phase.md](phase012/phase.md)、source の変更なし）。次の起動は p012 の手順 1（非同期の park と drain）から。
+- 2026-10-29 14:2x P1（q1662-i08、branch `agent/p1-ws309h`）: p011 cleared（手書きの照合の pool hand-1〜hand-N）。次は p012（display の thread）。
+- 2026-10-29 13:4x P1（q1662-i08、branch `agent/p1-ws309h`）: p010 cleared（出力の大きさの変化の QEMU `plan/ws309/tests/resize-guest.sh` PASS、回転は p012 へ）。次は p011（手書きの照合の pool）。
+- 2026-10-29 13:3x P1（q1662-i07、branch `agent/p1-ws309g`、b6b5b788c）: p010 は T9（blur の lane）・A1（loader は decode だけ）・landscape・`kwl_glass_resize` まで、QEMU `grave-guest.sh` PASS。次は [phase.md](phase010/phase.md) の「残り」1（回転は p012 と一緒かを Q1 に）・2。
+- 2026-10-29 13:1x P1（q1662-i07、branch `agent/p1-ws309g`、4b9d7d3d7）: p009 cleared（墓へ全ての解放、client の切断の quiesce を消す、glass の waits を消す。QEMU `plan/ws309/tests/grave-guest.sh` PASS）。次は p010。
+- 2026-10-29 12:3x P1（q1662-i06、branch `agent/p1-ws309f`、b5416a6fa）: p009 は遅らせた破棄の仕組みと shm の image まで。次は [phase.md](phase009/phase.md) の「残り」1 から。
+- 2026-10-29 12:2x P1（q1662-i06、branch `agent/p1-ws309f`）: p008 cleared（fence 付きの task、QEMU `plan/ws309/tests/task-guest.sh` PASS、host `plan/ws309/tests/render-task/run.sh` PASS）。次は p009（遅らせた破棄、[phase.md](phase008/phase.md) の「設計からの変え方」の task の解放の待ちを置き換える）。
+- 2026-10-29 04:54 P1（q1662-i05、branch `agent/p1-ws309e`、ラップアップ）: source の変更なし。p008 の「残り」1 から（[phase.md](phase008/phase.md) の再開点に build の手順と task の実装の案）。
+- 2026-10-29 P1（q1662-i04、branch `agent/p1-ws309d`）: p006・p007 cleared（QEMU `daemon-guest.sh`・`font-guest.sh` PASS）。p008 は queue の lock まで（6eab69097）、次は fence 付きの task（[phase.md](phase008/phase.md) の「残り」1〜6）。
+- 2026-10-29 03:28 P1（q1662-i03）: p004 cleared（io-device を全 backend で起動、電源・details・sysmon を io-device へ、machine は A2 machine-read、QEMU `plan/ws309/tests/io-device2-guest.sh` PASS）。次は p006（daemon ×5）。
+- 2026-10-29 03:1x P1（q1662-i03、branch `agent/p1-ws309c`）: p005 cleared（言語・apps.conf・account・鍵・printers の open、QEMU `plan/ws309/tests/io-read-guest.sh` PASS）。p019 cleared（P2 の q1668）。次は p004。
+- 2026-10-29 02:4x P1（q1662-i02、branch `agent/p1-ws309b`、d5fb0bd08・c3b274d51）: p005 は displays.conf（`saved` は書き終わりで答える）・desktop.conf の Log Out・printers.conf まで済み。
+  次は p005 の残り（言語の catalog・apps.conf の読み、account・鍵の保存、[phase.md](phase005/phase.md) の「残り」）、その後 p004。QEMU は `plan/ws309/tests/io-file-guest.sh`。
+- 2026-10-29 02:3x P1（q1662-i01）: p001・p002・p003 cleared、p019（shot の送りを thread へ）は QEMU で再現せず RDNA の確かめ待ち。
+  次は p005（io-file: displays.conf の `saved` の答えを書き終わりで返す。displays-shell.c の `displays_pending` の保留の仕組みを広げる案）か p004（io-device の残り）。
+  QEMU の image は `plan/ws309/tests/config-amd64-p1.mk`（BUILD=build/ws309/img）、試験は `plan/ws309/tests/` の io-device-guest.sh・shot-fifo.sh。
+
 ## Phase
 
-設計の確定の後に分ける（未作成）。
+| ID | 目的 | 状態 | 依存 |
+| --- | --- | --- | --- |
+| [ws309-p001](design.md) | 設計の確定（thread の一覧・本数・待ちの点・queue と通知・ゲームモード、敵対的レビューの反映） | cleared（判断の点 J1〜J6 は全て決定） | — |
+| [ws309-p002](phase002/phase.md) | 共通の部品: thread の台帳・lane（常駐と pool）、host 試験 | cleared | p001 |
+| [ws309-p003](phase003/phase.md) | io-device: 入力の device の検出と close を thread へ（zedBSD） | cleared（実機は未実施） | p002 |
+| [ws309-p004](phase004/phase.md) | io-device の残り: 電源・network の詳細・sysmon（machine は A2 の machine-read、detach の ack は p016） | cleared（実機・Linux/FreeBSD は未実施） | p003 |
+| [ws309-p005](phase005/phase.md) | io-file: displays.conf・desktop.conf・printers.conf の書き込み（`saved` は書き終わりで答える）、apps.conf・言語・printers.conf の読み、account・鍵の保存 | cleared（account の実行と実機は未実施） | p002 |
+| [ws309-p006](phase006/phase.md) | daemon ×5 の thread（zedBSD の backend、wake pipe を backend の open の前に） | cleared（実機は未実施） | p002、J6 |
+| [ws309-p007](phase007/phase.md) | font の thread: 予備の font・emoji の先読み、rasterize、color emoji の decode | cleared（実機は未実施） | p002 |
+| [ws309-p008](phase008/phase.md) | render を GPU の queue の唯一の持ち主に (1): fence 付きの task と queue の lock | cleared（FreeBSD の build と実機は未実施） | p002 |
+| [ws309-p009](phase009/phase.md) | 同 (2)(3): 遅らせた破棄（serial・descriptor set・二重の image）、quiesce と main の `vkDeviceWaitIdle` を消す | cleared（実機・FreeBSD の build は未実施。park の手順の wait は p012） | p008 |
+| [ws309-p010](phase010/phase.md) | blur の thread とその都度の decode（壁紙・出力の大きさ） | cleared（QEMU `grave-guest.sh`・`resize-guest.sh`。回転の `kwl_glass_size_prepare` は p012 へ（2026-10-29 Q1 の判断）。実機は未実施） | p009 |
+| [ws309-p011](phase011/phase.md) | 手書きの照合の pool（N = min(max(CPU−1,1),4)） | cleared（host `hand-pool/run.sh`・QEMU `hand-guest.sh`。実機は未実施） | p002 |
+| [ws309-p012](phase012/phase.md) | display の thread（swapchain・modeset・回転・hotplug の列挙・scanout の可否と claim・release・backlight、seat の pause）。回転の壁紙（`kwl_glass_size_prepare`）を A1・T9 へ（p010 から、2026-10-29 Q1 の判断）。BUG-353 をこの中で直し、受け入れに RTX の再現（`plan/ws291/tests/rtx-mview-order.sh`、実機の枠は Q1、2026-10-29 Q1 の決定） | planned | p009 |
+| ws309-p013 | present の常駐の thread（暫定の ioctl、共通の wake） | planned | p012 |
+| ws309-p014 | process の起動（J5 の形）と clipboard の書き込みを poll で | planned | p005、J5 |
+| ws309-p015 | game mode の V2: libvulkan の display の swapchain の image の export、compositor の受け渡し | planned | p013 |
+| ws309-p016 | Linux・FreeBSD の seat 経由の入力の open（J4）と seat の callback の detach の ack を wake で受ける形（p004 から） | planned | p003 |
+| ws309-p017 | QEMU の回帰（Venus: 基準・GPU の境界・`KWL THREADS`・`KWL PERF pass`）と遅さの注入の host 試験 | planned | p003〜p014 |
+| ws309-p018 | 規約の全文の見直し | planned | 全て |
+| [ws309-p019](phase019/phase.md) | 試験の screen capture の画素の送りを thread へ（keiland-shot の後の SURFACE_LOST、Q1 の依頼） | cleared（RDNA の実機は P2 の q1668） | p002 |
+

@@ -299,6 +299,7 @@ icmp_sendto(
 	const struct sockaddr *address,
 	socklen_t address_length)
 {
+	int alloc_error;
 	struct icmp_endpoint *endpoint;
 	struct sockaddr_in destination_address;
 	struct packet_buf *packet;
@@ -338,10 +339,10 @@ icmp_sendto(
 		return -EDESTADDRREQ;
 	}
 
-	/* Copies the message into a packet. */
-	packet = packet_buf_alloc(PACKET_BUF_DEFAULT_HEADROOM);
+	/* Copies the message into a packet of the class its length needs. */
+	packet = packet_buf_alloc_for(PACKET_BUF_DEFAULT_HEADROOM, length, 0, &alloc_error);
 	if (packet == NULL)
-		return -ENOBUFS;
+		return -alloc_error;
 	payload = packet_buf_append(packet, length);
 	if (payload == NULL) {
 		packet_buf_free(packet);
@@ -774,6 +775,7 @@ icmp6_sendto(
 	const struct sockaddr *address,
 	socklen_t address_length)
 {
+	int alloc_error;
 	struct sockaddr_in6 output;
 	struct in6_addr destination;
 	struct packet_buf *packet;
@@ -829,12 +831,12 @@ icmp6_sendto(
 			return -ENXIO;
 	}
 
-	/* Copies the message into a packet. */
-	packet = packet_buf_alloc(PACKET_BUF_DEFAULT_HEADROOM);
+	/* Copies the message into a packet of the class its length needs. */
+	packet = packet_buf_alloc_for(PACKET_BUF_DEFAULT_HEADROOM, length, 0, &alloc_error);
 	if (packet == NULL) {
 		if (device != NULL)
 			net_device_release(device);
-		return -ENOBUFS;
+		return -alloc_error;
 	}
 
 	payload = packet_buf_append(packet, length);

@@ -9,7 +9,8 @@
 #     The summary goes to OUT/<name>.md (default OUT plan/tools/hw5330/evidence, kept in git) and the whole kernel log
 #     to LOGS/<name>-dmesg.txt (default LOGS build/hw5330/logs, not in git).  plan/tools/hw5330/5330-survey-diff.py
 #     compares two whole kernel logs.
-# The account is kei (password kei, sudo with the same password); sshpass must be installed.  The backlight probe
+# The account is user (password user, sudo with the same password), or kei (password kei) in an image made before
+# the OS name became zedBSD; the first that answers is used.  sshpass must be installed.  The backlight probe
 # is the image's /bin/backlight-probe (config-5330.mk builds it in); BACKLIGHT_PROBE names a host file to copy to the
 # machine's /tmp and use instead.
 # Nothing on the host or the machine is removed.
@@ -22,12 +23,22 @@ OUT=${3:-plan/tools/hw5330/evidence}
 LOGS=${LOGS:-build/hw5330/logs}
 PROBE=${BACKLIGHT_PROBE:-}
 TARGET_PROBE=/bin/backlight-probe
-PASS=kei
 SSH_OPTS="-o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o ConnectTimeout=10 -o LogLevel=ERROR"
 mkdir -p "$OUT" "$LOGS"
 
+# The account that answers: user, or kei in an older image (the password is the name).
+PASS=
+for name in user kei; do
+	if timeout 20 sshpass -p "$name" ssh $SSH_OPTS "$name@$HOST" true 2> /dev/null; then
+		PASS=$name
+		break
+	fi
+done
+[ -n "$PASS" ] || { echo "5330-survey: neither user nor kei answers on $HOST" >&2; exit 1; }
+ACCOUNT=$PASS
+
 remote() {
-	sshpass -p "$PASS" ssh $SSH_OPTS "kei@$HOST" "$1"
+	sshpass -p "$PASS" ssh $SSH_OPTS "$ACCOUNT@$HOST" "$1"
 }
 
 # The kernel log, whole (sudo reads it; the password goes on stdin).
@@ -40,7 +51,7 @@ done
 
 # The backlight probe: the image's own, or the one BACKLIGHT_PROBE names copied to the machine's /tmp.
 if [ -n "$PROBE" ]; then
-	sshpass -p "$PASS" scp $SSH_OPTS "$PROBE" "kei@$HOST:/tmp/backlight-probe" > /dev/null
+	sshpass -p "$PASS" scp $SSH_OPTS "$PROBE" "$ACCOUNT@$HOST:/tmp/backlight-probe" > /dev/null
 	remote "chmod +x /tmp/backlight-probe"
 	TARGET_PROBE=/tmp/backlight-probe
 fi

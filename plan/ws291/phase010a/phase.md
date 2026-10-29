@@ -1,0 +1,201 @@
+<!-- awesome-plan project=zedbsd record=ws291-p010a -->
+
+# ws291-p010a nvrtx の executor に mview が要る物を足す（depth・index の draw・instance・mip・uniform buffer・cull）
+
+- 親: [WS291](../ws.md)。
+- 状態: cleared（2026-10-29 10:48 P2、q1670-i04。Q1「p010a は depth・texture が参照と一致したので、受け入れの判断を phase.md に書いて cleared にしてよい（instance rate の実機の未確かめは残りとして記録）」）。
+  前: in-progress（2026-10-29 07:30 P2 新設、q1670 の中で Q1 の判断。08:20 から q1670-i02 で P2 が実装）。
+- 出典: Q1 の判断（2026-10-29、q1670）「(2) nvrtx の executor に depth・index・mip（mview が動くまで）→ 新しい p010a、その後 p011（scene-5000 の 50 fps）」
+  「RDNA の p002a と同じ「機能を足してから比較」の形」。RDNA の手本は [p002a](../phase002a/phase.md)（2026-10-26 ユーザー「機能を足してから比較（推し）」）。
+- 依存: p010 の BAR1 の window の直し（06cdbf381）と work channel の VA の拡張（01478d325）。後続: p011。
+
+## 今の executor（main 42da8d889 の src/drivers/gpu/nvrtx/vk、読んだ事実）
+
+- 記録できる command（vk-record.c）: BIND_PIPELINE・SET_VIEWPORT・SET_SCISSOR・SET_LINE_WIDTH・BIND_DESCRIPTOR_SETS・BIND_VERTEX_BUFFERS・DRAW・
+  COPY_IMAGE・BLIT_IMAGE・COPY_BUFFER_TO_IMAGE・COPY_IMAGE_TO_BUFFER・CLEAR_COLOR_IMAGE・PIPELINE_BARRIER・PUSH_CONSTANTS・BEGIN/END_RENDER_PASS。
+  無い: BIND_INDEX_BUFFER・DRAW_INDEXED・COPY_BUFFER。
+- depth: どの format にも DEPTH_STENCIL_ATTACHMENT の feature が無い（vk-device.c 600）、render pass は depth を断る（vk-target.c 161）、push は
+  depth 無しの固定（exec-push.c 343・368）。mview は起動すると `api=depth format result=-11` で止まる（p010 の実機）。
+- image は mipLevels 1 だけ（vk-resource.c 245）。descriptor は COMBINED_IMAGE_SAMPLER だけ（vk-layout.c 729）。
+- cullMode は pipeline に読む（vk-pipeline.c 325）、instance の入力の rate は扱いがある（vk-pipeline.c 488、push で効くかは未確かめ）。
+
+## mview が使う物（userland/tests/mview の grep）
+
+- D32_SFLOAT（または D24_UNORM_S8_UINT・D32_SFLOAT_S8_UINT のどれか）、DrawIndexed（UINT32）、vertex の rate VERTEX と INSTANCE（copy_offset）、
+  descriptor の UNIFORM_BUFFER と COMBINED_IMAGE_SAMPLER、cull の BACK・NONE・FRONT_AND_BACK、mipLevels > 1 の texture と level の blit、
+  CopyBuffer・CopyBufferToImage、push constants。
+
+## 範囲
+
+1. depth: D32_SFLOAT の optimal の DEPTH_STENCIL_ATTACHMENT（1 level、sampled は不可でよい）。zeta の surface（Turing の 3D class の SET_ZETA_*・ZETA_ENABLE・
+   ZETA_SIZE、block linear の layout）、render pass の depth の attachment（clear・load・store）、pipeline の depth の test・write・compare、depth の clear。
+2. index の draw: vkCmdBindIndexBuffer（UINT16・UINT32）と vkCmdDrawIndexed（vertexOffset・firstIndex・instanceCount・firstInstance）。
+3. instance: instanceCount > 1 と rate INSTANCE の vertex の流れ（divisor）。
+4. uniform buffer の descriptor（constant buffer の bind、SM75 の compiler の cbuf の読みが要るなら compiler の対応も）。
+5. mip: mipLevels > 1 の image（level ごとの offset、copy・blit の level、view の level の範囲、sampler の LOD、TIC の level）。
+6. vkCmdCopyBuffer（copy engine か 3D の copy）。cull の BACK・FRONT_AND_BACK。
+- 参照（MIT、値と手順だけ、code は写さない）: Mesa 25.3.6 src/nouveau/vulkan（nvk_cmd_draw.c、nvk_image.c、nvk_cmd_copy.c）、open-gpu-doc
+  classes/3d/clc597.h（TURING_A の method）。block ごとに「Value(s) referenced:」「Procedure referenced:」。
+
+## 受け入れ
+
+- amd64 の vmunix が warning 0。plan/tools/nvrtx の host 試験（nvrtx-vk-host-test.sh・nvrtx-sm75-host-test.sh）が通る（追従は可）。
+- 実機（RTX 2070）で mview の既定の scene（`--content=game --present=mailbox`、copies 1 と 5000）が動き、keiland-shot の PNG で Linux（NVK）と同じ見た目
+  （深度の前後、texture）。scene-5000 の fps を p011 の起点として記録。
+
+## 記録
+
+- 2026-10-29 07:30 P2: 新設（未着手）。
+
+## q1670-i02（P2、worktree p2-ws291n、2026-10-29）
+
+### 実装の最初の段（aaf52d03b、基点 main 7b297b46a）
+
+- depth: D32_SFLOAT は optimal で DEPTH_STENCIL_ATTACHMENT だけ（sampled・copy は不可、1 level）。image は block linear の 1 GOB の block（行は 64 byte の倍数、
+  高さは 8 行の倍数、memory の requirement と bind の境界は 512 byte）。render pass は colour 1 つと depth 1 つまで（framebuffer は 2 つの view）。
+  colour target の push に ZT（SET_ZT_A〜ARRAY_PITCH・ZT_SELECT 1・ZT_SIZE（幅は行の pixel）・ZT_LAYER 0・Z_COMPRESSION off・ZT_SPARSE off）。
+  load の CLEAR は SET_Z_CLEAR_VALUE と CLEAR_SURFACE の Z だけ。draw ごとに SET_DEPTH_TEST・WRITE・FUNC（pipeline の depthTest・Write・CompareOp、
+  stencil・depth bounds は ENOTSUP）。PTE の kind は今の work channel の map のまま（pitch の kind）。GPU だけが読み書きするので layout は揃うはずだが未確かめ。
+- DrawIndexed: BIND_INDEX_BUFFER（UINT16・UINT32）、SET_INDEX_BUFFER_A・SIZE_A・E、BEGIN（instance iterate）・SET_INDEX_BUFFER_F（first）・
+  DRAW_INDEX_BUFFER（count）・END、vertexOffset は GLOBAL_BASE_VERTEX_INDEX と VERTEX_ID_BASE、primitive restart off。
+- cull・front face: draw ごとに OGL_SET_CULL・CULL_FACE・FRONT_FACE（Vulkan の CCW は 0x901）。
+- UNIFORM_BUFFER: vkUpdateDescriptorSets の buffer の descriptor を slot に保持（buffer・offset・range）。compiler の uniform の constant buffer 1+k を
+  draw ごとに group 0（vertex）・4（fragment）へ SET_CONSTANT_BUFFER_SELECTOR と BIND_GROUP_CONSTANT_BUFFER（256 byte の境界、16 byte の単位、64 KiB まで）。
+- mip: colour image は level の列（各 level は pitch linear、256 byte の境界）。CopyBufferToImage・CopyImageToBuffer（CPU の経路も）・CopyImage・
+  BlitImage の各 region の mipLevel、ClearColorImage は全 level、view の baseMipLevel。sampling は pitch の TIC が 1 level なので view の先頭の level だけ
+  （遠い copy の縮小の見た目は NVK と違う見込み。block linear の texture にすれば mip の sampling ができる、未着手）。
+- CopyBuffer: CPU（BAR1 の window）で、前の work の後に（mview の staging からの一度の upload）。
+- 参照は Mesa 25.0.7（tree の外の build にあった物。25.3.6 は取れなかった: archive.mesa3d.org の名前が引けない）の clc597.h・cl9097.h・nvk_cmd_draw.c・
+  nvk_cmd_clear.c・nvk_shader.h。値と手順だけ。
+- 確かめ（host）: `make ZEDBSD_CONFIG=plan/ws291/tests/config.mk BUILD=build/ws291/k build/ws291/k/vmunix` warning 0（cksum は build/ws291/k/vmunix）、
+  plan/tools/nvrtx/nvrtx-vk-host-test.sh PASS 60 checks（D32_SFLOAT の feature の check を新しい形に追従）、nvrtx-sm75-host-test.sh 287 checks 0 failures。
+- 未実施: 実機、新しい push の関数の host の check、instance の rate の実機の確かめ、arm64・riscv64 の build。
+
+### 実機（10.0.10.3、移設の後）
+
+- 08:16 lock（P2）。rtx-va-check.sh の deploy で Debian から BootNext 0004 → 300 s で zedBSD が network に出ない（2 回、08:17 と 08:35）。
+  1 回目の後の 08:24 の SwitchBot の cycle はプラグが未接続で届いていなかった（ユーザー）。Debian（08:34）: enx6c1ff71a08b6（RTL8156 0bda:8156）10.0.10.3、
+  RTX は vfio-pci、BootOrder 0002,0000。zedBSD が起動しないのか link が出ないのかは未切り分け（画面が要る、Q1 に返した）。VA の拡張（01478d325）の実機は未実施。
+
+### 実装の 2 段目（a21aaa3f9）・host の確かめ（032fb7cfe）
+
+- mip の sampling: 2 level 以上の colour image は tiled（各 level が 1 GOB の block の block linear、前の level の直後、境界 512 byte）。
+  texture header は block linear（version 3、2D、MAX_MIP_LEVEL・RES_VIEW_MIN/MAX_MIP_LEVEL、address は 512 byte 単位）、sampler は
+  mipmapMode（POINT・LINEAR）と minLod・maxLod の clamp（4.8 の固定小数点）。colour target も block linear にできる（幅は行の pixel、
+  MEMORY 0、ARRAY_PITCH は level の大きさ）。quad の source の tiled の level は level 0 だけの面として読む（画素の座標のため）。
+  CPU の copy の経路は tiled の image に GOB の中の 16 byte の並び（Turing の 2D の GOB）で 1 画素ずつ。
+  1 level の image（swapchain・desktop の物）は前と同じ pitch linear。
+- host: nvrtx-vk-host-test.sh PASS 86 checks（push の check を足した: depth target・indexed draw・index buffer・cull・depth test・
+  depth の clear・uniform buffer・block linear の colour target・tiled の header）。mview の 6 つの shader は SM75 の compiler で全部
+  compile でき IR と一致（nvrtx-sm75-desktop-test の build で `--sm 75 userland/tests/mview/shaders/*.spv`、6 compiled 0 refused）。
+  rpi4（arm64）・riscv64-virt の vmunix も rc 0・warning 0（nvrtx は amd64 だけ、libvulkan は触っていない）。
+- 実機の script: plan/ws291/tests/rtx-mview-check.sh（f7ff592c9、copies 1・5000、shading=pixel、shot 1・5000、kernel の vk の行）。
+
+### 実機の「zedBSD が出ない」の原因（08:52）
+
+- 新しい worktree の plan/tmp/guest/id_ed25519 が mode 0664 で、ssh が鍵を拒み、measure.sh の uname の確かめが失敗していた
+  （「zedbsd did not come up」）。chmod 600 で直った（git は mode を追わない）。08:51 に zedBSD は 10.0.30.5 にいた（DP の cable で起動）。
+
+### 再開点（2026-10-29 08:57 P2）
+
+- 実機: 08:56 に返した（Debian、RTX は vfio-pci、NVMe の zedBSD の kernel は vmunix-va1 = 01478d325 の build）。VA の拡張は実機で OK（[p010](../phase010/phase.md) の最後の節）。
+  Q1 の指示: p010a の実機の確かめは P1（WS235）の枠の後の枠で。
+- 次の枠: `sh plan/ws291/tests/rtx-mview-check.sh build/ws291/rtx/m1 build/ws291/vmunix-p010a1`（dadd28a8d の build、cksum 2422632154。
+  新しい worktree なら `make ZEDBSD_CONFIG=plan/ws291/tests/config.mk BUILD=build/ws291/k build/ws291/k/vmunix` で作り直し、plan/tmp/guest/id_ed25519 は chmod 600）。
+  見る物: mview の MVIEW SPIN（copies 1・5000、shading=pixel）、shot-1・shot-5000 の PNG（深度の前後と texture）、kernel の `nvrtx: vk` の行と MMU の fault。
+  block linear（depth・tiled の texture）の PTE の kind は pitch のままなので、壊れた画や fault が出れば kind を見る。
+
+## q1670-i03（P2、worktree p2-ws291o、2026-10-29）
+
+### 実機の 1 回目（09:11〜09:16、vmunix-p010a1 = dadd28a8d、cksum 2422632154）
+
+- `sh plan/ws291/tests/rtx-mview-check.sh build/ws291/rtx/m1 build/ws291/vmunix-p010a1`: mview copies 1 は最初の vkQueueSubmit で
+  `result=-4 errno=5`（device lost）、kernel は `channel-stop channel error: eng 1 chid 4 type 69`（GR の class error）。以後の work は全部失敗。
+- 診断: rpc.c に、type 69 の時に GR の trapped の register（0x400100・0x400704・0x400708・0x400110・0x404200）を読む行を足した（759123d87 に含む）。
+  vmunix-p010a2（cksum 435740828）で `gr refused: status 00100000 subc 0 method 17e0` `data 00000858 code 0000009c class c597`。
+  method 0x17e0 は DRAW_INDEX_BUFFER（count 2136）、code 0x9c は open-gpu-doc gv100 dev_graphics.ref.txt の
+  NV_PGRAPH_CLASS_ERROR_CODE_ERROR_ZETA_REQUIRES_BLOCK_LINEAR0: zeta を使う draw は colour target 0 が block linear でなければならない。
+  swapchain の image（1 level）は pitch linear。PTE の kind の問題ではなかった。
+
+### 直し（759123d87）
+
+- vk-execute.c: depth を持つ pass の colour target が pitch linear なら、executor の block linear の影の surface（GOB の行・GOB の高さ、
+  足りない時は前の work の後に作り直す）に描き、pass の終わりに render area を quad で target へ写す（LOAD の pass は始めに target から影へ写す）。
+  quad は cull と depth test を切る（pass の draw の状態が残るため）。手本は NVK の linear の image の tiled の影（nvk_linear_render_copy）。
+- 確かめ（host）: amd64 vmunix rc 0・warning 0（vmunix check PASS）、nvrtx-vk-host-test.sh PASS 86 checks。nvrtx-sm75-host-test は未実施（compiler は触っていない）。
+- rtx-mview-check.sh の kernel の行の grep に `gr refused` を足した。
+
+### 実機の 2 回目（09:28〜09:46、10.0.10.3、DP）
+
+| run | kernel | 結果 |
+| --- | --- | --- |
+| m3（rtx-mview-check） | vmunix-p010a3（759123d87、cksum 3281438578） | one 451.18 fps、many（5000）42.02 fps、pixel 401.65 fps、GPU の error・fault 無し。shot-1・shot-5000 は mview の window が写らず desktop だけ |
+| m4（shot 1 だけ） | 実験: 影を使わず depth を外す | model と texture が出る（深度の前後は無い） |
+| m5（shot 1 だけ） | 実験: 影＋copy、zeta 無し | m4 と同じく出る |
+| m6（shot 1 だけ） | 実験: 影＋copy、zeta を bind して clear、depth test・write を切る | 出る |
+
+- 実験の kernel は source に残していない（build/ws291/vmunix-nodepth・vmunix-shadow-noz・vmunix-z-notest）。
+- 分かった事: 影の surface（block linear の描画）、tiled の sampling、写しの quad、zeta の bind と clear は動く。depth test を入れると、
+  背景の clear も含めて window が透けて desktop が見える（画の全体が消える）。原因は未確定（ZCULL の設定・viewport の z・depth の clear の値を見る）。
+- 撮れた PNG: build/ws291/rtx/m3/shot-1/shot.png（desktop だけ）、build/ws291/rtx/m4/shot-1/shot.png、build/ws291/rtx/m5/shot-1/shot.png、
+  build/ws291/rtx/m6/shot-1/shot.png（縮小は各 shot-small.png）。
+- 返却: 09:46 Debian、RTX は vfio-pci、BootOrder 0002,0000、NVMe の kernel は vmunix-va1（cksum 1463007375、sha256 6a06e796…）。lock は free。
+- 5000 copies の 42.02 fps は depth test が効いていない状態（画が出ていない）の値なので p011 の起点にしない。
+
+### host の続き（09:50〜）と次の枠の手順
+
+- 見た事: ZF32 の PTE の kind は Turing では GENERIC_MEMORY（0x06、Mesa 25.3 系 nil/image.rs の tu102_choose_pte_kind、tu102 dev_mmu.h）で、
+  block linear の colour と同じ kind。block linear の colour の影は kind 0 のまま正しく出た（m5・m6）。depth test の有無で背景の clear まで消えるのは
+  kind だけでは説明しにくい。depth の method の番号（DEPTH_TEST・WRITE・FUNC・ZT_*・Z_CLEAR_VALUE・CLEAR_SURFACE）と FUNC の値（OGL 0x200+op）は
+  clc597.h と一致。ZCULL は ACTIVE_ZCULL_REGION 0x3f（NVK の zcull 無しの時と同じ）。
+- 診断を足した（63ebcaf71）: vk-node.c で run の後に GR の 0x400100・0x400108・0x400118 を読み、0 でなければ最初の 4 回だけ
+  `vk: gr after a run:` を出す。GSP が止めずに扱った trap が有るかを見る。
+- 次の枠の script: `sh plan/ws291/tests/rtx-depth-probe.sh build/ws291/rtx/p1 build/ws291/vmunix-va1 build/ws291/vmunix-p010a4 build/ws291/vmunix-z-nowrite`
+  （各 kernel で shot 1 と dmesg 全部、最後に vmunix-va1 を戻して Debian）。vmunix-p010a4 = 63ebcaf71（cksum 869726610）、
+  vmunix-z-nowrite = 同じ tree で draw の depth write だけを切った実験（cksum 4163372434、source には残していない）。
+
+## q1670-i04（P2、worktree p2-ws291p、2026-10-29）
+
+### 実機（10:28〜10:46、10.0.10.3、DP、lock は P2）
+
+- `sh plan/ws291/tests/rtx-depth-probe.sh build/ws291/rtx/p1 build/ws291/vmunix-va1 build/ws291/vmunix-p010a4 build/ws291/vmunix-z-nowrite`:
+  p1/1（vmunix-p010a4 = 63ebcaf71、cksum 869726610、depth あり）の shot 1 は model・texture・背景が出て、Linux の参照（RADV の
+  linux-shot-1.png、p2-ws291 の build から複写）と 16 段以上違う画素が 2 / 2073600。`vk: gr after a run` の行は無し（GR の trap 無し）。
+  p1/2（vmunix-z-nowrite）は前後が崩れる（depth の write が効いている事の裏付け）。p1/2 の shot.png は m4・m6 の shot.png と byte まで同じ:
+  test が LESS_OR_EQUAL で clear が 1.0、write が無いので全ての fragment が通り、depth 無しと同じ描画になる（静止画、全画面）。
+- 前回の「depth test で全体が消える」は depth ではなかった。`sh plan/ws291/tests/rtx-mview-order.sh build/ws291/rtx/o1 build/ws291/vmunix-p010a4`:
+  a-shot1（起動の直後）は出る。b-one（mview の spin、mailbox）の後の c-shot1・e-shot5000・f-shot1 は mview の window が写らず、
+  desktop（Settings の Welcome）だけ。m3 の shot は spin の後に撮っていた。同じ起動の中で mailbox の mview の後の mview（fifo）の window が
+  画面に出ない別の不具合（原因は未調べ、depth・p010a の範囲の外の見込み。Q1 に報告）。
+- `sh plan/ws291/tests/rtx-scene-profile.sh build/ws291/rtx/s1 build/ws291/vmunix-va1 build/ws291/vmunix-p010a4 5000`（起動の直後の shot 5000、
+  nvrtx.vk.perf=1 で mview 5000 copies 12 s）: shot 5000 は格子の 5000 体が出る（build/ws291/rtx/s1/shot-small.png、Linux の 5000 の参照は無く
+  画素の比較は未実施）。MVIEW SPIN 42.24 fps（frame 23.63 ms、record 1.32、submit 21.63、present 0.40）。kernel の perf（5 s ごと）:
+  runs 434 avg 10074 us、gpu avg 9802 us、frames 868、flips 217（43/s）。起動の直後の compositor だけの run は gpu avg 1635 us。
+  1 frame に 2 run（mview と compositor の見込み）で、GPU の時間は 1 frame に約 19.6 ms、残り約 4 ms は CPU と同期の待ち。
+- o1 の d-many（depth あり）は 42.13 fps、b-one は 444.00 fps。m3 の 42.02 fps も depth が効いた状態の値だった（kernel は同じ 759123d87 の形）。
+- 返却: 10:46 Debian（`measure.sh where` = linux）、RTX の 4 function は vfio-pci、BootOrder 0002,0000、NVMe の kernel は vmunix-va1
+  （cksum 1463007375）、zedbsd.cfg の nvrtx.vk.perf の行は 0。lock は free。
+
+### p010a の受け入れの今
+
+- 済み: amd64 の vmunix の warning 0 と host 試験（i03 の記録）、実機の mview copies 1 の深度の前後と texture（Linux の RADV の参照と 2 画素差）、
+  5000 copies が動く（42.1〜42.2 fps、p011 の起点）。
+- 未実施: NVK（Linux の RTX）の参照の shot との比較（RADV の参照で代用）、5000 copies の画素の比較、spin の後に window が出ない件。
+
+### p011 の見立て（host で次に進める）
+
+- vkQueueSubmit は GPU を待つ（vk-execute.c の execute_flush → nvrtx_vk_gpu_run が fence を待つ）。amdrdna は待たない形（slot と parked の marker、
+  completer の thread）。GPU が 1 frame に約 19.6 ms なので、待たない形で CPU の約 4 ms を重ねれば 50 fps 前後に届く見込み（この件は WS291 の表の
+  とおり WS250 p005 との分担を Q1 が決めてから）。足りなければ
+  vertex の program（SM75 の compiler）の質を見る。
+
+### 受け入れの判断（2026-10-29 10:48 P2）
+
+- amd64 の vmunix の warning 0、nvrtx-vk-host-test.sh PASS 86 checks、nvrtx-sm75-host-test.sh 287 checks 0 failures（i02・i03 の記録）: 満たす。
+- 実機の mview（`--content=game --present=mailbox`）の copies 1 と 5000 が動く（o1: 444.00 fps・42.13 fps、GPU の error・fault 無し）: 満たす。
+- 見た目: copies 1 の深度の前後と texture が Linux の参照と一致（16 段以上の差は 2 画素）。参照は NVK ではなく RADV の linux-shot-1.png
+  （同じ scene・同じ mview）。5000 copies は格子の 5000 体が出る事を目で見ただけ（参照の画が無い）。
+- scene-5000 の起点: 42.2 fps（s1、frame 23.6 ms、GPU は 1 frame に約 19.6 ms）→ p011。
+- → cleared。残り: instance の rate（divisor）の実機の個別の確かめ（mview の copy_offset の instance の流れが 5000 体の格子に出る事で間接には動いている）、
+  NVK の参照の shot との比較、5000 copies の画素の比較、mip の遠い copy の見た目（block linear の mip の sampling は実装済み、比較は未実施）。
+  BUG-353（mailbox の mview の後の window が出ない）は範囲の外。

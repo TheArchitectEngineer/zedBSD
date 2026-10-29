@@ -148,6 +148,14 @@ struct wlan_station {
 
 static struct spinlock wlan_registry_lock;
 static struct wlan_station wlan_stations[NET_DEVICE_MAX];
+
+/*
+ * How many of the slots hold a station: the network worker's passes skip
+ * every wireless step when there is none (most machines have no wireless
+ * station).  Moved with atomic adds where a slot is taken or given back,
+ * read atomically.
+ */
+static unsigned wlan_stations_used;
 static atomic_uint_t wlan_initialized;
 static int wlan_stopping;
 static int wlan_shutdown_inflight;
@@ -439,6 +447,7 @@ wlan_station_attach(
 		free_station->fullmac = 1;
 
 	free_station->used = 1;
+	(void)__atomic_fetch_add(&wlan_stations_used, 1U, __ATOMIC_ACQ_REL);
 
 	spin_unlock_irqrestore(&free_station->lock, station_enabled);
 
@@ -2066,10 +2075,14 @@ wlan_timer_run(
 	uint64_t now_ticks)
 {
 	unsigned index;
+	unsigned stations;
 	struct wlan_station *station;
 
-	/* Runs the timer of every live station. */
+	/* Runs the timer of every live station; none at all is the common case. */
 	if (atomic_load_acquire(&wlan_initialized) != 2U)
+		return;
+	stations = __atomic_load_n(&wlan_stations_used, __ATOMIC_ACQUIRE);
+	if (stations == 0)
 		return;
 	for (index = 0U; index < NET_DEVICE_MAX; index++) {
 		if (station_index_enter(index, &station) != 0)
@@ -2092,12 +2105,16 @@ wlan_timer_next_deadline(
 	struct wlan_station *station;
 	unsigned long enabled;
 	uint64_t candidate;
+	unsigned stations;
 
 	/* Starts out with no deadline pending. */
 	result = 0U;
 
-	/* Reports no deadline until the subsystem is fully up. */
+	/* Reports no deadline until the subsystem is fully up, nor without a station. */
 	if (atomic_load_acquire(&wlan_initialized) != 2U)
+		return 0U;
+	stations = __atomic_load_n(&wlan_stations_used, __ATOMIC_ACQUIRE);
+	if (stations == 0)
 		return 0U;
 
 	/* Takes the earliest deadline any live station is waiting on. */
@@ -2160,10 +2177,14 @@ wlan_work_pending(
 	struct wlan_station *station;
 	unsigned long enabled;
 	uint64_t now;
+	unsigned stations;
 	int pending;
 
-	/* Asks every live station whether it has work due. */
+	/* Asks every live station whether it has work due; none at all is the common case. */
 	if (atomic_load_acquire(&wlan_initialized) != 2U)
+		return 0;
+	stations = __atomic_load_n(&wlan_stations_used, __ATOMIC_ACQUIRE);
+	if (stations == 0)
 		return 0;
 	for (index = 0U; index < NET_DEVICE_MAX; index++) {
 		if (station_index_enter(index, &station) != 0)
@@ -4186,6 +4207,7 @@ station_index_enter(
 	struct wlan_station *station;
 	unsigned long registry_enabled;
 	unsigned long enabled;
+	unsigned slot_used;
 	int error;
 
 	/* Starts out reporting that no station was found. */
@@ -4193,6 +4215,18 @@ station_index_enter(
 
 	/* Rejects an index outside the registry. */
 	if (index >= NET_DEVICE_MAX || result == NULL)
+		return ENODEV;
+
+	/*
+	 * An index that holds no station is passed over without the registry
+	 * lock: the network worker asks every index on each of its passes,
+	 * tens of thousands of times a second under load, and most machines
+	 * have no wireless station at all.  A station published meanwhile is
+	 * found on the next pass, as it would be had the lock been taken a
+	 * moment earlier.
+	 */
+	slot_used = __atomic_load_n(&wlan_stations[index].used, __ATOMIC_ACQUIRE);
+	if (slot_used == 0)
 		return ENODEV;
 
 	/* Takes a reference on the station the index names. */
@@ -5212,6 +5246,7 @@ station_finalize_locked(
 	station->clock_context = NULL;
 	station->lifecycle_inflight = 0;
 	station->used = 0;
+	(void)__atomic_fetch_sub(&wlan_stations_used, 1U, __ATOMIC_ACQ_REL);
 
 	/* Hands the detached device back to the caller. */
 	return device;

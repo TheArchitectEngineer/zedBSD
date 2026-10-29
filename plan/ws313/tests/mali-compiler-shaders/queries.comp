@@ -1,0 +1,20 @@
+#version 450
+// The Mali compiler's host check: the length of a runtime array and a texture's size and levels.
+layout(local_size_x = 4) in;
+layout(std430, set = 0, binding = 0) buffer B { uint data[]; } b;
+layout(set = 0, binding = 1) uniform sampler2D image;
+layout(set = 0, binding = 2) uniform sampler3D volume;
+layout(set = 0, binding = 3) uniform sampler2DArray layers;
+void main()
+{
+	uint i = gl_LocalInvocationIndex;
+	ivec2 s = textureSize(image, int(i));
+	ivec3 v = textureSize(volume, 1);
+	ivec3 l = textureSize(layers, 2);
+	b.data[i * 8u] = uint(b.data.length());
+	b.data[i * 8u + 1u] = uint(s.x + s.y * 7);
+	b.data[i * 8u + 2u] = uint(v.x * 3 + v.y + v.z);
+	b.data[i * 8u + 3u] = uint(l.x + l.y + l.z * 5);
+	b.data[i * 8u + 4u] = uint(textureQueryLevels(image));
+	b.data[i * 8u + 5u] = uint(texelFetch(image, ivec2(i, 2), 0).x * 100.0);
+}

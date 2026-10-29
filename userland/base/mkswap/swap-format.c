@@ -23,6 +23,7 @@ static void put32(uint8_t *out, uint32_t value);
 static void put64(uint8_t *out, uint64_t value);
 static int write_exact(int fd, const void *data, size_t length, uint64_t offset);
 static void make_header(uint8_t *header, uint64_t bytes);
+static int verify_header(int fd, uint64_t bytes);
 
 /*
  * Checks the production file-backed swap geometry before mutation.
@@ -83,10 +84,6 @@ swap_format_verify(
 	int fd,
 	uint64_t bytes)
 {
-	struct swap_header_info parsed;
-	uint8_t header[SWAP_PAGE_SIZE];
-	uint8_t expected[SWAP_PAGE_SIZE];
-	ssize_t done;
 	int error;
 
 	/* Requires the same size accepted by generation. */
@@ -94,34 +91,94 @@ swap_format_verify(
 	if (error != 0)
 		return error;
 
-	/* Reads the complete reserved page, retrying only interrupted reads. */
-	do {
-		done = pread(fd, header, sizeof(header), 0);
-	} while (done < 0 && errno == EINTR);
-
-	/* Preserves read failures and rejects truncated verification data. */
-	if (done < 0)
-		return errno;
-	if (done != (ssize_t)sizeof(header))
-		return EIO;
-
-	/* Applies the shared kernel parser before checking generated invariants. */
-	error = swap_header_parse(header, bytes, &parsed);
+	/* Compares the header page with the one generation writes. */
+	error = verify_header(fd, bytes);
 	if (error != 0)
 		return error;
 
-	/* Requires version two and the exact positive caller-sized slot count. */
-	if (parsed.version != 2 || parsed.slot_count == 0 ||
-	    parsed.slot_count != bytes / SWAP_PAGE_SIZE - 1)
-		return EIO;
-
-	/* Verifies the identity, checksum, and cleared reserved page contents. */
-	memset(expected, 0, sizeof(expected));
-	make_header(expected, bytes);
-	if (memcmp(header, expected, sizeof(header)) != 0)
-		return EIO;
-
 	/* Reports a recognized and complete swap header. */
+	return 0;
+}
+
+/*
+ * Checks the size of a swap partition before its header is written.
+ *
+ * A partition is not bound by the regular file's limit: the version-two
+ * header records a 64-bit size.  The kernel accepts a partition whose
+ * bytes are whole pages and whose slots fit in 32 bits.
+ */
+int
+swap_format_validate_partition(
+	uint64_t bytes)
+{
+	uint64_t slots;
+
+	/* Requires a header page and at least one complete slot page. */
+	if (bytes < SWAP_PAGE_SIZE * 2U || bytes % SWAP_PAGE_SIZE != 0)
+		return EINVAL;
+
+	/* Refuses more slots than the kernel's slot numbers can name. */
+	slots = bytes / SWAP_PAGE_SIZE - 1U;
+	if (slots > UINT32_MAX)
+		return EFBIG;
+
+	/* Reports a usable swap partition size. */
+	return 0;
+}
+
+/*
+ * Writes a swap partition's header page in one page-sized write.
+ *
+ * The whole page goes at once (the header and the zeros after it), so a
+ * device with 4096-byte sectors is written in whole sectors.
+ */
+int
+swap_format_write_partition(
+	int fd,
+	uint64_t bytes)
+{
+	uint8_t page[SWAP_PAGE_SIZE];
+	int error;
+
+	/* Rejects unsupported sizes without issuing a write. */
+	error = swap_format_validate_partition(bytes);
+	if (error != 0)
+		return error;
+
+	/* Builds the header page: the header and zeros to the page's end. */
+	memset(page, 0, sizeof(page));
+	make_header(page, bytes);
+
+	/* Writes the page over whatever was there. */
+	error = write_exact(fd, page, sizeof(page), 0);
+	if (error != 0)
+		return error;
+
+	/* Succeeded: the header page is written; the caller makes it durable. */
+	return 0;
+}
+
+/*
+ * Validates a swap partition's reread header page.
+ */
+int
+swap_format_verify_partition(
+	int fd,
+	uint64_t bytes)
+{
+	int error;
+
+	/* Requires the same size accepted by generation. */
+	error = swap_format_validate_partition(bytes);
+	if (error != 0)
+		return error;
+
+	/* Compares the header page with the one generation writes. */
+	error = verify_header(fd, bytes);
+	if (error != 0)
+		return error;
+
+	/* Succeeded: the partition carries the expected header. */
 	return 0;
 }
 
@@ -165,6 +222,54 @@ swap_format_pristine(
 		}
 	}
 
+	return 0;
+}
+
+/* Rereads the header page and compares it with the canonical one. */
+static int
+verify_header(
+	int fd,
+	uint64_t bytes)
+{
+	struct swap_header_info parsed;
+	uint8_t header[SWAP_PAGE_SIZE];
+	uint8_t expected[SWAP_PAGE_SIZE];
+	ssize_t done;
+	int different;
+	int error;
+
+	/* Reads the complete reserved page, retrying only interrupted reads. */
+	do {
+		done = pread(fd, header, sizeof(header), 0);
+	} while (done < 0 && errno == EINTR);
+
+	/* Preserves read failures and rejects truncated verification data. */
+	if (done < 0)
+		return errno;
+	if (done != (ssize_t)sizeof(header))
+		return EIO;
+
+	/* Applies the shared kernel parser before checking generated invariants. */
+	error = swap_header_parse(header, bytes, &parsed);
+	if (error != 0)
+		return error;
+
+	/* Requires version two and the exact positive caller-sized slot count. */
+	if (parsed.version != 2)
+		return EIO;
+	if (parsed.slot_count == 0)
+		return EIO;
+	if (parsed.slot_count != bytes / SWAP_PAGE_SIZE - 1)
+		return EIO;
+
+	/* Verifies the identity, checksum, and cleared reserved page contents. */
+	memset(expected, 0, sizeof(expected));
+	make_header(expected, bytes);
+	different = memcmp(header, expected, sizeof(header));
+	if (different != 0)
+		return EIO;
+
+	/* Succeeded: the header page is the canonical one. */
 	return 0;
 }
 

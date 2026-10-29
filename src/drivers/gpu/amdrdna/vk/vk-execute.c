@@ -37,9 +37,10 @@
  * pixel coordinates) into the destination, or writes one colour.  A copy
  * whose buffer is not laid out as a linear image can be (its start or its
  * row pitch off 256 bytes) is moved by the command processor, row by row.
- * Between a pass or a transfer and what follows, and at the end of every
- * indirect buffer, a barrier drains the programs, writes the colour
- * caches back and empties the shader caches.
+ * Between a pass or a transfer and what follows, and at the end of a
+ * command buffer's last indirect buffer, a barrier drains the programs,
+ * writes the colour caches back and empties the shader caches (a buffer
+ * that fills goes on its queue without one).
  *
  * A dispatch writes its kernel's resource table (from the sets bound at
  * the compute bind point), the kernel and the workgroups, then a barrier.
@@ -202,9 +203,14 @@ struct execute_tables {
  * viewport, scissor and culling words) and the resource tables it used
  * (with the vertex program's instance mask), good while target_written
  * stays set (every internal draw, transfer, pass and new buffer clears it);
- * sets_changed, buffers_changed and push_changed say that the descriptor
- * sets, the vertex buffers or the push constants changed since then (a
- * binding of what is bound already changes nothing).
+ * sets_changed (a bit for each set number) and buffers_changed say that
+ * the descriptor sets or the vertex buffers changed since then, and
+ * push_changed_from is the first byte of the push constants that changed
+ * (AMDRDNA_VK_PUSH_BYTES for none; a program's table holds the bytes from 0
+ * to its push_bytes); a binding of what is bound already changes nothing.  fixed_written says that the drawn_ fields of the
+ * fixed state (with the topology, blend, raster and depth words) are what
+ * the buffer's registers hold since the target was written, so that a draw
+ * of another pipeline writes only what differs.
  */
 struct execute_state {
 	const struct amdrdna_vk_pipeline *pipeline;
@@ -233,9 +239,14 @@ struct execute_state {
 	int32_t drawn_scissor[4];
 	uint32_t drawn_culling[AMDRDNA_GFX10_NGG_CULL_USER_SGPRS - AMDRDNA_GFX10_NGG_USER_SGPRS];
 	struct execute_tables drawn_tables;
-	bool sets_changed;
+	uint32_t drawn_topology;
+	struct amdrdna_vk_blend drawn_blend;
+	uint32_t drawn_raster[2];
+	uint32_t drawn_depth[3];
+	bool fixed_written;
+	uint32_t sets_changed;
 	bool buffers_changed;
-	bool push_changed;
+	uint32_t push_changed_from;
 };
 
 /*
@@ -274,6 +285,7 @@ static int execute_compile(struct amdrdna_quad_ir *program, const struct amdrdna
 static int execute_start(struct amdrdna_vk_session *session, struct amdrdna_vk_execute *execute);
 static int execute_slot_make(struct amdrdna_vk_session *session, struct execute_slot *slot);
 static int execute_flush(struct amdrdna_vk_session *session, struct amdrdna_vk_execute *execute);
+static int execute_put(struct amdrdna_vk_session *session, struct amdrdna_vk_execute *execute);
 static int execute_room(struct amdrdna_vk_session *session, struct amdrdna_vk_execute *execute, struct execute_state *state);
 static void execute_barrier(struct amdrdna_vk_execute *execute);
 static int execute_record(struct amdrdna_vk_session *session, struct amdrdna_vk_execute *execute, struct execute_state *state, const struct amdrdna_vk_record *record);
@@ -286,12 +298,14 @@ static int execute_kernel_resources(const struct amdrdna_gfx10_program *program,
 static int execute_part(struct amdrdna_vk_execute *execute, uint32_t bytes, uint8_t **cpu, uint64_t *va);
 static int execute_begin_pass(struct amdrdna_vk_session *session, struct amdrdna_vk_execute *execute, struct execute_state *state, const struct amdrdna_vk_record *record);
 static int execute_draw(struct amdrdna_vk_execute *execute, struct execute_state *state, const struct amdrdna_vk_record *record);
+static int execute_draw_fixed(struct amdrdna_vk_execute *execute, struct execute_state *state, const struct amdrdna_vk_pipeline *pipeline, const uint32_t *viewport, const int32_t *scissor);
+static uint32_t execute_program_sets(const struct amdrdna_gfx10_program *program);
 static int execute_draw_tables(struct amdrdna_vk_execute *execute, const struct execute_state *state, const struct amdrdna_vk_pipeline *pipeline, struct execute_tables *tables);
 static int execute_table_copy(struct amdrdna_vk_execute *execute, const struct amdrdna_gfx10_program *program, const struct execute_state *state, const uint8_t *earlier, uint8_t **cpu, uint64_t *va);
 static int execute_draw_end(struct amdrdna_vk_execute *execute, struct execute_state *state, const struct amdrdna_vk_record *record, const struct execute_tables *tables);
 static int execute_draw_call(struct amdrdna_vk_execute *execute, const struct execute_state *state, const struct amdrdna_vk_record *record);
 static int execute_pass_view(const struct amdrdna_vk_framebuffer *framebuffer, uint32_t attachment, const struct amdrdna_vk_view **view);
-static int execute_table(struct amdrdna_vk_execute *execute, const struct amdrdna_gfx10_program *program, uint8_t **cpu, uint64_t *va);
+static int execute_table(struct amdrdna_vk_execute *execute, const struct amdrdna_gfx10_program *program, bool clear, uint8_t **cpu, uint64_t *va);
 static int execute_resources(const struct amdrdna_gfx10_program *program, const struct execute_state *state, uint8_t *table);
 static int execute_buffer_slot(const struct amdrdna_vk_descriptor_slot *slot, uint32_t size, uint32_t *words);
 static int execute_texture_slot(const struct amdrdna_vk_descriptor_slot *slot, uint32_t *image_words, uint32_t *sampler_words);
@@ -806,11 +820,37 @@ execute_flush(
 	struct amdrdna_vk_session *session,
 	struct amdrdna_vk_execute *execute)
 {
+	int error;
+
+	/* The barrier at the end, then the buffer on its queue. */
+	execute_barrier(execute);
+	error = execute_put(session, execute);
+	if (error != 0)
+		return error;
+
+	/* Succeeded: the run is on its queue. */
+	return 0;
+}
+
+/*
+ * Puts the indirect buffer written so far on its queue as it is, padded,
+ * without waiting for it: the run is the slot's and the queue's newest,
+ * and the next slot is the current one.  A buffer that fills in the middle
+ * of a command buffer goes without a barrier, as the draws of one buffer
+ * do: the ring's fence after the run (an end-of-pipe event that writes
+ * the level-2 cache back) is what frees the slot, the run after it starts
+ * by emptying the caches, and the draws that follow keep the order of
+ * draws in one pass.  Returns the error of the run's putting.
+ */
+static int
+execute_put(
+	struct amdrdna_vk_session *session,
+	struct amdrdna_vk_execute *execute)
+{
 	struct amdrdna_vk_ticket ticket;
 	int error;
 
-	/* The barrier at the end, the buffer padded. */
-	execute_barrier(execute);
+	/* The buffer padded. */
 	amdrdna_vk_pm4_pad(&execute->pm4, EXECUTE_BUFFER_PAD);
 	if (execute->pm4.full)
 		return ENOSPC;
@@ -855,8 +895,8 @@ execute_room(
 	if (!full)
 		return 0;
 
-	/* Puts what there is on the queue and starts the next buffer. */
-	error = execute_flush(session, execute);
+	/* Puts what there is on the queue, without a barrier, and starts the next buffer. */
+	error = execute_put(session, execute);
 	if (error == 0)
 		error = execute_start(session, execute);
 	if (error != 0)
@@ -956,7 +996,9 @@ execute_bind(
 	struct execute_state *state,
 	const struct amdrdna_vk_record *record)
 {
+	const uint8_t *pushed;
 	uint32_t index;
+	int compared;
 
 	/* The state each command binds. */
 	switch (record->opcode) {
@@ -975,7 +1017,7 @@ execute_bind(
 		for (index = 0U; index < record->object_count; index++) {
 			if (record->objects[index] != NULL && state->sets[record->first + index] != record->objects[index]->payload) {
 				state->sets[record->first + index] = record->objects[index]->payload;
-				state->sets_changed = true;
+				state->sets_changed |= 1U << (record->first + index);
 			}
 		}
 		break;
@@ -995,10 +1037,20 @@ execute_bind(
 		state->index_type = record->values[0];
 		break;
 	case GPU_OP_CMD_PUSH_CONSTANTS:
-		if (kern_memcmp(state->push + record->first, state->push_bytes + record->push_at, record->count) != 0) {
-			kern_memcpy(state->push + record->first, state->push_bytes + record->push_at, record->count);
-			state->push_changed = true;
+		pushed = state->push_bytes + record->push_at;
+		compared = kern_memcmp(state->push + record->first, pushed, record->count);
+		if (compared == 0)
+			break;
+
+		/* The first byte that changes, then the bytes. */
+		for (index = 0U; index < record->count; index++) {
+			if (state->push[record->first + index] != pushed[index])
+				break;
 		}
+
+		if (record->first + index < state->push_changed_from)
+			state->push_changed_from = record->first + index;
+		kern_memcpy(state->push + record->first, pushed, record->count);
 		break;
 	default:
 		break;
@@ -1088,7 +1140,7 @@ execute_dispatch(
 	if (error != 0)
 		return error;
 	execute_put_words(groups, 0U, record->values, 3U);
-	error = execute_table(execute, pipeline->kernel.compiled, &table, &table_va);
+	error = execute_table(execute, pipeline->kernel.compiled, true, &table, &table_va);
 	if (error == 0)
 		error = execute_kernel_resources(pipeline->kernel.compiled, state, groups_va, table);
 	if (error != 0)
@@ -1350,10 +1402,10 @@ execute_draw(
 	const struct amdrdna_vk_record *record)
 {
 	const struct amdrdna_vk_pipeline *pipeline;
-	struct amdrdna_vk_blend blend;
 	const uint32_t *viewport;
 	const VkRect2D *scissor;
 	struct execute_tables tables;
+	int32_t clipped[4];
 	uint32_t base_vertex;
 	uint32_t first_instance;
 	int32_t x0;
@@ -1431,14 +1483,60 @@ execute_draw(
 		if (error != 0)
 			return error;
 		state->target_written = true;
+		state->fixed_written = false;
 	}
 
-	/* The viewport and the scissor. */
-	amdrdna_vk_state_viewport(&execute->pm4, viewport);
-	amdrdna_vk_state_guard_band(&execute->pm4, viewport, pipeline->topology);
-	amdrdna_vk_state_scissor(&execute->pm4, (uint32_t)x0, (uint32_t)y0, (uint32_t)x1, (uint32_t)y1);
+	/* The viewport, the scissor, the blend, the raster and the depth test that differ from what the buffer holds. */
+	clipped[0] = x0;
+	clipped[1] = y0;
+	clipped[2] = x1;
+	clipped[3] = y1;
+	error = execute_draw_fixed(execute, state, pipeline, viewport, clipped);
+	if (error != 0)
+		return error;
 
-	/* The blend and the culling. */
+	/* The programs with their tables, the first vertex and instance, the culling of a primitive shader that culls. */
+	amdrdna_vk_state_programs(&execute->pm4, &pipeline->vertex, &pipeline->fragment, tables.vertex_va, tables.fragment_va, base_vertex,
+				  first_instance, tables.instance_mask, state->drawn_culling);
+
+	/* What the next draw of the same may leave as it is. */
+	state->drawn_pipeline = pipeline;
+
+	/* The draw. */
+	return execute_draw_end(execute, state, record, &tables);
+}
+
+/*
+ * Writes the fixed state of a draw of a pipeline other than the last
+ * one's, or the first in a buffer: the viewport and its guard band, the
+ * scissor (clipped, x0 y0 x1 y1), the blend, the raster and the depth
+ * test, each only when it differs from what the buffer's registers hold
+ * (all of it when fixed_written is clear), and the culling words of a
+ * primitive shader that culls.  The drawn_ fields then hold what the
+ * registers do.  Returns 0 or the blend's error.
+ */
+static int
+execute_draw_fixed(
+	struct amdrdna_vk_execute *execute,
+	struct execute_state *state,
+	const struct amdrdna_vk_pipeline *pipeline,
+	const uint32_t *viewport,
+	const int32_t *scissor)
+{
+	struct amdrdna_vk_blend blend;
+	uint32_t raster[2];
+	uint32_t depth[3];
+	bool test;
+	bool write;
+	bool same_viewport;
+	bool same_scissor;
+	bool same_blend;
+	bool same_raster;
+	bool same_depth;
+	int compared;
+	int error;
+
+	/* The pipeline's blend, raster and depth words. */
 	blend.enable = pipeline->blend_enable;
 	blend.colour_op = pipeline->blend_colour_op;
 	blend.colour_source = pipeline->blend_src_colour;
@@ -1447,37 +1545,107 @@ execute_draw(
 	blend.alpha_source = pipeline->blend_src_alpha;
 	blend.alpha_destination = pipeline->blend_dst_alpha;
 	blend.write_mask = pipeline->write_mask;
-	error = amdrdna_vk_state_blend(&execute->pm4, &blend);
-	if (error != 0)
-		return error;
-	amdrdna_vk_state_raster(&execute->pm4, pipeline->cull_mode, pipeline->front_face);
+	raster[0] = pipeline->cull_mode;
+	raster[1] = pipeline->front_face;
+	test = false;
+	if (state->depth_on && pipeline->depth_test != 0U)
+		test = true;
+	write = false;
+	if (state->depth_on && pipeline->depth_write != 0U)
+		write = true;
+	depth[0] = (uint32_t)test;
+	depth[1] = (uint32_t)write;
+	depth[2] = pipeline->depth_compare;
 
-	/* The depth test and write of the pipeline, in a pass with a depth target. */
-	amdrdna_vk_state_depth(&execute->pm4, state->depth_on && pipeline->depth_test != 0U, state->depth_on && pipeline->depth_write != 0U,
-			       pipeline->depth_compare);
+	/* Which of them the buffer's registers hold already (none before its first full draw). */
+	same_viewport = false;
+	same_scissor = false;
+	same_blend = false;
+	same_raster = false;
+	same_depth = false;
+	if (state->fixed_written) {
+		compared = kern_memcmp(state->drawn_viewport, viewport, sizeof(state->drawn_viewport));
+		if (compared == 0 && state->drawn_topology == pipeline->topology)
+			same_viewport = true;
+		compared = kern_memcmp(state->drawn_scissor, scissor, sizeof(state->drawn_scissor));
+		if (compared == 0)
+			same_scissor = true;
+		compared = kern_memcmp(&state->drawn_blend, &blend, sizeof(blend));
+		if (compared == 0)
+			same_blend = true;
+		compared = kern_memcmp(state->drawn_raster, raster, sizeof(raster));
+		if (compared == 0)
+			same_raster = true;
+		compared = kern_memcmp(state->drawn_depth, depth, sizeof(depth));
+		if (compared == 0)
+			same_depth = true;
+	}
 
-	/* The programs with their tables, the first vertex and instance, the culling of a primitive shader that culls. */
-	amdrdna_vk_state_culling(viewport, pipeline->topology, pipeline->cull_mode, pipeline->front_face, state->drawn_culling);
-	amdrdna_vk_state_programs(&execute->pm4, &pipeline->vertex, &pipeline->fragment, tables.vertex_va, tables.fragment_va, base_vertex,
-				  first_instance, tables.instance_mask, state->drawn_culling);
+	/* The viewport with its guard band (which the topology widens), and the scissor. */
+	if (!same_viewport) {
+		amdrdna_vk_state_viewport(&execute->pm4, viewport);
+		amdrdna_vk_state_guard_band(&execute->pm4, viewport, pipeline->topology);
+	}
 
-	/* What the next draw of the same may leave as it is. */
-	state->drawn_pipeline = pipeline;
+	if (!same_scissor)
+		amdrdna_vk_state_scissor(&execute->pm4, (uint32_t)scissor[0], (uint32_t)scissor[1], (uint32_t)scissor[2], (uint32_t)scissor[3]);
+
+	/* The blend, the raster and the depth test. */
+	if (!same_blend) {
+		error = amdrdna_vk_state_blend(&execute->pm4, &blend);
+		if (error != 0)
+			return error;
+	}
+
+	if (!same_raster)
+		amdrdna_vk_state_raster(&execute->pm4, pipeline->cull_mode, pipeline->front_face);
+	if (!same_depth)
+		amdrdna_vk_state_depth(&execute->pm4, test, write, pipeline->depth_compare);
+
+	/* The culling words, which only the viewport, the topology and the raster words change. */
+	if (!same_viewport || !same_raster)
+		amdrdna_vk_state_culling(viewport, pipeline->topology, pipeline->cull_mode, pipeline->front_face, state->drawn_culling);
+
+	/* What the registers hold now. */
 	kern_memcpy(state->drawn_viewport, viewport, sizeof(state->drawn_viewport));
-	state->drawn_scissor[0] = x0;
-	state->drawn_scissor[1] = y0;
-	state->drawn_scissor[2] = x1;
-	state->drawn_scissor[3] = y1;
+	kern_memcpy(state->drawn_scissor, scissor, sizeof(state->drawn_scissor));
+	state->drawn_topology = pipeline->topology;
+	state->drawn_blend = blend;
+	kern_memcpy(state->drawn_raster, raster, sizeof(raster));
+	kern_memcpy(state->drawn_depth, depth, sizeof(depth));
+	state->fixed_written = true;
 
-	/* The draw. */
-	return execute_draw_end(execute, state, record, &tables);
+	/* Succeeded: the fixed state is the draw's. */
+	return 0;
+}
+
+/* Gives the set numbers a program's resource table reads, a bit each. */
+static uint32_t
+execute_program_sets(
+	const struct amdrdna_gfx10_program *program)
+{
+	uint32_t sets;
+	uint32_t index;
+
+	/* The storage buffers', the uniform buffers' and the sampled images' sets. */
+	sets = 0U;
+	for (index = 0U; index < program->storage_used; index++)
+		sets |= 1U << program->storage[index].set;
+	for (index = 0U; index < program->uniform_used; index++)
+		sets |= 1U << program->uniforms[index].set;
+	for (index = 0U; index < program->texture_used; index++)
+		sets |= 1U << program->textures[index].set;
+
+	/* Succeeded: the sets are known. */
+	return sets;
 }
 
 /*
  * Gives a draw's two resource tables: for the buffer's next draw of the
- * same pipeline, a table the last one used while nothing it reads changed,
- * or a copy of it with the push constants written again when only they
- * changed; else a new table.
+ * same pipeline, a table the last one used while nothing it reads changed
+ * (the sets its program reads, the vertex buffers of the vertex program's,
+ * the push constants), or a copy of it with the push constants written
+ * again when only they changed; else a new table.
  */
 static int
 execute_draw_tables(
@@ -1489,26 +1657,40 @@ execute_draw_tables(
 	const struct amdrdna_gfx10_program *vertex;
 	const struct amdrdna_gfx10_program *fragment;
 	const struct execute_tables *drawn;
-	bool kept;
+	uint32_t vertex_sets;
+	uint32_t fragment_sets;
+	bool vertex_kept;
+	bool fragment_kept;
 	int error;
 
 	vertex = pipeline->vertex.compiled;
 	fragment = pipeline->fragment.compiled;
 	drawn = &state->drawn_tables;
-	kept = state->target_written && state->drawn_pipeline == pipeline && !state->sets_changed;
+
+	/* Each program's table is the last draw's while the sets it reads did not change. */
+	vertex_kept = false;
+	fragment_kept = false;
+	if (state->target_written && state->drawn_pipeline == pipeline) {
+		vertex_sets = execute_program_sets(vertex);
+		fragment_sets = execute_program_sets(fragment);
+		if ((state->sets_changed & vertex_sets) == 0U && !state->buffers_changed)
+			vertex_kept = true;
+		if ((state->sets_changed & fragment_sets) == 0U)
+			fragment_kept = true;
+	}
 
 	/* The vertex program's: kept, copied, or new with its vertex input. */
-	if (kept && !state->buffers_changed && (!state->push_changed || vertex->push_bytes == 0U)) {
+	if (vertex_kept && state->push_changed_from >= vertex->push_bytes) {
 		tables->vertex_cpu = drawn->vertex_cpu;
 		tables->vertex_va = drawn->vertex_va;
 		tables->instance_mask = drawn->instance_mask;
-	} else if (kept && !state->buffers_changed) {
+	} else if (vertex_kept) {
 		error = execute_table_copy(execute, vertex, state, drawn->vertex_cpu, &tables->vertex_cpu, &tables->vertex_va);
 		if (error != 0)
 			return error;
 		tables->instance_mask = drawn->instance_mask;
 	} else {
-		error = execute_table(execute, vertex, &tables->vertex_cpu, &tables->vertex_va);
+		error = execute_table(execute, vertex, true, &tables->vertex_cpu, &tables->vertex_va);
 		if (error == 0)
 			error = execute_resources(vertex, state, tables->vertex_cpu);
 		if (error != 0)
@@ -1517,15 +1699,15 @@ execute_draw_tables(
 	}
 
 	/* The pixel program's: kept, copied, or new. */
-	if (kept && (!state->push_changed || fragment->push_bytes == 0U)) {
+	if (fragment_kept && state->push_changed_from >= fragment->push_bytes) {
 		tables->fragment_cpu = drawn->fragment_cpu;
 		tables->fragment_va = drawn->fragment_va;
-	} else if (kept) {
+	} else if (fragment_kept) {
 		error = execute_table_copy(execute, fragment, state, drawn->fragment_cpu, &tables->fragment_cpu, &tables->fragment_va);
 		if (error != 0)
 			return error;
 	} else {
-		error = execute_table(execute, fragment, &tables->fragment_cpu, &tables->fragment_va);
+		error = execute_table(execute, fragment, true, &tables->fragment_cpu, &tables->fragment_va);
 		if (error == 0)
 			error = execute_resources(fragment, state, tables->fragment_cpu);
 		if (error != 0)
@@ -1552,8 +1734,8 @@ execute_table_copy(
 	uint32_t bytes;
 	int error;
 
-	/* A new part, the earlier table over it, then the push constants. */
-	error = execute_table(execute, program, cpu, va);
+	/* A new part (not cleared: the earlier table covers it), the earlier table over it, then the push constants. */
+	error = execute_table(execute, program, false, cpu, va);
 	if (error != 0)
 		return error;
 	bytes = (program->table_bytes + EXECUTE_TABLE_ALIGN) & ~(EXECUTE_TABLE_ALIGN - 1U);
@@ -1585,9 +1767,9 @@ execute_draw_end(
 
 	/* Its tables. */
 	state->drawn_tables = *tables;
-	state->sets_changed = false;
+	state->sets_changed = 0U;
 	state->buffers_changed = false;
-	state->push_changed = false;
+	state->push_changed_from = AMDRDNA_VK_PUSH_BYTES;
 
 	/* Succeeded: the draw is written. */
 	return 0;
@@ -1649,11 +1831,15 @@ execute_draw_call(
 	return 0;
 }
 
-/* Gives a program's resource table: the next part of the run's tables, cleared. */
+/*
+ * Gives a program's resource table: the next part of the run's tables,
+ * cleared when clear is set (else the caller writes all of it).
+ */
 static int
 execute_table(
 	struct amdrdna_vk_execute *execute,
 	const struct amdrdna_gfx10_program *program,
+	bool clear,
 	uint8_t **cpu,
 	uint64_t *va)
 {
@@ -1669,7 +1855,8 @@ execute_table(
 	/* The part. */
 	*cpu = execute->cpu + EXECUTE_TABLES_AT + execute->tables;
 	*va = execute->va + EXECUTE_TABLES_AT + execute->tables;
-	kern_memset(*cpu, 0, bytes);
+	if (clear)
+		kern_memset(*cpu, 0, bytes);
 	execute->tables += bytes;
 
 	/* Succeeded: the part is the program's. */
@@ -1783,7 +1970,8 @@ execute_buffer_slot(
 
 /*
  * Writes the image and the sampler descriptors of a combined image
- * sampler binding.  EINVAL for a binding without both.
+ * sampler binding: the ones made when it was written, else made now.
+ * EINVAL for a binding without both.
  */
 static int
 execute_texture_slot(
@@ -1791,27 +1979,19 @@ execute_texture_slot(
 	uint32_t *image_words,
 	uint32_t *sampler_words)
 {
-	const struct amdrdna_vk_view *view;
-	const struct amdrdna_vk_image *image;
-	uint64_t va;
-	uint8_t *cpu;
 	int error;
 
-	/* The view's image, with storage, and the sampler. */
-	if (slot->view == NULL || slot->sampler == NULL)
-		return EINVAL;
-	view = slot->view->payload;
-	image = view->image->payload;
-	error = amdrdna_vk_image_address(image, &va, &cpu);
-	if (error != 0)
-		return error;
+	/* The binding's own copy, made when it was written. */
+	if (slot->words_ready) {
+		kern_memcpy(image_words, slot->image_words, sizeof(slot->image_words));
+		kern_memcpy(sampler_words, slot->sampler_words, sizeof(slot->sampler_words));
+		return 0;
+	}
 
-	/* The two descriptors; the image's from the start of its mip chain, with the view's levels. */
-	error = amdrdna_vk_image_descriptor(va, image->width, image->height, view->format, view->swizzle, image_words);
+	/* Else made from the view, its image and the sampler now. */
+	error = amdrdna_vk_texture_descriptors(slot, image_words, sampler_words);
 	if (error != 0)
 		return error;
-	amdrdna_vk_image_descriptor_levels(image_words, view->base_level, view->base_level + view->level_count - 1U, image->levels);
-	amdrdna_vk_sampler_descriptor(slot->sampler->payload, sampler_words);
 
 	/* Succeeded: the binding's descriptors are written. */
 	return 0;
@@ -2439,9 +2619,9 @@ execute_quad(
 	fragment = &execute->quad[EXECUTE_QUAD_COLOUR];
 	if (quad->textured)
 		fragment = &execute->quad[EXECUTE_QUAD_TEXTURED];
-	error = execute_table(execute, vertex->compiled, &vertex_table, &vertex_va);
+	error = execute_table(execute, vertex->compiled, true, &vertex_table, &vertex_va);
 	if (error == 0)
-		error = execute_table(execute, fragment->compiled, &fragment_table, &fragment_va);
+		error = execute_table(execute, fragment->compiled, true, &fragment_table, &fragment_va);
 	if (error != 0)
 		return error;
 

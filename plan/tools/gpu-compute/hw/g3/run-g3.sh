@@ -11,7 +11,8 @@ run() {
 	echo "== after $log" >> /var/log/g3-ps.log
 	sync
 }
-export KEI_GLES_COMPUTE_TRACE=1
+# The trace's variable by its name now and by its old name, for an image built before the change.
+export ZEDBSD_GLES_COMPUTE_TRACE=1 KEI_GLES_COMPUTE_TRACE=1
 ps -A -o pid,args | grep '/bin/[w]ayland' > /var/log/g3-ps.log
 echo "== before" >> /var/log/g3-ps.log
 run /var/log/g3-s13.log 120 /bin/sh /usr/share/gpudemo/s13.sh

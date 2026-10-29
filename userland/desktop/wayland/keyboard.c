@@ -454,6 +454,14 @@ struct keyboard_move {
 static struct kwl_hand_ink keyboard_ink;
 
 /*
+ * The ink's generation: counted up whenever the ink changes (a stroke
+ * begun, the ink cleared), so that an answer of the recognition pool for
+ * an ink written before is dropped.  Only the compositor's thread touches
+ * it.
+ */
+static uint64_t keyboard_ink_generation;
+
+/*
  * The flick panel's tools, row by row (fixed; they live as long as the
  * program).
  */
@@ -656,6 +664,8 @@ static void keyboard_hand_point(struct kwl_server *server, int32_t x, int32_t y,
 static void keyboard_hand_release(struct kwl_server *server);
 static void keyboard_hand_key_release(struct kwl_server *server);
 static void keyboard_hand_recognize(struct kwl_server *server);
+static void keyboard_hand_show(struct kwl_server *server, const struct kwl_hand_ink *ink);
+static void keyboard_hand_answer(void *context, const struct kwl_hand_answer *answer);
 static void keyboard_draw_hand(struct kwl_server *server, struct kwl_list *command);
 static void keyboard_send(struct kwl_server *server, const char *text);
 static int keyboard_send_key(struct kwl_server *server, unsigned code, int shift);
@@ -964,6 +974,29 @@ keyboard_touch_button(
 }
 
 /*
+ * Takes the recognition pool's answers on the main thread's pass (after
+ * its wake pipe): the one for the ink as it is now is shown.
+ */
+void
+kwl_keyboard_hand_take(
+	struct kwl_server *server)
+{
+	/* Each finished recognition, the stale ones dropped. */
+	(void)kwl_hand_take(keyboard_hand_answer, server);
+}
+
+/*
+ * Stops the recognition pool at the end of the session (the recognitions
+ * running finish, their answers are not shown).
+ */
+void
+kwl_keyboard_hand_stop(void)
+{
+	/* The pool's threads end. */
+	kwl_hand_stop();
+}
+
+/*
  * Keeps the keyboard's time: the corners' places are logged once, a
  * contact whose release never came ends, and one that does not arm in time
  * is let go.  The panel follows a change of the screen's size.
@@ -1161,6 +1194,7 @@ kwl_keyboard_close(
 	keyboard.writing = 0;
 	keyboard.hand_key_active = 0;
 	kwl_hand_clear(&keyboard_ink);
+	keyboard_ink_generation++;
 	keyboard.recognized = 0;
 	memset(&keyboard.result, 0, sizeof(keyboard.result));
 	server->dirty = 1;
@@ -3630,12 +3664,13 @@ keyboard_hand_toggle(
 	keyboard.writing = 0;
 	keyboard.recognized = 0;
 	kwl_hand_clear(&keyboard_ink);
+	keyboard_ink_generation++;
 	memset(&keyboard.result, 0, sizeof(keyboard.result));
 	server->dirty = 1;
 
 	/* The log line the tests read, with the writing area's place; the templates are read ahead meanwhile. */
 	if (keyboard.hand) {
-		kwl_hand_preload(&keyboard.result);
+		kwl_hand_preload(&keyboard.result, server->wake[1]);
 		keyboard_hand_area(area);
 		printf("KWL OSK hand on area=%d,%d,%d,%d\n", area[0], area[1], area[2], area[3]);
 		return;
@@ -3674,6 +3709,7 @@ keyboard_hand_point(
 	/* The first point of a stroke, or the next one. */
 	if (begin) {
 		kept = kwl_hand_begin(&keyboard_ink, x, y);
+		keyboard_ink_generation++;
 		keyboard.writing = 1;
 		keyboard.recognized = 0;
 	} else {
@@ -3730,6 +3766,7 @@ keyboard_hand_key_release(
 			return;
 		keyboard_send(server, keyboard.result.candidates[key]);
 		kwl_hand_clear(&keyboard_ink);
+		keyboard_ink_generation++;
 		keyboard.recognized = 0;
 		memset(&keyboard.result, 0, sizeof(keyboard.result));
 		return;
@@ -3740,6 +3777,7 @@ keyboard_hand_key_release(
 	case KEYBOARD_HAND_CLEAR:
 		/* The ink and the answer go. */
 		kwl_hand_clear(&keyboard_ink);
+		keyboard_ink_generation++;
 		keyboard.recognized = 0;
 		memset(&keyboard.result, 0, sizeof(keyboard.result));
 		printf("KWL OSK hand clear\n");
@@ -3758,27 +3796,81 @@ keyboard_hand_key_release(
 	}
 }
 
-/* Recognizes the ink (keyboard-hand.c) and shows the candidates. */
+/*
+ * Recognizes the ink (keyboard-hand.c), once for this ink, by its shape,
+ * size and place on the writing area: on the recognition pool, whose
+ * answer kwl_keyboard_hand_take shows, or here when the pool cannot take
+ * it.
+ */
 static void
 keyboard_hand_recognize(
 	struct kwl_server *server)
 {
+	int32_t area[4];
+	int error;
+
+	/* Asked once for this ink. */
+	keyboard_hand_area(area);
+	keyboard.recognized = 1;
+
+	/* Given to the pool with the ink's generation. */
+	error = kwl_hand_submit(&keyboard_ink, area[1], area[3], keyboard_ink_generation);
+	if (error == 0)
+		return;
+
+	/* Without the pool: the answer here, shown at once. */
+	kwl_hand_recognize_on(&keyboard_ink, area[1], area[3], &keyboard.result);
+	keyboard_hand_show(server, &keyboard_ink);
+}
+
+/*
+ * Shows the answer in keyboard.result for an ink: the frame, and the log
+ * line the tests read (the ink measured, and the answer's first
+ * candidate).
+ */
+static void
+keyboard_hand_show(
+	struct kwl_server *server,
+	const struct kwl_hand_ink *ink)
+{
 	const char *first;
 	int32_t bounds[4];
-	int32_t area[4];
 
-	/* The answer, once for this ink, by its shape, size and place on the writing area. */
-	keyboard_hand_area(area);
-	kwl_hand_recognize_on(&keyboard_ink, area[1], area[3], &keyboard.result);
-	keyboard.recognized = 1;
+	/* The candidates in the next frame. */
 	server->dirty = 1;
 
-	/* The log line the tests read: the ink measured, and the answer (its first candidate). */
-	kwl_hand_bounds(&keyboard_ink, bounds);
+	/* The ink measured, and the first candidate. */
+	kwl_hand_bounds(ink, bounds);
 	first = "";
 	if (keyboard.result.count > 0U)
 		first = keyboard.result.candidates[0];
-	printf("KWL OSK hand recognize strokes=%u points=%u box=%d,%d,%d,%d candidates=%u first=%s note=%s\n", keyboard_ink.count, kwl_hand_points(&keyboard_ink), bounds[0], bounds[1], bounds[2], bounds[3], keyboard.result.count, first, keyboard.result.note);
+	printf("KWL OSK hand recognize strokes=%u points=%u box=%d,%d,%d,%d candidates=%u first=%s note=%s\n", ink->count, kwl_hand_points(ink), bounds[0], bounds[1], bounds[2], bounds[3], keyboard.result.count, first, keyboard.result.note);
+}
+
+/*
+ * Takes an answer of the recognition pool (kwl_keyboard_hand_take): shown
+ * when it is for the ink as it is now on the handwriting face; an answer
+ * for an ink changed since, or a face put away, is dropped.
+ */
+static void
+keyboard_hand_answer(
+	void *context,
+	const struct kwl_hand_answer *answer)
+{
+	struct kwl_server *server;
+
+	/* The compositor. */
+	server = context;
+
+	/* An answer for an ink changed since (a stroke begun, cleared, the face changed or put away) is not shown. */
+	if (answer->generation != keyboard_ink_generation) {
+		printf("KWL OSK hand stale generation=%llu now=%llu\n", (unsigned long long)answer->generation, (unsigned long long)keyboard_ink_generation);
+		return;
+	}
+
+	/* The answer, shown. */
+	keyboard.result = answer->result;
+	keyboard_hand_show(server, answer->ink);
 }
 
 /*

@@ -42,6 +42,7 @@
 - 人間の判断が要る点・計画に無い依存・未達の受け入れ条件は、その場で Q1（Q1 はユーザー）へ報告する。
   ユーザーが不在の間の自律実行を指示された時は、判断が要る Phase を uncleared にして理由と要る判断を記録し、先へ進む。
 - Q1 はユーザーに日本語で、聞かれた件だけを答える。ユーザーに試験を頼まず、ユーザーが拾える試験の一覧に置く。
+- **ユーザーに選択（クリック）を求める前に**、どの WS か（番号と短い説明）、どんな WS か、今の状態、何が決まっていないかを書き、問いに専門語があれば用語を説明してから問いに入る（2026-10-29 ユーザー「質問のクリックを求めるときには、事前に、どのWSで、どんなWSで、どんなステータスで、何が決まっていなくて、質問に専門用語があるなら説明した上で、質問に入ってください。」）。
 
 ## 4. 担当の共通の規則
 
@@ -98,6 +99,7 @@
 - `.internal/` を読まない。
 - 集約の `make check` を走らせない。
 - **HAL の API**（`include/hal/hal.h` の宣言・契約・HAL の責務）の変更は差分ごとの事前承認が要る。承認前の差分は plan に置くだけ。
+  **HAL を変える必要があると主張する時は、なぜ既存の HAL と driver・kernel の側では足りないのかを必ず説明する**（2026-10-29 ユーザー「HALを変える必要があると主張するときは、どうしてそう思うのかを添えて必ず説明してください。これまで、ほとんどのケースで、HALを変える必要がなく、提案が粗悪なものでした。」）。まず HAL を変えない形（driver・kernel の側、既存の HAL の口）を探し、それで足りない理由を具体的に示した時だけ HAL の差分を案にする。
   `src/hal/` の実装の修正・補完・最適化は承認不要。承認済みの差分は [Guardrail](plan/guardrail.md) の表。
 - **toolchain** は Q1 の許可なしに変更・build・install しない: `toolchain/`（LLVM の patch・`llvm.mk`・`sysroot.mk`）、`userland/base/noct/` の patch と
   build の規則、`userland/packages/lang/clang`・`userland/packages/devel/libcxx`、共有の `build/llvm`・`build/llvm-source`・`build/llvm-build`・
@@ -144,6 +146,7 @@
   | Linux・FreeBSD の QEMU guest（WS105・WS108・WS109・WS131。Linux の backend は QEMU+KVM） | `127.0.0.1` の転送 port からの SSH の疎通と QMP の `screendump` の PNG |
   | ZYBO の QEMU `xilinx-zynq-a9` と実機（WS286） | 生きた serial を対話で読む（armv7 の QEMU `virt` は boot-test.sh） |
   | ZYBO の LAN（WS289） | `127.0.0.1` の転送 port から guest の SSH |
+  | ODROID-C5 の実機（WS313） | 生きた serial を対話で読む（network と画面が出た後は SSH と画面の PNG）（2026-10-29 ユーザーのクリック「許可する」） |
   | RG350 の実機（WS273） | ユーザーが画面・LED を目で見て写真で返した結果 |
 
 - 回帰試験では GPU を使わず framebuffer で login prompt だけを確かめる。GPU の確認は GPU を扱う WS の Phase で。

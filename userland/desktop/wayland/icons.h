@@ -89,6 +89,8 @@ enum glass_icon {
 	GLASS_ICON_APP_MUSIC,
 	/* ws157-p003: Photos. */
 	GLASS_ICON_APP_PHOTOS,
+	/* The installer, on the installer's image alone. */
+	GLASS_ICON_APP_INSTALLER,
 	GLASS_ICON_COUNT
 };
 

@@ -118,7 +118,10 @@ target_create_pass(
 		error = ENOTSUP;
 	}
 
-	/* The pass keeps whether it writes a colour attachment, its format and its load operation. */
+	/*
+	 * The pass keeps whether it writes a colour attachment and a depth
+	 * attachment, and of each its number, format and load operation.
+	 */
 	pass = NULL;
 	if (error == 0) {
 		pass = kern_calloc(1U, sizeof(*pass));
@@ -127,8 +130,17 @@ target_create_pass(
 			attachment = subpass->pColorAttachments[0].attachment;
 			if (attachment != VK_ATTACHMENT_UNUSED) {
 				pass->colour = 1U;
+				pass->colour_attachment = attachment;
 				pass->format = info.pAttachments[attachment].format;
 				pass->load_op = info.pAttachments[attachment].loadOp;
+			}
+		}
+		if (pass != NULL && subpass->pDepthStencilAttachment != NULL) {
+			attachment = subpass->pDepthStencilAttachment->attachment;
+			if (attachment != VK_ATTACHMENT_UNUSED) {
+				pass->depth = 1U;
+				pass->depth_attachment = attachment;
+				pass->depth_load_op = info.pAttachments[attachment].loadOp;
 			}
 		}
 	}
@@ -142,7 +154,8 @@ target_create_pass(
 
 /*
  * Reports whether a render pass is one subpass writing at most one colour
- * attachment, in a colour format, and nothing else.
+ * attachment, in a colour format, and at most one depth attachment, in
+ * D32_SFLOAT, and nothing else.
  */
 static int
 target_pass_supported(
@@ -152,16 +165,27 @@ target_pass_supported(
 	uint32_t attachment;
 	bool colour;
 
-	/* One subpass, at most one attachment. */
+	/* One subpass, at most two attachments. */
 	if (info->subpassCount != 1U || info->pSubpasses == NULL)
 		return 0;
-	if (info->attachmentCount > 1U)
+	if (info->attachmentCount > NVRTX_VK_ATTACHMENTS_MAX)
 		return 0;
 
-	/* No depth, no inputs, no resolves, at most one colour attachment. */
+	/* The depth attachment, when there is one, is the pass's attachment in D32_SFLOAT. */
 	subpass = &info->pSubpasses[0];
-	if (subpass->pDepthStencilAttachment != NULL)
-		return 0;
+	if (subpass->pDepthStencilAttachment != NULL) {
+		attachment = subpass->pDepthStencilAttachment->attachment;
+		if (attachment != VK_ATTACHMENT_UNUSED) {
+			if (attachment >= info->attachmentCount || info->pAttachments == NULL)
+				return 0;
+			if (info->pAttachments[attachment].format != VK_FORMAT_D32_SFLOAT)
+				return 0;
+			if (info->pAttachments[attachment].samples != VK_SAMPLE_COUNT_1_BIT)
+				return 0;
+		}
+	}
+
+	/* No inputs, no resolves, at most one colour attachment. */
 	if (subpass->inputAttachmentCount != 0U)
 		return 0;
 	if (subpass->pResolveAttachments != NULL)
@@ -189,8 +213,8 @@ target_pass_supported(
 
 /*
  * vkCreateFramebuffer: [device][present][VkFramebufferCreateInfo] and the
- * create's tail -> the create's reply.  The framebuffer holds the view of
- * its one attachment.
+ * create's tail -> the create's reply.  The framebuffer holds the views of
+ * its attachments.
  */
 static int
 target_create_framebuffer(
@@ -200,9 +224,11 @@ target_create_framebuffer(
 {
 	VkFramebufferCreateInfo info;
 	struct nvrtx_vk_framebuffer *framebuffer;
-	struct nvrtx_vk_object *view;
+	struct nvrtx_vk_object *views[NVRTX_VK_ATTACHMENTS_MAX];
 	uint64_t identity;
 	uint64_t view_id;
+	uint32_t index;
+	uint32_t held;
 	int error;
 
 	/* The create info behind the device and its presence word. */
@@ -214,38 +240,48 @@ target_create_framebuffer(
 	if (reader->error != 0)
 		return EINVAL;
 
-	/* At most one attachment, a known view, of a size an image may have. */
+	/* At most two attachments, known views, of a size an image may have. */
 	error = 0;
-	view = NULL;
-	if (info.attachmentCount > 1U) {
+	kern_memset(views, 0, sizeof(views));
+	if (info.attachmentCount > NVRTX_VK_ATTACHMENTS_MAX) {
 		error = ENOTSUP;
 	} else if (info.width == 0U || info.width > NVRTX_VK_IMAGE_SIDE_MAX) {
 		error = EINVAL;
 	} else if (info.height == 0U || info.height > NVRTX_VK_IMAGE_SIDE_MAX) {
 		error = EINVAL;
-	} else if (info.attachmentCount == 1U) {
+	}
+	for (index = 0U; error == 0 && index < info.attachmentCount; index++) {
 		/* The decoded handles are the wire's 64-bit identities. */
-		kern_memcpy(&view_id, info.pAttachments, sizeof(view_id));
-		view = nvrtx_vk_object_find(session, I915_VK_OBJ_IMAGE_VIEW, view_id);
-		if (view == NULL)
+		kern_memcpy(&view_id, (const uint8_t *)info.pAttachments + index * sizeof(view_id), sizeof(view_id));
+		views[index] = nvrtx_vk_object_find(session, I915_VK_OBJ_IMAGE_VIEW, view_id);
+		if (views[index] == NULL)
 			error = EINVAL;
 	}
 
-	/* The framebuffer holds its view. */
-	if (error == 0 && view != NULL)
-		error = nvrtx_vk_object_retain(view);
+	/* The framebuffer holds its views. */
+	held = 0U;
+	while (error == 0 && held < info.attachmentCount) {
+		error = nvrtx_vk_object_retain(views[held]);
+		if (error == 0)
+			held++;
+	}
 	framebuffer = NULL;
 	if (error == 0) {
 		framebuffer = kern_calloc(1U, sizeof(*framebuffer));
 		if (framebuffer == NULL)
-			(void)nvrtx_vk_object_release(view);
+			error = ENOMEM;
+	}
+	if (error != 0) {
+		for (index = 0U; index < held; index++)
+			(void)nvrtx_vk_object_release(views[index]);
 	}
 
-	/* Its size and its view. */
+	/* Its size and its views. */
 	if (framebuffer != NULL) {
 		framebuffer->width = info.width;
 		framebuffer->height = info.height;
-		framebuffer->view = view;
+		framebuffer->view_count = info.attachmentCount;
+		kern_memcpy(framebuffer->views, views, sizeof(views));
 	}
 
 	/* Publishes the framebuffer and answers. */
@@ -283,21 +319,28 @@ target_granularity(
 	return 0;
 }
 
-/* Destroys a framebuffer nothing holds: it lets its view go. */
+/* Destroys a framebuffer nothing holds: it lets its views go. */
 static int
 target_framebuffer_destroy(
 	struct nvrtx_vk_session *session,
 	void *payload)
 {
 	struct nvrtx_vk_framebuffer *framebuffer;
+	uint32_t index;
+	int released;
 	int error;
 
 	UNUSED_PARAMETER(session);
 
 	framebuffer = payload;
 
-	/* The view may go with it when nothing else holds the view. */
-	error = nvrtx_vk_object_release(framebuffer->view);
+	/* The views may go with it when nothing else holds them; the first failure is reported. */
+	error = 0;
+	for (index = 0U; index < framebuffer->view_count; index++) {
+		released = nvrtx_vk_object_release(framebuffer->views[index]);
+		if (error == 0)
+			error = released;
+	}
 	kern_free(framebuffer);
 
 	/* Reports a view whose destruction failed. */

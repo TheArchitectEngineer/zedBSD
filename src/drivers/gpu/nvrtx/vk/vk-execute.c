@@ -8,14 +8,20 @@
 /*
  * The running of a command buffer's records on the GPU.
  *
- * Each session has a run of the executor's GPU memory for its
- * submissions: the push buffer, a constant buffer 0 for each draw, the
- * texture header and sampler pools, a zero page and the corners of a quad.
- * The records are turned into methods in order (exec-push.c and
- * draw-push.c) and the push buffer is run on the work channel when it is
- * full, when a copy must be done by the CPU, and at the end; each run is
- * waited for, so the run's memory is free again after it and nothing a
- * submission names is in use by the GPU once it returns.
+ * Each session has up to EXECUTE_SLOTS runs (slots) of the executor's GPU
+ * memory for its submissions, each with a push buffer, a constant buffer 0
+ * for each draw, the texture header and sampler pools, a zero page and the
+ * corners of a quad.  The records are turned into methods in order
+ * (exec-push.c and draw-push.c) and the push buffer is put on the work
+ * channel when it is full, when a copy must be done by the CPU, and at the
+ * end, without waiting for the GPU: the next push buffer is written in a
+ * slot whose run has ended (a new slot is made while one is to be had,
+ * else the oldest run is waited for), so the CPU writes one while the GPU
+ * runs the others.  The runs on the one work channel run in order, each
+ * after the one before has finished (its fence waits for idle).  What
+ * needs the GPU done with the session's work first waits for its newest
+ * run: a copy by the CPU, a shadow given back, the session's close (and,
+ * in the node, a memory or a run of the executor's memory given back).
  *
  * A draw writes everything it uses: its constants (the push constants and
  * its texture handles) in a constant buffer of its own, a header and a
@@ -45,7 +51,13 @@
 #include "drivers/gpu/nvrtx/nvrtx-gsp.h"
 #include "drivers/gpu/nvrtx/compiler/sm75/sm75.h"
 
-/* The session's run: its size and where each of its parts starts. */
+/*
+ * The runs (slots) a session writes its submissions in at most: one being
+ * written while the GPU runs the others.
+ */
+#define EXECUTE_SLOTS			3U
+
+/* A slot's run: its size and where each of its parts starts. */
 #define EXECUTE_RUN_BYTES		(2U * 1024U * 1024U)
 #define EXECUTE_PUSH_AT			0U
 #define EXECUTE_PUSH_BYTES		(1024U * 1024U)
@@ -81,6 +93,20 @@
  */
 #define EXECUTE_HANDLE_SAMPLER_SHIFT	20U
 
+/*
+ * The program groups of the vertex and the fragment programs, and a
+ * uniform buffer: its start on 256 bytes (minUniformBufferOffsetAlignment),
+ * its size in 16-byte units up to 64 KiB (maxUniformBufferRange).
+ *
+ * Value referenced: Mesa 25.0.7 src/nouveau/vulkan/nvk_shader.h
+ * (nvk_cbuf_binding_for_stage: the group is the stage's number).
+ */
+#define EXECUTE_GROUP_VERTEX		0U
+#define EXECUTE_GROUP_FRAGMENT		4U
+#define EXECUTE_UNIFORM_ALIGN		256U
+#define EXECUTE_UNIFORM_UNIT		16U
+#define EXECUTE_UNIFORM_BYTES_MAX	65536U
+
 /* The quad's corners: two triangles of six corners, two floats each. */
 #define EXECUTE_CORNERS			6U
 #define EXECUTE_CORNER_STRIDE		8U
@@ -115,17 +141,31 @@
 #define EXECUTE_TEXTURE_PITCH_ALIGN	32U
 
 /*
+ * One slot: its run (token names it to the node, cpu and va its two views)
+ * and the GPU's run of the push buffer last written in it, which must end
+ * before the slot is written again.
+ */
+struct execute_slot {
+	void *token;
+	uint8_t *cpu;
+	uint64_t va;
+	struct nvrtx_vk_ticket ticket;
+};
+
+/*
  * The executor's own programs (a textured quad placed by push constants,
- * the draw-test draw's) and the session's run.
+ * the draw-test draw's) and the session's slots.
  *
- * token names the run to the node, cpu and va its two views; at is where the
- * push buffer goes on, constants, headers and samplers how much of their parts
- * the push buffer uses, draws and quads how many application draws and own
- * quads it holds (for the node's counts).  The programs are compiled once, into
- * a run of their own.
+ * slot is the slot the push buffer is written in, cpu and va its views;
+ * started says a push buffer is begun there and not yet submitted.  at is
+ * where the push buffer goes on, constants, headers and samplers how much
+ * of their parts the push buffer uses, draws and quads how many
+ * application draws and own quads it holds (for the node's counts).  The
+ * programs are compiled once, into a run of their own.
  */
 struct nvrtx_vk_execute {
-	void *token;
+	struct execute_slot slots[EXECUTE_SLOTS];
+	uint32_t slot;
 	uint8_t *cpu;
 	uint64_t va;
 	size_t at;
@@ -143,6 +183,12 @@ struct nvrtx_vk_execute {
 	uint32_t quad_vertex_gprs;
 	uint32_t quad_fragment_gprs;
 	bool programs_ready;
+	void *shadow_token;
+	uint64_t shadow_va;
+	uint64_t shadow_bytes;
+	/* The owner's generation: the shader model of the programs and the 3D class of the push buffers. */
+	uint32_t shader_model;
+	uint32_t threed_class;
 };
 
 /*
@@ -158,14 +204,19 @@ struct execute_state {
 	const struct nvrtx_vk_descriptor_set *sets[NVRTX_VK_SETS_MAX];
 	const struct nvrtx_vk_buffer *buffers[NVRTX_VK_VERTEX_BINDINGS_MAX];
 	uint64_t offsets[NVRTX_VK_VERTEX_BINDINGS_MAX];
+	const struct nvrtx_vk_buffer *index_buffer;
+	uint64_t index_offset;
+	uint32_t index_type;
 	uint8_t push[NVRTX_VK_PUSH_BYTES];
 	bool in_pass;
 	struct nvrtx_exec_target target;
 	bool target_written;
 	VkRect2D area;
+	struct nvrtx_exec_target resolve;
+	bool shadowed;
 };
 
-/* One quad an internal draw makes: the destination, the source texture and its region in pixels. */
+/* One quad an internal draw makes: the destination, the source texture (pitch linear or tiled) and its region in pixels. */
 struct execute_quad {
 	struct nvrtx_exec_target target;
 	int32_t x0;
@@ -177,6 +228,7 @@ struct execute_quad {
 	uint32_t source_height;
 	uint32_t source_pitch;
 	uint32_t source_format;
+	bool source_tiled;
 	int32_t u0;
 	int32_t v0;
 	int32_t u1;
@@ -186,13 +238,23 @@ struct execute_quad {
 
 static int execute_open(struct nvrtx_vk_session *session, struct nvrtx_vk_execute **execute);
 static int execute_programs(struct nvrtx_vk_session *session, struct nvrtx_vk_execute *execute);
-static int execute_compile(struct nvrtx_draw_ir *program, uint8_t *cpu, uint32_t *gprs, uint32_t *bytes);
-static void execute_start(struct nvrtx_vk_execute *execute);
+static int execute_compile(struct nvrtx_draw_ir *program, uint32_t shader_model, uint8_t *cpu, uint32_t *gprs, uint32_t *bytes);
+static int execute_slot_make(struct nvrtx_vk_session *session, struct execute_slot *slot);
+static int execute_start(struct nvrtx_vk_session *session, struct nvrtx_vk_execute *execute);
+static void execute_begin(struct nvrtx_vk_execute *execute);
+static int execute_submit(struct nvrtx_vk_session *session, struct nvrtx_vk_execute *execute);
 static int execute_flush(struct nvrtx_vk_session *session, struct nvrtx_vk_execute *execute);
+static int execute_drain(struct nvrtx_vk_session *session, struct nvrtx_vk_execute *execute);
 static int execute_room(struct nvrtx_vk_session *session, struct nvrtx_vk_execute *execute, struct execute_state *state);
 static int execute_record(struct nvrtx_vk_session *session, struct nvrtx_vk_execute *execute, struct execute_state *state, const struct nvrtx_vk_record *record);
 static void execute_bind(struct execute_state *state, const struct nvrtx_vk_record *record);
-static int execute_begin_pass(struct nvrtx_vk_execute *execute, struct execute_state *state, const struct nvrtx_vk_record *record);
+static int execute_begin_pass(struct nvrtx_vk_session *session, struct nvrtx_vk_execute *execute, struct execute_state *state,
+			      const struct nvrtx_vk_record *record);
+static int execute_shadow(struct nvrtx_vk_session *session, struct nvrtx_vk_execute *execute, struct execute_state *state,
+			  bool load);
+static int execute_end_pass(struct nvrtx_vk_session *session, struct nvrtx_vk_execute *execute, struct execute_state *state);
+static void execute_shadow_copy(const struct nvrtx_exec_target *to, const struct nvrtx_exec_target *from, int32_t x0, int32_t y0,
+				int32_t x1, int32_t y1, struct execute_quad *quad);
 static int execute_draw(struct nvrtx_vk_execute *execute, struct execute_state *state, const struct nvrtx_vk_record *record);
 static int execute_textures(struct nvrtx_vk_execute *execute, const struct execute_state *state, uint8_t *constants);
 static int execute_texture(struct nvrtx_vk_execute *execute, const struct nvrtx_vk_view *view, const struct nvrtx_vk_sampler *sampler, uint32_t *handle);
@@ -202,17 +264,22 @@ static void execute_vertex_input(const struct nvrtx_vk_pipeline *pipeline, const
 static int execute_transfer(struct nvrtx_vk_session *session, struct nvrtx_vk_execute *execute, struct execute_state *state, const struct nvrtx_vk_record *record);
 static int execute_copy_images(struct nvrtx_vk_session *session, struct nvrtx_vk_execute *execute, struct execute_state *state, const struct nvrtx_vk_record *record);
 static int execute_buffer_image(struct nvrtx_vk_session *session, struct nvrtx_vk_execute *execute, struct execute_state *state, const struct nvrtx_vk_record *record);
-static int execute_cpu_copy(const struct nvrtx_vk_buffer *buffer, const struct nvrtx_vk_image *image, const VkBufferImageCopy *region, bool to_image);
+static int execute_cpu_copy(struct nvrtx_vk_session *session, const struct nvrtx_vk_buffer *buffer, const struct nvrtx_vk_image *image, const VkBufferImageCopy *region, bool to_image);
 static int execute_clear_image(struct nvrtx_vk_execute *execute, struct execute_state *state, const struct nvrtx_vk_record *record);
 static int execute_quad(struct nvrtx_vk_session *session, struct nvrtx_vk_execute *execute, struct execute_state *state, const struct execute_quad *quad);
-static int execute_image_target(const struct nvrtx_vk_image *image, uint32_t format, struct nvrtx_exec_target *target);
+static int execute_image_target(const struct nvrtx_vk_image *image, uint32_t level, uint32_t format, struct nvrtx_exec_target *target);
+static int execute_image_source(const struct nvrtx_vk_image *image, uint32_t level, struct execute_quad *quad);
+static int execute_depth_target(const struct nvrtx_vk_image *image, struct nvrtx_exec_target *target);
+static int execute_uniforms(const struct execute_state *state, const struct nvrtx_vk_program *program, uint32_t group, uint8_t *push, size_t *at);
+static int execute_copy_buffer(struct nvrtx_vk_session *session, struct nvrtx_vk_execute *execute, const struct nvrtx_vk_record *record);
+static uint64_t execute_gob_offset(uint32_t pitch, uint32_t x, uint32_t y);
 static bool execute_region_inside(int32_t x, int32_t y, uint32_t width, uint32_t height, uint32_t image_width, uint32_t image_height);
 static void execute_full_viewport(uint32_t *viewport, int32_t x0, int32_t y0, int32_t x1, int32_t y1);
 
 /*
- * Runs an executable command buffer's records on the GPU and waits for
- * them.  Returns 0, EINVAL for a command buffer that is not executable, or
- * the error of the run that failed (the GPU then did not finish).
+ * Puts an executable command buffer's records on the GPU without waiting
+ * for them.  Returns 0, EINVAL for a command buffer that is not
+ * executable, or the error of the submission or the wait that failed.
  */
 int
 nvrtx_vk_execute(
@@ -240,10 +307,16 @@ nvrtx_vk_execute(
 	if (state == NULL)
 		return ENOMEM;
 
-	/* Each record in order, the push buffer started over when it fills. */
-	execute_start(execute);
+	/* A push buffer begun before and never submitted (its command buffer failed) is begun again; else a slot is taken. */
 	error = 0;
-	for (index = 0U; index < command->record_count; index++) {
+	if (execute->started) {
+		execute_begin(execute);
+	} else {
+		error = execute_start(session, execute);
+	}
+
+	/* Each record in order, the push buffer put on the GPU when it fills. */
+	for (index = 0U; index < command->record_count && error == 0; index++) {
 		error = execute_room(session, execute, state);
 		if (error != 0)
 			break;
@@ -254,40 +327,45 @@ nvrtx_vk_execute(
 
 	/* The rest of the push buffer. */
 	if (error == 0)
-		error = execute_flush(session, execute);
+		error = execute_submit(session, execute);
 	kern_free(state);
 
 	/* Reports a run that failed. */
 	if (error != 0)
 		return error;
 
-	/* Succeeded: the GPU has done the command buffer. */
+	/* Succeeded: the GPU runs the command buffer. */
 	return 0;
 }
 
-/* Gives back a closing session's run and programs. */
+/* Gives back a closing session's slots and programs once its runs have ended. */
 void
 nvrtx_vk_execute_close(
 	struct nvrtx_vk_session *session)
 {
 	struct nvrtx_vk_execute *execute;
+	uint32_t index;
 
 	execute = session->execute;
 	if (execute == NULL)
 		return;
 
-	/* The runs, then the record. */
-	if (execute->token != NULL)
-		nvrtx_vk_gpu_free(session->owner, execute->token);
+	/* The runs (the node waits for the session's runs first), then the record. */
+	for (index = 0U; index < EXECUTE_SLOTS; index++) {
+		if (execute->slots[index].token != NULL)
+			nvrtx_vk_gpu_free(session->owner, execute->slots[index].token);
+	}
 	if (execute->program_token != NULL)
 		nvrtx_vk_gpu_free(session->owner, execute->program_token);
+	if (execute->shadow_token != NULL)
+		nvrtx_vk_gpu_free(session->owner, execute->shadow_token);
 	kern_free(execute);
 	session->execute = NULL;
 }
 
 /*
- * Gives the session's run, made at its first submission: the zero page
- * and the quad's corners written once, and the executor's programs.
+ * Gives the session's slots, made at its first submission with the first
+ * slot, and the executor's programs.
  */
 static int
 execute_open(
@@ -295,15 +373,6 @@ execute_open(
 	struct nvrtx_vk_execute **execute)
 {
 	struct nvrtx_vk_execute *opened;
-	static const uint32_t corners[EXECUTE_CORNERS * 2U] = {
-		0U, 0U,
-		EXECUTE_FLOAT_ONE, 0U,
-		0U, EXECUTE_FLOAT_ONE,
-		EXECUTE_FLOAT_ONE, 0U,
-		EXECUTE_FLOAT_ONE, EXECUTE_FLOAT_ONE,
-		0U, EXECUTE_FLOAT_ONE
-	};
-	uint32_t index;
 	int error;
 
 	/* Made once; programs that did not compile are tried again. */
@@ -318,20 +387,22 @@ execute_open(
 		return 0;
 	}
 
-	/* The record and the run. */
+	/* The record and its first slot, the one written first. */
 	opened = kern_calloc(1U, sizeof(*opened));
 	if (opened == NULL)
 		return ENOMEM;
-	error = nvrtx_vk_gpu_alloc(session->owner, EXECUTE_RUN_BYTES, &opened->token, &opened->cpu, &opened->va);
+	error = execute_slot_make(session, &opened->slots[0]);
 	if (error != 0) {
 		kern_free(opened);
 		return error;
 	}
+	opened->slot = 0U;
+	opened->cpu = opened->slots[0].cpu;
+	opened->va = opened->slots[0].va;
 
-	/* The zero page, and the corners: (0,0) (1,0) (0,1), (1,0) (1,1) (0,1). */
-	kern_memset(opened->cpu + EXECUTE_ZERO_AT, 0, NVRTX_GSP_PAGE_SIZE);
-	for (index = 0U; index < EXECUTE_CORNERS * 2U; index++)
-		nvrtx_put32(opened->cpu, EXECUTE_CORNERS_AT + index * 4U, corners[index]);
+	/* The owner's generation, read once: the programs and the push buffers follow it. */
+	opened->shader_model = nvrtx_vk_shader_model(session->owner);
+	opened->threed_class = nvrtx_vk_threed_class(session->owner);
 
 	/* The executor's programs. */
 	session->execute = opened;
@@ -339,8 +410,45 @@ execute_open(
 	if (error != 0)
 		return error;
 
-	/* Succeeded: the run is the session's. */
+	/* Succeeded: the slots are the session's. */
 	*execute = opened;
+	return 0;
+}
+
+/* Makes a slot: its run, the zero page and the quad's corners written once. */
+static int
+execute_slot_make(
+	struct nvrtx_vk_session *session,
+	struct execute_slot *slot)
+{
+	static const uint32_t corners[EXECUTE_CORNERS * 2U] = {
+		0U, 0U,
+		EXECUTE_FLOAT_ONE, 0U,
+		0U, EXECUTE_FLOAT_ONE,
+		EXECUTE_FLOAT_ONE, 0U,
+		EXECUTE_FLOAT_ONE, EXECUTE_FLOAT_ONE,
+		0U, EXECUTE_FLOAT_ONE
+	};
+	uint32_t index;
+	int error;
+
+	/* The run, in system memory the CPU writes through its cache (else in VRAM). */
+	error = nvrtx_vk_gpu_alloc_system(session->owner, EXECUTE_RUN_BYTES, &slot->token, &slot->cpu, &slot->va);
+	if (error != 0)
+		error = nvrtx_vk_gpu_alloc(session->owner, EXECUTE_RUN_BYTES, &slot->token, &slot->cpu, &slot->va);
+	if (error != 0) {
+		slot->token = NULL;
+		return error;
+	}
+
+	/* The zero page, and the corners: (0,0) (1,0) (0,1), (1,0) (1,1) (0,1). */
+	kern_memset(slot->cpu + EXECUTE_ZERO_AT, 0, NVRTX_GSP_PAGE_SIZE);
+	for (index = 0U; index < EXECUTE_CORNERS * 2U; index++)
+		nvrtx_put32(slot->cpu, EXECUTE_CORNERS_AT + index * 4U, corners[index]);
+
+	/* Succeeded: no run reads the slot yet. */
+	slot->ticket.fence = 0U;
+	slot->ticket.submitted_us = 0U;
 	return 0;
 }
 
@@ -377,10 +485,10 @@ execute_programs(
 
 	/* The vertex program in the first page, the fragment program in the second. */
 	nvrtx_draw_vertex_ir(program, 1);
-	error = execute_compile(program, cpu, &execute->quad_vertex_gprs, &bytes);
+	error = execute_compile(program, execute->shader_model, cpu, &execute->quad_vertex_gprs, &bytes);
 	if (error == 0) {
 		nvrtx_draw_fragment_ir(program, 1);
-		error = execute_compile(program, cpu + NVRTX_GSP_PAGE_SIZE, &execute->quad_fragment_gprs, &bytes);
+		error = execute_compile(program, execute->shader_model, cpu + NVRTX_GSP_PAGE_SIZE, &execute->quad_fragment_gprs, &bytes);
 	}
 	kern_free(program);
 	if (error != 0)
@@ -397,6 +505,7 @@ execute_programs(
 static int
 execute_compile(
 	struct nvrtx_draw_ir *program,
+	uint32_t shader_model,
 	uint8_t *cpu,
 	uint32_t *gprs,
 	uint32_t *bytes)
@@ -406,10 +515,10 @@ execute_compile(
 	uint32_t code;
 	int error;
 
-	/* Compiled for SM75. */
+	/* Compiled for the owner's shader model. */
 	binary = NULL;
 	kern_memset(&diagnostic, 0, sizeof(diagnostic));
-	error = nvrtx_sm75_compile_ir(&program->ir, &binary, &diagnostic);
+	error = nvrtx_sm75_compile_ir_sm(&program->ir, shader_model, &binary, &diagnostic);
 	if (error != 0) {
 		kern_logf("nvrtx: vk: a quad program did not compile (%d)\n", error);
 		return error;
@@ -434,23 +543,89 @@ execute_compile(
 }
 
 /*
- * Starts a push buffer: the 3D class's state a queue starts with, the
- * header and sampler pools, and the shader caches emptied; nothing of the
- * run's parts is used yet.
+ * Starts a push buffer in a slot whose run has ended: the current slot,
+ * another one made earlier, a new one while one is to be had, or else the
+ * slot of the oldest run once it ended.  Returns 0, or the error of the
+ * wait for that run.
+ */
+static int
+execute_start(
+	struct nvrtx_vk_session *session,
+	struct nvrtx_vk_execute *execute)
+{
+	struct execute_slot *slot;
+	uint32_t chosen;
+	uint32_t index;
+	uint32_t at;
+	bool passed;
+	int error;
+
+	/* The current slot when its run ended, else another made one whose run ended. */
+	chosen = EXECUTE_SLOTS;
+	for (index = 0U; index < EXECUTE_SLOTS && chosen == EXECUTE_SLOTS; index++) {
+		at = (execute->slot + index) % EXECUTE_SLOTS;
+		slot = &execute->slots[at];
+		if (slot->token == NULL)
+			continue;
+		passed = nvrtx_vk_gpu_passed(session->owner, &slot->ticket);
+		if (passed)
+			chosen = at;
+	}
+
+	/* Else a new slot, while one is to be had (one that cannot be made is waited for instead). */
+	for (index = 0U; index < EXECUTE_SLOTS && chosen == EXECUTE_SLOTS; index++) {
+		if (execute->slots[index].token != NULL)
+			continue;
+		error = execute_slot_make(session, &execute->slots[index]);
+		if (error == 0)
+			chosen = index;
+		break;
+	}
+
+	/* Else the slot of the oldest run, once it ended (the first slot is always made). */
+	if (chosen == EXECUTE_SLOTS) {
+		chosen = 0U;
+		for (index = 1U; index < EXECUTE_SLOTS; index++) {
+			if (execute->slots[index].token == NULL)
+				continue;
+			if (execute->slots[index].ticket.submitted_us < execute->slots[chosen].ticket.submitted_us)
+				chosen = index;
+		}
+		error = nvrtx_vk_gpu_wait(session->owner, &execute->slots[chosen].ticket);
+		if (error != 0)
+			return error;
+	}
+
+	/* The slot's run is over: counted and forgotten; the push buffer is written there. */
+	slot = &execute->slots[chosen];
+	nvrtx_vk_gpu_retire(session->owner, &slot->ticket);
+	execute->slot = chosen;
+	execute->cpu = slot->cpu;
+	execute->va = slot->va;
+	execute_begin(execute);
+
+	/* Succeeded: the push buffer is begun. */
+	return 0;
+}
+
+/*
+ * Begins a push buffer in the current slot: the 3D class's state a queue
+ * starts with, the header and sampler pools, and the shader caches
+ * emptied; nothing of the slot's parts is used yet.
  *
  * Procedure referenced: Mesa 25.3.6 src/nouveau/vulkan/nvk_queue.c
  * (nvk_queue_init_context_state) and src/nouveau/vulkan/nvk_cmd_draw.c
  * (nvk_push_draw_state_init).
  */
 static void
-execute_start(
+execute_begin(
 	struct nvrtx_vk_execute *execute)
 {
 	uint8_t *push;
 
 	/* The state and the pools. */
 	push = execute->cpu + EXECUTE_PUSH_AT;
-	execute->at = nvrtx_push_draw_init(push, 0U, execute->va + EXECUTE_ZERO_AT);
+	execute->at = nvrtx_push_draw_init_class(push, 0U, execute->va + EXECUTE_ZERO_AT, execute->threed_class);
 	execute->at = nvrtx_push_draw_textures(push, execute->at, execute->va + EXECUTE_HEADERS_AT, EXECUTE_POOL_ENTRIES,
 					       execute->va + EXECUTE_SAMPLERS_AT, EXECUTE_POOL_ENTRIES);
 
@@ -467,8 +642,32 @@ execute_start(
 }
 
 /*
- * Runs the push buffer written so far and waits for it, then starts the
- * next one.  Returns the run's error.
+ * Puts the push buffer written so far on the GPU without waiting for it;
+ * no push buffer is begun after it.  Returns the submission's error.
+ */
+static int
+execute_submit(
+	struct nvrtx_vk_session *session,
+	struct nvrtx_vk_execute *execute)
+{
+	struct execute_slot *slot;
+	int error;
+
+	/* Counts its draws, then submits it; the slot keeps its run. */
+	slot = &execute->slots[execute->slot];
+	nvrtx_vk_gpu_drawn(session->owner, execute->draws, execute->quads);
+	error = nvrtx_vk_gpu_submit(session->owner, execute->va + EXECUTE_PUSH_AT, (uint32_t)execute->at, &slot->ticket);
+	if (error != 0)
+		return error;
+
+	/* Succeeded: the GPU runs it. */
+	execute->started = false;
+	return 0;
+}
+
+/*
+ * Puts the push buffer written so far on the GPU, then starts the next
+ * one.  Returns the submission's error or the wait's for a slot.
  */
 static int
 execute_flush(
@@ -477,14 +676,39 @@ execute_flush(
 {
 	int error;
 
-	/* Counts its draws, then runs it. */
-	nvrtx_vk_gpu_drawn(session->owner, execute->draws, execute->quads);
-	error = nvrtx_vk_gpu_run(session->owner, execute->va + EXECUTE_PUSH_AT, (uint32_t)execute->at);
+	/* The push buffer, then the next one. */
+	error = execute_submit(session, execute);
+	if (error == 0)
+		error = execute_start(session, execute);
 	if (error != 0)
 		return error;
 
-	/* Succeeded: the GPU has done it; the next push buffer starts. */
-	execute_start(execute);
+	/* Succeeded: the next push buffer is begun. */
+	return 0;
+}
+
+/*
+ * Puts the push buffer written so far on the GPU and waits until the
+ * session's runs have ended (a copy by the CPU follows), then starts the
+ * next one.  Returns the error of the submission or the wait.
+ */
+static int
+execute_drain(
+	struct nvrtx_vk_session *session,
+	struct nvrtx_vk_execute *execute)
+{
+	int error;
+
+	/* The push buffer, the wait for it, then the next one. */
+	error = execute_submit(session, execute);
+	if (error == 0)
+		error = nvrtx_vk_gpu_idle(session->owner);
+	if (error == 0)
+		error = execute_start(session, execute);
+	if (error != 0)
+		return error;
+
+	/* Succeeded: the GPU has done the work before; the next push buffer is begun. */
 	return 0;
 }
 
@@ -541,19 +765,21 @@ execute_record(
 	case GPU_OP_CMD_SET_SCISSOR:
 	case GPU_OP_CMD_BIND_DESCRIPTOR_SETS:
 	case GPU_OP_CMD_BIND_VERTEX_BUFFERS:
+	case GPU_OP_CMD_BIND_INDEX_BUFFER:
 	case GPU_OP_CMD_PUSH_CONSTANTS:
 		execute_bind(state, record);
 		break;
 	case GPU_OP_CMD_BEGIN_RENDER_PASS:
-		error = execute_begin_pass(execute, state, record);
+		error = execute_begin_pass(session, execute, state, record);
 		break;
 	case GPU_OP_CMD_END_RENDER_PASS:
-		state->in_pass = false;
-		execute->at = nvrtx_exec_barrier(execute->cpu + EXECUTE_PUSH_AT, execute->at);
+		error = execute_end_pass(session, execute, state);
 		break;
 	case GPU_OP_CMD_DRAW:
+	case GPU_OP_CMD_DRAW_INDEXED:
 		error = execute_draw(execute, state, record);
 		break;
+	case GPU_OP_CMD_COPY_BUFFER:
 	case GPU_OP_CMD_COPY_IMAGE:
 	case GPU_OP_CMD_BLIT_IMAGE:
 	case GPU_OP_CMD_COPY_BUFFER_TO_IMAGE:
@@ -606,6 +832,11 @@ execute_bind(
 			state->offsets[record->first + index] = record->offsets[index];
 		}
 		break;
+	case GPU_OP_CMD_BIND_INDEX_BUFFER:
+		state->index_buffer = record->objects[0]->payload;
+		state->index_offset = record->offsets[0];
+		state->index_type = record->values[0];
+		break;
 	case GPU_OP_CMD_PUSH_CONSTANTS:
 		kern_memcpy(state->push + record->first, record->push, record->count);
 		break;
@@ -615,11 +846,14 @@ execute_bind(
 }
 
 /*
- * Begins a pass: its framebuffer's view's image is the target from now on,
- * and a pass whose attachment loads by clearing clears its render area.
+ * Begins a pass: its framebuffer's colour view's image (at the view's
+ * level) is the target from now on, with its depth view's image as the
+ * depth target, and a pass whose attachment loads by clearing clears its
+ * render area.
  */
 static int
 execute_begin_pass(
+	struct nvrtx_vk_session *session,
 	struct nvrtx_vk_execute *execute,
 	struct execute_state *state,
 	const struct nvrtx_vk_record *record)
@@ -627,6 +861,8 @@ execute_begin_pass(
 	const struct nvrtx_vk_render_pass *pass;
 	const struct nvrtx_vk_framebuffer *framebuffer;
 	const struct nvrtx_vk_view *view;
+	bool clear_colour;
+	bool clear_depth;
 	int32_t x1;
 	int32_t y1;
 	int error;
@@ -634,23 +870,40 @@ execute_begin_pass(
 	pass = record->objects[0]->payload;
 	framebuffer = record->objects[1]->payload;
 
-	/* A pass that writes no attachment draws nothing that stays. */
+	/* A pass that writes no colour attachment draws nothing that stays. */
 	state->in_pass = true;
 	state->target_written = false;
 	state->area = record->rect;
-	if (pass->colour == 0U || framebuffer->view == NULL) {
-		state->target.address = 0U;
+	state->shadowed = false;
+	kern_memset(&state->target, 0, sizeof(state->target));
+	if (pass->colour == 0U || pass->colour_attachment >= framebuffer->view_count)
 		return 0;
-	}
 
-	/* The target: the view's image, in the view's format. */
-	view = framebuffer->view->payload;
-	error = execute_image_target(view->image->payload, view->format, &state->target);
+	/* The target: the colour view's image at its level, in the view's format. */
+	view = framebuffer->views[pass->colour_attachment]->payload;
+	error = execute_image_target(view->image->payload, view->base_level, view->format, &state->target);
 	if (error != 0)
 		return error;
 
+	/* The depth target: the depth view's image. */
+	if (pass->depth != 0U && pass->depth_attachment < framebuffer->view_count) {
+		view = framebuffer->views[pass->depth_attachment]->payload;
+		error = execute_depth_target(view->image->payload, &state->target);
+		if (error != 0)
+			return error;
+	}
+
+	/* A pitch-linear colour target with a depth target is drawn in a block-linear shadow. */
+	if (state->target.depth_address != 0U && state->target.block_linear == 0U) {
+		error = execute_shadow(session, execute, state, pass->load_op == VK_ATTACHMENT_LOAD_OP_LOAD);
+		if (error != 0)
+			return error;
+	}
+
 	/* A pass loading by clearing clears its area, within the framebuffer and the image. */
-	if (pass->load_op != VK_ATTACHMENT_LOAD_OP_CLEAR)
+	clear_colour = (pass->load_op == VK_ATTACHMENT_LOAD_OP_CLEAR);
+	clear_depth = (state->target.depth_address != 0U && pass->depth_load_op == VK_ATTACHMENT_LOAD_OP_CLEAR);
+	if (!clear_colour && !clear_depth)
 		return 0;
 	execute->at = nvrtx_exec_target(execute->cpu + EXECUTE_PUSH_AT, execute->at, &state->target);
 	state->target_written = true;
@@ -666,18 +919,180 @@ execute_begin_pass(
 		y1 = (int32_t)state->target.height;
 	if (state->area.offset.x < 0 || state->area.offset.y < 0 || x1 <= state->area.offset.x || y1 <= state->area.offset.y)
 		return 0;
-	execute->at = nvrtx_exec_clear(execute->cpu + EXECUTE_PUSH_AT, execute->at, record->values,
-				       (uint32_t)state->area.offset.x, (uint32_t)state->area.offset.y, (uint32_t)x1, (uint32_t)y1);
+	if (clear_colour)
+		execute->at = nvrtx_exec_clear(execute->cpu + EXECUTE_PUSH_AT, execute->at, record->values,
+					       (uint32_t)state->area.offset.x, (uint32_t)state->area.offset.y, (uint32_t)x1, (uint32_t)y1);
+	if (clear_depth)
+		execute->at = nvrtx_exec_clear_depth(execute->cpu + EXECUTE_PUSH_AT, execute->at, record->values[4],
+						     (uint32_t)state->area.offset.x, (uint32_t)state->area.offset.y, (uint32_t)x1, (uint32_t)y1);
 
 	/* Succeeded: the pass draws into its target. */
 	return 0;
 }
 
 /*
- * Runs a draw in a pass: its constants (the push constants and the
- * texture handles of the fragment program's samples), the target when not
- * written yet, the viewport and scissor, the blend, the vertex input, the
- * programs and the draw.
+ * Puts a block-linear shadow of the pass's pitch-linear colour target in
+ * its place (the 3D engine draws with a depth target only into a
+ * block-linear colour target 0): the shadow is the executor's, grown after
+ * the work before it ran when too small, and a pass that loads its colour
+ * starts the shadow with the target's pixels.
+ *
+ * Procedure referenced: Mesa 25.0.7 src/nouveau/vulkan/nvk_cmd_draw.c
+ * (nvk_linear_render_copy, rendering a linear image through a tiled shadow
+ * copied at the start and the end of rendering).
+ */
+static int
+execute_shadow(
+	struct nvrtx_vk_session *session,
+	struct nvrtx_vk_execute *execute,
+	struct execute_state *state,
+	bool load)
+{
+	struct execute_quad quad;
+	uint8_t *cpu;
+	uint64_t bytes;
+	uint32_t pitch;
+	uint32_t height;
+	int error;
+
+	/* The shadow's rows in whole GOBs, its height in whole GOBs. */
+	pitch = (state->target.width * NVRTX_VK_PIXEL_BYTES + NVRTX_VK_GOB_WIDTH - 1U) & ~(NVRTX_VK_GOB_WIDTH - 1U);
+	height = (state->target.height + NVRTX_VK_GOB_HEIGHT - 1U) & ~(NVRTX_VK_GOB_HEIGHT - 1U);
+	bytes = (uint64_t)pitch * height;
+
+	/* A shadow too small is replaced once the work that may draw in it has run. */
+	if (execute->shadow_bytes < bytes) {
+		if (execute->shadow_token != NULL) {
+			error = execute_flush(session, execute);
+			if (error != 0)
+				return error;
+			nvrtx_vk_gpu_free(session->owner, execute->shadow_token);
+			execute->shadow_token = NULL;
+			execute->shadow_bytes = 0U;
+		}
+		error = nvrtx_vk_gpu_alloc(session->owner, (bytes + NVRTX_GSP_PAGE_SIZE - 1U) & ~(uint64_t)(NVRTX_GSP_PAGE_SIZE - 1U),
+					   &execute->shadow_token, &cpu, &execute->shadow_va);
+		if (error != 0)
+			return error;
+		execute->shadow_bytes = bytes;
+	}
+
+	/* The pass draws into the shadow; the target gets it at the pass's end. */
+	state->resolve = state->target;
+	state->resolve.depth_address = 0U;
+	state->target.address = execute->shadow_va;
+	state->target.pitch = pitch;
+	state->target.block_linear = 1U;
+	state->shadowed = true;
+	if (!load)
+		return 0;
+
+	/* A loading pass: the target's pixels into the shadow. */
+	execute_shadow_copy(&state->target, &state->resolve, 0, 0, (int32_t)state->target.width, (int32_t)state->target.height,
+			    &quad);
+	quad.target.depth_address = 0U;
+	quad.source_tiled = false;
+	error = execute_quad(session, execute, state, &quad);
+	if (error != 0)
+		return error;
+	execute->at = nvrtx_exec_barrier(execute->cpu + EXECUTE_PUSH_AT, execute->at);
+
+	/* Succeeded: the shadow holds the target's pixels. */
+	return 0;
+}
+
+/*
+ * Ends a pass: its work is ordered before what follows, and a pass drawn in
+ * a shadow copies its render area from the shadow to the target.
+ */
+static int
+execute_end_pass(
+	struct nvrtx_vk_session *session,
+	struct nvrtx_vk_execute *execute,
+	struct execute_state *state)
+{
+	struct execute_quad quad;
+	int32_t x0;
+	int32_t y0;
+	int32_t x1;
+	int32_t y1;
+	int error;
+
+	/* The pass's work before what follows. */
+	state->in_pass = false;
+	execute->at = nvrtx_exec_barrier(execute->cpu + EXECUTE_PUSH_AT, execute->at);
+	if (!state->shadowed)
+		return 0;
+	state->shadowed = false;
+
+	/* The render area, within the target. */
+	x0 = state->area.offset.x;
+	y0 = state->area.offset.y;
+	x1 = x0 + (int32_t)state->area.extent.width;
+	y1 = y0 + (int32_t)state->area.extent.height;
+	if (x0 < 0)
+		x0 = 0;
+	if (y0 < 0)
+		y0 = 0;
+	if (x1 > (int32_t)state->resolve.width)
+		x1 = (int32_t)state->resolve.width;
+	if (y1 > (int32_t)state->resolve.height)
+		y1 = (int32_t)state->resolve.height;
+	if (x1 <= x0 || y1 <= y0)
+		return 0;
+
+	/* The shadow's area onto the target, then ordered before what follows. */
+	execute_shadow_copy(&state->resolve, &state->target, x0, y0, x1, y1, &quad);
+	quad.source_tiled = true;
+	error = execute_quad(session, execute, state, &quad);
+	if (error != 0)
+		return error;
+	state->target_written = false;
+	execute->at = nvrtx_exec_barrier(execute->cpu + EXECUTE_PUSH_AT, execute->at);
+
+	/* Succeeded: the target has the pass's pixels. */
+	return 0;
+}
+
+/* Describes a one-to-one, nearest copy of a region between two colour targets of one size as a quad. */
+static void
+execute_shadow_copy(
+	const struct nvrtx_exec_target *to,
+	const struct nvrtx_exec_target *from,
+	int32_t x0,
+	int32_t y0,
+	int32_t x1,
+	int32_t y1,
+	struct execute_quad *quad)
+{
+	/* The destination and its region. */
+	kern_memset(quad, 0, sizeof(*quad));
+	quad->target = *to;
+	quad->target.depth_address = 0U;
+	quad->x0 = x0;
+	quad->y0 = y0;
+	quad->x1 = x1;
+	quad->y1 = y1;
+
+	/* The source, the same region, nearest. */
+	quad->source = from->address;
+	quad->source_width = from->width;
+	quad->source_height = from->height;
+	quad->source_pitch = from->pitch;
+	quad->source_format = from->format;
+	quad->u0 = x0;
+	quad->v0 = y0;
+	quad->u1 = x1;
+	quad->v1 = y1;
+	quad->filter = VK_FILTER_NEAREST;
+}
+
+/*
+ * Runs a draw (indexed or not) in a pass: its constants (the push
+ * constants and the texture handles of the fragment program's samples),
+ * the target when not written yet, the viewport and scissor, the culling,
+ * the depth test, the blend, the vertex input, the index buffer, the
+ * constant buffers, the programs and the draw.
  */
 static int
 execute_draw(
@@ -688,6 +1103,7 @@ execute_draw(
 	const struct nvrtx_vk_pipeline *pipeline;
 	struct nvrtx_exec_vertex vertex;
 	struct nvrtx_exec_blend blend;
+	struct nvrtx_exec_depth depth;
 	const uint32_t *viewport;
 	const VkRect2D *scissor;
 	uint8_t *push;
@@ -697,14 +1113,28 @@ execute_draw(
 	int32_t y0;
 	int32_t x1;
 	int32_t y1;
+	uint64_t index_va;
+	uint8_t *index_cpu;
+	bool indexed;
 	int error;
 
-	/* A draw in a pass with a target, with a pipeline. */
+	/* A draw in a pass with a target, with a pipeline; an indexed one with an index buffer. */
 	pipeline = state->pipeline;
+	indexed = (record->opcode == GPU_OP_CMD_DRAW_INDEXED);
 	if (!state->in_pass || pipeline == NULL)
+		return EINVAL;
+	if (indexed && state->index_buffer == NULL)
 		return EINVAL;
 	if (state->target.address == 0U || record->values[0] == 0U || record->values[1] == 0U)
 		return 0;
+	index_va = 0U;
+	if (indexed) {
+		error = nvrtx_vk_buffer_address(state->index_buffer, &index_va, &index_cpu);
+		if (error != 0)
+			return error;
+		if (state->index_offset >= state->index_buffer->size)
+			return EINVAL;
+	}
 
 	/* The draw's constants: the push constants, then the handles of its textures. */
 	error = execute_constants(execute, &constants, &constants_va);
@@ -746,6 +1176,16 @@ execute_draw(
 	execute->at = nvrtx_exec_viewport(push, execute->at, viewport);
 	execute->at = nvrtx_exec_scissor(push, execute->at, (uint32_t)x0, (uint32_t)y0, (uint32_t)x1, (uint32_t)y1);
 
+	/* The culling, and the depth test when the pass has a depth target. */
+	execute->at = nvrtx_exec_raster(push, execute->at, pipeline->cull_mode, pipeline->front_face);
+	kern_memset(&depth, 0, sizeof(depth));
+	if (state->target.depth_address != 0U) {
+		depth.test = pipeline->depth_test;
+		depth.write = pipeline->depth_write;
+		depth.compare = pipeline->depth_compare;
+	}
+	execute->at = nvrtx_exec_depth(push, execute->at, &depth);
+
 	/* The blend. */
 	blend.enable = pipeline->blend_enable;
 	blend.colour_op = pipeline->blend_colour_op;
@@ -757,19 +1197,84 @@ execute_draw(
 	blend.write_mask = pipeline->write_mask;
 	execute->at = nvrtx_exec_blend(push, execute->at, &blend);
 
-	/* The vertex input, the constants and the programs. */
+	/* The vertex input, the index buffer, the constants, the uniform buffers and the programs. */
 	execute_vertex_input(pipeline, state, &vertex);
 	execute->at = nvrtx_exec_vertex(push, execute->at, &vertex);
+	if (indexed)
+		execute->at = nvrtx_exec_index_buffer(push, execute->at, index_va + state->index_offset,
+						      state->index_buffer->size - state->index_offset, state->index_type);
 	execute->at = nvrtx_push_draw_constants(push, execute->at, constants_va, EXECUTE_CONSTANTS_SIZE);
+	error = execute_uniforms(state, &pipeline->vertex, EXECUTE_GROUP_VERTEX, push, &execute->at);
+	if (error == 0)
+		error = execute_uniforms(state, &pipeline->fragment, EXECUTE_GROUP_FRAGMENT, push, &execute->at);
+	if (error != 0)
+		return error;
 	execute->at = nvrtx_push_draw_pipeline(push, execute->at, pipeline->vertex.va, pipeline->vertex.gprs,
 					       pipeline->fragment.va, pipeline->fragment.gprs);
 
 	/* The draw, one more in the push buffer. */
-	execute->at = nvrtx_exec_draw(push, execute->at, pipeline->topology, record->values[2], record->values[0],
-				      record->values[1], record->values[3]);
+	if (indexed) {
+		execute->at = nvrtx_exec_draw_indexed(push, execute->at, pipeline->topology, record->values[2], record->values[0],
+						      record->values[1], record->values[4], (int32_t)record->values[3]);
+	} else {
+		execute->at = nvrtx_exec_draw(push, execute->at, pipeline->topology, record->values[2], record->values[0],
+					      record->values[1], record->values[3]);
+	}
 	execute->draws++;
 
 	/* Succeeded: the draw is written. */
+	return 0;
+}
+
+/*
+ * Binds a program's uniform buffers to its group: the k-th one, from its
+ * set's binding, as constant buffer 1 + k, its range rounded up to whole
+ * 16-byte units and cut at the largest constant buffer.  A binding with
+ * nothing bound, or a range off the 256-byte boundary, refuses the draw.
+ */
+static int
+execute_uniforms(
+	const struct execute_state *state,
+	const struct nvrtx_vk_program *program,
+	uint32_t group,
+	uint8_t *push,
+	size_t *at)
+{
+	const struct nvrtx_vk_descriptor_set *set;
+	const struct nvrtx_vk_descriptor_slot *slot;
+	const struct nvrtx_vk_buffer *buffer;
+	uint64_t range;
+	uint64_t va;
+	uint8_t *cpu;
+	uint32_t index;
+	int error;
+
+	/* Each uniform buffer of the program. */
+	for (index = 0U; index < program->uniform_count; index++) {
+		set = state->sets[program->uniforms[index].set];
+		if (set == NULL)
+			return EINVAL;
+		slot = &set->slots[program->uniforms[index].binding];
+		if (slot->buffer == NULL)
+			return EINVAL;
+		buffer = slot->buffer->payload;
+		error = nvrtx_vk_buffer_address(buffer, &va, &cpu);
+		if (error != 0)
+			return error;
+		if (slot->offset >= buffer->size || ((va + slot->offset) % EXECUTE_UNIFORM_ALIGN) != 0U)
+			return EINVAL;
+
+		/* Its range: the rest of the buffer for the whole size. */
+		range = slot->range;
+		if (range == VK_WHOLE_SIZE || range > buffer->size - slot->offset)
+			range = buffer->size - slot->offset;
+		range = (range + EXECUTE_UNIFORM_UNIT - 1U) & ~(uint64_t)(EXECUTE_UNIFORM_UNIT - 1U);
+		if (range > EXECUTE_UNIFORM_BYTES_MAX)
+			range = EXECUTE_UNIFORM_BYTES_MAX;
+		*at = nvrtx_exec_uniform(push, *at, group, NVRTX_SM75_CB_UNIFORM_FIRST + index, va + slot->offset, (uint32_t)range);
+	}
+
+	/* Succeeded: every uniform buffer is bound. */
 	return 0;
 }
 
@@ -825,19 +1330,35 @@ execute_texture(
 	uint32_t header[8];
 	uint32_t sampled[8];
 	uint64_t va;
+	uint64_t offset;
+	uint32_t width;
+	uint32_t height;
+	uint32_t pitch;
 	uint8_t *cpu;
 	int error;
 
-	/* The view's image, with storage. */
+	/* The view's image, with storage, in a colour format. */
 	image = view->image->payload;
+	if (image->depth)
+		return EINVAL;
 	error = nvrtx_vk_image_address(image, &va, &cpu);
 	if (error != 0)
 		return error;
 
-	/* The header and the sampler. */
-	nvrtx_exec_texture_header(header, va, image->width, image->height, image->pitch, view->format, view->swizzle);
+	/* The header: a tiled image's with the view's levels, a pitch-linear image's of its one level; the sampler. */
+	if (image->tiled) {
+		nvrtx_exec_texture_header_tiled(header, va, image->width, image->height, image->levels, view->base_level,
+						view->level_count, view->format, view->swizzle);
+	} else {
+		nvrtx_vk_image_level(image, 0U, &offset, &width, &height, &pitch);
+		nvrtx_exec_texture_header(header, va + offset, width, height, pitch, view->format, view->swizzle);
+	}
+	kern_memset(&words, 0, sizeof(words));
 	words.mag_filter = sampler->mag_filter;
 	words.min_filter = sampler->min_filter;
+	words.mipmap_mode = sampler->mipmap_mode;
+	words.min_lod = sampler->min_lod;
+	words.max_lod = sampler->max_lod;
 	words.address_u = sampler->address_u;
 	words.address_v = sampler->address_v;
 	words.address_w = sampler->address_w;
@@ -970,7 +1491,9 @@ execute_transfer(
 	execute->at = nvrtx_exec_barrier(execute->cpu + EXECUTE_PUSH_AT, execute->at);
 
 	/* The transfer. */
-	if (record->opcode == GPU_OP_CMD_COPY_IMAGE || record->opcode == GPU_OP_CMD_BLIT_IMAGE) {
+	if (record->opcode == GPU_OP_CMD_COPY_BUFFER) {
+		error = execute_copy_buffer(session, execute, record);
+	} else if (record->opcode == GPU_OP_CMD_COPY_IMAGE || record->opcode == GPU_OP_CMD_BLIT_IMAGE) {
 		error = execute_copy_images(session, execute, state, record);
 	} else if (record->opcode == GPU_OP_CMD_CLEAR_COLOR_IMAGE) {
 		error = execute_clear_image(execute, state, record);
@@ -1006,8 +1529,9 @@ execute_copy_images(
 	const VkImageCopy *copies;
 	const VkImageBlit *blits;
 	struct execute_quad quad;
-	uint8_t *cpu;
 	uint32_t index;
+	uint32_t source_level;
+	uint32_t destination_level;
 	int32_t dx0;
 	int32_t dy0;
 	int32_t dx1;
@@ -1021,17 +1545,8 @@ execute_copy_images(
 	source = record->objects[0]->payload;
 	destination = record->objects[1]->payload;
 
-	/* The two images, with storage. */
+	/* A copy one to one and nearest, a blit filtered. */
 	kern_memset(&quad, 0, sizeof(quad));
-	error = execute_image_target(destination, destination->format, &quad.target);
-	if (error == 0)
-		error = nvrtx_vk_image_address(source, &quad.source, &cpu);
-	if (error != 0)
-		return error;
-	quad.source_width = source->width;
-	quad.source_height = source->height;
-	quad.source_pitch = source->pitch;
-	quad.source_format = source->format;
 	quad.filter = VK_FILTER_NEAREST;
 	if (record->opcode == GPU_OP_CMD_BLIT_IMAGE)
 		quad.filter = record->values[0];
@@ -1040,6 +1555,22 @@ execute_copy_images(
 	copies = record->regions;
 	blits = record->regions;
 	for (index = 0U; index < record->region_count; index++) {
+		/* The two images at the region's levels, with storage. */
+		if (record->opcode == GPU_OP_CMD_COPY_IMAGE) {
+			source_level = copies[index].srcSubresource.mipLevel;
+			destination_level = copies[index].dstSubresource.mipLevel;
+		} else {
+			source_level = blits[index].srcSubresource.mipLevel;
+			destination_level = blits[index].dstSubresource.mipLevel;
+		}
+		if (source_level >= source->levels || destination_level >= destination->levels)
+			return EINVAL;
+		error = execute_image_target(destination, destination_level, destination->format, &quad.target);
+		if (error == 0)
+			error = execute_image_source(source, source_level, &quad);
+		if (error != 0)
+			return error;
+
 		/* The destination's and the source's corners. */
 		if (record->opcode == GPU_OP_CMD_COPY_IMAGE) {
 			dx0 = copies[index].dstOffset.x;
@@ -1119,6 +1650,11 @@ execute_buffer_image(
 	uint32_t row;
 	uint32_t pitch;
 	uint32_t skew;
+	uint32_t level;
+	uint32_t level_width;
+	uint32_t level_height;
+	uint32_t level_pitch;
+	uint64_t level_offset;
 	bool inside;
 	bool drawn;
 	int error;
@@ -1135,6 +1671,8 @@ execute_buffer_image(
 	error = nvrtx_vk_buffer_address(buffer, &buffer_va, &buffer_cpu);
 	if (error == 0)
 		error = nvrtx_vk_image_address(image, &image_va, &image_cpu);
+	if (error == 0 && image->depth)
+		error = EINVAL;
 	if (error != 0)
 		return error;
 
@@ -1143,9 +1681,13 @@ execute_buffer_image(
 	for (index = 0U; index < record->region_count; index++) {
 		region = &regions[index];
 
-		/* Inside the image; the buffer's rows (a row length of zero is the region's width). */
+		/* Its level; inside it; the buffer's rows (a row length of zero is the region's width). */
+		level = region->imageSubresource.mipLevel;
+		if (level >= image->levels)
+			return EINVAL;
+		nvrtx_vk_image_level(image, level, &level_offset, &level_width, &level_height, &level_pitch);
 		inside = execute_region_inside(region->imageOffset.x, region->imageOffset.y, region->imageExtent.width,
-					       region->imageExtent.height, image->width, image->height);
+					       region->imageExtent.height, level_width, level_height);
 		if (!inside || region->imageExtent.width == 0U || region->imageExtent.height == 0U)
 			return EINVAL;
 		row = region->bufferRowLength;
@@ -1173,9 +1715,9 @@ execute_buffer_image(
 
 		/* Any other region is copied by the CPU, after the work before it. */
 		if (!drawn) {
-			error = execute_flush(session, execute);
+			error = execute_drain(session, execute);
 			if (error == 0)
-				error = execute_cpu_copy(buffer, image, region, to_image);
+				error = execute_cpu_copy(session, buffer, image, region, to_image);
 			if (error != 0)
 				return error;
 
@@ -1191,7 +1733,7 @@ execute_buffer_image(
 		if (to_image) {
 			/* The texture from the 32-byte boundary at or before the region; the region skew pixels into its rows. */
 			skew = (uint32_t)(start % EXECUTE_TEXTURE_START_ALIGN) / NVRTX_VK_PIXEL_BYTES;
-			error = execute_image_target(image, image->format, &quad.target);
+			error = execute_image_target(image, level, image->format, &quad.target);
 			quad.x0 = region->imageOffset.x;
 			quad.y0 = region->imageOffset.y;
 			quad.source = start - (uint64_t)skew * NVRTX_VK_PIXEL_BYTES;
@@ -1209,11 +1751,7 @@ execute_buffer_image(
 			quad.target.format = image->format;
 			quad.x0 = 0;
 			quad.y0 = 0;
-			quad.source = image_va;
-			quad.source_width = image->width;
-			quad.source_height = image->height;
-			quad.source_pitch = image->pitch;
-			quad.source_format = image->format;
+			error = execute_image_source(image, level, &quad);
 			quad.u0 = region->imageOffset.x;
 			quad.v0 = region->imageOffset.y;
 		}
@@ -1234,40 +1772,64 @@ execute_buffer_image(
 
 /*
  * Copies one region between a buffer and an image by the CPU, row by row
- * through the BAR1 window (the GPU is idle: the work before has run).
+ * through the BAR1 window (the GPU is idle: the work before has run); the
+ * two storages take their place in the window now if they have none.
  */
 static int
 execute_cpu_copy(
+	struct nvrtx_vk_session *session,
 	const struct nvrtx_vk_buffer *buffer,
 	const struct nvrtx_vk_image *image,
 	const VkBufferImageCopy *region,
 	bool to_image)
 {
-	uint64_t va;
 	uint8_t *buffer_cpu;
 	uint8_t *image_cpu;
 	uint8_t *buffer_row;
 	uint8_t *image_row;
+	uint64_t level_offset;
+	uint32_t level_width;
+	uint32_t level_height;
+	uint32_t level_pitch;
 	uint32_t row_pixels;
 	uint32_t bytes;
+	uint32_t x;
 	uint32_t y;
 	int error;
 
 	/* The two views. */
-	error = nvrtx_vk_buffer_address(buffer, &va, &buffer_cpu);
+	error = nvrtx_vk_buffer_cpu(session, buffer, &buffer_cpu);
 	if (error == 0)
-		error = nvrtx_vk_image_address(image, &va, &image_cpu);
+		error = nvrtx_vk_image_cpu(session, image, &image_cpu);
 	if (error != 0)
 		return error;
 
-	/* The rows: the buffer's at its row length, the image's at its pitch. */
+	/* The rows: the buffer's at its row length, the image's at its level's pitch. */
+	nvrtx_vk_image_level(image, region->imageSubresource.mipLevel, &level_offset, &level_width, &level_height, &level_pitch);
 	row_pixels = region->bufferRowLength;
 	if (row_pixels == 0U)
 		row_pixels = region->imageExtent.width;
 	bytes = region->imageExtent.width * NVRTX_VK_PIXEL_BYTES;
 	for (y = 0U; y < region->imageExtent.height; y++) {
 		buffer_row = buffer_cpu + region->bufferOffset + (uint64_t)y * row_pixels * NVRTX_VK_PIXEL_BYTES;
-		image_row = image_cpu + (uint64_t)(region->imageOffset.y + (int32_t)y) * image->pitch +
+
+		/* A tiled image's pixels each where its GOB keeps it. */
+		if (image->tiled) {
+			for (x = 0U; x < region->imageExtent.width; x++) {
+				image_row = image_cpu + level_offset +
+				    execute_gob_offset(level_pitch, ((uint32_t)region->imageOffset.x + x) * NVRTX_VK_PIXEL_BYTES,
+						       (uint32_t)region->imageOffset.y + y);
+				if (to_image) {
+					kern_memcpy(image_row, buffer_row + x * NVRTX_VK_PIXEL_BYTES, NVRTX_VK_PIXEL_BYTES);
+				} else {
+					kern_memcpy(buffer_row + x * NVRTX_VK_PIXEL_BYTES, image_row, NVRTX_VK_PIXEL_BYTES);
+				}
+			}
+			continue;
+		}
+
+		/* A pitch-linear image's row at once. */
+		image_row = image_cpu + level_offset + (uint64_t)(region->imageOffset.y + (int32_t)y) * level_pitch +
 		    (uint64_t)region->imageOffset.x * NVRTX_VK_PIXEL_BYTES;
 		if (to_image) {
 			kern_memcpy(image_row, buffer_row, bytes);
@@ -1280,7 +1842,85 @@ execute_cpu_copy(
 	return 0;
 }
 
-/* Clears a whole image to a colour (it has one level and one layer). */
+/*
+ * Reports where a byte of a block-linear surface in one-GOB blocks lies: its
+ * GOB (rows of GOBs, pitch bytes a row wide), then its 16-byte piece within
+ * the GOB and its place in the piece.
+ *
+ * Value referenced: Mesa 25.0.7 src/nouveau/nil/copy.rs
+ * (CopyGOBTuring2D::for_each_16b, the 16-byte pieces of a 64-byte by 8-row
+ * GOB).
+ */
+static uint64_t
+execute_gob_offset(
+	uint32_t pitch,
+	uint32_t x,
+	uint32_t y)
+{
+	uint64_t gob;
+	uint32_t inside;
+
+	/* The GOB, then the byte within it. */
+	gob = (uint64_t)(y / NVRTX_VK_GOB_HEIGHT) * (pitch / NVRTX_VK_GOB_WIDTH) + x / NVRTX_VK_GOB_WIDTH;
+	x %= NVRTX_VK_GOB_WIDTH;
+	y %= NVRTX_VK_GOB_HEIGHT;
+	inside = (x & 15U) | ((y & 3U) << 4) | ((x & 16U) << 2) | ((y & 4U) << 5) | ((x & 32U) << 3);
+
+	/* Succeeded: the byte's offset. */
+	return gob * NVRTX_VK_GOB_BYTES + inside;
+}
+
+/*
+ * Copies regions between two buffers by the CPU through the BAR1 window,
+ * after the work before it ran (the copy is a one-off upload: a model's
+ * vertices and indices from a staging buffer).
+ */
+static int
+execute_copy_buffer(
+	struct nvrtx_vk_session *session,
+	struct nvrtx_vk_execute *execute,
+	const struct nvrtx_vk_record *record)
+{
+	const struct nvrtx_vk_buffer *source;
+	const struct nvrtx_vk_buffer *destination;
+	const VkBufferCopy *regions;
+	uint8_t *source_cpu;
+	uint8_t *destination_cpu;
+	uint32_t index;
+	int error;
+
+	source = record->objects[0]->payload;
+	destination = record->objects[1]->payload;
+
+	/* Each region inside both buffers. */
+	regions = record->regions;
+	for (index = 0U; index < record->region_count; index++) {
+		if (regions[index].srcOffset > source->size || regions[index].size > source->size - regions[index].srcOffset)
+			return EINVAL;
+		if (regions[index].dstOffset > destination->size || regions[index].size > destination->size - regions[index].dstOffset)
+			return EINVAL;
+	}
+
+	/* The work before has run; the two views. */
+	error = execute_drain(session, execute);
+	if (error == 0)
+		error = nvrtx_vk_buffer_cpu(session, source, &source_cpu);
+	if (error == 0)
+		error = nvrtx_vk_buffer_cpu(session, destination, &destination_cpu);
+	if (error != 0)
+		return error;
+
+	/* The regions (kern_memmove: they may overlap within one buffer). */
+	for (index = 0U; index < record->region_count; index++) {
+		kern_memmove(destination_cpu + regions[index].dstOffset, source_cpu + regions[index].srcOffset, (size_t)regions[index].size);
+		nvrtx_vk_gpu_copied(session->owner, regions[index].size);
+	}
+
+	/* Succeeded: the regions are copied. */
+	return 0;
+}
+
+/* Clears a whole image, every level, to a colour (it has one layer). */
 static int
 execute_clear_image(
 	struct nvrtx_vk_execute *execute,
@@ -1289,20 +1929,21 @@ execute_clear_image(
 {
 	const struct nvrtx_vk_image *image;
 	struct nvrtx_exec_target target;
+	uint32_t level;
 	uint8_t *push;
 	int error;
 
 	image = record->objects[0]->payload;
 
-	/* The image as a target. */
-	error = execute_image_target(image, image->format, &target);
-	if (error != 0)
-		return error;
-
-	/* The target, then its whole rectangle cleared. */
+	/* Each level as a target, then its whole rectangle cleared. */
 	push = execute->cpu + EXECUTE_PUSH_AT;
-	execute->at = nvrtx_exec_target(push, execute->at, &target);
-	execute->at = nvrtx_exec_clear(push, execute->at, record->values, 0U, 0U, target.width, target.height);
+	for (level = 0U; level < image->levels; level++) {
+		error = execute_image_target(image, level, image->format, &target);
+		if (error != 0)
+			return error;
+		execute->at = nvrtx_exec_target(push, execute->at, &target);
+		execute->at = nvrtx_exec_clear(push, execute->at, record->values, 0U, 0U, target.width, target.height);
+	}
 	state->target_written = false;
 
 	/* Succeeded: the clear is written. */
@@ -1325,6 +1966,7 @@ execute_quad(
 	struct nvrtx_exec_sampler sampler;
 	struct nvrtx_exec_vertex vertex;
 	struct nvrtx_exec_blend blend;
+	struct nvrtx_exec_depth depth;
 	static const uint32_t identity[4] = {
 		VK_COMPONENT_SWIZZLE_R, VK_COMPONENT_SWIZZLE_G, VK_COMPONENT_SWIZZLE_B, VK_COMPONENT_SWIZZLE_A
 	};
@@ -1353,9 +1995,14 @@ execute_quad(
 	if (!inside)
 		return EINVAL;
 
-	/* The source's header and a sampler in pixels, clamped. */
-	nvrtx_exec_texture_header(header, quad->source, quad->source_width, quad->source_height, quad->source_pitch,
-				  quad->source_format, identity);
+	/* The source's header (a tiled source's level as a surface of its own) and a sampler in pixels, clamped. */
+	if (quad->source_tiled) {
+		nvrtx_exec_texture_header_tiled(header, quad->source, quad->source_width, quad->source_height, 1U, 0U, 1U,
+						quad->source_format, identity);
+	} else {
+		nvrtx_exec_texture_header(header, quad->source, quad->source_width, quad->source_height, quad->source_pitch,
+					  quad->source_format, identity);
+	}
 	kern_memset(&sampler, 0, sizeof(sampler));
 	sampler.mag_filter = quad->filter;
 	sampler.min_filter = quad->filter;
@@ -1398,6 +2045,11 @@ execute_quad(
 	blend.write_mask = 0xfU;
 	execute->at = nvrtx_exec_blend(push, execute->at, &blend);
 
+	/* No culling and no depth test (a pass's draws may have left them on). */
+	execute->at = nvrtx_exec_raster(push, execute->at, VK_CULL_MODE_NONE, VK_FRONT_FACE_COUNTER_CLOCKWISE);
+	kern_memset(&depth, 0, sizeof(depth));
+	execute->at = nvrtx_exec_depth(push, execute->at, &depth);
+
 	/* The corners at location 0, the constants, the programs, two triangles. */
 	kern_memset(&vertex, 0, sizeof(vertex));
 	vertex.attribute_count = 1U;
@@ -1418,35 +2070,91 @@ execute_quad(
 }
 
 /*
- * Describes an image as a colour target in a format; EIO without storage,
- * EINVAL for a format the executor does not render to.
+ * Describes a level of an image as a colour target in a format, with no
+ * depth target; EIO without storage, EINVAL for a format the executor does
+ * not render to.
  */
 static int
 execute_image_target(
 	const struct nvrtx_vk_image *image,
+	uint32_t level,
 	uint32_t format,
 	struct nvrtx_exec_target *target)
 {
+	uint64_t va;
+	uint64_t offset;
 	uint8_t *cpu;
 	uint32_t code;
 	bool renderable;
 	int error;
 
 	/* The image's storage. */
-	error = nvrtx_vk_image_address(image, &target->address, &cpu);
+	kern_memset(target, 0, sizeof(*target));
+	error = nvrtx_vk_image_address(image, &va, &cpu);
 	if (error != 0)
 		return error;
 
-	/* A format rendered to. */
+	/* A format rendered to, of a colour image. */
 	renderable = nvrtx_exec_target_format(format, &code);
-	if (!renderable)
+	if (!renderable || image->depth)
 		return EINVAL;
 
-	/* Succeeded: the target is the image. */
-	target->width = image->width;
-	target->height = image->height;
-	target->pitch = image->pitch;
+	/* Succeeded: the target is the image's level. */
+	nvrtx_vk_image_level(image, level, &offset, &target->width, &target->height, &target->pitch);
+	target->address = va + offset;
 	target->format = format;
+	target->block_linear = 0U;
+	if (image->tiled)
+		target->block_linear = 1U;
+	return 0;
+}
+
+/* Puts a depth image beside a colour target as its depth target; EIO without storage, EINVAL for a colour image. */
+static int
+execute_depth_target(
+	const struct nvrtx_vk_image *image,
+	struct nvrtx_exec_target *target)
+{
+	uint8_t *cpu;
+	int error;
+
+	/* A depth image with storage. */
+	if (!image->depth)
+		return EINVAL;
+	error = nvrtx_vk_image_address(image, &target->depth_address, &cpu);
+	if (error != 0)
+		return error;
+
+	/* Succeeded: the target has its depth target. */
+	target->depth_pitch = image->pitch;
+	target->depth_height = image->height;
+	return 0;
+}
+
+/* Describes a level of an image as a quad's source; EIO without storage, EINVAL for a depth image. */
+static int
+execute_image_source(
+	const struct nvrtx_vk_image *image,
+	uint32_t level,
+	struct execute_quad *quad)
+{
+	uint64_t va;
+	uint64_t offset;
+	uint8_t *cpu;
+	int error;
+
+	/* A colour image with storage. */
+	if (image->depth)
+		return EINVAL;
+	error = nvrtx_vk_image_address(image, &va, &cpu);
+	if (error != 0)
+		return error;
+
+	/* Succeeded: the source is the image's level. */
+	nvrtx_vk_image_level(image, level, &offset, &quad->source_width, &quad->source_height, &quad->source_pitch);
+	quad->source = va + offset;
+	quad->source_format = image->format;
+	quad->source_tiled = image->tiled;
 	return 0;
 }
 

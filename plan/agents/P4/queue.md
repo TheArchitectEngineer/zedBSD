@@ -46,3 +46,5 @@ Worktree `/home/awe/zedBSD-worktrees/p4-ws307e`、定義 phase-runner。
 | Queue | Phase | 範囲 | State |
 | --- | --- | --- | --- |
 | q1665 | [ws307](../../ws307/ws.md) p002〜p014 | spec.md どおりに実装。toolchain（sysroot.mk・libcxx）・asset の upload・HAL に触れる所は始める前に Q1 へ。QEMU。原文「P4にWS307」 | in-progress |
+
+- 2026-10-29 Q1 の追加（q1665 の範囲）: spec §13a の plan/tools を user → kei の順で試す形の変更（aat・hw5330・gpu-perf・AAT の helper）を P4 の worktree で。toolchain の sysroot.mk（p003）と lang/clang・devel/libcxx（p004）の編集を許可（自分の build/ の下だけ、共有の toolchain の unlock・install・PATCH_LEVEL の上げ・asset の upload はしない、要れば止めてユーザーの判断）。

@@ -44,7 +44,21 @@
 /* The kernel's direct map of physical memory and devices. */
 #define RPI4_DIRECT_BASE	0xffff000000000000ULL
 
-#if defined(HAL_BOARD_RPI5)
+#if defined(HAL_BOARD_ODROID_C5)
+/*
+ * The ODROID-C5's debug UART (the S905X5M's uart_B), an Amlogic UART: its
+ * receive FIFO, its status register and the status's receive-empty bit.
+ *
+ * Values referenced: Hardkernel Linux odroids7d-6.12.y common_drivers
+ * arch/arm64/boot/dts/amlogic/meson-s7d.dtsi (uart_B under apb4's
+ * ranges); Linux v7.3 drivers/tty/serial/meson_uart.c (the receive FIFO
+ * and status offsets, and the receive-empty bit).
+ */
+#define RPI4_UART_BASE		0xfe07a000ULL
+#define RPI4_UART_DR		0x04U
+#define RPI4_UART_FR		0x0cU
+#define RPI4_UART_FR_RXFE	0x00100000U
+#elif defined(HAL_BOARD_RPI5)
 /*
  * The Pi 5's PL011 of the three-pin debug connector, which shares nothing
  * with the Bluetooth controller.
@@ -60,14 +74,20 @@
 #endif
 
 /* The name prefix under which the hardware layer describes the firmware's screen. */
-#if defined(HAL_BOARD_RPI5)
+#if defined(HAL_BOARD_ODROID_C5)
+#define RPI4_FRAMEBUFFER_NAME	"odroidc5.framebuffer"
+#elif defined(HAL_BOARD_RPI5)
 #define RPI4_FRAMEBUFFER_NAME	"rpi5.framebuffer"
 #else
 #define RPI4_FRAMEBUFFER_NAME	"rpi4.framebuffer"
 #endif
+
+/* A PL011's data and flag registers, and the flag's receive-empty bit. */
+#if !defined(HAL_BOARD_ODROID_C5)
 #define RPI4_UART_DR		0x00U
 #define RPI4_UART_FR		0x18U
 #define RPI4_UART_FR_RXFE	0x10U
+#endif
 
 /* The grid a serial terminal is assumed to have. */
 #define RPI4_CONSOLE_COLUMNS	80U
@@ -268,7 +288,7 @@ console_nothing(
 {
 }
 
-/* Reads one PL011 register. */
+/* Reads one register of the debug UART. */
 static uint32_t
 uart_read(
 	unsigned offset)

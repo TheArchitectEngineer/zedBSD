@@ -81,7 +81,7 @@ endif
 
 ZEDBSD_PLATFORM_DIR := $(strip \
 	$(if $(filter i386,$(ZEDBSD_PLATFORM)),pcat,\
-	$(if $(filter rpi4 rpi5,$(ZEDBSD_PLATFORM)),arm64,\
+	$(if $(filter rpi4 rpi5 odroid-c5,$(ZEDBSD_PLATFORM)),arm64,\
 	$(if $(filter sun4u,$(ZEDBSD_PLATFORM)),sparcv9,\
 	$(if $(filter riscv64-virt visionfive2,$(ZEDBSD_PLATFORM)),riscv64,\
 	$(if $(filter riscv32-virt,$(ZEDBSD_PLATFORM)),riscv32,\
@@ -115,6 +115,11 @@ endif
 # The Raspberry Pi 5 shares the Pi 4's platform directory, not its build tree.
 ifeq ($(ZEDBSD_PLATFORM),rpi5)
 BUILD := build/rpi5
+endif
+
+# So does the ODROID-C5.
+ifeq ($(ZEDBSD_PLATFORM),odroid-c5)
+BUILD := build/odroid-c5
 endif
 
 #
@@ -214,6 +219,7 @@ ZEDBSD_VARIANTS_amd64_pcat := native hybrid uefi bios
 ZEDBSD_VARIANTS_i386_pc98 := default
 ZEDBSD_VARIANTS_arm64_rpi4 := default
 ZEDBSD_VARIANTS_arm64_rpi5 := default
+ZEDBSD_VARIANTS_arm64_odroid-c5 := default
 ZEDBSD_VARIANTS_riscv64_virt := default
 ZEDBSD_VARIANTS_riscv64_visionfive2 := default
 ZEDBSD_VARIANTS_riscv32_virt := default
@@ -232,6 +238,7 @@ ZEDBSD_PLATFORM_TARGET_amd64 := amd64_pcat
 ZEDBSD_PLATFORM_TARGET_pc98 := i386_pc98
 ZEDBSD_PLATFORM_TARGET_rpi4 := arm64_rpi4
 ZEDBSD_PLATFORM_TARGET_rpi5 := arm64_rpi5
+ZEDBSD_PLATFORM_TARGET_odroid-c5 := arm64_odroid-c5
 ZEDBSD_PLATFORM_TARGET_riscv64-virt := riscv64_virt
 ZEDBSD_PLATFORM_TARGET_visionfive2 := riscv64_visionfive2
 ZEDBSD_PLATFORM_TARGET_riscv32-virt := riscv32_virt
@@ -324,6 +331,9 @@ CONFIG_GHCI_HOST_UNCACHED ?= n
 CONFIG_DRIVER_PCI_HDA ?= $(if $(filter amd64,$(ZEDBSD_PLATFORM)),y,n)
 
 CONFIG_DRIVER_PCI_INTEL_AX211 ?= n
+CONFIG_DRIVER_PCI_RTL8125 ?= n
+# Counts the RTL8125-family driver's own work and reports it once a second (a diagnostic).
+CONFIG_DRIVER_PCI_RTL8125_PROFILE ?= n
 
 # The Pi 4 onboard Ethernet works independently of the USB host controller.
 CONFIG_DRIVER_BCM2711_GENET ?= $(if $(filter rpi4,$(ZEDBSD_PLATFORM)),y,n)
@@ -503,6 +513,88 @@ USERLAND_NETWORK_PROGRAMS := $(foreach program,$(USERLAND_PACKAGES),\
 ZEDBSD_USER_PROGRAMS ?= $(ZEDBSD_DEFAULT_USER_PROGRAMS)
 
 #
+# The installer's image (make installer-image) builds everything an
+# installed system may be given, whatever the configuration chose: every
+# selectable program of the base, the desktop, the firmware and the
+# packages that the platform takes.  The tests and X11 are not offered
+# for installing, and the installer itself is the image's own, not a
+# unit (platform/amd64/installer-image.mk).  menuconfig still configures
+# the kernel.
+#
+ZEDBSD_IMAGE_PROFILE ?=
+ZEDBSD_INSTALLER_MENUS := base desktop packages/%
+ifeq ($(ZEDBSD_IMAGE_PROFILE),installer)
+#
+# The firmware is what the configured kernel's drivers need
+# (config/drivers/firmware.list: a driver's key, then its firmware
+# packages), as menuconfig selects it, not every firmware package.
+#
+ZEDBSD_INSTALLER_COMMA := ,
+ZEDBSD_INSTALLER_FIRMWARE := $(sort $(foreach row,$(shell sed -n \
+	's/^\(CONFIG_[A-Z0-9_]*\)|\(.*\)$$/\1=\2/p' config/drivers/firmware.list | tr ' ' ','),\
+ $(if $(filter y,$($(firstword $(subst =, ,$(row))))),\
+ $(subst $(ZEDBSD_INSTALLER_COMMA), ,$(lastword $(subst =, ,$(row)))))))
+override ZEDBSD_USER_PROGRAMS := $(foreach program,$(ZEDBSD_ALL_USER_PROGRAMS),\
+	$(if $(filter $(ZEDBSD_INSTALLER_MENUS),$(USERLAND_$(program)_MENU)),\
+ $(if $(call user_program_applies,$(program)),$(program)))) \
+	$(filter $(ZEDBSD_INSTALLER_FIRMWARE),$(foreach program,$(ZEDBSD_ALL_USER_PROGRAMS),\
+ $(if $(filter firmware,$(USERLAND_$(program)_MENU)),$(program))))
+#
+# A test's image may leave out programs it does not build (the toolchain's
+# packages, whose build is not a test's to make); only a test's
+# configuration sets ZEDBSD_INSTALLER_TEST_OMIT, and with it
+# ZEDBSD_INSTALLER_TEST_ITEMS, items that do not name the units left out
+# (platform/amd64/installer-image.mk).
+#
+override ZEDBSD_USER_PROGRAMS := $(filter-out $(ZEDBSD_INSTALLER_TEST_OMIT),$(ZEDBSD_USER_PROGRAMS))
+else ifneq ($(strip $(ZEDBSD_IMAGE_PROFILE)),)
+$(error Unknown ZEDBSD_IMAGE_PROFILE '$(ZEDBSD_IMAGE_PROFILE)'; the only profile is installer)
+endif
+
+#
+# make installer-image makes itself again with the profile, which
+# chooses the selection while make reads the makefiles; the trees are
+# its own ($(BUILD)/installer), so an ordinary image of the same BUILD
+# is left alone.  It is for the native amd64 layout only, and alone on
+# the command line: another image's goal would want the configuration's
+# selection, which the profile replaces.
+#
+ZEDBSD_OTHER_IMAGE_GOALS := $(filter-out installer-image \
+	$(BUILD)/installer-image.img,$(filter disk-image run rootfs world \
+ check-disk-image %.img %.hd,$(MAKECMDGOALS)))
+ifneq ($(or $(filter installer-image,$(MAKECMDGOALS)),$(filter installer,$(ZEDBSD_IMAGE_PROFILE))),)
+ifneq ($(strip $(ZEDBSD_PLATFORM) $(ZEDBSD_VARIANT)),amd64 native)
+$(error make installer-image needs ZEDBSD_PLATFORM amd64 and ZEDBSD_VARIANT native \
+	(the configuration has '$(ZEDBSD_PLATFORM)' and '$(ZEDBSD_VARIANT)'))
+endif
+ifneq ($(strip $(ZEDBSD_OTHER_IMAGE_GOALS)),)
+$(error make installer-image cannot share the command line with $(ZEDBSD_OTHER_IMAGE_GOALS))
+endif
+endif
+ifneq ($(ZEDBSD_IMAGE_PROFILE),installer)
+.PHONY: installer-image
+installer-image:
+	+$(MAKE) ZEDBSD_IMAGE_PROFILE=installer $(BUILD)/installer-image.img
+endif
+
+#
+# The installer and its helper are the menu installer's: the installer's
+# image puts them in its own root (platform/amd64/installer-image.mk), and
+# no other image may carry them, for the helper writes disks as root
+# without asking for a password.  Their registrations are not selectable,
+# so menuconfig does not offer them; a configuration that names one
+# anyway is refused below, after the dependencies are expanded.
+#
+ZEDBSD_INSTALLER_PROGRAMS := $(foreach program,$(USERLAND_PACKAGES),\
+	$(if $(filter installer,$(USERLAND_$(program)_MENU)),$(program)))
+ifneq ($(strip $(foreach program,$(ZEDBSD_INSTALLER_PROGRAMS),\
+ $(filter-out n,$(USERLAND_$(program)_SELECTABLE)))),)
+$(error A program of the menu installer must not be selectable: \
+	$(foreach program,$(ZEDBSD_INSTALLER_PROGRAMS),\
+ $(if $(filter-out n,$(USERLAND_$(program)_SELECTABLE)),$(program))))
+endif
+
+#
 # Remove held package roots before dependency expansion. Otherwise a
 # stale configuration that still names a held application could retain
 # its dependencies even though the application itself is suppressed.
@@ -531,6 +623,10 @@ ZEDBSD_USER_PROGRAMS_DEPS_2 := $(sort $(ZEDBSD_USER_PROGRAMS_DEPS_1) \
 ZEDBSD_USER_PROGRAMS_DEPS_3 := $(sort $(ZEDBSD_USER_PROGRAMS_DEPS_2) \
 	$(call user_program_dependency_names,$(ZEDBSD_USER_PROGRAMS_DEPS_2)))
 override ZEDBSD_USER_PROGRAMS := $(ZEDBSD_USER_PROGRAMS_DEPS_3)
+ifneq ($(strip $(filter $(ZEDBSD_INSTALLER_PROGRAMS),$(ZEDBSD_USER_PROGRAMS))),)
+$(error Only make installer-image builds the installer; the selection names \
+	$(filter $(ZEDBSD_INSTALLER_PROGRAMS),$(ZEDBSD_USER_PROGRAMS)))
+endif
 ifneq ($(strip $(ZEDBSD_TARGET_TRIPLE)),)
 override ZEDBSD_USER_PROGRAMS := $(sort \
 	$(ZEDBSD_USER_PROGRAMS) llvm-runtime-license)
@@ -829,6 +925,8 @@ ZEDBSD_CONFIG_CPPFLAGS := \
 	-DCONFIG_GHCI_HOST_UNCACHED=$(if $(filter y,$(CONFIG_GHCI_HOST_UNCACHED)),1,0) \
 	-DCONFIG_DRIVER_PCI_HDA=$(if $(filter y,$(CONFIG_DRIVER_PCI_HDA)),1,0) \
 	-DCONFIG_DRIVER_PCI_INTEL_AX211=$(if $(filter y,$(CONFIG_DRIVER_PCI_INTEL_AX211)),1,0) \
+	-DCONFIG_DRIVER_PCI_RTL8125=$(if $(filter y,$(CONFIG_DRIVER_PCI_RTL8125)),1,0) \
+	-DCONFIG_DRIVER_PCI_RTL8125_PROFILE=$(if $(filter y,$(CONFIG_DRIVER_PCI_RTL8125_PROFILE)),1,0) \
 	-DCONFIG_DRIVER_BCM2711_GENET=$(if $(filter y,$(CONFIG_DRIVER_BCM2711_GENET)),1,0) \
 	-DCONFIG_DRIVER_BCM2711_GPU=$(if $(filter y,$(CONFIG_DRIVER_BCM2711_GPU)),1,0) \
 	-DCONFIG_DRIVER_POWERVR=$(if $(filter y,$(CONFIG_DRIVER_POWERVR)),1,0) \
@@ -869,6 +967,10 @@ ZEDBSD_CONFIG_CPPFLAGS += -DRPI4_SERIAL_CONSOLE
 endif
 # The Pi 5 shares the Pi 4's console code, which the same switch turns to the serial line.
 ifeq ($(ZEDBSD_PLATFORM)$(CONFIG_RPI5_SERIAL_CONSOLE),rpi5y)
+ZEDBSD_CONFIG_CPPFLAGS += -DRPI4_SERIAL_CONSOLE
+endif
+# So does the ODROID-C5, whose debug UART is the console by default.
+ifeq ($(ZEDBSD_PLATFORM)$(CONFIG_ODROID_C5_SERIAL_CONSOLE),odroid-c5y)
 ZEDBSD_CONFIG_CPPFLAGS += -DRPI4_SERIAL_CONSOLE
 endif
 ifeq ($(CONFIG_INPUT_TEST_INJECT),y)
@@ -1026,11 +1128,13 @@ KERN_NET_SOURCES := \
 	src/kern/net/icmp.c \
 	src/kern/net/udp.c \
 	src/kern/net/tcp.c \
+	src/kern/net/tcp-cubic.c \
 	src/kern/net/in6.c \
 	src/kern/net/in6-address.c \
 	src/kern/net/in6-route.c \
 	src/kern/net/in6-neighbor.c \
 	src/kern/net/ipv6.c \
+	src/kern/net/ipv6-frag.c \
 	src/kern/net/ipv6-ioctl.c \
 	src/kern/net/icmp6.c \
 	src/kern/net/nd6.c \
@@ -1258,11 +1362,13 @@ $(ZEDBSD_VERSION_STAMP): FORCE_ZEDBSD_VERSION
 	@printf '%s\n' '$(ZEDBSD_VERSION)' > $@.tmp
 	@if cmp -s $@.tmp $@; then rm -f $@.tmp; else mv $@.tmp $@; fi
 
+include config/os-name.mk
+
 $(ZEDBSD_OS_RELEASE): FORCE_ZEDBSD_VERSION
 	@mkdir -p $(dir $@)
-	@printf '%s\n' 'NAME="zedBSD"' 'ID=zedbsd' \
+	@printf '%s\n' 'NAME="$(ZEDBSD_OS_NAME)"' 'ID=$(ZEDBSD_OS_ID)' \
  'VERSION="$(ZEDBSD_VERSION_NAME)"' 'VERSION_ID=$(ZEDBSD_VERSION)' \
- 'PRETTY_NAME="Kei/zedBSD $(ZEDBSD_VERSION_NAME)"' \
+ 'PRETTY_NAME="$(ZEDBSD_OS_NAME) $(ZEDBSD_VERSION_NAME)"' \
  'BUILD_ID=$(ZEDBSD_SOURCE_REVISION)' 'ZEDBSD_RELEASE=$(ZEDBSD_RELEASE)' \
  'ZEDBSD_VERSION="zedBSD $(ZEDBSD_RELEASE) ($(ZEDBSD_SOURCE_REVISION) $(ZEDBSD_SOURCE_DATE))"' > $@.tmp
 	@if cmp -s $@.tmp $@; then rm -f $@.tmp; else mv $@.tmp $@; fi
@@ -1309,7 +1415,7 @@ ZEDBSD_PACKAGE_FILES += $(ZEDBSD_EXTRA_FILES)
 # prerequisite.
 #
 
-ZEDBSD_ROOTFS_CONFIG_STAMP := $(BUILD)/.rootfs-config
+ZEDBSD_ROOTFS_CONFIG_STAMP := $(BUILD)/$(if $(filter installer,$(ZEDBSD_IMAGE_PROFILE)),installer/).rootfs-config
 ZEDBSD_ARCH_IMAGE_CONFIG_STAMP := \
 	$(ARCH_IMAGE_DIR)/.$(ZEDBSD_ARCHITECTURE)-rootfs-config
 .PHONY: FORCE_ZEDBSD_ROOTFS_CONFIG
@@ -1386,7 +1492,8 @@ ZEDBSD_ROOTFS_DIRECTORIES := bin sbin lib etc var root home dev boot run \
 ZEDBSD_ROOTFS_STICKY_DIRECTORIES := tmp shm
 
 #
-# $(1): profile, $(2): prerequisites, $(3): --file/--mode arguments.
+# $(1): profile, $(2): prerequisites, $(3): --file/--mode arguments,
+# $(4): the tree's directory ($(BUILD)/rootfs when it is not given).
 #
 # The staged tree is the root.  It is what the UFS image is made from,
 # so there is one description of what a root holds instead of two that
@@ -1424,23 +1531,27 @@ ZEDBSD_ROOTFS_STICKY_DIRECTORIES := tmp shm
 #
 
 define ZEDBSD_ROOTFS_TREE_RULE
-$(BUILD)/rootfs/.stamp: $(ZEDBSD_ROOTFS_CONFIG_STAMP) $(2) \
+$(call ZEDBSD_ROOTFS_TREE_RULE_AT,$(1),$(2),$(3),$(or $(4),$(BUILD)/rootfs))
+endef
+
+define ZEDBSD_ROOTFS_TREE_RULE_AT
+$(4)/.stamp: $(ZEDBSD_ROOTFS_CONFIG_STAMP) $(2) \
 	$(ZEDBSD_PACKAGE_INPUTS) $(ZEDBSD_ROOTFS_DEVELOPMENT_INPUTS)
-	@rm -rf $(BUILD)/rootfs
-	@umask 022; mkdir -p $(BUILD)/rootfs $(addprefix $(BUILD)/rootfs/,\
+	@rm -rf $(4)
+	@umask 022; mkdir -p $(4) $(addprefix $(4)/,\
  $(ZEDBSD_ROOTFS_DIRECTORIES) $(ZEDBSD_ROOTFS_STICKY_DIRECTORIES))
-	@chmod 0755 $(BUILD)/rootfs $(addprefix $(BUILD)/rootfs/,\
+	@chmod 0755 $(4) $(addprefix $(4)/,\
  $(ZEDBSD_ROOTFS_DIRECTORIES))
-	@chmod 1777 $(addprefix $(BUILD)/rootfs/,\
+	@chmod 1777 $(addprefix $(4)/,\
  $(ZEDBSD_ROOTFS_STICKY_DIRECTORIES))
-	@ln -s ../run $(BUILD)/rootfs/var/run
-	@umask 022; printf '%s\n' '$(1)' > $(BUILD)/rootfs/lib/arch.id
-	@umask 022; printf 'zedBSD ufs root v1\n' > $(BUILD)/rootfs/etc/zedbsd-root
+	@ln -s ../run $(4)/var/run
+	@umask 022; printf '%s\n' '$(1)' > $(4)/lib/arch.id
+	@umask 022; printf 'zedBSD ufs root v1\n' > $(4)/etc/zedbsd-root
 	@set -e; umask 022; for pass in file mode; do \
  set -- $(3) $$(ZEDBSD_PACKAGE_FILES); while test $$$$# -gt 0; do \
  option=$$$$1; specification=$$$$2; shift 2; \
  path=$$$${specification%%=*}; value=$$$${specification#*=}; \
- path=$$$${path#/}; destination=$(BUILD)/rootfs/$$$$path; \
+ path=$$$${path#/}; destination=$(4)/$$$$path; \
  case $$$$option in \
  --file) test "$$$$pass" = file || continue; \
  mkdir -p "$$$${destination%/*}"; cp -f "$$$$value" "$$$$destination" ;; \
@@ -1460,11 +1571,11 @@ $(BUILD)/rootfs/.stamp: $(ZEDBSD_ROOTFS_CONFIG_STAMP) $(2) \
 	done
 	@set -e; umask 022; for specification in $(ZEDBSD_PACKAGE_LINKS); do \
  path=$$$${specification%%=*}; target=$$$${specification#*=}; \
- path=$$$${path#/}; destination=$(BUILD)/rootfs/$$$$path; \
+ path=$$$${path#/}; destination=$(4)/$$$$path; \
  mkdir -p "$$$${destination%/*}"; ln -sfn "$$$$target" "$$$$destination"; \
  done
-	@$$(call ZEDBSD_ROOTFS_INSTALL_DEVELOPMENT,$(BUILD)/rootfs)
-	@find $(BUILD)/rootfs \( -path $(BUILD)/rootfs/tmp -o -path $(BUILD)/rootfs/shm \) \
+	@$$(call ZEDBSD_ROOTFS_INSTALL_DEVELOPMENT,$(4))
+	@find $(4) \( -path $(4)/tmp -o -path $(4)/shm \) \
  -prune -o -type d -exec chmod 0755 {} +
 	@umask 022; touch $$@
 endef
@@ -1575,7 +1686,7 @@ $(BUILD)/src/hal/i386/cmain.o: HAL_CC += -DZEDBSD_VERSION='"$(ZEDBSD_VERSION)"'
 $(BUILD)/kern64/src/kern/main.o $(BUILD)/src/kern/main.o: $(ZEDBSD_VERSION_STAMP)
 $(BUILD)/kern64/src/kern/main.o: AMD64_CPPFLAGS += -DZEDBSD_VERSION='"$(ZEDBSD_VERSION)"'
 $(BUILD)/src/kern/main.o: OBJ_CFLAGS += -DZEDBSD_VERSION='"$(ZEDBSD_VERSION)"'
-include tools/release/kei-nightly.mk
+include tools/release/zedbsd-nightly.mk
 
 ifneq ($(strip $(ZEDBSD_TARGET_TRIPLE)),)
 
@@ -1615,7 +1726,7 @@ distclean: noct-clean
 	rm -rf build
 
 ifneq ($(strip $(ZEDBSD_PLATFORM)),)
--include $(filter-out $(BUILD)/rootfs/%,$(wildcard $(BUILD)/*.d \
+-include $(filter-out $(BUILD)/rootfs/% $(BUILD)/installer/%,$(wildcard $(BUILD)/*.d \
 	$(BUILD)/*/*.d $(BUILD)/*/*/*.d $(BUILD)/*/*/*/*.d \
 	$(BUILD)/*/*/*/*/*.d $(BUILD)/*/*/*/*/*/*.d \
 	$(BUILD)/*/*/*/*/*/*/*.d \

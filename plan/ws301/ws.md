@@ -3,8 +3,8 @@
 # WS301 CPU の省電力の driver の枠組み（DVFS と P-core/E-core の性能）
 
 - Master: [plan/master.md](../master.md)（2026-10-27 作成、q1615 P1 の計画）。Primary Milestone: MG004（既定構成の性能と電力）。Related: MG003、MG008（HAL の契約）、
-  [WS302](../ws302/ws.md)（この WS の口を使う）、[WS052](../ws052/ws.md)（電源の UAPI と文書）、[WS132](../ws132/ws.md)（`/dev/system` の事象）。
-- Status: planning（2026-10-27 新設。計画だけ）
+  [WS302](../ws302/ws.md)（この WS の口を使う）、[WS052](../ws052/ws.md)（電源の UAPI と文書）、[WS303](../ws303/ws.md)（`/dev/thermal`・strategy・passive、この WS の UAPI の置き場所）、[WS310](../ws310/ws.md)（`_OSC`）。
+- Status: planning（2026-10-27 新設。設計 p001 は第 3 版の改訂 3、2026-10-29）
 - 出典: 2026-10-27 ユーザー
   「CPUの省電力機能のドライバフレームワークを追加（WSを立てて検討）
   - コアごとのDVFSのステップ(設定可能な値)を取得する機能
@@ -24,84 +24,52 @@ kernel に CPU の性能と電力の枠組み（provider の登録の口）を�
 (5) 一番速い core を 100 とした core ごとの相対の性能、を kernel の中（WS302 などの利用者）と user（UAPI）から使えるようにする。
 他の機種（Pi 4・Pi 5・VisionFive 2・AMD）は provider を足す後の Phase で、枠組みはそれらを入れられる形にする。
 
-## 今の事実（2026-10-27 の調べ、根拠は file:行）
 
-- CPU の周波数・DVFS・P-state の code は **どの arch にも無い**（HWP・IA32_PERF_CTL・EPP・CPPC の `_CPC`・`_PSS`・`_PSD`・CPUID 0x1A・HFI・operating-points-v2 の grep が 0）。
-- topology: amd64 は MADT の LAPIC・x2APIC の平らな list（`src/hal/amd64/bsp-pcat/acpi.c:155-245`、`smp.c:44-100`）で、SMT・core・cluster・package は出していない。
-  CPUID 0xB/0x1F は console の lock の x2APIC の ID だけ（`bsp-pcat/cons.c:586-616`）。arm64 は MPIDR（`bsp-rpi4/fdt.c:679-708`）、riscv64 は `cpu-map` を読まない（`src/hal/riscv64/fdt.c:1121`）。
-- HAL の CPU の口は `hal_cpu_count`・`hal_cpu_current`・mask・notify・`hal_cpu_idle`・`hal_cpu_idle_suspend*`（`include/hal/hal.h:120-232`）だけ。MSR の読み書きは HAL の中だけ（`src/hal/amd64/asm.c:270-295`）。
-- 似た前例: GPU の DVFS は i915 の RPS（`src/drivers/gpu/i915/gt-power.c:252-723`）、遠隔測定は `hw.gputelemetry`（`include/uapi/sysctl.h:179-237`）。熱は `hw.thermal`（ACPI の `_TMP`・`_PSV`・`_CRT`、Pi 5 の fan、`src/drivers/acpi/acpi-thermal.c:112`、`rpi5-fan.c:330`）。
-  Pi 4 の firmware の mailbox は core の clock だけ扱う（`src/drivers/platform/rpi4/rpi4-firmware.c:132-137`、ARM の clock 3 は使っていない）。VF2 の CPU の clock には触らない（`vf2-crg.c:18-23`）、PMIC の driver は無い。
-- `docs/architecture/power-management.md:22-24` は「processor frequency control and thermal management」を対応外と書いている（ユーザーの review 待ちの文書）。この WS で範囲を変える。
+## 設計の要点（写し。本体は [design.md](design.md) 第 3 版の改訂 3）
 
-## 範囲
+- UAPI は WS303 の `/dev/thermal`（ioctl の範囲 32〜63、`include/uapi/thermal.h`）。`/dev/system` には足さない（下の 2026-10-29 の決定が 2026-10-27 の「UAPI は /dev/system」を置き換えた）。
+- HAL は変えない（Q301-1）。x86 の driver（`src/drivers/platform/pcat/`）が CPUID・MSR を自分で扱い、CPU 間は既存の `hal_cpu_notify` の道。関門は CPUID の bit・hypervisor では動かない・model の allow list・`CONFIG_CPU_PERF` 既定 n。
+- WS301 は自分の policy を持たず、WS303 の strategy の受け手（登録は p004）。root の直の設定（domain ごとの min・max・desired・EPP）は診断の口。熱の上限（WS303 の passive）は千分率の口。
+- 対象は 5330（HWP と、`cpuperf.hwp=off` の試験の legacy の P-state）。arm64・riscv64 は枠だけ（Q301-5）。`_OSC` は呼ばない（Q301-3、WS310）。fan は WS303。
+- 相対の性能は起動の時に測る Highest の MHz の比が既定、基準は root が替えられる（Q301-2）。
+- 2026-10-27 の P1 の案（`/dev/system` の推し、HAL の差分、p001〜p009 の表）は git の履歴にあり、今は使わない。
 
-- 含む: kernel の枠組み（perf domain・step の表か連続の範囲・状態の set/get・相対の性能・topology）、利用者の口（kernel の内部の API と UAPI）、
-  既定の policy（performance・balanced・powersave 程度、熱の passive cooling の上限の口）、x86 の provider（HWP と、無い機械の `_PSS`＋PERF_CTL、Intel hybrid の core の種類と性能の比、ACPI `_CPC`・`_PSD`）、
-  後の Phase で arm64（Pi の firmware の ARM clock）・riscv64（JH7110 の CPU の PLL と OPP、電圧は PMIC が要る）・AMD（CPPC）の provider。
-- 含まない（別の WS か後）: thread の割り付けの判断（[WS302](../ws302/ws.md)）、S0ix（WS052）、**fan の制御**（下の「fan の扱い」、別の WS の案）、C-state の governor（今の idle は `hlt`、別の話）。
+## Phase（写し。本体は design.md §7）
 
-## UAPI の置き場所（ユーザーの補足への答え、推し）
+| Phase | 内容 | 依存 | LW | 状態 |
+| --- | --- | --- | --- | --- |
+| p001 | 調査と設計、design-reviewer、ユーザーの判断 | — | 残り 1 | in-progress（改訂 3、改訂 2・3 の review を待つ） |
+| p002 | 枠組み（domain・電圧の群・相対の性能と基準・strategy の受け・直の設定・熱の上限・要求の箱と notify の道・provider の口）と host 試験 | p001 | 5 | planning |
+| p003 | x86 の driver の基礎（CPUID・MSR の file、関門、topology、MADT の UID、notify の道） | p002 | 3 | planning |
+| p004 | HWP の道（enable、能力と MHz の測り、strategy の対応と受け手の登録、HFI、PECI の flag） | p003、WS303 p003a | 4 | planning |
+| p005 | legacy の P-state（`_PSS`・0xCE・AMD の HwPstate、governor） | p003 | 4 | planning |
+| p006 | UAPI（`/dev/thermal` の CPU の ioctl）と道具 | p002、WS303 p003a | 3 | planning |
+| p007 | 5330 の受け入れ（1 本の script） | p004、p005、p006 | 4 | planning |
+| p008 | 規約の全文と文書（WS303 と順を Q1） | p007 | 2 | planning |
 
-| 案 | 良い所 | 悪い所 |
-| --- | --- | --- |
-| **A. `/dev/system` の ioctl（推し）** | 電源の操作（`KERN_SYSTEM_GET_POWER`・`KERN_SYSTEM_SLEEP`）と事象の購読（WS132、class ごとの filter）が既に一か所にある。権限（root か session の user か）の扱いが揃う。policy の変化・熱の制限を事象で知らせられる。WS052 の電源の文書と同じ所に書ける | `system-device.c` が育つ。core ごとの表は可変長（`process_info` と同じ配列の ioctl で足りる） |
-| B. sysctl（`hw.cpuperf`） | `hw.cputimes`・`hw.thermal`・`hw.gputelemetry` と同じ形で、監視の道具（top など）が読みやすい | 固定の表の読みだけの口で、設定・権限・事象に向かない（設定は結局 A が要る） |
-| C. 新しい device（`/dev/cpuperf`） | 独立 | 口が増え、権限と事象の仕組みを作り直す |
+合計 約 25 LW（p001 を除く）。WS303 の p007（passive）は WS301 の p002・p004 の後。
 
-推し: **A**。topology・domain・step・相対の性能・今の状態の読みと、policy と domain の上限・下限の設定を `/dev/system` に、変化は事象の class で。
-秒ごとの監視で要れば、今の周波数だけ B の読みを後で足す（決めるのは p001）。UAPI の変更はユーザーの明示の決定（`plan/master-design-policy.md:189`）。
+## ユーザーの回答（2026-10-29、Q1 の中継、原文）
 
-「core ごとの DVFS の状態の設定」は、利用者が直接 MHz を書くより、domain ごとの min・max・desired（と EPP）を渡し、hardware（HWP）か provider が決める形を推す
-（HWP は logical CPU ごとの要求を hardware が domain で解く。共有の domain の core に違う値を書いた時の規則を p001 で決める）。
+- 2026-10-29 ユーザー（Q1 の中継、原文）「CPUのスピードは/dev/systemと言ってしまいましたが、/dev/thermalに変更してください。」→ 解釈: UAPI は WS303 の `/dev/thermal`（上の 2026-10-27 の「UAPI は /dev/system」を置き換える）。policy は WS303 の strategy の受け手（design.md の「第 2 版への追記」）。
 
-## fan の扱い（ユーザーの補足「ファン制御もあるといいですね。」、案）
+- Q301-3「最終的には呼ぶが、別なWSにして、システム全体の挙動が問題ないかを厳重にチェックする。今は呼ばない。」→ 解釈: この WS は `_OSC` を呼ばない。Q1 が WS310（`_OSC` を呼び全体の挙動を確かめる、WS301 の後）を作った。
+- Q301-4「試験が通るまで無効 (推し)」→ `CONFIG_CPU_PERF` の既定は n、p006（今の番号は p007）の受け入れの後に既定を決め直す。
+- Q301-5「枠だけ、実装は後 (推し)」→ arm64・riscv64 は provider の口と既定の答えまで。provider は後の WS。
+- Q301-7「持たせない (推し)」（Q1 の注: 利用者が選ぶのは WS303 の strategy だけ、CPU ごとの直の値は root の診断用だけ）→ WS301 は自分の policy・起動の parameter を持たない。domain ごとの直の設定は root の診断の口。
+- ユーザーの問い「HWP は必ずあるのか」→ design.md §4.9 と Q301-8（新）。
 
-- 推し: **別の WS（番号は Q1）「熱と fan の制御」**にし、この WS とは口だけ揃える。理由: 到達目標と hardware が違う（DVFS は CPU の register・firmware、fan は ACPI の `_FAN`・active cooling の `_ACx`/`_ALx`、
-  Dell の EC・SMM・thermal mode、Pi 5 の PWM（既存 `rpi5-fan.c`）、AMD の GPU の board の SMU の fan（[WS039](../ws039/ws.md) p012、`include/uapi/amdrdna.h:93-99`・`242-245`、GPU に閉じた物））。
-  5330 の fan は EC が回し、OS から直に duty を書けない見込み（読みと Dell の thermal mode の選択が現実的、要調査）。
-- 関係: 熱の policy は passive（この WS の DVFS の上限）と active（fan）を合わせて決める。passive の口（domain の上限を熱の側が下げる）はこの WS の p002 に入れ、熱と fan の WS がそれを使う。
-- UAPI は同じ置き場所（推し A の `/dev/system`、温度は今の `hw.thermal`）。
+## ユーザーの回答の第 2 回（2026-10-29、Q1 の中継の原文）
 
-## 制約
+- Q301-2（firmware の値が誤りだった事を伝えて聞き直した。前の答え「firmware の Nominal (推し)」を置き換える）「とりあえず推しにしますが、あとでマッピングを変えられるインタフェースにします。」→ 解釈: 既定は最大の周波数の比（5330 は E = 75）、基準は root が選べ driver が別の源を出せる口にする（design.md §4.7）。
+- Q301-8「P-stateを操作しますが、HALではなくドライバでできるはずです。」→ 解釈: HWP の無い CPU も P-state を操作する（legacy の道、design.md §4.9）。HAL を増やさず x86 の driver が CPUID・MSR を扱う。同じ理由で HWP・HFI・topology も driver に移し、HAL を変えない案を推しにした（design.md §4.2、Q301-1 の問いを [hal-review.md](hal-review.md) で改めた）。
 
-- HAL の API の変更は差分ごとの事前承認（[Guardrail](../guardrail.md)）。この WS で要る見込みの物（p001 で差分の案を `plan/ws301/proposed/` に置く、適用しない）:
-  - topology: `hal_cpu_topology(cpu, &info)`（package・core・SMT・cluster の ID、core の種類）。MADT・APIC ID・MPIDR は HAL が持つため。
-  - x86 の性能の register: core ごとに MSR を読み書きする口。案 (a) HAL が HWP の機構（caps の読み・要求の書き）を持ち policy は持たない（`hal_cpu_idle_suspend` と同じ分け方）、
-    案 (b) 指定の CPU で関数を走らせる口と MSR の口。推しは (a)（HAL の責務を「機構だけ」に保つ）。arm64・riscv64 は driver（firmware・clock）が provider で HAL は ENOTSUP。
-- 値と手順: Intel SDM（HWP・CPUID 0x1A・HFI）、ACPI 仕様（`_CPC`・`_PSS`・`_PSD`）、各 SoC の公開資料を優先。Linux の intel_pstate・cpufreq（GPL）は参照だけ、code は写さず block ごとに出典。
-- 規約: 新しいコードに `plan/coding-style.md` の全文。config は `config/kernel-options.list`・`Makefile`・`platform/<arch>/vmunix.mk` の形（`CONFIG_CPU_PERF` など）。
-- 試験: host 試験（domain の組み立て、相対の性能の計算、policy の解決、hybrid の scaling）と 5330 の実機（周波数の観測は APERF/MPERF の比か HWP の status、負荷の時と idle の時の電力は Debian の RAPL との比較か zedBSD の RAPL の読み）。
-  QEMU は口の回帰（provider が無い時に ENOTSUP・空の表）だけ。
+## ユーザーの回答（2026-10-29、Q301-1、Q1 が MSR の例外と Linux の rdmsr_safe を説明して聞き直した）
 
-## 受け入れ（案）
+- 回答（クリック）「HAL を変えず確かめで守る (推し)」→ HAL は変えない。driver の確かめ（CPUID・許可の表・hypervisor では動かない・既定は無効）で想定の外れを避け、外れた時は kernel が止まる（有効にした機械だけ）。安全網は必要になった時に別の差分で。
+- 途中のユーザーの問い（原文）「MSRを例外を期待してtryでアクセスする実装は、私は個人的には見たことがないのですが、Linuxではふつうなのですか？今の気持ちとしては、HALを変えないことに傾いていますが、再説明してください。」
 
-1. 5330 で、12 の logical CPU について、domain（共有の群）、step か連続の範囲、今の状態、相対の性能（最速の P-core = 100、E-core の値は p001 で根拠を示す）が UAPI で読め、Debian（`/sys/devices/system/cpu`・`intel_pstate`）の値と矛盾しない。
-2. policy と domain の min・max の設定で、負荷の時の実際の周波数（APERF/MPERF）が設定に従う事を数で示す。powersave で idle の電力が下がる（測れる範囲で）。
-3. kernel の内部の API（WS302 が使う相対の性能・domain・topology）が文書と host 試験で固まる。
-4. 提供者の無い機械（QEMU、他の arch）で壊れない（ENOTSUP か 1 domain の表）。build warning 0（全 platform）、`boot-test.sh` の回帰（T）、5330 の素の起動の回帰。
-5. 規約の全文、`docs/architecture/power-management.md`（か新しい文書）の更新（ユーザーの review）。
+## 再開点（2026-10-29 P5、q1666-i04）
 
-## Phase の案と見積もり（LW、±50%）
-
-| Phase | 内容 | 依存 | LW |
-| --- | --- | --- | --- |
-| p001 | 調査と設計: 5330 の HWP・CPUID 0x1A・HFI・`_CPC`・`_PSD`・RAPL を Debian で読む（cpuid・rdmsr・acpidump）、Pi・VF2・AMD の口の下見、枠組みの API・UAPI（推し A の詳細）・HAL の差分の案・config、design-reviewer | — | 6 |
-| p002 | kernel の枠組み（domain・step・状態・相対の性能・policy・熱の上限の口）と host 試験、provider の無い時の形 | p001、HAL・UAPI の決定 | 5 |
-| p003 | HAL: topology と x86 の HWP の機構（承認された差分だけ） | p001 の承認 | 4 |
-| p004 | x86 の provider: HWP（と `_PSS`＋PERF_CTL の fallback）、Intel hybrid の core の種類と性能の比、`_PSD` の domain | p002、p003 | 6 |
-| p005 | UAPI（`/dev/system` の ioctl と事象）、`cpuperf` の道具（読みと設定） | p002、UAPI の決定 | 4 |
-| p006 | 5330 の受け入れ（1 本の script: 表の読み、設定と APERF/MPERF、電力） | p004、p005 | 3 |
-| p007 | arm64 の provider（Pi 4・Pi 5 の firmware の ARM clock、domain は 4 core で 1 つ） | p002 | 4 |
-| p008 | riscv64 の provider（JH7110 の CPU の PLL と OPP、電圧の PMIC が要るなら別の Phase か WS に） | p002 | 5 |
-| p009 | 規約の全文の見直しと文書 | p006〜p008 | 3 |
-
-合計 約 40 LW（p001〜p006・p009 の 5330 だけなら 31 LW）。p007・p008 は 5330 の後で、ユーザーの判断で後に回せる。
-
-## 判断が要る点
-
-- UAPI の置き場所（推し A、`/dev/system`）と、設定を誰に許すか（root だけか、session の user が policy を選べるか）。
-- HAL の差分（topology、x86 の HWP の機構の案 (a)）の承認。
-- fan を別の WS にする（推し）か、この WS に入れるか。
-- 範囲: 5330 だけで WS を閉じ、他の arch は別の WS にするか、p007・p008 まで入れるか。
-- `docs/architecture/power-management.md` の「CPU の周波数と熱は対応外」を変えること。
+- design.md 第 3 版の改訂 3: Q301-1 の答え（HAL を変えない）、第 3 版の review の minor m1〜m17、§4.10 の lock の順を WS303 第 5 版（worker から lock なし）に合わせた（行き先は design.md §12）。HAL の差分の案 [proposed/hal-cpu-perf.diff](proposed/hal-cpu-perf.diff) は選ばなかった案 C の記録（当てない）、ユーザー向けの説明は [hal-review.md](hal-review.md)（回答済み）。
+- 次: 改訂 2・3 の design-reviewer（design-v3r3-review.md）と反映。ユーザーへの問いは無い（WS303 の Q303-17・18 の答えを待つ所は推し A で書いた）。

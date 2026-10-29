@@ -6,7 +6,7 @@
  */
 
 /*
- * The Kei mark (ws035-p108), as in kei-boot-splash.png and
+ * The mark, as in zedbsd-boot-splash.png and
  * plan/ws035/kei-identity-design.md: a tall bar with rounded corners (the
  * lower left one wide) and a leaf, a lens leaning from the bar's foot to
  * the upper right, over it.  Each layer is a square of coverage (0..255)

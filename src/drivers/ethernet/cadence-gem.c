@@ -256,6 +256,7 @@ static const struct net_device_ops gem_operations = {
 	gem_transmit,
 	gem_poll,
 	NULL,
+	NULL,
 	NULL
 };
 

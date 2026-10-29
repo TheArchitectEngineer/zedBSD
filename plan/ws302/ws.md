@@ -31,18 +31,18 @@ sched に core の種類の希望（hint）を出し、DTB を切った時に比
 - sched（`src/kern/sched.c` 2952 行、`include/kern/sched.h`）: CPU ごとの run queue、thread は CPU に固定、移動は `sched_set_cpu()`（:1665-1758）だけで、**走っている thread は移せず（EINVAL）、sched.c の外に呼び手は無い**。
   16 段の priority、全部の thread が既定の priority で作られる。affinity・cpuset は無い。負荷の分散は idle の CPU の盗み（:2528-2599）と、忙しい CPU が idle の CPU を起こす（:1092-1113）だけで、
   core の性能・topology を知らない。hint の口は無い。
-- **nice は保存されるが sched は読まない**（`setpriority` は `process->nice_value` に入れるだけ、`src/kern/syscall.c:8599-8722`、sched.c に nice は無い）。
+- **nice は保存されるが sched は読まない**（`setpriority` は `process->nice_value` に入れるだけ、`src/kern/syscall.c:8863-8935`（main 61630bb0b）、sched.c に nice は無い）。
 - 統計: process ごとの tick（cpu・user・system、`include/kern/process.h:119-124`）、`controlling_tty`（:145）、`command`。thread ごとは無い（`kern.perf=1` の時の診断だけ）。
-  syscall の数・最後の syscall の時刻・自発／非自発の切り替え・wake の数は無い（`ru_nvcsw`・`ru_nivcsw` は宣言だけ）。足す所は `syscall_dispatch_body`（syscall.c:9587）、`sched_wakeup`・`sched_yield`・`switch_without_enqueue`。
+  syscall の数・最後の syscall の時刻・自発／非自発の切り替え・wake の数は無い（`ru_nvcsw`・`ru_nivcsw` は宣言だけ）。足す所は `syscall_dispatch_body`（syscall.c:9796、main 61630bb0b）、`sched_wakeup`・`sched_yield`・`switch_without_enqueue`。
 - HID: `src/drivers/generic/input.c` に kernel の購読の口 `drv_input_subscribe`（:1517、最大 8、今は console だけ）。数・最後の入力の時刻は無い。
 - GPU: `/dev/gpuN` の `struct gpu_session`（`src/drivers/gpu/gpu.c:219`）に process ごとの使用量は無い。device ごとの `hw.gputelemetry`（busy_ns など）だけ。
 - core の性能・topology の口は無い → [WS301](../ws301/ws.md) が作る。
 
 ## 範囲
 
-- 含む: 「どの情報からどんな balancing ができるか」の検討（p001、ユーザーの「まず」）、sched への依頼の口（hint、走っている thread の安全な点での移動）、
+- 含む: 「どの情報からどんな balancing ができるか」の検討（p001、ユーザーの「まず」）、nice を sched の priority に効かせる事（2026-10-27 09:39 ユーザーの決定、上の原文）、sched への依頼の口（hint、走っている thread の安全な点での移動）、
   統計の追加（thread・HID・GPU）、DTB の本体（周期の評価・分類・hint・履歴の幅）、config、観察の道具、5330 の評価。
-- 含まない: sched の作り直し（hint を受ける最小の変更だけ）、DVFS の policy（WS301）、nice を sched の priority に効かせる事（下の判断 D3）、他の機種の評価（hybrid でない機械では「速い core」が無い。電力の寄せ方だけ後で）。
+- 含まない: sched の作り直し（hint を受ける最小の変更だけ）、DVFS の policy（WS301）、他の機種の評価（hybrid でない機械では「速い core」が無い。電力の寄せ方だけ後で）。
 
 ## 検討の骨組み（p001 で埋める表の案）
 
@@ -61,7 +61,7 @@ sched に core の種類の希望（hint）を出し、DTB を切った時に比
 
 ## 制約
 
-- DTB は sched の外の kernel の部品（`src/kern/dtb.c` など、`CONFIG_DTB`、既定は off か on かは p001 の後に決める）。sched の変更は hint を受ける最小の口だけ。
+- DTB は sched の外の kernel の部品（`src/kern/dtb.c` など、`CONFIG_DTB`、既定は off、2026-10-27 09:39 ユーザーの決定）。sched の変更は hint を受ける最小の口だけ。
 - HAL は使わない見込み（topology・性能は WS301 の kernel の API）。UAPI（focus の hint、観察の口）は明示の決定（`plan/master-design-policy.md:189`）。desktop の OS 固有の code は libkeiland-backend-zedbsd だけ（[Guardrail](../guardrail.md)）。
 - 規約: 新しいコードに `plan/coding-style.md` の全文。tick は `kern_ms_to_ticks()` など（数の直書きをしない）。
 - 試験: host 試験（分類と hint の決定の表、履歴の幅）、5330 の実機（1 本の script で on・off を比べる）。QEMU は回帰（DTB を on にして起動・desktop が動く、T）。
@@ -90,8 +90,14 @@ sched に core の種類の希望（hint）を出し、DTB を切った時に比
 
 ## 判断が要る点
 
-- D1: 既定で on か off か（ユーザーは「コンフィグで有効にできる」）。
+- D1: 決定済み（2026-10-27 09:39 ユーザー（クリック）「CONFIG_DTB の既定は off」、上の原文）。
 - D2: 規則の強さの順（nice・GPU・tty・長い計算）。P-core が 2 つ（4 thread）しかない 5330 で、GPU の app と terminal の app が競う時。
-- D3: nice を sched の priority にも効かせるか（今は sched が nice を読まない。DTB の core の割り付けとは別の、sched の変更）。
+- D3: 決定済み（2026-10-27 09:39 ユーザー（クリック）「nice は core の選択に加えて sched の priority にも効かせる」、上の原文）。今は sched が nice を読まない（survey-source.md §2）ので、飢えを防ぐ対応（段か重みか上限か）は p001 の設計で決める。
 - D4: 前面の app を kernel が知る口（compositor からの focus の hint の UAPI）を作るか。作らなければ HID は「人が操作中か」だけに使う。
 - D5: 統計の追加（syscall の数と時刻）を DTB が off の時も常に取るか（負担の数を p001 で示す）。
+
+## 再開点（2026-10-29 P5、q1666）
+
+
+
+- source の棚卸し [survey-source.md](survey-source.md)（Opus の調べ、Q1 の指示で止めた。未調査は §7）。§0 の ws.md の食い違い（:21 の決定と :45・:64・:93・:95）は Q1 の確かめの後に直す。再開は p001 の設計（WS301 p001 の後、WS309 の thread の種類と合わせる）。

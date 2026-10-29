@@ -18,6 +18,9 @@
 - WS291 との順（2026-10-27 ユーザー「WS306ですが、AMD RDNAドライバの最適化をWS291でやりきったあとに、要素の最適化をオプションに移して実装し直す作業という認識なので、両方のWSに記録してください。」）→ WS306 は [WS291](../ws291/ws.md) で AMD RDNA の最適化をやりきった後に始める。WS291 で入れた最適化の要素（NGG の culling など）を option に移して実装し直す作業。
 - 同じ日の task・mesh shader: VK_EXT_mesh_shader（task と mesh は同じ拡張の 2 つの feature）で出す。ゲーム最適化とは関係なく、使える GPU では常に出す（Q1 の説明にユーザーが「はい」の流れ。詳細は WS226 で）。
 
+- 2026-10-29 ユーザーの回答（クリック、Q1 の中継、設計 [design.md](design.md) §9 の問い）: Q306-1「VULKAN_ZEDBSD_GAME (推し)」、Q306-2「+name/-name (推し)」、Q306-3「無視して数を返す (推し)」、Q306-4「libvulkan の C の関数 (推し)」。Q306-5 は Q1 の問いの文「変数が無い時は OFF…推しで進めます。違う場合は Other で」にユーザーが Other を選ばなかった。
+  → 解釈（P5）: 環境変数は `VULKAN_ZEDBSD_GAME`（0/1）と `VULKAN_ZEDBSD_GAME_OPTIONS`、option の文字列は「,」区切りの `+name`／`-name`、表に無い名前は無視して数を返す（文法の誤りだけ拒否）、一覧は libvulkan の zedBSD の C の関数（Vulkan の拡張ではない）を patch した vulkaninfo とゲームが呼ぶ、変数が無い時は OFF。
+
 ## Q1 の解釈（未確定、設計の Phase で決める）
 
 - RDNA: ゲーム最適化が ON の session の pipeline だけを culling 入りの NGG で compile する（三角形の少ない描画では culling を飛ばす判断は残す）。OFF の時は passthrough の NGG か従来の経路（desktop の frame-ops を測って決める）。
@@ -29,10 +32,21 @@
 
 | Phase | 内容 | 依存 | 状態 |
 | --- | --- | --- | --- |
-| p001 | 設計: UAPI（session の flag・option の文字列・option の一覧・名前と版の取得）、libvulkan が読む環境変数の名前と書式、知らない option の扱い、各 driver の option の表（amdrdna の NGG culling から）、vulkaninfo への一覧の出し方、design-reviewer | — | planning |
+| p001 | 設計: UAPI（session の flag・option の文字列・option の一覧・名前と版の取得）、libvulkan が読む環境変数の名前と書式、知らない option の扱い、各 driver の option の表（amdrdna の NGG culling から）、vulkaninfo への一覧の出し方、design-reviewer | — | in-progress（[design.md](design.md) 第 1 版 2026-10-29 P5、問いは回答済み、design-reviewer 待ち） |
 | p002〜 | 実装: UAPI と gpu の枠組み、libvulkan、amdrdna の option（NGG culling）、vulkaninfo の移植（userland/packages、ライセンスの監査）。p001 で分ける | p001 | planning |
 
 ## Resume point
 
 - 2026-10-27: 新設。使用量が戻ったら p001 の設計から。
 - 2026-10-28 確かめ: 2026-10-28 ユーザー「P2はRDNAマシンで作業します。RDNAの高速化をお願いします。まずNGGなどの高速化を取り入れてLinuxと同等以上の描画速度を達成して、そのあとで、ゲーム用最適化をオプションに分けていく段取りになっているので、確認してください。」 → 上の順のまま（WS291 で Linux 以上 → WS306）。
+
+## ユーザーの回答（2026-10-29、Q306-6）
+
+- 原文: 「デスクトップではすべて入れません。ゲームはレンダリングの内容が大きく変わらないものを中心に推しでデフォルトを決めます。bootの行というのはなんでしょうか。カーネルではなく/bin/waylandですか？」
+- Q1 の解釈（確かめ中）: desktop（ゲーム最適化が OFF の session）には描画の最適化の option を入れない。ゲーム（ON）の option の既定は、描画の内容が大きく変わらない物を中心に推しで決める。「boot の行」は loader の cfg の kernel の引数（例 amdrdna.vk.ngg、amdrdna の driver が読む）だとユーザーに説明した。
+
+## ユーザーの回答（2026-10-29、Q306-6 の確かめ）
+
+- 問い（Q1）: WS291 の案 4・5（描画の内容を変えない投入の経路の改善）を desktop を含む全部に効かせてよいか。
+- 原文: 「まずはデフォルト有効で実装して、NGGはゲーム用に作り替えます。つまりWSに依存関係があります。」
+- Q1 の解釈: 案 4・5 は既定で全部に有効（option にしない）。NGG（と culling）はゲーム用（ゲーム最適化が ON の session の option）に作り替える。この作り替えは WS291 の成果の上で行うので、WS306 の NGG の段は WS291 に依存する（WS291 の NVIDIA の段の前後の順は Q1 が決める）。

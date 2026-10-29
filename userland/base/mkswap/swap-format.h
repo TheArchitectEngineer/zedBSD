@@ -16,5 +16,9 @@ int swap_format_validate_size(uint64_t);
 int swap_format_write(int, uint64_t);
 int swap_format_verify(int, uint64_t);
 int swap_format_pristine(int, uint64_t);
+int swap_format_validate_partition(uint64_t);
+int swap_format_write_partition(int, uint64_t);
+int swap_format_verify_partition(int, uint64_t);
+int swap_device_command(const char *);
 
 #endif

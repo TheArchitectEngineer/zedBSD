@@ -13,7 +13,7 @@ since: ws089-p026
 Settings の Manage users の裏の道具 `/usr/libexec/account-admin` が、呼び手（root でない wheel の者）、その password、名前・password の規則を確かめてから account の file を変えることを確かめる。
 
 ## 準備
-kei は wheel で password は `kei`。要求は標準入力の行: 呼び手の password、操作、引数（add: 名前・full name・新しい password・`admin` か `user`、remove: 名前・`keep-home` か `remove-home`）。答えは 1 行 `ok` か `error 理由`。エージェントは root から `su kei -c …` で kei として流す。
+user は wheel で password は `user`。要求は標準入力の行: 呼び手の password、操作、引数（add: 名前・full name・新しい password・`admin` か `user`、remove: 名前・`keep-home` か `remove-home`）。答えは 1 行 `ok` か `error 理由`。エージェントは root から `su user -c …` で user として流す。
 
 ## 操作と確認
 1. 操作: `aatuser`（`AAT User`、`aat-pass-1`、user）の add を、違う呼び手の password で。

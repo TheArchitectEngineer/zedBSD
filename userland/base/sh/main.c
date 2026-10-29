@@ -250,7 +250,7 @@ sh_prompt_text(
 			strcpy(cwd, "/");
 		host_error = gethostname(host, sizeof(host));
 		if (host_error != 0)
-			strcpy(host, "kei");
+			strcpy(host, "zedbsd");
 		host[sizeof(host) - 1] = '\0';
 
 		/* The user the shell runs as, by name (the test tools read "$" for every user). */
@@ -580,7 +580,7 @@ prompt_directory(
 		return;
 	}
 
-	/* Only the whole name matches: /home/kei2 is not under /home/kei. */
+	/* Only the whole name matches: /home/user2 is not under /home/user. */
 	if (cwd[length] != '\0' && cwd[length] != '/') {
 		snprintf(text, size, "%s", cwd);
 		return;

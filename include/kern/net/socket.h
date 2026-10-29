@@ -42,9 +42,18 @@
  */
 #define SOCKET_BROADCAST_MAX 32U
 #define SOCKET_RECEIVE_MESSAGES_MAX 8U
+/* The jumbo packets a datagram socket's receive queue holds at most. */
+#define SOCKET_RECEIVE_JUMBO_MAX 2U
 #define SOCKET_BUFFER_DEFAULT (64U * 1024U)
 #define SOCKET_BUFFER_MIN 2048U
 #define SOCKET_BUFFER_MAX (1024U * 1024U)
+/*
+ * The bytes each packet of a stream's receive queue holds at least, but
+ * the last (socket_enqueue_stream fills a packet holding fewer before it
+ * queues another), so that a queue of N packets more takes N times this
+ * many bytes however the peer cuts its segments.
+ */
+#define SOCKET_STREAM_PACKET_BYTES 1024U
 
 struct file;
 struct filedesc;
@@ -52,6 +61,7 @@ struct cwdinfo;
 struct ucred;
 struct packet_buf;
 struct socket;
+struct uaccess_pin;
 struct thread;
 struct path;
 
@@ -66,6 +76,14 @@ struct socket_ops {
 		      socklen_t *, unsigned);
 	ssize_t (*sendto)(struct socket *, const void *, size_t, int,
 			  const struct sockaddr *, socklen_t);
+	/*
+	 * sendto without an address from a user buffer the caller has pinned
+	 * (length bytes at offset in the pin), copied straight into the
+	 * protocol's own buffers rather than through the system call's bounce
+	 * buffer; NULL where the protocol takes kernel buffers only (write(2)
+	 * then bounces).
+	 */
+	ssize_t (*send_pinned)(struct socket *, const struct uaccess_pin *, size_t, size_t, int);
 	ssize_t (*recvfrom)(struct socket *, void *, size_t, int,
 			    struct sockaddr *, socklen_t *);
 	/*
@@ -109,6 +127,11 @@ struct socket {
 	struct packet_buf *receive_head;
 	struct packet_buf *receive_tail;
 	unsigned receive_packets;
+	/*
+	 * The jumbo packets among them (socket_enqueue_packet keeps a datagram
+	 * socket's to SOCKET_RECEIVE_JUMBO_MAX); guarded by the lock.
+	 */
+	unsigned receive_jumbo;
 	size_t receive_bytes;
 	size_t receive_packet_limit;
 	size_t receive_hiwat_bytes;
@@ -119,6 +142,16 @@ struct socket {
 	unsigned keepalive;
 	unsigned read_shutdown;
 	unsigned write_shutdown;
+	/*
+	 * Set, and never cleared, once poll or select has looked at the
+	 * socket.  The frequent readiness changes of a socket no one polls
+	 * (each segment queued, each acknowledgement that frees room) then
+	 * skip the system-wide poll channel, which would wake every polling
+	 * thread of the system to scan its descriptors again.  Written and
+	 * read atomically, with a full fence on both sides (socket_poll_watch,
+	 * socket_poll_notify).
+	 */
+	unsigned polled;
 };
 
 #define SOCKET_IO_NONBLOCK 0x0001U
@@ -161,6 +194,14 @@ void socket_close_endpoint(struct socket *socket);
 void socket_release(struct socket *socket);
 int socket_enqueue_packet(struct socket *socket, struct packet_buf *packet);
 int socket_enqueue_stream(struct socket *socket, struct packet_buf *packet);
+/*
+ * The longest datagram a socket sends or receives in one call: a packet's
+ * storage, the largest (jumbo) one for the Internet families, the standard
+ * one for AF_UNIX, whose datagrams stay standard packets.
+ */
+size_t socket_datagram_max(const struct socket *socket);
+void socket_poll_watch(struct socket *socket);
+void socket_poll_notify(struct socket *socket);
 int socket_enqueue_packet_wait(struct socket *socket, struct packet_buf *packet,
 			       int flags, uint64_t timeout_ticks);
 int socket_requeue_packet_front(struct socket *socket,
@@ -171,6 +212,12 @@ int socket_file_create(struct socket *socket, struct file **result);
 int socket_file_reserve(struct file **result);
 int socket_file_attach(struct file *file, struct socket *socket);
 struct socket *socket_from_file(struct file *file);
+/*
+ * Whether write(2) on the file goes straight from the caller's pinned
+ * pages into the socket (socket_file_write_pinned), and the write itself.
+ */
+int socket_file_takes_pinned(struct file *file);
+ssize_t socket_file_write_pinned(struct file *file, const struct uaccess_pin *pin, size_t length);
 int socket_file_ref_get(struct filedesc *fd, int descriptor,
 			struct socket_file_ref *reference);
 void socket_file_ref_put(struct socket_file_ref *reference);

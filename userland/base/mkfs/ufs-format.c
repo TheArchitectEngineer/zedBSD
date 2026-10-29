@@ -22,10 +22,14 @@
 #include <sys/types.h>
 #include <unistd.h>
 
+/*
+ * The 1 KiB-fragment block; every buffer is this size, so the larger
+ * blocks of the 4 KiB-fragment native profile are written in pieces.
+ */
 #define FORMAT_BLOCK 8192U
 #define FORMAT_FRAGMENT 1024U
+#define FORMAT_FRAGMENTS_PER_BLOCK 8U
 #define FORMAT_IPG 256U
-#define FORMAT_DATA_FRAGMENT 144U
 #define FORMAT_CG0_USED 440U
 #define FORMAT_JOURNAL_BYTES (128U * 1024U)
 #define FORMAT_ROOT_MARKER "zedBSD ufs root v1\n"
@@ -35,8 +39,10 @@
 #define FORMAT_REGULAR 0100000U
 #define FORMAT_DIRECTORY 0040000U
 #define FORMAT_NATIVE 2
-#define FORMAT_NATIVE_USED 152U
+/* The fragments per group that fill the 1 KiB-fragment group's bitmap block. */
 #define FORMAT_MAX_FPG ((FORMAT_BLOCK - 200U) * 8U)
+/* The native fragment for a disk with 4096-byte logical sectors. */
+#define FORMAT_LARGE_FRAGMENT 4096U
 /* The superblock offset of the journal size record ("ZJ3R", spare words). */
 #define FORMAT_JOURNAL_REQUEST 1248U
 
@@ -56,12 +62,23 @@ struct format_context {
 	uint32_t ncg;
 	uint32_t fpg;
 	uint32_t cgsize;
+
+	/* The fragment, the block, and each group's areas in fragments. */
+	uint32_t fsize;
+	uint32_t fshift;
+	uint32_t bsize;
+	uint32_t sblkno;
+	uint32_t cblkno;
+	uint32_t iblkno;
+	uint32_t dblkno;
+	uint32_t first_used;
 	struct format_extent *extents;
 	size_t extent_count;
 	size_t extent_capacity;
 };
 
-static int format_run(int fd, uint64_t bytes, int verify, int profile);
+static int format_run(int fd, uint64_t bytes, int verify, int profile, uint32_t fragment);
+static int native_fragment(uint32_t sector_size, uint32_t *fragment);
 static int record_extent(struct format_context *context, uint64_t offset, size_t length);
 static int verify_gaps(struct format_context *context);
 static int format_tail(struct format_context *context);
@@ -70,7 +87,7 @@ static void put16(uint8_t *buffer, size_t offset, uint16_t value);
 static void put32(uint8_t *buffer, size_t offset, uint32_t value);
 static void put64(uint8_t *buffer, size_t offset, uint64_t value);
 static uint32_t record_crc(const uint8_t *buffer, size_t length);
-static int initialize_context(struct format_context *context, int fd, uint64_t bytes, int verify, int profile);
+static int initialize_context(struct format_context *context, int fd, uint64_t bytes, int verify, int profile, uint32_t fragment);
 static int read_exact(int fd, void *buffer, size_t length, uint64_t offset);
 static int transfer(struct format_context *context, uint64_t offset, const uint8_t *buffer, size_t length);
 static int zero_region(struct format_context *context, uint64_t offset, uint64_t length);
@@ -78,7 +95,7 @@ static int format_metadata(struct format_context *context);
 static int format_journal(struct format_context *context, unsigned slot);
 static int format_directories(struct format_context *context);
 static void directory_entry(uint8_t *buffer, size_t offset, uint32_t inode, uint16_t length, uint8_t type, const char *name);
-static void format_inode(uint8_t *buffer, uint32_t number, uint16_t mode, uint16_t links, uint64_t bytes, uint32_t first, unsigned blocks, uint32_t indirect);
+static void format_inode(uint8_t *buffer, uint32_t block, uint32_t number, uint16_t mode, uint16_t links, uint64_t bytes, uint32_t first, unsigned blocks, uint32_t indirect);
 static int format_inodes(struct format_context *context);
 static void make_cg(struct format_context *context, unsigned index, uint8_t *buffer);
 static void make_super(struct format_context *context, uint8_t *buffer);
@@ -117,7 +134,7 @@ ufs_format_write(
 	int error;
 
 	/* Generate the ordinary profile without a persistence tail. */
-	error = format_run(fd, bytes, 0, 0);
+	error = format_run(fd, bytes, 0, 0, FORMAT_FRAGMENT);
 	return error;
 }
 
@@ -132,7 +149,7 @@ ufs_format_verify(
 	int error;
 
 	/* Compare the entire initialized metadata set. */
-	error = format_run(fd, bytes, 1, 0);
+	error = format_run(fd, bytes, 1, 0, FORMAT_FRAGMENT);
 	return error;
 }
 
@@ -147,7 +164,7 @@ ufs_format_feature_write(
 	int error;
 
 	/* Select the profile in this call's private context. */
-	error = format_run(fd, bytes, 0, 1);
+	error = format_run(fd, bytes, 0, 1, FORMAT_FRAGMENT);
 	return error;
 }
 
@@ -162,7 +179,7 @@ ufs_format_feature_verify(
 	int error;
 
 	/* Verify the same fixed profile selected by the write callback. */
-	error = format_run(fd, bytes, 1, 1);
+	error = format_run(fd, bytes, 1, 1, FORMAT_FRAGMENT);
 	return error;
 }
 
@@ -177,7 +194,7 @@ ufs_format_pristine(
 	int error;
 
 	/* Enables exact coverage in addition to metadata comparison. */
-	error = format_run(fd, bytes, 2, 0);
+	error = format_run(fd, bytes, 2, 0, FORMAT_FRAGMENT);
 	return error;
 }
 
@@ -192,53 +209,121 @@ ufs_format_feature_pristine(
 	int error;
 
 	/* Selects the same deterministic profile with full-byte verification. */
-	error = format_run(fd, bytes, 2, 1);
+	error = format_run(fd, bytes, 2, 1, FORMAT_FRAGMENT);
 	return error;
 }
 
 /* Native geometry is bounded by the actual format and host offset types. */
 int
-ufs_format_native_validate_size(uint64_t bytes)
+ufs_format_native_validate_size(
+	uint64_t bytes,
+	uint32_t sector_size)
 {
 	struct format_context context;
+	uint32_t fragment;
+	int error;
 
-	return initialize_context(&context, -1, bytes, 0, FORMAT_NATIVE);
+	/* Takes the fragment the disk's sectors call for, then the geometry. */
+	error = native_fragment(sector_size, &fragment);
+	if (error != 0)
+		return error;
+	error = initialize_context(&context, -1, bytes, 0, FORMAT_NATIVE, fragment);
+	return error;
 }
 
 /* Reports allocatable full blocks and inodes without opening or writing media. */
 int
-ufs_format_native_capacity(uint64_t bytes, struct ufs_format_capacity *capacity)
+ufs_format_native_capacity(
+	uint64_t bytes,
+	uint32_t sector_size,
+	struct ufs_format_capacity *capacity)
 {
 	struct format_context context;
 	uint64_t free_fragments;
+	uint32_t fragment;
 	int error;
 
+	/* Derives the geometry the same command would format. */
 	if (capacity == NULL)
 		return EINVAL;
 	memset(capacity, 0, sizeof(*capacity));
-	error = initialize_context(&context, -1, bytes, 0, FORMAT_NATIVE);
+	error = native_fragment(sector_size, &fragment);
+	if (error != 0)
+		return error;
+	error = initialize_context(&context, -1, bytes, 0, FORMAT_NATIVE, fragment);
 	if (error != 0)
 		return error;
 
 	/* Only the final group has a partial block; every other boundary is aligned. */
-	free_fragments = context.fragments - (uint64_t)context.ncg * FORMAT_DATA_FRAGMENT -
-	    (FORMAT_NATIVE_USED - FORMAT_DATA_FRAGMENT);
-	capacity->free_bytes = free_fragments / (FORMAT_BLOCK / FORMAT_FRAGMENT) * FORMAT_BLOCK;
+	free_fragments = context.fragments - (uint64_t)context.ncg * context.dblkno -
+	    (context.first_used - context.dblkno);
+	capacity->free_bytes = free_fragments / FORMAT_FRAGMENTS_PER_BLOCK * context.bsize;
 	capacity->free_inodes = (uint64_t)context.ncg * FORMAT_IPG - 3U;
-	capacity->allocation_size = FORMAT_BLOCK;
+	capacity->allocation_size = context.bsize;
 	return 0;
 }
 
+/* Formats the native profile whose fragment fits the disk's sectors. */
 int
-ufs_format_native_write(int fd, uint64_t bytes)
+ufs_format_native_write(
+	int fd,
+	uint64_t bytes,
+	uint32_t sector_size)
 {
-	return format_run(fd, bytes, 0, FORMAT_NATIVE);
+	uint32_t fragment;
+	int error;
+
+	/* Refuses a sector size no native profile is made for. */
+	error = native_fragment(sector_size, &fragment);
+	if (error != 0)
+		return error;
+	error = format_run(fd, bytes, 0, FORMAT_NATIVE, fragment);
+	return error;
 }
 
+/* Compares the volume with the native profile the write made. */
 int
-ufs_format_native_verify(int fd, uint64_t bytes)
+ufs_format_native_verify(
+	int fd,
+	uint64_t bytes,
+	uint32_t sector_size)
 {
-	return format_run(fd, bytes, 1, FORMAT_NATIVE);
+	uint32_t fragment;
+	int error;
+
+	/* Selects the same fragment the write selected for these sectors. */
+	error = native_fragment(sector_size, &fragment);
+	if (error != 0)
+		return error;
+	error = format_run(fd, bytes, 1, FORMAT_NATIVE, fragment);
+	return error;
+}
+
+/*
+ * Chooses the native fragment for a disk's logical sector: 1 KiB on a
+ * 512-byte disk, and on a 4096-byte disk a fragment of one sector, so the
+ * kernel never writes part of a sector and the loader reads whole
+ * sectors.
+ */
+static int
+native_fragment(
+	uint32_t sector_size,
+	uint32_t *fragment)
+{
+	/* Keeps the 1 KiB profile every existing 512-byte volume has. */
+	if (sector_size == 512U) {
+		*fragment = FORMAT_FRAGMENT;
+		return 0;
+	}
+
+	/* Takes one whole sector per fragment on a 4096-byte disk. */
+	if (sector_size == 4096U) {
+		*fragment = FORMAT_LARGE_FRAGMENT;
+		return 0;
+	}
+
+	/* Refuses any other sector size. */
+	return EOPNOTSUPP;
 }
 
 /*
@@ -259,7 +344,8 @@ format_run(
 	int fd,
 	uint64_t bytes,
 	int verify,
-	int profile)
+	int profile,
+	uint32_t fragment)
 {
 	struct format_context context;
 	struct ufs_super super;
@@ -272,7 +358,9 @@ format_run(
 		if (error != 0)
 			return error;
 	}
-	error = initialize_context(&context, fd, bytes, verify, profile);
+
+	/* Derives the geometry of the volume. */
+	error = initialize_context(&context, fd, bytes, verify, profile, fragment);
 	if (error != 0)
 		return error;
 
@@ -499,14 +587,23 @@ initialize_context(
 	int fd,
 	uint64_t bytes,
 	int verify,
-	int profile)
+	int profile,
+	uint32_t fragment)
 {
 	uint64_t groups, last;
 	off_t final_offset;
-	uint32_t fpg;
+	uint32_t fpg, max_fpg;
+
+	/* Only the native profile has a fragment other than 1 KiB. */
+	if (fragment != FORMAT_FRAGMENT) {
+		if (profile != FORMAT_NATIVE)
+			return EINVAL;
+		if (fragment != FORMAT_LARGE_FRAGMENT)
+			return EINVAL;
+	}
 
 	/* Reject unsupported offsets before subtraction or any I/O. */
-	if (bytes < UFS_FORMAT_MIN_BYTES || bytes % FORMAT_FRAGMENT != 0)
+	if (bytes < UFS_FORMAT_MIN_BYTES || bytes % fragment != 0)
 		return EINVAL;
 	final_offset = (off_t)(bytes - 1);
 	if (final_offset < 0 || (uint64_t)final_offset != bytes - 1)
@@ -518,17 +615,43 @@ initialize_context(
 	context->verify = verify;
 	context->profile = profile;
 	context->medium_bytes = bytes;
+
+	/*
+	 * Each group starts with the 64 KiB boot area, then one block each
+	 * for the superblock copy and the group's maps, then the inode table
+	 * and the data.  With 1 KiB fragments these are fragments 64, 72, 80
+	 * and 144, the layout of every existing volume.
+	 */
+	context->fsize = fragment;
+	context->fshift = fragment == FORMAT_FRAGMENT ? 10U : 12U;
+	context->bsize = fragment * FORMAT_FRAGMENTS_PER_BLOCK;
+	context->sblkno = UFS_SBLOCK_OFFSET / fragment;
+	context->cblkno = context->sblkno + FORMAT_FRAGMENTS_PER_BLOCK;
+	context->iblkno = context->cblkno + FORMAT_FRAGMENTS_PER_BLOCK;
+	context->dblkno = context->iblkno + FORMAT_IPG * UFS_DINODE_SIZE / fragment;
+
+	/* The native first group also holds the root directory's block. */
+	context->first_used = FORMAT_CG0_USED;
+	if (profile == FORMAT_NATIVE)
+		context->first_used = context->dblkno + FORMAT_FRAGMENTS_PER_BLOCK;
 	if (profile)
 		bytes = (bytes - FORMAT_TAIL_BYTES) / FORMAT_FRAGMENT * FORMAT_FRAGMENT;
-	context->fragments = bytes / FORMAT_FRAGMENT;
+	context->fragments = bytes / fragment;
 	if (profile == FORMAT_NATIVE) {
+		/*
+		 * A group spans at most the 1 KiB profile's largest group in
+		 * bytes (about 62 MiB), so a 4 KiB-fragment volume keeps the
+		 * same 256 inodes in that span.
+		 */
+		max_fpg = FORMAT_MAX_FPG / (fragment / FORMAT_FRAGMENT);
+
 		/* A bounded search keeps even the final group's metadata in range. */
-		for (fpg = FORMAT_MAX_FPG; fpg >= 1024U; fpg -= 8U) {
+		for (fpg = max_fpg; fpg >= 1024U; fpg -= FORMAT_FRAGMENTS_PER_BLOCK) {
 			groups = (context->fragments + fpg - 1U) / fpg;
 			if (groups > UINT32_MAX / FORMAT_IPG)
 				return EOVERFLOW;
 			last = context->fragments - (groups - 1U) * fpg;
-			if (last <= FORMAT_DATA_FRAGMENT)
+			if (last <= context->dblkno)
 				continue;
 			context->ncg = (uint32_t)groups;
 			context->fpg = fpg;
@@ -671,10 +794,23 @@ format_metadata(
 	uint64_t offset;
 	int error;
 
-	/* Initialize the reserved boot area of every cylinder group. */
+	/*
+	 * Initialize the reserved boot area of every cylinder group, and
+	 * the parts of its superblock and map blocks past the records the
+	 * format writes (none with 1 KiB fragments).
+	 */
 	for (group = 0; group < context->ncg; group++) {
-		offset = (uint64_t)group * context->fpg * FORMAT_FRAGMENT;
+		offset = (uint64_t)group * context->fpg * context->fsize;
 		error = zero_region(context, offset, UFS_SBLOCK_OFFSET);
+		if (error != 0)
+			return error;
+		error = zero_region(context, offset + UFS_SBLOCK_OFFSET + FORMAT_BLOCK,
+		    context->bsize - FORMAT_BLOCK);
+		if (error != 0)
+			return error;
+		error = zero_region(context,
+		    offset + (uint64_t)context->cblkno * context->fsize + FORMAT_BLOCK,
+		    context->bsize - FORMAT_BLOCK);
 		if (error != 0)
 			return error;
 	}
@@ -702,7 +838,7 @@ format_metadata(
 	/* Install all allocation maps and their accounting summaries. */
 	for (group = 0; group < context->ncg; group++) {
 		make_cg(context, group, buffer);
-		offset = ((uint64_t)group * context->fpg + 72U) * FORMAT_FRAGMENT;
+		offset = ((uint64_t)group * context->fpg + context->cblkno) * context->fsize;
 		error = transfer(context, offset, buffer, sizeof(buffer));
 		if (error != 0)
 			return error;
@@ -716,7 +852,7 @@ format_metadata(
 	/* Write alternate superblocks before publishing the primary copy. */
 	make_super(context, buffer);
 	for (group = 1; group < context->ncg; group++) {
-		offset = ((uint64_t)group * context->fpg + 64U) * FORMAT_FRAGMENT;
+		offset = ((uint64_t)group * context->fpg + context->sblkno) * context->fsize;
 		error = transfer(context, offset, buffer, sizeof(buffer));
 		if (error != 0)
 			return error;
@@ -824,6 +960,7 @@ format_directories(
 {
 	static const char marker[] = FORMAT_ROOT_MARKER;
 	uint8_t buffer[FORMAT_BLOCK];
+	uint64_t offset;
 	int error;
 
 	if (context->profile == FORMAT_NATIVE) {
@@ -831,8 +968,15 @@ format_directories(
 		memset(buffer, 0, sizeof(buffer));
 		directory_entry(buffer, 0U, 2U, 12U, 4U, ".");
 		directory_entry(buffer, 12U, 2U, 500U, 4U, "..");
-		return transfer(context, FORMAT_DATA_FRAGMENT * FORMAT_FRAGMENT,
-		    buffer, sizeof(buffer));
+		offset = (uint64_t)context->dblkno * context->fsize;
+		error = transfer(context, offset, buffer, sizeof(buffer));
+		if (error != 0)
+			return error;
+
+		/* Clears the rest of a root block larger than the buffer. */
+		error = zero_region(context, offset + FORMAT_BLOCK,
+		    context->bsize - FORMAT_BLOCK);
+		return error;
 	}
 
 	/* Install the maintained backend's root marker. */
@@ -870,6 +1014,7 @@ format_directories(
 static void
 format_inode(
 	uint8_t *buffer,
+	uint32_t block,
 	uint32_t number,
 	uint16_t mode,
 	uint16_t links,
@@ -887,7 +1032,7 @@ format_inode(
 	put16(inode, UFS_DI_MODE, mode);
 	put16(inode, UFS_DI_NLINK, links);
 	put64(inode, UFS_DI_SIZE, bytes);
-	put32(inode, UFS_DI_BLKSIZE, FORMAT_BLOCK);
+	put32(inode, UFS_DI_BLKSIZE, block);
 	put32(inode, UFS_DI_GEN, number);
 
 	/* Populate the direct data addresses in allocation order. */
@@ -895,10 +1040,10 @@ format_inode(
 		put64(inode, UFS_DI_DB + index * 8U, first + index * 8U);
 
 	/* Include the indirect block in the sector accounting when present. */
-	sectors = blocks * 16U;
+	sectors = blocks * (block / 512U);
 	if (indirect != 0) {
 		put64(inode, UFS_DI_IB, indirect);
-		sectors += 16U;
+		sectors += block / 512U;
 	}
 
 	/* Store the total allocation in 512-byte sectors. */
@@ -911,35 +1056,39 @@ format_inodes(
 	struct format_context *context)
 {
 	uint8_t buffer[FORMAT_BLOCK];
-	uint64_t offset;
+	uint64_t offset, table;
 	unsigned group;
 	int error;
 
 	/* Encode the two directories and three regular files. */
 	memset(buffer, 0, sizeof(buffer));
 	if (context->profile == FORMAT_NATIVE) {
-		format_inode(buffer, 2U, FORMAT_DIRECTORY | 0755U, 2U, 512U,
-		    FORMAT_DATA_FRAGMENT, 1U, 0U);
+		format_inode(buffer, context->bsize, 2U, FORMAT_DIRECTORY | 0755U, 2U, 512U,
+		    context->dblkno, 1U, 0U);
 	} else {
-		format_inode(buffer, 2U, FORMAT_DIRECTORY | 0755U, 3U, 512U, 424U, 1U, 0U);
-		format_inode(buffer, 3U, FORMAT_REGULAR | 0644U, 1U, FORMAT_JOURNAL_BYTES, 144U, 16U, 272U);
-		format_inode(buffer, 4U, FORMAT_REGULAR | 0644U, 1U, FORMAT_JOURNAL_BYTES, 280U, 16U, 408U);
-		format_inode(buffer, 5U, FORMAT_DIRECTORY | 0755U, 2U, 512U, 432U, 1U, 0U);
-		format_inode(buffer, 6U, FORMAT_REGULAR | 0644U, 1U, sizeof(FORMAT_ROOT_MARKER) - 1U, 416U, 1U, 0U);
+		format_inode(buffer, FORMAT_BLOCK, 2U, FORMAT_DIRECTORY | 0755U, 3U, 512U, 424U, 1U, 0U);
+		format_inode(buffer, FORMAT_BLOCK, 3U, FORMAT_REGULAR | 0644U, 1U, FORMAT_JOURNAL_BYTES, 144U, 16U, 272U);
+		format_inode(buffer, FORMAT_BLOCK, 4U, FORMAT_REGULAR | 0644U, 1U, FORMAT_JOURNAL_BYTES, 280U, 16U, 408U);
+		format_inode(buffer, FORMAT_BLOCK, 5U, FORMAT_DIRECTORY | 0755U, 2U, 512U, 432U, 1U, 0U);
+		format_inode(buffer, FORMAT_BLOCK, 6U, FORMAT_REGULAR | 0644U, 1U, sizeof(FORMAT_ROOT_MARKER) - 1U, 416U, 1U, 0U);
 	}
-	error = transfer(context, 80U * FORMAT_FRAGMENT, buffer, sizeof(buffer));
+
+	/* Writes the first block of the first group's inode table. */
+	offset = (uint64_t)context->iblkno * context->fsize;
+	error = transfer(context, offset, buffer, sizeof(buffer));
 	if (error != 0)
 		return error;
 
 	/* Preserve zeroed unused entries in the first cylinder group. */
-	error = zero_region(context, 88U * FORMAT_FRAGMENT, 56U * FORMAT_FRAGMENT);
+	table = (uint64_t)(context->dblkno - context->iblkno) * context->fsize;
+	error = zero_region(context, offset + FORMAT_BLOCK, table - FORMAT_BLOCK);
 	if (error != 0)
 		return error;
 
 	/* Preserve the entirely free inode tables in every later group. */
 	for (group = 1; group < context->ncg; group++) {
-		offset = ((uint64_t)group * context->fpg + 80U) * FORMAT_FRAGMENT;
-		error = zero_region(context, offset, 64U * FORMAT_FRAGMENT);
+		offset = ((uint64_t)group * context->fpg + context->iblkno) * context->fsize;
+		error = zero_region(context, offset, table);
 		if (error != 0)
 			return error;
 	}
@@ -966,12 +1115,10 @@ make_cg(
 	memset(buffer, 0, FORMAT_BLOCK);
 	remaining = context->fragments - (uint64_t)index * context->fpg;
 	fragments = remaining > context->fpg ? context->fpg : (uint32_t)remaining;
-	used = index == 0 ? FORMAT_CG0_USED : FORMAT_DATA_FRAGMENT;
+	used = index == 0 ? context->first_used : context->dblkno;
 	allocated_inodes = 7U;
 	directories = 2U;
 	if (context->profile == FORMAT_NATIVE) {
-		if (index == 0)
-			used = FORMAT_NATIVE_USED;
 		allocated_inodes = 3U;
 		directories = 1U;
 	}
@@ -980,9 +1127,9 @@ make_cg(
 	put32(buffer, UFS_CG_CGX, index);
 	put32(buffer, UFS_CG_NDBLK, fragments);
 	put32(buffer, UFS_CG_NDIR, index == 0 ? directories : 0U);
-	put32(buffer, UFS_CG_NBFREE, free_fragments / 8U);
+	put32(buffer, UFS_CG_NBFREE, free_fragments / FORMAT_FRAGMENTS_PER_BLOCK);
 	put32(buffer, UFS_CG_NIFREE, index == 0 ? FORMAT_IPG - allocated_inodes : FORMAT_IPG);
-	put32(buffer, UFS_CG_NFFREE, free_fragments % 8U);
+	put32(buffer, UFS_CG_NFFREE, free_fragments % FORMAT_FRAGMENTS_PER_BLOCK);
 	put32(buffer, UFS_CG_IUSEDOFF, 168U);
 	put32(buffer, UFS_CG_FREEOFF, 200U);
 	put32(buffer, UFS_CG_NEXTFREEOFF, context->cgsize);
@@ -1011,28 +1158,29 @@ make_super(
 	uint32_t fragments;
 	uint64_t remaining;
 	uint32_t first_used, allocated_inodes, directories;
+	uint32_t group_used;
 
 	/* Initialize the canonical fixed geometry and filesystem identity. */
 	memset(buffer, 0, FORMAT_BLOCK);
-	put32(buffer, UFS_FS_SBLKNO, 64U);
-	put32(buffer, UFS_FS_CBLKNO, 72U);
-	put32(buffer, UFS_FS_IBLKNO, 80U);
-	put32(buffer, UFS_FS_DBLKNO, FORMAT_DATA_FRAGMENT);
+	put32(buffer, UFS_FS_SBLKNO, context->sblkno);
+	put32(buffer, UFS_FS_CBLKNO, context->cblkno);
+	put32(buffer, UFS_FS_IBLKNO, context->iblkno);
+	put32(buffer, UFS_FS_DBLKNO, context->dblkno);
 	put64(buffer, UFS_FS_SIZE, context->fragments);
-	put64(buffer, UFS_FS_DSIZE, context->fragments - context->ncg * FORMAT_DATA_FRAGMENT);
+	put64(buffer, UFS_FS_DSIZE, context->fragments - (uint64_t)context->ncg * context->dblkno);
 	put64(buffer, UFS_FS_SBLOCKLOC, UFS_SBLOCK_OFFSET);
-	put64(buffer, UFS_FS_CSADDR, FORMAT_DATA_FRAGMENT);
+	put64(buffer, UFS_FS_CSADDR, context->dblkno);
 	put32(buffer, UFS_FS_NCG, context->ncg);
-	put32(buffer, UFS_FS_BSIZE, FORMAT_BLOCK);
-	put32(buffer, UFS_FS_FSIZE, FORMAT_FRAGMENT);
-	put32(buffer, UFS_FS_FRAG, 8U);
-	put32(buffer, UFS_FS_BSHIFT, 13U);
-	put32(buffer, UFS_FS_FSHIFT, 10U);
+	put32(buffer, UFS_FS_BSIZE, context->bsize);
+	put32(buffer, UFS_FS_FSIZE, context->fsize);
+	put32(buffer, UFS_FS_FRAG, FORMAT_FRAGMENTS_PER_BLOCK);
+	put32(buffer, UFS_FS_BSHIFT, context->fshift + 3U);
+	put32(buffer, UFS_FS_FSHIFT, context->fshift);
 	put32(buffer, UFS_FS_FRAGSHIFT, 3U);
-	put32(buffer, UFS_FS_FSBTODB, 1U);
+	put32(buffer, UFS_FS_FSBTODB, context->fshift - 9U);
 	put32(buffer, UFS_FS_SBSIZE, UFS_FS_STRUCT_SIZE);
-	put32(buffer, UFS_FS_NINDIR, FORMAT_BLOCK / 8U);
-	put32(buffer, UFS_FS_INOPB, FORMAT_BLOCK / UFS_DINODE_SIZE);
+	put32(buffer, UFS_FS_NINDIR, context->bsize / 8U);
+	put32(buffer, UFS_FS_INOPB, context->bsize / UFS_DINODE_SIZE);
 	memcpy(buffer + UFS_FS_ID, "zedBSD\001", 8U);
 	put32(buffer, UFS_FS_CGSIZE, context->cgsize);
 	put32(buffer, UFS_FS_IPG, FORMAT_IPG);
@@ -1043,21 +1191,25 @@ make_super(
 	put32(buffer, UFS_FS_MAGIC, UFS_MAGIC);
 
 	/* Records the journal size the kernel makes the journal file with. */
-	make_journal_request(buffer, context->fragments * FORMAT_FRAGMENT);
+	make_journal_request(buffer, context->fragments * context->fsize);
 
 	/* Sum full and partial free blocks across all cylinder groups. */
 	free_blocks = 0;
 	partial_fragments = 0;
-	first_used = context->profile == FORMAT_NATIVE ? FORMAT_NATIVE_USED : FORMAT_CG0_USED;
+	first_used = context->first_used;
 	allocated_inodes = context->profile == FORMAT_NATIVE ? 3U : 7U;
 	directories = context->profile == FORMAT_NATIVE ? 1U : 2U;
 	for (group = 0; group < context->ncg; group++) {
 		remaining = context->fragments - (uint64_t)group * context->fpg;
 		fragments = remaining > context->fpg ? context->fpg : (uint32_t)remaining;
-		free_fragments = fragments - (group == 0 ?
-		    first_used : FORMAT_DATA_FRAGMENT);
-		free_blocks += free_fragments / 8U;
-		partial_fragments += free_fragments % 8U;
+
+		/* The first group also holds the root directory's block. */
+		group_used = context->dblkno;
+		if (group == 0)
+			group_used = first_used;
+		free_fragments = fragments - group_used;
+		free_blocks += free_fragments / FORMAT_FRAGMENTS_PER_BLOCK;
+		partial_fragments += free_fragments % FORMAT_FRAGMENTS_PER_BLOCK;
 	}
 	put64(buffer, UFS_FS_CSTOTAL_NDIR, directories);
 	put64(buffer, UFS_FS_CSTOTAL_NBFREE, free_blocks);
@@ -1100,8 +1252,13 @@ format_tail(
 	if (!context->profile)
 		return 0;
 
-	/* Clear old recovery records and unallocated final alignment padding. */
-	end = (uint64_t)context->fragments * 2U;
+	/*
+	 * Clear old recovery records and unallocated final alignment padding.
+	 * The records are in 512-byte sectors after the volume, where the
+	 * kernel looks for them; on a disk of larger sectors the device
+	 * writes the partial sectors.
+	 */
+	end = (uint64_t)context->fragments * (context->fsize / 512U);
 	cursor = end + 1U + FORMAT_LOG_SECTORS;
 	error = zero_region(context, (end + 1U) * 512U, FORMAT_LOG_SECTORS * 512U);
 	if (error != 0)

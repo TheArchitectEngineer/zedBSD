@@ -1,0 +1,182 @@
+Proposed change to include/hal/hal.h for WS301 (CPU performance framework).
+NOT APPLIED.  Needs the user's approval (plan/guardrail.md, HAL).
+Not recommended since 2026-10-29 (design.md revision 1 of the third version keeps the HAL
+unchanged; this diff is kept as the rejected option C).  Base: main 63386d8a4.
+Second version (2026-10-29): design-review.md B1, M1-M8 applied.  Design: plan/ws301/design.md.
+Third version (2026-10-29): highest_khz in place of the capabilities' last reserved word
+(the 5330's firmware gives one nominal frequency for both core types, so the kernel
+needs the processor's stated clock per core type to estimate MHz; design.md section 4.7).
+The topology part and the performance-control part are one diff; the
+kernel framework (p002) needs the topology part, the x86 provider (p004) both.
+
+--- a/include/hal/hal.h	2026-10-29 03:38:28.809932466 +0900
++++ b/include/hal/hal.h	2026-10-29 03:38:28.837932383 +0900
+@@ -232,6 +232,168 @@
+ hal_cpu_idle_suspend(void);
+ 
+ /*
++ * Topology
++ *
++ * Where a CPU sits: the package, die, module (a level between die and
++ * core that the processor reports, such as a cluster of cores; equal to
++ * core when the processor reports none), core and hardware thread, as
++ * identifiers that compare equal for CPUs that share that level; the
++ * processor's own core type code, which names a kind of core and implies
++ * nothing about its speed; and the firmware's processor identifier (the
++ * ACPI processor UID of the MADT, or the device-tree CPU node's reg),
++ * which matches the CPU to its firmware objects.  The HAL fills the table
++ * while it starts the CPUs; the answer is fixed once
++ * hal_cpu_start_others() has returned.
++ */
++#define HAL_CPU_TYPE_UNKNOWN	0U	/* the processor does not report a core type */
++
++struct hal_cpu_topology {
++	uint32_t package;
++	uint32_t die;
++	uint32_t module;
++	uint32_t core;
++	uint32_t thread;	/* the hardware thread's index within its core */
++	uint32_t core_type;	/* the processor's code (x86: CPUID 1AH EAX[31:24]), or HAL_CPU_TYPE_UNKNOWN */
++	uint32_t firmware_id;
++	uint32_t flags;		/* HAL_CPU_TOPOLOGY_FIRMWARE_ID when firmware_id is known */
++};
++
++#define HAL_CPU_TOPOLOGY_FIRMWARE_ID	0x1U
++
++/*
++ * Report a CPU's topology.
++ *
++ * Returns HAL_OK, or HAL_ERR_INVALID for a CPU that does not exist.  A
++ * HAL that knows nothing of the topology still answers HAL_OK, with each
++ * CPU its own package, die, module and core, thread 0 and core_type
++ * HAL_CPU_TYPE_UNKNOWN.
++ */
++int
++hal_cpu_topology(
++	hal_cpu_id_t cpu,
++	struct hal_cpu_topology *topology);
++
++/*
++ * The performance control of the current CPU
++ *
++ * The mechanism only: the HAL reports what the processor's own
++ * performance control can do and carries out a request; the kernel
++ * chooses the request.  Every call acts on the calling CPU with
++ * interrupts disabled for its duration; the kernel makes the calls from
++ * kernel_cpu_notify_handler() on the target CPU, or on the current CPU.
++ * On a machine without such a control (no HWP on x86, under a
++ * hypervisor, arm64 and riscv64 today) every call returns
++ * HAL_ERR_UNSUPPORTED and changes nothing.  A register access the
++ * processor refuses makes the call return HAL_ERR_UNSUPPORTED; it does
++ * not stop the machine.
++ *
++ * Performance values are the processor's abstract units, 0 to 255,
++ * comparable only between CPUs of one core type.
++ */
++#define HAL_CPU_PERF_HAS_EPP		0x01U	/* energy-performance preference */
++#define HAL_CPU_PERF_HAS_WINDOW		0x02U	/* activity window */
++#define HAL_CPU_PERF_HAS_FEEDBACK	0x04U	/* a hardware feedback table */
++#define HAL_CPU_PERF_HAS_COUNTERS	0x08U	/* delivered and reference counters */
++#define HAL_CPU_PERF_ENABLED		0x10U	/* the control is on (it cannot be turned off) */
++#define HAL_CPU_PERF_PLATFORM_LIMIT	0x20U	/* the platform (e.g. the EC through PECI) overrides the request */
++
++struct hal_cpu_perf_capabilities {
++	uint32_t flags;			/* HAL_CPU_PERF_* */
++	uint8_t highest;		/* the four levels are 0 until HAL_CPU_PERF_ENABLED */
++	uint8_t guaranteed;
++	uint8_t efficient;
++	uint8_t lowest;
++	uint32_t feedback_row;		/* this CPU's row in the feedback table */
++	uint32_t feedback_pages;	/* the table's size in pages */
++	uint32_t feedback_capabilities;	/* the values each row holds per class (1: performance, 2: and efficiency) */
++	uint32_t feedback_classes;	/* the classes each row holds (1 without class support) */
++	uint32_t reference_khz;		/* the reference counter's rate (x86: the TSC's), 0 unknown */
++	uint32_t highest_khz;		/* the processor's stated clock at highest (x86: CPUID 16H), 0 unknown */
++};
++
++struct hal_cpu_perf_request {
++	uint8_t minimum;
++	uint8_t maximum;
++	uint8_t desired;		/* 0: the processor chooses */
++	uint8_t preference;		/* 0 performance ... 255 energy; ignored without HAL_CPU_PERF_HAS_EPP */
++	uint32_t window_us;		/* 0: the processor chooses */
++};
++
++struct hal_cpu_perf_counters {
++	uint64_t delivered;		/* counts at the actual clock while running */
++	uint64_t reference;		/* counts at the reference rate while running */
++	uint32_t events;		/* HAL_CPU_PERF_EVENT_* seen since the last read, then cleared */
++	uint32_t reserved;
++};
++
++#define HAL_CPU_PERF_EVENT_GUARANTEED	0x1U	/* the guaranteed level changed */
++#define HAL_CPU_PERF_EVENT_HIGHEST	0x2U	/* the highest level changed */
++#define HAL_CPU_PERF_EVENT_EXCURSION	0x4U	/* the processor fell below the minimum */
++
++/*
++ * Read the current CPU's capabilities.  Before hal_cpu_perf_enable()
++ * only flags is filled (what the processor offers, without
++ * HAL_CPU_PERF_ENABLED) and the levels read 0; read again after enabling,
++ * and after HAL_CPU_PERF_EVENT_GUARANTEED or HAL_CPU_PERF_EVENT_HIGHEST.
++ * Returns HAL_OK or HAL_ERR_UNSUPPORTED.
++ */
++int
++hal_cpu_perf_capabilities(
++	struct hal_cpu_perf_capabilities *capabilities);
++
++/*
++ * Turn the current CPU's control on, with each logical CPU's own request
++ * in force (no package-wide request).  On x86 this cannot be undone until
++ * reset, and it applies to the whole package.  Returns HAL_OK (also when
++ * it was already on) or HAL_ERR_UNSUPPORTED.
++ */
++int
++hal_cpu_perf_enable(void);
++
++/*
++ * Ask the current CPU's control for a request: lowest <= minimum <=
++ * maximum <= highest, desired 0 or between them.  Returns HAL_OK,
++ * HAL_ERR_INVALID for values out of range, HAL_ERR_STATE before
++ * hal_cpu_perf_enable(), or HAL_ERR_UNSUPPORTED.
++ */
++int
++hal_cpu_perf_set(
++	const struct hal_cpu_perf_request *request);
++
++/*
++ * Read the request the current CPU holds and its counters.  Returns
++ * HAL_OK, HAL_ERR_STATE before hal_cpu_perf_enable(), or
++ * HAL_ERR_UNSUPPORTED.
++ */
++int
++hal_cpu_perf_get(
++	struct hal_cpu_perf_request *request,
++	struct hal_cpu_perf_counters *counters);
++
++/*
++ * Point the current CPU's package at a hardware feedback table the
++ * kernel allocated (zeroed, physically contiguous, feedback_pages pages,
++ * page aligned), or stop it with address 0.  Returns HAL_OK, HAL_ERR_STATE
++ * when stopping has not finished (call again), HAL_ERR_INVALID for a bad
++ * address, or HAL_ERR_UNSUPPORTED.  The kernel frees the table only after
++ * a stop returned HAL_OK.
++ */
++int
++hal_cpu_perf_feedback(
++	uint64_t physical_address);
++
++/*
++ * Copy the current package's feedback table into buffer (size bytes) if
++ * the hardware has written it since the last copy, and only then let the
++ * hardware write it again.  Returns 1 with a copy, 0 when nothing new was
++ * written, or a negative HAL error.
++ */
++int
++hal_cpu_perf_feedback_copy(
++	void *buffer,
++	size_t size);
++
++/*
+  * XXX: Rename to hal_cpu_halt().
+  * XXX: Is this same to hal_cpu_idle()??
+  *

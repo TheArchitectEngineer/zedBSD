@@ -337,6 +337,7 @@ collect_metadata(uint64_t block, uint32_t count, void *context)
 {
 	struct claim_metadata *metadata;
 	struct backing_range range;
+	uint32_t per_block;
 	int error;
 
 	metadata = context;
@@ -344,7 +345,23 @@ collect_metadata(uint64_t block, uint32_t count, void *context)
 		return EOVERFLOW;
 	if (metadata->ranges != NULL && metadata->count >= metadata->capacity)
 		return EAGAIN;
-	error = canonical_range(metadata->disk, block, count, &range);
+
+	/*
+	 * The filesystems report 512-byte sectors; a range names the disk's
+	 * own blocks, so on a disk of larger blocks the extent has to lie on
+	 * them.
+	 */
+	per_block = metadata->disk->d_block_size / DISK_SECTOR_SIZE;
+	if (per_block == 0U)
+		return EIO;
+	if (block % per_block != 0U)
+		return EIO;
+	if (count % per_block != 0U)
+		return EIO;
+
+	/* Canonicalizes the range in the disk's own blocks. */
+	error = canonical_range(metadata->disk, block / per_block,
+	    count / per_block, &range);
 	if (error != 0)
 		return error;
 	if (range.leaf != metadata->claim->key.leaf ||

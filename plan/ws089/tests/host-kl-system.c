@@ -657,3 +657,68 @@ kl_system_bluetooth_device(struct kl_system *system, unsigned action, const char
 	(void)request;
 	return ENOTSUP;
 }
+
+int
+kl_system_take_phone_event(struct kl_system *system, struct kl_phone_event *event)
+{
+	(void)system;
+	(void)event;
+	return 0;
+}
+
+int
+kl_system_phone_link(const struct kl_system *system, struct kl_phone_link *link, size_t size)
+{
+	(void)system;
+	(void)link;
+	(void)size;
+	return ENOTSUP;
+}
+
+int
+kl_system_phone_watch_link(struct kl_system *system, unsigned on)
+{
+	(void)system;
+	(void)on;
+	return ENOTSUP;
+}
+
+int
+kl_system_phone_link_set(struct kl_system *system, const char *address, unsigned on, unsigned profiles, uint32_t *request)
+{
+	(void)system;
+	(void)address;
+	(void)on;
+	(void)profiles;
+	(void)request;
+	return ENOTSUP;
+}
+
+int
+kl_system_displays_rotation(const struct kl_system *system, const char *key, unsigned *rotation)
+{
+	(void)system;
+	(void)key;
+	(void)rotation;
+	return ENOTSUP;
+}
+
+int
+kl_system_displays_rotations(const struct kl_system *system, const char *key, unsigned *mask, unsigned *why)
+{
+	(void)system;
+	(void)key;
+	(void)mask;
+	(void)why;
+	return ENOTSUP;
+}
+
+int
+kl_system_displays_set_rotation(struct kl_system *system, const char *key, unsigned rotation, uint32_t *request)
+{
+	(void)system;
+	(void)key;
+	(void)rotation;
+	(void)request;
+	return ENOTSUP;
+}

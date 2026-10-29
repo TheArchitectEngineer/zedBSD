@@ -8,8 +8,8 @@
 /*
  * A test client of the text input protocol (ws095-p004): a window of one
  * color whose text input is enabled while it has the keyboard, and which
- * writes what it hears to a log file for the guest tests
- * (plan/ws095/tests/ime-p004.sh) to read over SSH:
+ * writes what it hears to a log file for the input method's guest tests
+ * to read over SSH:
  *
  *   PROBE ENTER / LEAVE            the text input's enter and leave
  *   PROBE KEY key=K state=S        a key heard on wl_keyboard

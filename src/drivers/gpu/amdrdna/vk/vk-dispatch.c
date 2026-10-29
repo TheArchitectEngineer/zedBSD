@@ -26,11 +26,13 @@ static unsigned dispatch_shown;
 static void dispatch_refused(uint32_t opcode, int error);
 
 /*
- * The handlers, each owning a group of opcodes: the instance and device,
- * the objects and the recorded work.  The list is fixed for the node's
- * life.
+ * The handlers, each owning a group of opcodes: the recorded work first
+ * (most of a stream's commands are vkCmd* records, which then meet no
+ * other handler), the instance and device, the objects and the queue.
+ * The list is fixed for the node's life.
  */
 static const amdrdna_vk_route dispatch_routes[] = {
+	amdrdna_vk_record_route,
 	amdrdna_vk_device_route,
 	amdrdna_vk_memory_route,
 	amdrdna_vk_resource_route,
@@ -38,7 +40,6 @@ static const amdrdna_vk_route dispatch_routes[] = {
 	amdrdna_vk_target_route,
 	amdrdna_vk_pipeline_route,
 	amdrdna_vk_command_route,
-	amdrdna_vk_record_route,
 	amdrdna_vk_queue_route
 };
 

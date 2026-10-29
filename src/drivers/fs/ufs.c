@@ -728,6 +728,9 @@ static int write_content_sectors_context(struct mount *mountp, uint64_t lba, uin
 static int write_sectors_context(struct mount *mountp, uint64_t lba, uint32_t count, const void *buffer, const struct io_context *context);
 static int write_sectors(struct mount *mountp, uint64_t lba, uint32_t count, const void *buffer);
 static int observed_disk_read(struct disk *disk, uint64_t block, uint32_t count, void *buffer);
+static uint64_t ufs_disk_sectors(const struct disk *disk);
+static void ufs_sector_blocks(const struct disk *disk, uint64_t sector, uint32_t count, uint64_t *block, uint32_t *blocks);
+static int ufs_disk_read_view(struct disk *disk, uint64_t sector, uint32_t count, void *buffer, struct buf_view *view);
 static int ufs_sync(struct mount *mountp);
 static int ufs_sync_journal(struct ufs_mount_state *ms, struct mount *mountp);
 static int ufs_sync_commit(struct ufs_mount_state *ms, struct mount *mountp);
@@ -2843,20 +2846,24 @@ ufs_identify(
 	uint32_t second;
 	uint64_t first_block;
 	uint64_t block_count;
+	uint64_t disk_sectors;
+	int unsupported;
 	int error;
 
 	/* Rejects a call that names no disk or nowhere to report. */
 	if (disk == NULL || identity == NULL)
 		return EINVAL;
 
-	/* This driver reads 512-byte sectors and nothing else. */
-	if (disk->d_block_size != UFS_SECTOR_SIZE)
+	/* This driver reads disks whose blocks are whole sectors. */
+	unsupported = disk_sector_supported(disk);
+	if (unsupported != 0)
 		return EOPNOTSUPP;
 	first_block = UFS_SBLOCK_OFFSET / UFS_SECTOR_SIZE;
 
 	/* The superblock sits at a fixed offset, in whole sectors. */
 	block_count = UFS_SBLOCK_SIZE / UFS_SECTOR_SIZE;
-	if (disk->d_block_count < first_block + block_count)
+	disk_sectors = ufs_disk_sectors(disk);
+	if (disk_sectors < first_block + block_count)
 		return EOPNOTSUPP;
 
 	/* Takes the staging the superblock is read into. */
@@ -2865,12 +2872,18 @@ ufs_identify(
 		return ENOMEM;
 
 	/* Reads the superblock, which is where every field below lives. */
-	error = disk_read_direct(disk, first_block, (uint32_t)block_count,
-				 buffer);
+	error = disk_sector_transfer(disk, first_block, (uint32_t)block_count,
+				     buffer, 0, 1, NULL);
 	if (error == 0) {
 		error = drv_ufs_super_decode(buffer, UFS_SBLOCK_SIZE,
-					     disk->d_block_count, &super);
+					     disk_sectors, &super);
 	}
+
+	/* A fragment smaller than the disk's block was not written on it. */
+	if (error == 0 && super.fsize < disk->d_block_size)
+		error = EOPNOTSUPP;
+
+	/* Reports why the superblock could not be taken. */
 	if (error != 0) {
 		kern_free(buffer);
 
@@ -2942,6 +2955,79 @@ journal_checkpoint_locked(
 	return 0;
 }
 
+/*
+ * How many 512-byte sectors a disk holds, whatever the size of its blocks:
+ * the unit every address of the volume is in (fsbtodb).
+ */
+static uint64_t
+ufs_disk_sectors(
+	const struct disk *disk)
+{
+	uint64_t per_block;
+
+	/* The sectors in one of the disk's blocks. */
+	per_block = disk->d_block_size / UFS_SECTOR_SIZE;
+
+	/* A count that would not fit is as large as can be told. */
+	if (disk->d_block_count > UINT64_MAX / per_block)
+		return UINT64_MAX;
+	return disk->d_block_count * per_block;
+}
+
+/*
+ * The disk's blocks that a run of sectors lies in: the first and how many,
+ * so that a guard over blocks covers every sector of the run.
+ */
+static void
+ufs_sector_blocks(
+	const struct disk *disk,
+	uint64_t sector,
+	uint32_t count,
+	uint64_t *block,
+	uint32_t *blocks)
+{
+	uint32_t per_block;
+	uint64_t last;
+
+	/* The sectors in one of the disk's blocks. */
+	per_block = disk->d_block_size / UFS_SECTOR_SIZE;
+
+	/* The block of the first sector, and the one of the last. */
+	*block = sector / per_block;
+	last = (sector + count + per_block - 1U) / per_block;
+	*blocks = (uint32_t)(last - *block);
+}
+
+/*
+ * Reads whole blocks of the volume into a view of the buffer cache.  The
+ * run is in sectors; on a disk of larger blocks it has to start and end on
+ * the disk's blocks, which a group's block does on a volume whose
+ * fragments are no smaller than them (ufs_read_super).
+ */
+static int
+ufs_disk_read_view(
+	struct disk *disk,
+	uint64_t sector,
+	uint32_t count,
+	void *buffer,
+	struct buf_view *view)
+{
+	uint32_t per_block;
+	int error;
+
+	/* The sectors in one of the disk's blocks. */
+	per_block = disk->d_block_size / UFS_SECTOR_SIZE;
+
+	/* A run that is not whole blocks cannot be a view of them. */
+	if (sector % per_block != 0U || count % per_block != 0U)
+		return EIO;
+
+	/* Reads the blocks themselves. */
+	error = disk_read_view(disk, sector / per_block, count / per_block,
+			       buffer, view);
+	return error;
+}
+
 /* Counts filesystem disk requests, including metadata and journal traffic. */
 static int
 observed_disk_read(
@@ -2956,12 +3042,15 @@ observed_disk_read(
 	/* A request with no disk behind it moves nothing. */
 	bytes = 0;
 	if (disk != NULL)
-		bytes = (uint64_t)count * disk->d_block_size;
+		bytes = (uint64_t)count * UFS_SECTOR_SIZE;
 
 	io_stats_record(IO_UFS_READ, bytes);
 
-	/* Reads through the disk, so the fault injection sees it. */
-	error = disk_read(disk, block, count, buffer);
+	/*
+	 * Reads the sectors through the disk's cache, so the fault injection
+	 * sees it, on a disk of 512-byte blocks or of larger ones.
+	 */
+	error = disk_sector_transfer(disk, block, count, buffer, 0, 0, NULL);
 
 	/* Reports how the read went. */
 	return error;
@@ -3004,12 +3093,11 @@ journal_write(
 	error = io_context_child(&child, owner->context, IO_CONTEXT_ORDERED);
 	if (error != 0)
 		return error;
-	io_stats_record(IO_UFS_WRITE,
-			(uint64_t)count * owner->disk->d_block_size);
+	io_stats_record(IO_UFS_WRITE, (uint64_t)count * UFS_SECTOR_SIZE);
 
 	/* Writes the sectors through that context. */
-	bytes_written =
-		disk_write_filesystem_context(owner->disk, lba, count, buffer, &child);
+	bytes_written = disk_sector_transfer(owner->disk, lba, count,
+					     (void *)buffer, 1, 0, &child);
 
 	/* Reports how many bytes reached the disk. */
 	return bytes_written;
@@ -3218,12 +3306,14 @@ journal_discover(
 	uint32_t version;
 	uint32_t stored_digest;
 	uint32_t computed_digest;
+	uint64_t disk_sectors;
 	int old_signature;
 	int signature;
 	int error;
 
 	/* A volume too small to hold the locator carries no journal. */
-	if (end >= mountp->m_disk->d_block_count)
+	disk_sectors = ufs_disk_sectors(mountp->m_disk);
+	if (end >= disk_sectors)
 		return 0;
 
 	/* Reads the last sector, where the locator lives. */
@@ -3275,7 +3365,7 @@ journal_discover(
 	}
 
 	/* Nor can one that would reach past the end of the volume. */
-	if ((uint64_t)sectors + 1U > mountp->m_disk->d_block_count - end) {
+	if ((uint64_t)sectors + 1U > disk_sectors - end) {
 		/* Failed. */
 		return EINVAL;
 	}
@@ -3318,11 +3408,13 @@ snapshot_discover(
 	uint32_t stored_digest;
 	uint32_t computed_digest;
 	size_t map_count;
+	uint64_t disk_sectors;
 	int signature;
 	int error;
 
 	/* A volume too small to hold the locator carries no snapshot. */
-	if (end >= mountp->m_disk->d_block_count)
+	disk_sectors = ufs_disk_sectors(mountp->m_disk);
+	if (end >= disk_sectors)
 		return 0;
 
 	/* Reads the last sector, where the locator lives. */
@@ -3353,7 +3445,7 @@ snapshot_discover(
 		sectors = locator_get32(locator + 8);
 
 		/* A journal reaching past the volume names nothing real. */
-		if (sectors > mountp->m_disk->d_block_count - end - 1U) {
+		if (sectors > disk_sectors - end - 1U) {
 			/* Failed. */
 			return EINVAL;
 		}
@@ -3363,7 +3455,7 @@ snapshot_discover(
 	}
 
 	/* A locator pointing past the volume names nothing. */
-	if (cursor >= mountp->m_disk->d_block_count)
+	if (cursor >= disk_sectors)
 		return 0;
 
 	/* Reads the sector the locator points at. */
@@ -3417,7 +3509,7 @@ snapshot_discover(
 	}
 
 	/* Nor may the area reach past the end of the volume. */
-	if ((uint64_t)sectors + 1U > mountp->m_disk->d_block_count - cursor) {
+	if ((uint64_t)sectors + 1U > disk_sectors - cursor) {
 		/* Failed. */
 		return EINVAL;
 	}
@@ -3539,9 +3631,10 @@ write_sectors_impl(
 		return error;
 	}
 
-	io_stats_record(IO_UFS_WRITE, (uint64_t)count * mountp->m_disk->d_block_size);
+	io_stats_record(IO_UFS_WRITE, (uint64_t)count * UFS_SECTOR_SIZE);
 
-	error = disk_write_filesystem_context(mountp->m_disk, lba, count, buffer, context);
+	error = disk_sector_transfer(mountp->m_disk, lba, count, (void *)buffer,
+				     1, 0, context);
 
 	/* Releases the snapshot hold the preservation took. */
 	if (snapshot_locked)
@@ -4100,11 +4193,11 @@ load_cg_image(
 			io_stats_record(IO_UFS_READ, ms->super.bsize);
 
 			/* Reads the group off the volume itself. */
-			error = disk_read_view(mountp->m_disk,
-					       fragment << ms->super.fsbtodb,
-					       ms->super.bsize /
-					       UFS_SECTOR_SIZE,
-					       ms->cg, &ms->cg_view);
+			error = ufs_disk_read_view(mountp->m_disk,
+						   fragment << ms->super.fsbtodb,
+						   ms->super.bsize /
+						   UFS_SECTOR_SIZE,
+						   ms->cg, &ms->cg_view);
 		}
 	}
 
@@ -5502,6 +5595,7 @@ ufs_backing_lock(struct file *file, struct ufs_mount_state **result)
 	struct mount *mountp;
 	struct ufs_mount_state *ms;
 	const struct ufs_super *super;
+	int unsupported;
 
 	if (file == NULL || file->f_inode == NULL)
 		return EINVAL;
@@ -5515,8 +5609,10 @@ ufs_backing_lock(struct file *file, struct ufs_mount_state **result)
 	if (ms == NULL)
 		return EIO;
 	super = &ms->super;
-	if (mountp->m_disk->d_block_size != UFS_SECTOR_SIZE ||
-	    super->cgoffset != 0)
+	unsupported = disk_sector_supported(mountp->m_disk);
+	if (unsupported != 0)
+		return EOPNOTSUPP;
+	if (super->cgoffset != 0)
 		return EOPNOTSUPP;
 	if (super->bsize == 0 || super->bsize % UFS_SECTOR_SIZE != 0 ||
 	    super->fsize < UFS_SECTOR_SIZE || super->fsize % UFS_SECTOR_SIZE != 0 ||
@@ -5551,6 +5647,7 @@ ufs_file_extents(struct file *file, file_extent_cb callback, void *context)
 	uint64_t run_physical;
 	uint32_t count;
 	uint32_t run_count;
+	uint64_t disk_sectors;
 	int error;
 
 	if (callback == NULL)
@@ -5561,6 +5658,7 @@ ufs_file_extents(struct file *file, file_extent_cb callback, void *context)
 	inode = file->f_inode;
 	mountp = inode->i_mount;
 	super = &ms->super;
+	disk_sectors = ufs_disk_sectors(mountp->m_disk);
 	remaining = (uint64_t)inode->i_size / UFS_SECTOR_SIZE;
 	logical = 0;
 	run_logical = 0;
@@ -5580,8 +5678,8 @@ ufs_file_extents(struct file *file, file_extent_cb callback, void *context)
 		count = super->bsize / UFS_SECTOR_SIZE;
 		if (remaining < count)
 			count = (uint32_t)remaining;
-		if (physical >= mountp->m_disk->d_block_count ||
-		    count > mountp->m_disk->d_block_count - physical) {
+		if (physical >= disk_sectors ||
+		    count > disk_sectors - physical) {
 			error = EIO;
 			break;
 		}
@@ -5618,6 +5716,7 @@ ufs_metadata_tree(struct mount *mountp, uint64_t fragment, unsigned depth,
 	uint64_t used;
 	uint32_t index;
 	uint32_t sectors;
+	uint64_t disk_sectors;
 	unsigned level;
 	int error;
 
@@ -5631,8 +5730,9 @@ ufs_metadata_tree(struct mount *mountp, uint64_t fragment, unsigned depth,
 		return EOVERFLOW;
 	physical = fragment * (super->fsize / UFS_SECTOR_SIZE);
 	sectors = super->bsize / UFS_SECTOR_SIZE;
-	if (physical >= mountp->m_disk->d_block_count ||
-	    sectors > mountp->m_disk->d_block_count - physical)
+	disk_sectors = ufs_disk_sectors(mountp->m_disk);
+	if (physical >= disk_sectors ||
+	    sectors > disk_sectors - physical)
 		return EIO;
 	error = callback(physical, sectors, context);
 	if (error != 0 || depth == 1U)
@@ -16955,10 +17055,15 @@ ufs_read_super(
 	struct ufs_super *super)
 {
 	uint8_t *buffer;
+	uint64_t disk_sectors;
+	int unsupported;
 	int error;
 
-	/* This driver reads 512-byte sectors and nothing else. */
-	if (disk == NULL || disk->d_block_size != UFS_SECTOR_SIZE)
+	/* This driver reads disks whose blocks are whole sectors. */
+	if (disk == NULL)
+		return EOPNOTSUPP;
+	unsupported = disk_sector_supported(disk);
+	if (unsupported != 0)
 		return EOPNOTSUPP;
 
 	/* Takes the staging the superblock is read into. */
@@ -16970,9 +17075,14 @@ ufs_read_super(
 	error = observed_disk_read(disk, UFS_SBLOCK_OFFSET / UFS_SECTOR_SIZE,
 				   UFS_SBLOCK_SIZE / UFS_SECTOR_SIZE, buffer);
 	if (error == 0) {
+		disk_sectors = ufs_disk_sectors(disk);
 		error = drv_ufs_super_decode(buffer, UFS_SBLOCK_SIZE,
-					     disk->d_block_count, super);
+					     disk_sectors, super);
 	}
+
+	/* A fragment smaller than the disk's block was not written on it. */
+	if (error == 0 && super->fsize < disk->d_block_size)
+		error = EOPNOTSUPP;
 
 	kern_free(buffer);
 
@@ -19803,11 +19913,13 @@ j3_io(
 
 		/* Moves the run between the buffer and the disk. */
 		if (write) {
-			error = disk_write_filesystem_context(
+			error = disk_sector_transfer(
 				mountp->m_disk,
 				lba,
 				amount,
-				bytes,
+				(void *)bytes,
+				1,
+				0,
 				NULL);
 		} else {
 			error = observed_disk_read(
@@ -20130,7 +20242,7 @@ j3_write(
 
 	/* Takes the write under the journal lock. */
 	j3 = &ms->j3;
-	bytes = (uint64_t)count * mountp->m_disk->d_block_size;
+	bytes = (uint64_t)count * UFS_SECTOR_SIZE;
 	mutex_lock(&j3->lock);
 
 	/* Holds content that lands in a block the running or the closed transaction freed. */
@@ -20148,7 +20260,8 @@ j3_write(
 		 * keeps it for the flusher unless the claim needs it written now.
 		 */
 		io_stats_record(IO_UFS_WRITE, bytes);
-		error = disk_write_filesystem_context(mountp->m_disk, lba, count, buffer, context);
+		error = disk_sector_transfer(mountp->m_disk, lba, count,
+					     (void *)buffer, 1, 0, context);
 		if (error != 0)
 			return error;
 
@@ -20558,6 +20671,8 @@ j3_home_direct(
 	uint64_t cursor)
 {
 	struct backing_mutation_guard guard;
+	uint64_t guard_block;
+	uint32_t guard_count;
 	uint32_t done;
 	uint32_t amount;
 	int error;
@@ -20575,10 +20690,11 @@ j3_home_direct(
 			return error;
 
 		/* Writes it home as the filesystem, beneath the cache, the way a delayed write-back does. */
-		error = backing_mutation_begin_disk_filesystem(mountp->m_disk, range->lba + done, amount, &guard);
+		ufs_sector_blocks(mountp->m_disk, range->lba + done, amount, &guard_block, &guard_count);
+		error = backing_mutation_begin_disk_filesystem(mountp->m_disk, guard_block, guard_count, &guard);
 		if (error != 0)
 			return error;
-		error = disk_write_direct_context(mountp->m_disk, range->lba + done, amount, j3->closed_staging, NULL);
+		error = disk_sector_transfer(mountp->m_disk, range->lba + done, amount, j3->closed_staging, 1, 1, NULL);
 		backing_mutation_end(&guard);
 
 		/* Reports why the chunk could not be written. */
@@ -21105,6 +21221,7 @@ j3_extents_read(
 	struct ufs_j3_extent *extent;
 	const uint8_t *entry;
 	uint64_t file_sector;
+	uint64_t disk_sectors;
 	uint32_t n;
 
 	/* Takes the table of extents. */
@@ -21113,6 +21230,7 @@ j3_extents_read(
 		return ENOMEM;
 
 	/* Reads each extent: its first disk sector and its length. */
+	disk_sectors = ufs_disk_sectors(mountp->m_disk);
 	file_sector = 0;
 	for (n = 0; n < count; n++) {
 		extent = &j3->extents[n];
@@ -21124,7 +21242,7 @@ j3_extents_read(
 		/* An empty extent, or one past the end of the disk, is not the journal's. */
 		if (extent->count == 0)
 			return EINVAL;
-		if (extent->lba + extent->count > mountp->m_disk->d_block_count)
+		if (extent->lba + extent->count > disk_sectors)
 			return EINVAL;
 
 		/* The next extent continues the file. */
@@ -21389,7 +21507,7 @@ j3_payload_home(
 			return error;
 
 		/* Writes it home. */
-		error = disk_write_filesystem_context(mountp->m_disk, lba + done, amount, payload, NULL);
+		error = disk_sector_transfer(mountp->m_disk, lba + done, amount, payload, 1, 0, NULL);
 		if (error != 0)
 			return error;
 	}

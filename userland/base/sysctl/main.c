@@ -98,6 +98,7 @@ show_all(
 	    "hw.gputelemetry",
 	    "hw.thermal",
 	    "net.tcpstats",
+	    "net.tcp.congestion",
 	    "kern.boot.firmware_partition",
 	    "kern.boot.config_partition",
 	    "kern.boot.config_matches",
@@ -169,12 +170,15 @@ show_name(
 		return 0;
 	}
 
-	/* Boot selectors are strings; the match count retains numeric
-	 * rendering. */
+	/*
+	 * Boot selectors and the congestion control's name are strings; the
+	 * match count retains numeric rendering.
+	 */
 	if (strcmp(name, "kern.boot.firmware_partition") == 0 ||
 	    strcmp(name, "kern.boot.config_partition") == 0 ||
 	    strcmp(name, "kern.boot.login") == 0 ||
-	    strcmp(name, "kern.boot.kmsg") == 0) {
+	    strcmp(name, "kern.boot.kmsg") == 0 ||
+	    strcmp(name, "net.tcp.congestion") == 0) {
 		char selector[64];
 		size_t size = sizeof(selector);
 
@@ -353,11 +357,14 @@ set_name(
 	const char *equal)
 {
 	int function_result;
+	int compare;
+	int error;
 	char name[NAME_MAX];
 	char *end;
 	unsigned long long parsed;
 	uint64_t value;
 	size_t name_length;
+	size_t text_length;
 
 	name_length = (size_t)(equal - argument);
 
@@ -368,6 +375,25 @@ set_name(
 	name[name_length] = '\0';
 	if (strcmp(name, "vfs.writeback.control") == 0)
 		return set_writeback(equal + 1);
+
+	/* The congestion control new sockets start with is set by its name. */
+	compare = strcmp(name, "net.tcp.congestion");
+	if (compare == 0) {
+		/* Sets the name, without a NUL. */
+		text_length = strlen(equal + 1);
+		error = sysctlbyname(name, NULL, NULL, equal + 1, text_length);
+		if (error != 0)
+			return errno;
+
+		/* Shows the name now in force. */
+		error = show_name(name);
+		if (error != 0)
+			return errno;
+
+		/* Succeeded: the name is set and shown. */
+		return 0;
+	}
+
 	errno = 0;
 	parsed = strtoull(equal + 1, &end, 10);
 
@@ -535,6 +561,8 @@ show_cputimes(
 		valid = 0;
 	} else if (header->version != CPU_TIMES_VERSION) {
 		valid = 0;
+	} else if (header->struct_size != sizeof(*header)) {
+		valid = 0;
 	} else if (header->element_size != sizeof(*entry)) {
 		valid = 0;
 	} else if (header->struct_size + (size_t)header->count * header->element_size != length) {
@@ -594,6 +622,8 @@ show_diskstats(
 	if (length < sizeof(*header)) {
 		valid = 0;
 	} else if (header->version != DISK_STATS_VERSION) {
+		valid = 0;
+	} else if (header->struct_size != sizeof(*header)) {
 		valid = 0;
 	} else if (header->element_size != sizeof(*entry)) {
 		valid = 0;
@@ -660,6 +690,8 @@ show_gputelemetry(
 		valid = 0;
 	} else if (header->version != GPU_TELEMETRY_VERSION) {
 		valid = 0;
+	} else if (header->struct_size != sizeof(*header)) {
+		valid = 0;
 	} else if (header->element_size != sizeof(*entry)) {
 		valid = 0;
 	} else if (header->struct_size + (size_t)header->count * header->element_size != length) {
@@ -724,6 +756,8 @@ show_thermal(
 		valid = 0;
 	} else if (header->version != THERMAL_VERSION) {
 		valid = 0;
+	} else if (header->struct_size != sizeof(*header)) {
+		valid = 0;
 	} else if (header->element_size != sizeof(*entry)) {
 		valid = 0;
 	} else if (header->struct_size + (size_t)header->count * header->element_size != length) {
@@ -777,6 +811,7 @@ show_tcpstats(
 {
 	const struct tcp_stats_header *header;
 	const struct tcp_stats_entry *entry;
+	const char *cc_name;
 	unsigned char *buffer;
 	char local[64];
 	char remote[64];
@@ -797,6 +832,8 @@ show_tcpstats(
 		valid = 0;
 	} else if (header->version != TCP_STATS_VERSION) {
 		valid = 0;
+	} else if (header->struct_size != sizeof(*header)) {
+		valid = 0;
 	} else if (header->element_size != sizeof(*entry)) {
 		valid = 0;
 	} else if (header->struct_size + (size_t)header->count * header->element_size != length) {
@@ -812,9 +849,12 @@ show_tcpstats(
 
 	/* The reading's time, the sockets and the packet pool. */
 	printf("net.tcpstats: time_ms=%llu sockets=%u packets_total=%u packets_used=%u packets_used_max=%u "
-	       "packet_alloc_failures=%llu\n",
+	       "packet_alloc_failures=%llu jumbo_total=%u jumbo_used=%u jumbo_used_max=%u jumbo_reserve=%u "
+	       "jumbo_alloc_failures=%llu\n",
 	       (unsigned long long)header->time_ms, header->count, header->packets_total, header->packets_used,
-	       header->packets_used_max, (unsigned long long)header->packet_alloc_failures);
+	       header->packets_used_max, (unsigned long long)header->packet_alloc_failures, header->jumbo_total,
+	       header->jumbo_used, header->jumbo_used_max, header->jumbo_reserve,
+	       (unsigned long long)header->jumbo_alloc_failures);
 
 	/* A line a socket. */
 	for (index = 0; index < header->count; index++) {
@@ -837,7 +877,7 @@ show_tcpstats(
 		       "send_buffer_sleeps=%llu segment_send_failures=%llu acks_in=%llu duplicate_acks_in=%llu "
 		       "acks_outside=%llu zero_windows_in=%llu zero_windows_out=%llu window_updates_out=%llu "
 		       "old_segments_in=%llu out_of_order_in=%llu out_of_order_kept=%llu receive_refused=%llu "
-		       "fast_retransmits=%llu\n",
+		       "fast_retransmits=%llu",
 		       (unsigned long long)entry->segments_out, (unsigned long long)entry->segments_in,
 		       (unsigned long long)entry->data_segments_out, (unsigned long long)entry->data_bytes_out,
 		       (unsigned long long)entry->data_bytes_in, (unsigned long long)entry->retransmit_segments,
@@ -849,6 +889,13 @@ show_tcpstats(
 		       (unsigned long long)entry->window_updates_out, (unsigned long long)entry->old_segments_in,
 		       (unsigned long long)entry->out_of_order_in, (unsigned long long)entry->out_of_order_kept,
 		       (unsigned long long)entry->receive_refused, (unsigned long long)entry->fast_retransmits);
+
+		/* The congestion control, as its name, with CUBIC's memory of the last loss and its window's state. */
+		cc_name = "reno";
+		if (entry->cc == TCP_STATS_CC_CUBIC)
+			cc_name = "cubic";
+		printf(" cc=%s cubic_w_max_kb=%u cubic_k_ms=%u cwnd_state=0x%x\n", cc_name, entry->cubic_w_max_kb,
+		       entry->cubic_k_ms, entry->cwnd_state);
 	}
 
 	/* The value is not needed any more. */

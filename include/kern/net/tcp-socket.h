@@ -30,44 +30,75 @@ enum tcp_state {
 /*
  * How many segments may be outstanding at once, and one of them.
  *
- * The window this opens is TCP_SEND_QUEUE_MAX segments; the peer's own
- * advertised window narrows it further whenever that is smaller.
+ * The window this opens is TCP_SEND_QUEUE_MAX segments; the congestion
+ * window and the peer's advertised window narrow it further whenever they
+ * are smaller.  Each queued segment keeps a copy of its payload in a
+ * packet of the shared pool, so the 64-bit machines, whose pool is large,
+ * keep enough for a gigabit link's round trip with the stack's delays and
+ * for a whole 128 KB write while half the ring is free (256 segments of
+ * 1460 bytes), and the 32-bit boards a few.
  */
 #ifndef CONFIG_TCP_SEND_QUEUE_MAX
+#if defined(HAL_ARCH_AMD64) || defined(HAL_ARCH_ARM64) || \
+    defined(HAL_ARCH_RISCV64)
+#define CONFIG_TCP_SEND_QUEUE_MAX 256
+#else
 #define CONFIG_TCP_SEND_QUEUE_MAX 8
 #endif
+#endif
 #define TCP_SEND_QUEUE_MAX ((unsigned)CONFIG_TCP_SEND_QUEUE_MAX)
+
+/* The congestion controls a connection may use: RFC 5681's (NewReno, RFC 6582) and CUBIC (RFC 9438). */
+#define TCP_CC_RENO	0U
+#define TCP_CC_CUBIC	1U
 
 /*
  * How many segments that came ahead of a gap a connection keeps until the
  * gap is filled (BUG-222).  On the 64-bit machines it is the whole receive
- * window (44 segments, tcp.c's TCP_RECEIVE_PACKETS): a segment dropped for
+ * window (tcp.c's TCP_RECEIVE_PACKETS, 128 segments: the 64 KB window in
+ * segments as small as 512 bytes): a segment dropped for
  * want of room is one the sender (without SACK) resends a round trip
  * after the one before it, and with the window queued in the USB adapter a
  * round trip is tens of milliseconds (T1-516: a 2 % loss fell to a tenth
  * of the speed).  The window counts only the receive queue's free slots,
  * so the queue and the segments kept ahead stay within about one window
  * of packets together.  The 32-bit boards keep a few (tcp.c).
+ * CONFIG_TCP_REORDER_MAX sets another (a build that measures longer round
+ * trips, with CONFIG_TCP_RECEIVE_PACKETS).
  */
-#if defined(HAL_ARCH_AMD64) || defined(HAL_ARCH_ARM64) || \
+#if defined(CONFIG_TCP_REORDER_MAX)
+#define TCP_REORDER_MAX ((unsigned)CONFIG_TCP_REORDER_MAX)
+#elif defined(HAL_ARCH_AMD64) || defined(HAL_ARCH_ARM64) || \
     defined(HAL_ARCH_RISCV64)
-#define TCP_REORDER_MAX 44U
+#define TCP_REORDER_MAX 128U
 #else
 #define TCP_REORDER_MAX 16U
 #endif
 
 /*
  * One segment in the send ring: its copy, where it lies in the sequence
- * space, its TCP flags, and whether it went out as a probe of a window
- * that could not take it (ws220-p005; set when it is marked sent).
+ * space, its TCP flags, whether it went out as a probe of a window that
+ * could not take it (set when it is marked sent), and whether
+ * it has never been handed to the device (fresh: a short last segment
+ * that Nagle's algorithm holds takes the next write's bytes), and whether
+ * it was made unsent again after it went (rewound: by a timeout's
+ * go-back-N or a Packet Too Big; its next sending is a resend, counted so
+ * and never timed).  The
+ * payload is length bytes at payload_offset in the copy's storage: the
+ * copy itself carries the segment's first transmission, which pushes the
+ * headers in front of the payload, so its data pointer is not the
+ * payload's afterwards; the payload's bytes never change.
  */
 struct tcp_pending {
 	struct packet_buf *packet;
 	uint32_t sequence;
 	uint32_t advance;
 	uint16_t length;
+	uint16_t payload_offset;
 	uint8_t flags;
 	uint8_t probe;
+	uint8_t fresh;
+	uint8_t rewound;
 };
 
 /*
@@ -112,7 +143,19 @@ struct tcp_socket {
 	uint32_t connect_generation;
 	uint32_t active_connect_generation;
 	uint64_t connect_wait_deadline;
-	uint16_t peer_window;
+	/*
+	 * The peer's window in bytes, scaled by its window scale (RFC 7323)
+	 * when both ends offered the option in their SYNs: wscale_offered
+	 * says this end's SYN carries it (an active open always, a passive
+	 * one when the peer's SYN did), peer_wscale is the peer's shift, and
+	 * wscale_on says both offered it.  This end's own shift, which its SYN
+	 * offers, scales the windows it advertises once wscale_on is set.
+	 */
+	uint32_t peer_window;
+	uint8_t peer_wscale;
+	uint8_t wscale_offered;
+	uint8_t wscale_on;
+	uint8_t receive_wscale;
 	/*
 	 * The sequence and acknowledgement numbers of the segment peer_window
 	 * was last taken from (RFC 9293's SND.WL1 and SND.WL2).  A segment
@@ -122,8 +165,117 @@ struct tcp_socket {
 	 */
 	uint32_t send_window_sequence;
 	uint32_t send_window_acknowledgement;
-	/* The window last put in a segment; a read that opens it says so. */
-	uint16_t advertised_window;
+	/*
+	 * The window last put in a segment, in bytes (the field scaled back by
+	 * this end's shift); a read that opens it says so.
+	 */
+	uint32_t advertised_window;
+	/*
+	 * The right edge of the window last put in a segment (receive_next
+	 * then, and that window), once one went (receive_edge_set): a window
+	 * that opens it by less than min(half the buffer, a segment) keeps it
+	 * where it was, the receiver's silly window avoidance.
+	 */
+	uint32_t receive_edge;
+	uint8_t receive_edge_set;
+	/*
+	 * The maximum segment size the peer's SYN offered (0: it offered none),
+	 * and the largest payload this end puts in a segment: the smaller of
+	 * that offer (536, or 1220 over IPv6, without one) and what the route's
+	 * interface carries, set when the connection is established.
+	 */
+	uint32_t peer_mss;
+	uint32_t send_mss;
+	/*
+	 * The maximum segment size this end's SYN offered (0 before one went):
+	 * what the route's interface carries, which the receive window and its
+	 * updates count in.
+	 */
+	uint32_t receive_mss;
+	/*
+	 * The congestion control of RFC 5681 in bytes: the congestion window
+	 * (RFC 6928's ten segments to start), the slow start threshold, and
+	 * the bytes acknowledged towards the next segment of growth in
+	 * congestion avoidance.  What is in flight stays within the smaller of
+	 * the congestion window and the peer's window.
+	 */
+	uint32_t cwnd;
+	uint32_t ssthresh;
+	uint32_t cwnd_acked;
+	/*
+	 * Whether the congestion window is what limits the sending (RFC 7661),
+	 * measured over rounds: a round ends when the acknowledgements reach
+	 * cwnd_round_end, the end of what was sent when it began.
+	 * cwnd_round_flight is the most sent and not acknowledged (the bytes
+	 * handed to the device, not those queued behind them) within the
+	 * round, cwnd_prev_flight that of the round before; cwnd_blocked says
+	 * the window held back a queued segment within the round (a write it
+	 * refuses has the flight within a segment of it already).  The window
+	 * grows only while a round uses it.
+	 */
+	uint32_t cwnd_round_end;
+	uint32_t cwnd_round_flight;
+	uint32_t cwnd_prev_flight;
+	unsigned cwnd_blocked;
+	/* The congestion control that grows and cuts the window (TCP_CC_*). */
+	unsigned cc;
+	/*
+	 * CUBIC's state (RFC 9438), in bytes and milliseconds: the window
+	 * before the last loss (W_max) and the window then (cwnd_prior); the
+	 * epoch of congestion avoidance, while cubic_epoch_started, with its
+	 * start, the window function's origin and K, and the estimate of
+	 * Reno's window (W_est); when the window began to go unused within
+	 * the epoch (cubic_limited_since_ms, 0 while it is used), which
+	 * moves the epoch on by that time; the remainders the integer growth
+	 * of W_est and of the window carry; and cubic_after_timeout, set by a
+	 * timeout for the next epoch outside a recovery to start at the
+	 * window it finds (K = 0).
+	 */
+	uint32_t cubic_w_max;
+	uint32_t cubic_cwnd_prior;
+	uint32_t cubic_origin;
+	uint32_t cubic_k_ms;
+	uint32_t cubic_w_est;
+	uint32_t cubic_est_rem;
+	uint32_t cubic_grow_rem;
+	uint64_t cubic_epoch_ms;
+	uint64_t cubic_limited_since_ms;
+	unsigned cubic_epoch_started;
+	unsigned cubic_after_timeout;
+	/*
+	 * Delayed acknowledgements (RFC 1122 4.2.3.2, RFC 5681 4.2): the
+	 * in-order segments received since this end last sent anything, which
+	 * the second of them acknowledges at once; one alone is acknowledged
+	 * when the network worker has taken every segment that had arrived
+	 * (tcp_ack_flush).  ack_listed says the connection is on that list,
+	 * linked by ack_next, with a reference the flush drops.
+	 */
+	unsigned ack_owed;
+	unsigned ack_listed;
+	struct tcp_socket *ack_next;
+	/*
+	 * The way the connection's IPv4 segments go, as the last route lookup
+	 * found it: its source address and next hop, through the interface
+	 * the connection is bound to (inet.ifindex), valid while route_cached
+	 * is set and route_generation() still returns route_generation_seen.
+	 * A peer that is one of this host's own addresses is never kept (its
+	 * segments go round the loopback device).  Guarded by the socket lock.
+	 */
+	unsigned route_cached;
+	unsigned long route_generation_seen;
+	uint32_t route_source;
+	uint32_t route_next_hop;
+	/*
+	 * The same for IPv6 segments, under route_cached and
+	 * route_generation_seen too: the interface the route goes out of
+	 * (route_ifindex), its next hop, the interface's hop limit and the
+	 * path's MTU; the source is inet.local6, which the first segment
+	 * fixed.
+	 */
+	unsigned route_ifindex;
+	struct in6_addr route_next_hop6;
+	unsigned route_hop_limit;
+	unsigned route_mtu;
 	/*
 	 * Segments queued and not yet acknowledged, oldest first.  Several
 	 * may be in flight at once, bounded by the peer's advertised window
@@ -146,6 +298,29 @@ struct tcp_socket {
 	unsigned send_first;
 	unsigned send_count;
 	unsigned send_unsent;
+	/* The ring's copies that are jumbo packets (within TCP_SEND_JUMBO_MAX). */
+	unsigned send_jumbo;
+	/*
+	 * The payload bytes of the ring's entries, which the socket's send
+	 * buffer (SO_SNDBUF, send_hiwat_bytes) bounds: a data segment joins
+	 * the ring while they stay within it, or the ring has no data.
+	 */
+	size_t send_bytes;
+	/*
+	 * Nagle's algorithm as Minshall changed it (and Linux has it): the
+	 * end of the last data segment shorter than send_mss handed to the
+	 * device, while send_small_outstanding says it is not yet
+	 * acknowledged.  Only then is a short last entry held back.
+	 */
+	uint32_t send_small_end;
+	unsigned send_small_outstanding;
+	/*
+	 * The end of the most ever handed to the device (BSD's snd_max): a
+	 * timeout's go-back-N or a Packet Too Big makes entries unsent again
+	 * that the peer may have had all along, and its acknowledgement of
+	 * them, up to here, is taken.
+	 */
+	uint32_t send_max;
 	/*
 	 * Set while one thread hands unsent entries to the device with the
 	 * socket lock released; another that queues meanwhile leaves its
@@ -275,9 +450,9 @@ struct tcp_socket {
 	unsigned maxunack_seconds;
 	uint64_t unack_since;
 	/*
-	 * TCP_NODELAY as the caller set it, and the idle-probe state for
-	 * SO_KEEPALIVE: when the next probe is due and how many have gone
-	 * unanswered.
+	 * TCP_NODELAY as the caller set it (set: Nagle's algorithm holds no
+	 * short segment), and the idle-probe state for SO_KEEPALIVE: when the
+	 * next probe is due and how many have gone unanswered.
 	 */
 	unsigned nodelay;
 	uint64_t keepalive_deadline;
@@ -315,5 +490,18 @@ tcp_stats_copy(
 	size_t capacity,
 	size_t *needed,
 	int superuser);
+const char *
+tcp_cc_name(
+	unsigned cc);
+int
+tcp_cc_lookup(
+	const char *name,
+	size_t length,
+	unsigned *cc);
+unsigned
+tcp_cc_default(void);
+void
+tcp_cc_set_default(
+	unsigned cc);
 
 #endif

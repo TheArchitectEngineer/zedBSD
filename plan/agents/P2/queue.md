@@ -36,7 +36,7 @@ Worktree: `/home/awe/zedBSD-worktrees/p2`、branch `agent/p2`、base main fc3d31
 | q618 / q618-i01 | [ws114-p008](../../ws114/phase008/phase.md) | KDE の server decoration、既定 SSD | user 2026-10-03 | 4h | finished / cleared |
 | q620 / q620-i01 | ws099-p021（fb1f6afee の `plan/ws099/phase021/phase.md`） | C2 の geometry・BUG-127 | 自走 | 3h | finished / uncleared |
 | q622 / q622-i01 | ws094-p014（fb1f6afee の `plan/ws094/phase014/phase.md`） | 規約の指摘の直し | 自走 | 2h | finished / cleared |
-| q625 / q625-i01 | ws099-p024（fb1f6afee の `plan/ws099/phase024/phase.md`） | BUG-147 の試験の頑健化 | 自走 | 3h | in-progress |
+| q625 / q625-i01 | ws099-p024（fb1f6afee の `plan/ws099/phase024/phase.md`） | BUG-147 の試験の頑健化 | 自走 | 3h | cleared（2026-10-29、919a05b78 → main） |
 
 Next（予約）: debug を続ける（BUG-147 の後: 優先度の高い bug。ws089-p019 と ws113 は WS131 の後に組み直す）
 
@@ -86,4 +86,6 @@ Worktree `/home/awe/zedBSD-worktrees/p2-ws291j`、定義 phase-runner。
 
 | Queue | Phase | 範囲 | State |
 | --- | --- | --- | --- |
-| q1663 | [ws291](../../ws291/ws.md) p006 の続き | 案 5 → 案 4（ユーザーの回答「両方 (推し)」）、実機 10.0.10.3。原文「P2にWS291の続き」。q1658 と同じ自律の承認 | in-progress |
+| q1663 | [ws291](../../ws291/ws.md) p006 の続き | 案 5 → 案 4（ユーザーの回答「両方 (推し)」）、実機 10.0.10.3。原文「P2にWS291の続き」。q1658 と同じ自律の承認 | cleared（2026-10-29、919a05b78 → main） |
+
+| q1668 | [ws291](../../ws291/ws.md) p006 の続き | shot の確かめ → big-N・subs-N | in-progress |

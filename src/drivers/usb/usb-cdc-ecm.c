@@ -45,6 +45,7 @@
 #define ECM_ETHERNET_HEADER_SIZE 14U
 #define ECM_MTU 1500U
 #define ECM_FRAME_SIZE (ECM_ETHERNET_HEADER_SIZE + ECM_MTU)
+#define ECM_FRAME_MAX (ECM_ETHERNET_HEADER_SIZE + NET_MTU_MAX)
 
 /*
  * Frames held while the one transmit transfer is busy.  The packet pool is
@@ -90,6 +91,15 @@ struct ecm_adapter {
 	uint8_t *tx_buffer;
 	unsigned data_alternate;
 	uint16_t bulk_out_max_packet_size;
+	/*
+	 * The longest frame either way: the descriptor's wMaxSegmentSize,
+	 * within what the packet pool holds.  The receive transfer is armed
+	 * for it rounded up to whole packets and one packet more, whatever
+	 * the MTU, so a frame that fills its last packet and the
+	 * zero-length packet after it end in one transfer.
+	 */
+	size_t frame_max;
+	size_t rx_length;
 	unsigned ready;
 	unsigned starts_active;
 	unsigned polls_active;
@@ -131,6 +141,7 @@ struct ecm_adapter {
 };
 
 static uint16_t ecm_le16(const uint8_t *bytes);
+static size_t ecm_rx_length(size_t frame_max, unsigned max_packet_size);
 static struct drv_usb_configuration * ecm_interface_configuration(struct drv_usb_interface *interface);
 static int ecm_iad_covers(const struct drv_usb_interface_association_descriptor *iad, unsigned interface_number);
 static int ecm_iad_consistent(struct drv_usb_configuration *configuration, unsigned control_number, unsigned data_number);
@@ -230,6 +241,27 @@ ecm_le16(
 {
 	/* Returns the computed result. */
 	return (uint16_t)((uint16_t)bytes[0] | ((uint16_t)bytes[1] << 8));
+}
+
+/*
+ * The receive transfer's length for frames up to frame_max: whole packets
+ * of the bulk-in endpoint and one packet more, so the zero-length packet
+ * after a frame that fills its last packet ends the same transfer.
+ */
+static size_t
+ecm_rx_length(
+	size_t frame_max,
+	unsigned max_packet_size)
+{
+	size_t packets;
+
+	/* An endpoint that reports no packet size takes the frame as it is. */
+	if (max_packet_size == 0)
+		return frame_max;
+
+	/* Whole packets for the frame, and the one after. */
+	packets = (frame_max + max_packet_size - 1U) / max_packet_size;
+	return (packets + 1U) * max_packet_size;
 }
 
 /* Reports the configuration an interface belongs to. */
@@ -1044,7 +1076,7 @@ ecm_open(
 	}
 	if (error == 0) {
 		error = ecm_start_urb(adapter, adapter->rx_urb,
-				      adapter->rx_buffer, ECM_FRAME_SIZE, 0);
+				      adapter->rx_buffer, adapter->rx_length, 0);
 	}
 	if (error != 0) {
 		(void)ecm_stop(adapter);
@@ -1098,7 +1130,7 @@ ecm_transmit(
 	}
 
 	/* Checks the current data length. */
-	if (length < ECM_ETHERNET_HEADER_SIZE || length > ECM_FRAME_SIZE) {
+	if (length < ECM_ETHERNET_HEADER_SIZE || length > adapter->frame_max) {
 		spin_unlock_irqrestore(&adapter->lock, irq);
 		packet_buf_free(packet);
 
@@ -1347,7 +1379,7 @@ ecm_rearm(
 		notification ? adapter->notification_urb : adapter->rx_urb;
 	void *buffer = notification ? (void *)adapter->notification_buffer
 				    : (void *)adapter->rx_buffer;
-	size_t length = notification ? adapter->notification_length : ECM_FRAME_SIZE;
+	size_t length = notification ? adapter->notification_length : adapter->rx_length;
 	int error = ecm_start_urb(adapter, urb, buffer, length, 0);
 	unsigned long irq = spin_lock_irqsave(&adapter->lock);
 	unsigned *retry = notification ? &adapter->notification_retries
@@ -1623,13 +1655,11 @@ ecm_poll_rx_completion(
 	/* Checks the operation status. */
 	length = drv_usb_urb_actual_length(adapter->rx_urb);
 	if (error == 0 &&
-	    (length < ECM_ETHERNET_HEADER_SIZE || length > ECM_FRAME_SIZE))
+	    (length < ECM_ETHERNET_HEADER_SIZE || length > adapter->frame_max))
 		error = EMSGSIZE;
 	if (error == 0) {
-		/* Handles the packet availability. */
-		packet = packet_buf_alloc(0);
-		if (packet == NULL)
-			error = ENOBUFS;
+		/* A packet of the class the frame needs (a driver's receive may take the reserved jumbo ones). */
+		packet = packet_buf_alloc_for(0, length, PACKET_BUF_ALLOC_RECEIVE, &error);
 	}
 	if (error == 0) {
 		/* Handles the destination availability. */
@@ -1642,10 +1672,13 @@ ecm_poll_rx_completion(
 	if (error == 0) {
 		net_device_receive(device, packet);
 	} else {
-		/* Handles the packet availability. */
+		/* Counts a frame the pool had no packet for as dropped, any other as an error. */
 		if (packet != NULL)
 			packet_buf_free(packet);
-		device->rx_errors++;
+		if (error == ENOBUFS)
+			device->rx_dropped++;
+		else
+			device->rx_errors++;
 	}
 
 	ecm_restore_pending(adapter, &adapter->rx_rearm);
@@ -1829,8 +1862,8 @@ ecm_buffers_alloc(
 	struct ecm_adapter *adapter)
 {
 	adapter->notification_buffer = kern_malloc(ECM_NOTIFICATION_SIZE);
-	adapter->rx_buffer = kern_malloc(ECM_FRAME_SIZE);
-	adapter->tx_buffer = kern_malloc(ECM_FRAME_SIZE);
+	adapter->rx_buffer = kern_malloc(adapter->rx_length);
+	adapter->tx_buffer = kern_malloc(adapter->frame_max);
 
 	/* Handles the notification buffer availability. */
 	if (adapter->notification_buffer != NULL &&
@@ -1859,6 +1892,7 @@ ecm_net_device_create(
 		return ENOSPC;
 	device->flags = NET_DEVICE_BROADCAST | NET_DEVICE_MULTICAST;
 	device->mtu = ECM_MTU;
+	device->mtu_max = (unsigned)(adapter->frame_max - ECM_ETHERNET_HEADER_SIZE);
 	kern_memcpy(device->hwaddr, mac, 6U);
 	device->hwaddr_len = 6U;
 	device->ops = &ecm_net_ops;
@@ -1920,6 +1954,11 @@ ecm_attach(
 	adapter->data_alternate = binding.data_alternate;
 	adapter->bulk_out_max_packet_size =
 		drv_usb_endpoint_max_packet_size(binding.bulk_out);
+	adapter->frame_max = binding.max_segment_size;
+	if (adapter->frame_max > ECM_FRAME_MAX)
+		adapter->frame_max = ECM_FRAME_MAX;
+	adapter->rx_length = ecm_rx_length(adapter->frame_max,
+					   drv_usb_endpoint_max_packet_size(binding.bulk_in));
 	adapter->notification_length = drv_usb_cdc_notification_transfer_length(
 		drv_usb_endpoint_max_packet_size(binding.notification));
 	spin_init(&adapter->lock, LOCK_RANK_DEVICE, "usb-cdc-ecm");
@@ -1965,9 +2004,10 @@ ecm_attach(
 		return error;
 	ecm_set_ready(adapter, 1);
 	kern_logf("usb-cdc-ecm: %s mac=%02x:%02x:%02x:%02x:%02x:%02x "
-		   "segment=%u\n",
+		   "segment=%u mtu_max=%u rx_urb=%zu\n",
 		   adapter->net_device->name, mac[0], mac[1], mac[2], mac[3],
-		   mac[4], mac[5], binding.max_segment_size);
+		   mac[4], mac[5], binding.max_segment_size,
+		   adapter->net_device->mtu_max, adapter->rx_length);
 
 	/* Succeeded. */
 	return 0;

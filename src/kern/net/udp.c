@@ -685,12 +685,10 @@ udp_send_ipv4(
 		goto fail;
 	}
 
-	/* Builds the datagram. */
-	packet = packet_buf_alloc(PACKET_BUF_DEFAULT_HEADROOM);
-	if (packet == NULL) {
-		error = ENOBUFS;
+	/* Builds the datagram in a packet of the class its length needs. */
+	packet = packet_buf_alloc_for(PACKET_BUF_DEFAULT_HEADROOM, sizeof(struct udp_wire) + length, 0, &error);
+	if (packet == NULL)
 		goto fail;
-	}
 
 	udp = packet_buf_append(packet, sizeof(*udp));
 	payload = packet_buf_append(packet, length);
@@ -811,12 +809,10 @@ udp_send_ipv6(
 		goto fail;
 	}
 
-	/* Builds the datagram. */
-	packet = packet_buf_alloc(PACKET_BUF_DEFAULT_HEADROOM);
-	if (packet == NULL) {
-		error = ENOBUFS;
+	/* Builds the datagram in a packet of the class its length needs. */
+	packet = packet_buf_alloc_for(PACKET_BUF_DEFAULT_HEADROOM, sizeof(struct udp_wire) + length, 0, &error);
+	if (packet == NULL)
 		goto fail;
-	}
 
 	udp = packet_buf_append(packet, sizeof(*udp));
 	payload = packet_buf_append(packet, length);
@@ -1090,7 +1086,7 @@ udp_input(
 	}
 
 	checksum = wire_get16(udp->checksum);
-	if (checksum != 0 &&
+	if (checksum != 0 && (packet->flags & PACKET_BUF_RX_CSUM_L4) == 0 &&
 	    net_checksum_pseudo(source, destination, IPPROTO_UDP,
 	    packet->data, udp_length) != 0) {
 		packet_buf_free(packet);
@@ -1209,7 +1205,13 @@ udp6_input(
 		return EINVAL;
 	}
 
-	checksum = net_checksum_pseudo6(source->s6_addr, destination->s6_addr, IPPROTO_UDP, packet->data, udp_length);
+	/* Checks the checksum, unless the device found it right. */
+	checksum = 0;
+	if ((packet->flags & PACKET_BUF_RX_CSUM_L4) == 0) {
+		checksum = net_checksum_pseudo6(source->s6_addr, destination->s6_addr, IPPROTO_UDP, packet->data,
+		    udp_length);
+	}
+
 	if (checksum != 0) {
 		packet_buf_free(packet);
 		return EINVAL;

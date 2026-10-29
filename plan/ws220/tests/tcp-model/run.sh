@@ -1,5 +1,5 @@
 #!/bin/sh
-# ws220-p001: the host model of a TCP transfer.  Builds src/kern/net/tcp.c, socket.c, packet-buf.c, checksum.c and in6.c
+# ws220-p001: the host model of a TCP transfer.  Builds src/kern/net/tcp.c, tcp-cubic.c, socket.c, packet-buf.c, checksum.c and in6.c
 # as the kernel builds them (freestanding, the kernel's headers) with shim.c and model.c, and runs the transfer
 # scenarios: A sends to B over a modelled link; the model prints each interval's rate and both ends' state.
 #   plan/ws220/tests/tcp-model/run.sh                 the scenarios against WS220's targets, a summary line each and PASS/FAIL
@@ -16,7 +16,7 @@ cc=${CC:-clang}
 flags="-std=c11 -O2 -g -nostdlibinc -Iinclude -Isrc -I. -Iplan/ws220/tests/tcp-model -DKERN_UAPI_NATIVE -DKERN_KCRT_NATIVE
 	-DHAL_ARCH_AMD64 -DHAL_BOARD_PCAT -DKERN_USER_ABI_LP64 -ffreestanding -fno-builtin -Wall -Wextra -Werror ${MODEL_CFLAGS:-}"
 objects=
-for source in src/kern/net/tcp.c src/kern/net/socket.c src/kern/net/packet-buf.c src/kern/net/checksum.c \
+for source in src/kern/net/tcp.c src/kern/net/tcp-cubic.c src/kern/net/socket.c src/kern/net/packet-buf.c src/kern/net/checksum.c \
     src/kern/net/in6.c plan/ws220/tests/tcp-model/shim.c plan/ws220/tests/tcp-model/model.c; do
 	object=$out/$(basename "$source" .c).o
 	# shellcheck disable=SC2086
@@ -25,6 +25,23 @@ for source in src/kern/net/tcp.c src/kern/net/socket.c src/kern/net/packet-buf.c
 done
 # shellcheck disable=SC2086
 $cc -o "$out/tcp-model" $objects -lc || { echo "tcp-model: link failed"; exit 2; }
+# ws311-p002: a second build whose limits let A's window and B's take a bottleneck's round trip (the send ring, B's
+# receive queue and reorder queue raised to 1024; the kernel's defaults are 256, 128 and 128): the congestion scenarios.
+# The model's two hosts share one packet pool, so it is four times the kernel's 1024 (ws311-p003: A's copies and B's
+# queues of a 1 MB window took all 1024, and the connection died).
+mkdir -p "$out/big"
+big_flags="-DCONFIG_TCP_SEND_QUEUE_MAX=1024 -DCONFIG_TCP_RECEIVE_PACKETS=1024 -DCONFIG_TCP_REORDER_MAX=1024
+	-DCONFIG_PACKET_BUF_POOL_COUNT=4096U"
+objects=
+for source in src/kern/net/tcp.c src/kern/net/tcp-cubic.c src/kern/net/socket.c src/kern/net/packet-buf.c src/kern/net/checksum.c \
+    src/kern/net/in6.c plan/ws220/tests/tcp-model/shim.c plan/ws220/tests/tcp-model/model.c; do
+	object=$out/big/$(basename "$source" .c).o
+	# shellcheck disable=SC2086
+	$cc $flags $big_flags -c "$source" -o "$object" || { echo "tcp-model: build of $source (big) failed"; exit 2; }
+	objects="$objects $object"
+done
+# shellcheck disable=SC2086
+$cc -o "$out/big/tcp-model" $objects -lc || { echo "tcp-model: link (big) failed"; exit 2; }
 
 if [ "${1:-}" = "--" ]; then
 	shift
@@ -67,6 +84,22 @@ scenario() {
 
 # The clean LAN: gigabit, 0.2 ms round trip, a USB adapter's queue of 9 frames each way (no regression).
 scenario lan-clean 30 --bytes 67108864
+# Jumbo frames (ws221-p005): an MTU of 9000 at both ends and 64 KB writes give 8960-byte segments, in jumbo packets
+# within the per-connection bounds; and with losses each lost frame is resent once.
+scenario lan-jumbo 100 --bytes 67108864 --mtu 9000 --write-bytes 65536 --expect-mss 8960
+scenario lan-jumbo-loss 50 --bytes 33554432 --mtu 9000 --write-bytes 65536 --loss-ab 0.1 --peer-window 65535 \
+    --expect-mss 8960 --expect-retransmits-losses --expect-timeouts-max 0
+scenario lan-1500-writes 100 --bytes 67108864 --write-bytes 65536 --expect-mss 1460
+# ws221-p008: other senders to slow peers hold every copy the pool lets them (all but PACKET_BUF_HOLD_RESERVE), A is
+# left 64: B's frames still find a packet (receive_no_packet 0) and the stream arrives whole, at what 64 copies carry.
+scenario pool-held 5 --bytes 16777216 --pool-held 64
+# ws221-p008: Nagle's algorithm: 1024-byte writes over 10 ms of round trip go in full 1460-byte segments (16 MiB is 11492
+# of them, 16384 writes), and with TCP_NODELAY nearly each write is its own segment (only one queued behind a segment the
+# device refused takes the next write's bytes).
+scenario nagle-1024 4 --bytes 16777216 --delay-us 5000 --expect-segments-max 11600
+scenario nodelay-1024 4 --bytes 16777216 --delay-us 5000 --nodelay --expect-segments-min 16000
+# ws221-p008: SO_SNDBUF bounds the payload A's ring holds (16 KB: no more is queued, and the window it keeps busy).
+scenario send-buffer-16k 20 --bytes 16777216 --send-buffer 16384
 # 10 ms of round trip: the rate is the window over the round trip (64 KB: 6.4 MB/s).
 scenario rtt-10ms 4 --bytes 16777216 --delay-us 5000
 # (The resends of these and of slow-reader stay at most the counts of ws220-p005, --expect-retransmits-max: p004 review-1 G2
@@ -74,11 +107,13 @@ scenario rtt-10ms 4 --bytes 16777216 --delay-us 5000
 # duplicates) and lan-loss-1's 85 with 2 timeouts.
 # rtt-10ms-loss-0.1 loses nothing to its losses since p005 (no timeout); its rate is the ring's 8 KB a round trip, p006.)
 # Losses on the data with a Linux peer's window: each must cost a round trip or so, not a timeout.
-scenario lan-loss-0.1 10 --bytes 33554432 --loss-ab 0.1 --peer-window 65535 --limit-s 300 --expect-retransmits-max 30 \
+# (ws221-p008: with the congestion window the ring holds the whole window; the three below resend each frame the link
+# lost once and nothing more, --expect-retransmits-losses, rather than the counts the ring of 8 gave.)
+scenario lan-loss-0.1 10 --bytes 33554432 --loss-ab 0.1 --peer-window 65535 --limit-s 300 --expect-retransmits-losses \
     --expect-timeouts-max 0
-scenario lan-loss-1 2 --bytes 8388608 --loss-ab 1 --peer-window 65535 --limit-s 300 --expect-retransmits-max 85 \
+scenario lan-loss-1 2 --bytes 8388608 --loss-ab 1 --peer-window 65535 --limit-s 300 --expect-retransmits-losses \
     --expect-timeouts-max 2
-scenario rtt-10ms-loss-0.1 2 --bytes 8388608 --delay-us 5000 --loss-ab 0.1 --peer-window 65535 --limit-s 300 --expect-retransmits-max 10 \
+scenario rtt-10ms-loss-0.1 2 --bytes 8388608 --delay-us 5000 --loss-ab 0.1 --peer-window 65535 --limit-s 300 --expect-retransmits-losses \
     --expect-timeouts-max 0
 # The same losses with zedBSD as the receiver (its window moves, which hides part of the sender's fault).
 scenario lan-loss-1-zedbsd 2 --bytes 16777216 --loss-ab 1 --limit-s 300
@@ -100,12 +135,15 @@ scenario queue-5 30 --bytes 67108864 --queue 5
 scenario queue-2 30 --bytes 67108864 --queue 2
 scenario queue-1 30 --bytes 33554432 --queue 1
 # ws220-p003: two writers on one socket while the device refuses: no byte twice, none out of order (before p003: corrupt).
-scenario two-writers 30 --bytes 33554432 --queue 3 --second-writer --expect-in-order
+# (ws221-p008: writes of one full segment each, so that each write is whole in one segment: since Nagle's algorithm a
+# short write is joined by the next, and the model's second writer would then land inside the first's bytes.)
+scenario two-writers 30 --bytes 33554432 --queue 3 --second-writer --expect-in-order --write-bytes 1460
 # ws220-p003: losses with a one-frame device queue: the timer's resends and the acknowledgements are refused too.
 scenario queue-1-loss-1 2 --bytes 16777216 --queue 1 --loss-ab 1 --limit-s 300
 # ws220-p003: A's neighbour is unresolved for 500 ms (IPv4 refuses with EAGAIN and asks ARP each time): TCP takes the
-# segments as lost on the wire (review-1 G1), so ARP is asked once for each segment of the ring and then at the timer's
-# resends (at most 12), and the transfer goes on after the timer's resend (a stall of about one RTO).
+# segments as lost on the wire (review-1 G1), so ARP is asked once for each segment in flight and then at the timer's
+# resends (ws221-p008: the flight is the 64 KB window, 64 of the model's 1024-byte segments, and at most 12 resends), and
+# the transfer goes on after the timer's resend (a stall of about one RTO).
 unresolved() {
 	name=$1
 	most=$2
@@ -120,7 +158,9 @@ unresolved() {
 		status=1
 	fi
 }
-unresolved unresolved 12 unresolved 5 --bytes 16777216 --unresolved-at-ms 100 --unresolved-ms 500
+# (ws221-p009: the 128 KB window holds 128 of the model's 1024-byte segments, so a flight asks ARP 128 times; before,
+# 64 and the bound 76.)
+unresolved unresolved 140 unresolved 5 --bytes 16777216 --unresolved-at-ms 100 --unresolved-ms 500
 # ws220-p003: the neighbour never resolves again: the connection is given up after R2 (100 s), with ARP asked only at the
 # ring's segments and the timer's resends (review-1 G1: before, a retry every 10 ms for ever).
 giveup_unresolved() {
@@ -137,8 +177,8 @@ giveup_unresolved() {
 		echo "  FAIL: $name: gave up after $seconds s, not between R2 (100 s) and 200 s"
 		status=1
 	fi
-	if [ -z "$refusals" ] || [ "$refusals" -gt 20 ]; then
-		echo "  FAIL: $name: $refusals refusals (ARP requests), more than 20"
+	if [ -z "$refusals" ] || [ "$refusals" -gt 148 ]; then
+		echo "  FAIL: $name: $refusals refusals (ARP requests), more than 148 (the flight's 128 and 20 resends)"
 		status=1
 	fi
 }
@@ -198,12 +238,19 @@ scenario delayed-ack-200 0 --bytes 262144 --writer-gap-ms 300 --ack-delay-ms 200
     --expect-srtt-us 190000:210000 --expect-fast-retransmits 0:0
 scenario delayed-ack-stream 30 --bytes 16777216 --ack-delay-ms 200 --expect-retransmits-max 0
 # ws220-p004 review-1 G1: the round trip grows from 0.2 ms to 600 ms past the timeout: the backoff holds until a sample,
-# the resends stay few, and SRTT follows (a Linux-like peer, whose window does not move).
-scenario rtt-step 0 --bytes 1048576 --delay-step-at-ms 20 --delay-step-us 300000 --peer-window 65535 --limit-s 120 \
-    --expect-retransmits-max 8 --expect-srtt-us 500000:700000 --expect-fast-retransmits 0:0
+# the resends stay few, and SRTT follows (a Linux-like peer, whose window does not move).  The step comes 2 ms in, while
+# the megabyte is still on its way (ws221-p008: at 100 MB/s it takes about 10 ms).  The spurious timeouts resend no
+# more than the flight (ws221-p008: the 64 KB window, 64 of the model's 1024-byte segments; before, the ring's 8).
+# (ws221-p008: a timeout goes back to the oldest segment and resends the flight in slow start; after this spurious one
+# the resends of segments B had come back as duplicates, which may bring one fast retransmit, as on BSD.)
+# (ws311-p004: with CUBIC, the default since, a timeout leaves the threshold at 0.7 of the flight rather than half, so
+# the slow start after the second spurious timeout resends a few more segments B had: 69 (Reno 57), at most 72.)
+scenario rtt-step 0 --bytes 1048576 --delay-step-at-ms 2 --delay-step-us 300000 --peer-window 65535 --limit-s 120 \
+    --expect-retransmits-max 72 --expect-srtt-us 500000:700000 --expect-fast-retransmits 0:1
 # ws220-p005: the same with zedBSD as the receiver (its window moves): no resend on a reopened window keeps the sample.
-scenario rtt-step-zedbsd 0 --bytes 1048576 --delay-step-at-ms 20 --delay-step-us 300000 --limit-s 120 \
-    --expect-retransmits-max 8 --expect-srtt-us 500000:700000 --expect-fast-retransmits 0:0
+# (ws221-p009: zedBSD's 128 KB window, 128 segments of the flight; the Linux-like peer above keeps 64 KB.)
+scenario rtt-step-zedbsd 0 --bytes 1048576 --delay-step-at-ms 2 --delay-step-us 300000 --limit-s 120 \
+    --expect-retransmits-max 128 --expect-srtt-us 500000:700000 --expect-fast-retransmits 0:1
 # ws220-p004 review-1 G2: B's reader stops for 5 s, B's window closes: A's probes double apart (at most 10, p003: 17739).
 # ws220-p005: the duplicates of the closed window start no fast retransmit; one after the window opens (the hole of a
 # segment B refused) may.
@@ -214,20 +261,27 @@ scenario zero-window 2.5 --bytes 16777216 --reader-pause-at-ms 100 --reader-paus
 scenario no-route 10 --bytes 16777216 --no-route-at-ms 100 --no-route-ms 50 --expect-srtt-max-us 5000
 # ws220-p005: NewReno (RFC 6582): two segments of one window lost: one fast retransmit, then the partial
 # acknowledgement's resend, no timeout (a Linux-like peer and zedBSD); a whole window lost: one timeout, its partial
-# acknowledgements' resends, and no fast retransmit from the duplicates the resends bring.
+# acknowledgements' resends, and no fast retransmit from the duplicates the resends bring.  (ws221-p008: the eight
+# segments are no longer the whole flight, so the ones after them bring duplicates and one fast retransmit may come
+# instead of the timeout.)
 scenario two-holes 30 --bytes 1048576 --drop-ab 100,103 --peer-window 65535 --expect-fast-retransmits 1:1 \
     --expect-timeouts-max 0 --expect-retransmits-max 2
 scenario two-holes-zedbsd 30 --bytes 1048576 --drop-ab 100,103 --expect-fast-retransmits 1:1 --expect-timeouts-max 0 \
     --expect-retransmits-max 2
+# ws221-p008: a burst loses A's frames for 2 ms 50 ms in (a whole flight) and B holds a lone acknowledgement 40 ms as
+# Linux does: one timeout, then the go-back-N in slow start resends the flight in a few round trips (before: a segment
+# a partial acknowledgement, each held 40 ms; on the VisionFive 2, 9 s).
+scenario burst-loss 20 --bytes 16777216 --drop-ab-run 50:2000 --ack-delay-ms 40 --expect-stall-max-ms 700
 scenario window-lost 2 --bytes 1048576 --drop-ab 100,101,102,103,104,105,106,107 --peer-window 65535 \
-    --expect-fast-retransmits 0:0 --expect-timeouts-max 1 --expect-retransmits-max 8
+    --expect-fast-retransmits 0:1 --expect-timeouts-max 1 --expect-retransmits-max 8
 # ws220-p005 review-1 G2: losses across the sequence numbers' wrap: the fast retransmits go on (recover is compared only
 # inside a recovery).
 scenario lan-wrap-loss 10 --bytes 16777216 --wrap-before 4194304 --loss-ab 0.1 --peer-window 65535 --limit-s 120 \
     --expect-fast-retransmits 1:100 --expect-timeouts-max 0
 # ws220-p005 (M7, the user's decision 2026-10-13: as FreeBSD): B's reader stops for 300 s and B keeps answering the probes
-# of its closed window: A is never given up, probes every 5 to 60 s (the persist timer), and the stream completes.
-scenario persist-answering 0 --bytes 4194304 --reader-pause-at-ms 100 --reader-pause-ms 300000 --limit-s 400 \
+# of its closed window: A is never given up, probes every 5 to 60 s (the persist timer), and the stream completes.  (64 MB:
+# ws221-p008 sends 4 MB within the first 100 ms.)
+scenario persist-answering 0 --bytes 67108864 --reader-pause-at-ms 100 --reader-pause-ms 300000 --limit-s 400 \
     --expect-probe-gap-s 5:60 --expect-retransmits-max 16
 # The same peer goes silent (the link loses everything from 2 s), or A has shut its side at 1 s (FIN_WAIT_1), or A sets
 # TCP_MAXUNACKTIME 10: A drops the connection after the persist timer's 12 steps and min(2 h, RTO x 2559) of silence
@@ -259,11 +313,11 @@ closes() {
 		status=1
 	fi
 }
-closes persist-silent 500 800 - --bytes 4194304 --reader-pause-at-ms 100 --reader-pause-ms 100000000 --blackhole-at-ms 2000 \
+closes persist-silent 500 800 - --bytes 67108864 --reader-pause-at-ms 100 --reader-pause-ms 100000000 --blackhole-at-ms 2000 \
     --limit-s 1200 --expect-probe-gap-s 5:60
-closes persist-closed 60 80 - --bytes 4194304 --reader-pause-at-ms 100 --reader-pause-ms 100000000 --blackhole-at-ms 2000 \
+closes persist-closed 60 80 - --bytes 67108864 --reader-pause-at-ms 100 --reader-pause-ms 100000000 --blackhole-at-ms 2000 \
     --close-at-ms 1000 --limit-s 120
-closes maxunacktime 10 11 0 --bytes 4194304 --reader-pause-at-ms 100 --reader-pause-ms 300000 --maxunacktime 10 --limit-s 400
+closes maxunacktime 10 11 0 --bytes 67108864 --reader-pause-at-ms 100 --reader-pause-ms 300000 --maxunacktime 10 --limit-s 400
 # ws220-p002: the link loses everything 500 ms in: A gives up after R2 (at least 100 s; 1+2+4+8+16+32+60 s of resends).
 giveup() {
 	name=$1
@@ -282,6 +336,27 @@ giveup() {
 giveup data-giveup --bytes 1073741824 --blackhole-at-ms 500 --limit-s 400
 # ws220-p002: A's SYN is lost from the start: the connect gives up only after 3 minutes (R2 for a SYN).
 scenario syn-giveup 0 --connect-blackhole
+# ws311-p002: A's data frames are all lost for 700 ms: the timer's resends are lost too, and each timeout repeated within
+# the recovery the first started holds the slow start threshold (RFC 5681 section 3.1; before: 2 segments).
+scenario timeout-repeated 10 --bytes 33554432 --drop-ab-run 100:700000 --peer-window 65535 --limit-s 120 \
+    --expect-ssthresh-held --expect-timeouts-max 3
+# ws311-p002: the congestion window's use (RFC 7661) over a bottleneck, with the big build: a 100 Mbps router with a
+# drop-tail queue of a quarter of the 250 KB the 20 ms round trip holds, B's buffers at 1 MB.  A's window limits it most of
+# the time, its slow start doubles each round trip, its congestion avoidance grows a segment a round trip (Reno), and its
+# window never grows past twice what it sent (the check of every run).  60 s, timed; the rate is what the losses leave.
+big_scenario() {
+	saved=$out
+	out=$out/big
+	scenario "$@"
+	out=$saved
+}
+big_scenario reno-bottleneck 4 --cc reno --run-s 60 --delay-us 10000 --bottleneck-mbps 100 --bottleneck-queue 62500 \
+    --send-buffer 1048576 --receive-buffer 1048576 --write-bytes 65536 --expect-slow-start --expect-ca-growth 0.8 \
+    --expect-cwnd-limited 0.8
+# ws311-p002: a second connection 5 s in over the same router (the "fair:" line gives the shares; p003 sets what they
+# must be): both streams arrive intact (the least rate is the first connection's, which shares the router).
+big_scenario reno-two-flows 1 --cc reno --second-flow-cc reno --run-s 60 --delay-us 10000 --bottleneck-mbps 100 --bottleneck-queue 62500 \
+    --send-buffer 1048576 --receive-buffer 1048576 --write-bytes 65536 --second-flow-at-ms 5000
 
 [ $status = 0 ] && echo "tcp-model: PASS" || echo "tcp-model: FAIL"
 exit $status

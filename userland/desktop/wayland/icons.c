@@ -589,6 +589,15 @@ static const struct icon_part icon_parts[GLASS_ICON_COUNT][ICON_PARTS] = {
 		{ ICON_TRIANGLE | ICON_CUT, 10.6f, 18.8f, 13.2f, 15.4f, 15.8f, 18.8f },
 		{ ICON_DOT | ICON_CUT, 13.4f, 11.0f, 1.5f, 0.0f, 0.0f, 0.0f },
 		{ ICON_END, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f }
+	},
+	/* Installer: an arrow down into a disk, the disk's slot and light knocked out. */
+	{
+		{ ICON_SEGMENT, 12.0f, 2.6f, 12.0f, 8.6f, 2.6f, 0.0f },
+		{ ICON_TRIANGLE, 7.2f, 7.8f, 16.8f, 7.8f, 12.0f, 12.6f },
+		{ ICON_BOX, 3.4f, 14.0f, 20.6f, 21.0f, 2.2f, 0.0f },
+		{ ICON_SEGMENT | ICON_CUT, 6.4f, 17.5f, 12.4f, 17.5f, 1.6f, 0.0f },
+		{ ICON_DOT | ICON_CUT, 17.0f, 17.5f, 1.3f, 0.0f, 0.0f, 0.0f },
+		{ ICON_END, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f }
 	}
 };
 
@@ -616,7 +625,8 @@ static const char *const icon_app_names[GLASS_ICON_APPS] = {
 	"mail",
 	"monitor",
 	"music",
-	"photos"
+	"photos",
+	"installer"
 };
 
 /*
@@ -645,7 +655,8 @@ static const struct icon_bands icon_app_bands[GLASS_ICON_APPS] = {
 	{ 0xc49bffU, 0x9c6cf0U },
 	{ 0xff9ec4U, 0xf06a9bU },
 	{ 0xffc933U, 0xf2a900U },
-	{ 0xffd27aU, 0xf59e2bU }
+	{ 0xffd27aU, 0xf59e2bU },
+	{ 0x8fd8ffU, 0x2f6fe0U }
 };
 
 /* The known programs' windows, found by their exact application ID. */
@@ -667,7 +678,8 @@ static const struct icon_app_id icon_app_ids[] = {
 	{ "mailer", GLASS_ICON_APP_MAIL },
 	{ "monitor", GLASS_ICON_APP_MONITOR },
 	{ "music", GLASS_ICON_APP_MUSIC },
-	{ "photos", GLASS_ICON_APP_PHOTOS }
+	{ "photos", GLASS_ICON_APP_PHOTOS },
+	{ "installer", GLASS_ICON_APP_INSTALLER }
 };
 
 static float icon_distance(const struct icon_part *part, float x, float y);

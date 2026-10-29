@@ -44,6 +44,8 @@
  * power.sleep.ac and power.sleep.battery (ws052-p012) are the minutes
  * without input before the machine sleeps, on the power adapter and on
  * battery (0 never); the screen goes out at half that time.
+ * power.lock is the minutes without input before a login session locks
+ * its screen (0 never, which it is unless chosen).
  */
 static const struct kl_settings_key settings_keys[] = {
 	{ "wallpaper", KL_SETTINGS_RESOLVER_COMPOSITOR, KL_SETTINGS_TYPE_PATH, 0, 0, 0, KL_SETTINGS_KEY_KEPT },
@@ -75,6 +77,7 @@ static const struct kl_settings_key settings_keys[] = {
 	{ "phone.backend", KL_SETTINGS_RESOLVER_COMPOSITOR, KL_SETTINGS_TYPE_INT, 0, 2, 0, KL_SETTINGS_KEY_KEPT },
 	{ "power.sleep.ac", KL_SETTINGS_RESOLVER_COMPOSITOR, KL_SETTINGS_TYPE_INT, 0, 240, 30, KL_SETTINGS_KEY_KEPT },
 	{ "power.sleep.battery", KL_SETTINGS_RESOLVER_COMPOSITOR, KL_SETTINGS_TYPE_INT, 0, 240, 15, KL_SETTINGS_KEY_KEPT },
+	{ "power.lock", KL_SETTINGS_RESOLVER_COMPOSITOR, KL_SETTINGS_TYPE_INT, 0, 240, 0, KL_SETTINGS_KEY_KEPT },
 	{ "terminal.ambiguous-wide", KL_SETTINGS_RESOLVER_APP, KL_SETTINGS_TYPE_BOOL, 0, 1, 0, 0U },
 	{ "terminal.font-size", KL_SETTINGS_RESOLVER_APP, KL_SETTINGS_TYPE_INT, 8, 32, 16, 0U },
 	{ "terminal.theme", KL_SETTINGS_RESOLVER_APP, KL_SETTINGS_TYPE_INT, 0, 2, 0, 0U },

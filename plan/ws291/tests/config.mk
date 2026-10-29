@@ -1,4 +1,4 @@
-# ws291: the image for the desktop's and the 3D scene's speed on the RX 5600 XT machine (10.0.10.3, zedBSD started
+# ws291: the image for the desktop's and the 3D scene's speed on the RX 5600 XT / RTX 2070 machine (10.0.10.3, zedBSD started
 # from the USB stick once with UEFI BootNext): the CI amd64 image (amdrdna built in, graphical login) with the
 # control tool, the Navi10 firmware, the test-only input injection and screen capture (frame-ops, keiland-shot),
 # and mview.  Its kernel and files replace the stick's one by one (Q1 2026-10-26: no whole-stick write).
@@ -17,3 +17,5 @@ ZEDBSD_USER_PROGRAMS += aat-input keiland-shot
 
 # The 3D scene (ws291-p002).
 ZEDBSD_USER_PROGRAMS += $(filter-out $(ZEDBSD_USER_PROGRAMS),mview)
+
+# nvrtx and its GSP firmware come from the CI config (the RTX 2070 replaces the RX 5600 XT on the same machine).

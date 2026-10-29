@@ -678,7 +678,7 @@ compute_channel(
 	compute->channel_made = 1;
 
 	/* Hands it its context buffers: its own main and patch, the golden context's global ones. */
-	error = nvrtx_gr_promote(gpu, NVRTX_HANDLE_COMPUTE_CHANNEL, compute->physical, false);
+	error = nvrtx_gr_promote(gpu, NVRTX_HANDLE_COMPUTE_CHANNEL, compute->physical, NULL, false);
 	if (error != 0) {
 		kern_free(params);
 		return error;
@@ -730,10 +730,10 @@ compute_program(
 
 	nvrtx_compute_first_ir(first);
 
-	/* Compiled for SM75. */
+	/* Compiled for the generation's shader model. */
 	binary = NULL;
 	kern_memset(&diagnostic, 0, sizeof(diagnostic));
-	error = nvrtx_sm75_compile_ir(&first->ir, &binary, &diagnostic);
+	error = nvrtx_sm75_compile_ir_sm(&first->ir, gpu->identity.chip.profile->sm, &binary, &diagnostic);
 	kern_free(first);
 	if (error != 0) {
 		nvrtx_stage_mark("compute-test fail: the program did not compile (%d: %s)", error, (diagnostic.reason != NULL) ? diagnostic.reason : "?");
@@ -771,6 +771,7 @@ compute_launch(
 	uint32_t gpr_count)
 {
 	struct nvrtx_compute_state *compute;
+	struct nvrtx_compute_kind kind;
 	struct nvrtx_qmd_info info;
 	uint32_t *words;
 	uint8_t *push;
@@ -783,6 +784,11 @@ compute_launch(
 
 	compute = &gpu->compute;
 	result_va = compute_page_va(COMPUTE_RESULT_PAGE);
+
+	/* The generation's QMD version and compute class. */
+	kind.qmd_major = gpu->identity.chip.profile->qmd_major;
+	kind.qmd_minor = gpu->identity.chip.profile->qmd_minor;
+	kind.compute_class = gpu->identity.chip.profile->class_compute;
 
 	/* The result page starts as a pattern the program does not write. */
 	words = (uint32_t *)compute->result.dma.address;
@@ -808,7 +814,7 @@ compute_launch(
 	info.gpr_count = gpr_count;
 	info.cbuf_address[0] = compute_page_va(COMPUTE_CONSTANTS_PAGE);
 	info.cbuf_size[0] = COMPUTE_CONSTANTS_BYTES;
-	error = nvrtx_qmd_build((uint32_t *)compute->qmd.dma.address, &info);
+	error = nvrtx_qmd_build_for((uint32_t *)compute->qmd.dma.address, &info, &kind);
 	if (error != 0) {
 		nvrtx_stage_mark("compute-test fail: the QMD could not be built (%d)", error);
 		return error;
@@ -817,7 +823,7 @@ compute_launch(
 	/* The launch, then the fence. */
 	kern_memset(compute->semaphore.dma.address, 0, NVRTX_GSP_PAGE_SIZE);
 	push = (uint8_t *)compute->push.dma.address;
-	length = nvrtx_push_compute_launch(push, compute_page_va(COMPUTE_QMD_PAGE));
+	length = nvrtx_push_compute_launch_for(push, compute_page_va(COMPUTE_QMD_PAGE), &kind);
 	length += nvrtx_push_fence(push + length, compute_page_va(COMPUTE_SEMAPHORE_PAGE), COMPUTE_FENCE_VALUE);
 
 	/* Ring entry 0. */

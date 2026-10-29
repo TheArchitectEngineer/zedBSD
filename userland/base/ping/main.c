@@ -29,11 +29,23 @@
 #include <unistd.h>
 
 static int usage(void);
+
+/*
+ * The echo's data bytes: the default (-s), the least (the time sent and
+ * the bytes after the identifier and sequence must fit), and the most a
+ * jumbo frame's IPv4 datagram carries (the kernel refuses a larger one).
+ */
+#define PING_DATA_DEFAULT 56U
+#define PING_DATA_MIN 8U
+#define PING_DATA_MAX 65000U
+
+/* The room a reply's IP header (with options) takes ahead of the echo. */
+#define PING_IP_HEADER_MAX 60U
 static void write16(uint8_t *p, uint16_t v);
 static void write64(uint8_t *p, uint64_t v);
 static uint16_t read16(const uint8_t *p);
 static uint64_t read64(const uint8_t *p);
-static int ping6(int descriptor, const struct sockaddr_in6 *peer, const char *name, uint32_t count, uint32_t interval_ms, uint32_t timeout_ms);
+static int ping6(int descriptor, const struct sockaddr_in6 *peer, const char *name, uint32_t count, uint32_t interval_ms, uint32_t timeout_ms, size_t data_size);
 static ssize_t ping6_receive(int descriptor, uint8_t *packet, size_t size, struct sockaddr_in6 *source, int *hop_limit);
 
 /*
@@ -45,6 +57,7 @@ main(
 	char **argv)
 {
 	int function_result;
+	int status;
 	char *end;
 	unsigned long v;
 	uint64_t rtt;
@@ -57,7 +70,8 @@ main(
 	struct addrinfo hints, *addresses;
 	struct sockaddr_in peer, source;
 	struct timeval receive_timeout;
-	uint8_t echo[64], packet[2048];
+	uint8_t *echo, *packet;
+	size_t data_size, echo_size, packet_size;
 	uint32_t count, interval_ms, timeout_ms;
 	uint64_t minimum, maximum, total;
 	uint16_t identifier;
@@ -73,6 +87,7 @@ main(
 	struct timespec delay;
 
 	count = 4;
+	data_size = PING_DATA_DEFAULT;
 	interval_ms = 1000;
 	timeout_ms = 1000;
 	minimum = 0;
@@ -150,6 +165,17 @@ main(
 				/* Returns the computed result. */
 				return function_result;
 			}
+		} else if (strcmp(argv[arg], "-s") == 0) {
+			/* The echo's data bytes. */
+			v = strtoul(argv[arg + 1], &end, 10);
+			if (*end != '\0' || end == argv[arg + 1] || v < PING_DATA_MIN || v > PING_DATA_MAX) {
+				/* Refuses a size outside what an echo carries. */
+				status = usage();
+				return status;
+			}
+
+			/* The size is kept for the echoes. */
+			data_size = (size_t)v;
 		} else if (strcmp(argv[arg], "-W") == 0) {
 			/* Validates the command-line arguments. */
 			if (netutil_parse_milliseconds(argv[arg + 1],
@@ -203,7 +229,9 @@ main(
 			printf("ping: socket: %s\n", strerror(socket6_error));
 			return 1;
 		}
-		error = ping6(descriptor6, &peer6, argv[arg], count, interval_ms, timeout_ms);
+
+		/* Pings the IPv6 peer. */
+		error = ping6(descriptor6, &peer6, argv[arg], count, interval_ms, timeout_ms, data_size);
 		return error;
 	}
 
@@ -213,7 +241,7 @@ main(
 	peer = *(const struct sockaddr_in *)addresses->ai_addr;
 	freeaddrinfo(addresses);
 	inet_ntop(AF_INET, &peer.sin_addr, numeric, sizeof(numeric));
-	printf("PING %s (%s): 56 data bytes\n", argv[arg], numeric);
+	printf("PING %s (%s): %zu data bytes\n", argv[arg], numeric, data_size);
 
 	/* Reports why the ICMP socket opened at the start is missing. */
 	if (descriptor < 0) {
@@ -227,12 +255,22 @@ main(
 	(void)setsockopt(descriptor, SOL_SOCKET, SO_RCVTIMEO, &receive_timeout,
 			 sizeof(receive_timeout));
 
+	/* The request's buffer (the ICMP header and the data) and the reply's (an IP header with options too). */
+	echo_size = 8U + data_size;
+	packet_size = PING_IP_HEADER_MAX + echo_size;
+	echo = malloc(echo_size);
+	packet = malloc(packet_size);
+	if (echo == NULL || packet == NULL) {
+		printf("ping: no memory for %zu data bytes\n", data_size);
+		return 1;
+	}
+
 	/* Process each remaining element. */
 	identifier = (uint16_t)(netutil_monotonic_us() ^ 0x5a42U);
 	for (sequence = 1; sequence <= count; sequence++) {
 		retry.tv_sec = 0;
 		retry.tv_nsec = 20000000L;
-		memset(echo, 0, sizeof(echo));
+		memset(echo, 0, echo_size);
 		echo[0] = 8;
 		write16(echo + 4, identifier);
 		write16(echo + 6, (uint16_t)sequence);
@@ -240,15 +278,15 @@ main(
 		write64(echo + 8, sent);
 
 		/* Process each remaining element. */
-		for (i = 16; i < sizeof(echo); i++)
+		for (i = 16; i < echo_size; i++)
 			echo[i] = (uint8_t)i;
 		deadline = sent + (uint64_t)timeout_ms * 1000U;
 		do {
-			length = sendto(descriptor, echo, sizeof(echo), 0,
+			length = sendto(descriptor, echo, echo_size, 0,
 					(struct sockaddr *)&peer, sizeof(peer));
 
 			/* Checks the current data length. */
-			if (length == (ssize_t)sizeof(echo))
+			if (length == (ssize_t)echo_size)
 				break;
 
 			/* Handles the reported system error. */
@@ -258,13 +296,17 @@ main(
 		} while (netutil_monotonic_us() < deadline);
 		transmitted++;
 
+		/* A request the kernel refused is said (a datagram beyond the interface's MTU: Message too long). */
+		if (length != (ssize_t)echo_size)
+			printf("ping: sendto: %s\n", strerror(errno));
+
 		/* Checks the current data length. */
-		if (length == (ssize_t)sizeof(echo)) {
+		if (length == (ssize_t)echo_size) {
 			/* Continue while the operation condition remains true. */
 			while (netutil_monotonic_us() < deadline) {
 				source_length = sizeof(source);
 				length = recvfrom(
-				    descriptor, packet, sizeof(packet), 0,
+				    descriptor, packet, packet_size, 0,
 				    (struct sockaddr *)&source, &source_length);
 
 				/* Checks the current data length. */
@@ -286,6 +328,13 @@ main(
 				    read16(icmp + 4) != identifier ||
 				    read16(icmp + 6) != sequence)
 					continue;
+
+				/* A reply shorter or longer than the request is said, and not counted. */
+				if ((size_t)length - ihl != echo_size) {
+					printf("%ld bytes from %s: icmp_seq=%u truncated (sent %zu)\n",
+					    (long)((size_t)length - ihl), numeric, sequence, echo_size);
+					break;
+				}
 
 				rtt = netutil_monotonic_us() -
 					       read64(icmp + 8);
@@ -327,6 +376,8 @@ main(
 		}
 	}
 	close(descriptor);
+	free(echo);
+	free(packet);
 	printf("--- %s ping statistics ---\n%u packets transmitted, %u packets "
 	       "received, %u%% packet loss\n",
 	       argv[arg], transmitted, received,
@@ -355,7 +406,7 @@ static int
 usage(
 	void)
 {
-	puts("usage: ping [-4|-6] [-c count] [-i interval] [-W timeout] host");
+	puts("usage: ping [-4|-6] [-c count] [-i interval] [-s size] [-W timeout] host");
 
 	/* Reports operation failure. */
 	return 2;
@@ -423,13 +474,15 @@ ping6(
 	const char *name,
 	uint32_t count,
 	uint32_t interval_ms,
-	uint32_t timeout_ms)
+	uint32_t timeout_ms,
+	size_t data_size)
 {
 	struct sockaddr_in6 source;
 	struct timeval receive_timeout;
 	struct timespec delay;
-	uint8_t echo[64];
-	uint8_t packet[2048];
+	uint8_t *echo;
+	uint8_t *packet;
+	size_t echo_size;
 	char numeric[INET6_ADDRSTRLEN + IF_NAMESIZE + 1];
 	char zone[IF_NAMESIZE];
 	char hop_text[16];
@@ -464,7 +517,19 @@ ping6(
 		i = (unsigned)strlen(numeric);
 		snprintf(numeric + i, sizeof(numeric) - i, "%%%s", zone);
 	}
-	printf("PING6 %s (%s): 56 data bytes\n", name, numeric);
+
+	/* Announces the peer and the size of each echo. */
+	printf("PING6 %s (%s): %zu data bytes\n", name, numeric, data_size);
+
+	/* The request's buffer, and the reply's (the message without its IPv6 header, RFC 3542). */
+	echo_size = 8U + data_size;
+	echo = malloc(echo_size);
+	packet = malloc(echo_size);
+	if (echo == NULL || packet == NULL) {
+		printf("ping: no memory for %zu data bytes\n", data_size);
+		close(descriptor);
+		return 1;
+	}
 	receive_timeout.tv_sec = (time_t)(timeout_ms / 1000U);
 	receive_timeout.tv_usec = (long)(timeout_ms % 1000U) * 1000L;
 	(void)setsockopt(descriptor, SOL_SOCKET, SO_RCVTIMEO, &receive_timeout, sizeof(receive_timeout));
@@ -482,34 +547,45 @@ ping6(
 	received = 0;
 	for (sequence = 1; sequence <= count; sequence++) {
 		/* The request: type 128, the identifier, the sequence and the time sent. */
-		memset(echo, 0, sizeof(echo));
+		memset(echo, 0, echo_size);
 		echo[0] = 128;
 		write16(echo + 4, identifier);
 		write16(echo + 6, (uint16_t)sequence);
 		sent = netutil_monotonic_us();
 		write64(echo + 8, sent);
-		for (i = 16; i < sizeof(echo); i++)
+		for (i = 16; i < echo_size; i++)
 			echo[i] = (uint8_t)i;
 		deadline = sent + (uint64_t)timeout_ms * 1000U;
-		length = sendto(descriptor, echo, sizeof(echo), 0, (const struct sockaddr *)peer, sizeof(*peer));
+		length = sendto(descriptor, echo, echo_size, 0, (const struct sockaddr *)peer, sizeof(*peer));
 		transmitted++;
 
+		/* A request the kernel refused is said. */
+		if (length != (ssize_t)echo_size)
+			printf("ping: sendto: %s\n", strerror(errno));
+
 		/* Its reply: type 129 from the peer with the same identifier and sequence. */
-		while (length == (ssize_t)sizeof(echo)) {
+		while (length == (ssize_t)echo_size) {
 			now = netutil_monotonic_us();
 			if (now >= deadline)
 				break;
-			length = ping6_receive(descriptor, packet, sizeof(packet), &source, &hop_limit);
+			length = ping6_receive(descriptor, packet, echo_size, &source, &hop_limit);
 			if (length < 16)
 				break;
 			same = memcmp(&source.sin6_addr, &peer->sin6_addr, sizeof(source.sin6_addr));
 			if (same != 0 || packet[0] != 129) {
-				length = (ssize_t)sizeof(echo);
+				length = (ssize_t)echo_size;
 				continue;
 			}
 			if (read16(packet + 4) != identifier || read16(packet + 6) != sequence) {
-				length = (ssize_t)sizeof(echo);
+				length = (ssize_t)echo_size;
 				continue;
+			}
+
+			/* A reply shorter than the request is said, and not counted. */
+			if ((size_t)length != echo_size) {
+				printf("%ld bytes from %s: icmp_seq=%u truncated (sent %zu)\n", (long)length, numeric, sequence,
+				    echo_size);
+				break;
 			}
 
 			/* Its round trip. */
@@ -536,6 +612,8 @@ ping6(
 		}
 	}
 	close(descriptor);
+	free(echo);
+	free(packet);
 
 	/* The statistics. */
 	loss = 0;

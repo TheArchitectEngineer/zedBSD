@@ -20,6 +20,8 @@
 
 #include "settings.h"
 
+#include "include/kern/os-name.h"
+
 #include <stdio.h>
 #include <string.h>
 
@@ -179,7 +181,7 @@ se_keyboard_draw(
 	y = input_slider_block(app, canvas, input_slider_of(INPUT_DELAY), x, y, width);
 
 	/* When it applies, and what comes later. */
-	y = input_note(app, canvas, x, card + height + INPUT_GAP, width, "Applications started from now on repeat keys this way. Keyboard layouts are coming in a later version of Kei.");
+	y = input_note(app, canvas, x, card + height + INPUT_GAP, width, "Applications started from now on repeat keys this way. Keyboard layouts are coming in a later version of " ZEDBSD_OS_NAME ".");
 
 	/* The edge below the cards. */
 	return y;

@@ -31,6 +31,15 @@
  * frame in flight), for the main thread to change the swapchains; images
  * the thread holds stay held unless the main thread forgets them there.
  *
+ * The thread is the only one that submits the main thread's work to the
+ * queue: a task is a command buffer the main thread recorded (an image's
+ * move to its layout), which the thread submits with the task's fence
+ * before any list given after it, so the drawings that follow sample the
+ * image after the move.  The thread watches the fence and tells the main
+ * thread when the task completed, tasks in the order they were given.
+ * Tasks are submitted and watched while the thread is parked too (they
+ * touch no swapchain), and a stop waits for them.
+ *
  * The thread knows nothing of the compositor: its Vulkan work is done by
  * the operations it is given (compose.c's, or a host test's fakes).
  */
@@ -102,7 +111,9 @@ enum kwl_render_message_kind {
 	/* The output's image could not be acquired: the want went down. */
 	KWL_RENDER_ACQUIRE_FAILED,
 	/* A frame or a layer's picture completed (or failed). */
-	KWL_RENDER_COMPLETED
+	KWL_RENDER_COMPLETED,
+	/* A task completed (or its submission or its fence failed). */
+	KWL_RENDER_TASK_DONE
 };
 
 /*
@@ -179,6 +190,12 @@ struct kwl_render_outcome {
  * job's); held is what a ready holds; result an acquire's failure;
  * outcome a completion's; acquired_us when a ready's output image was
  * acquired and acquire_cycles how long that took.
+ *
+ * A task's message is the main thread's instead: it allocates it with the
+ * task (number, task_command, task_fence), the thread submits and watches
+ * it and posts it back as its completion (result the submission's or the
+ * fence's), and the main thread frees it with the command buffer and the
+ * fence.
  */
 struct kwl_render_message {
 	struct kwl_render_message *next;
@@ -191,6 +208,8 @@ struct kwl_render_message {
 	struct kwl_render_outcome outcome;
 	uint64_t acquired_us;
 	uint64_t acquire_cycles;
+	VkCommandBuffer task_command;
+	VkFence task_fence;
 };
 
 /*
@@ -223,7 +242,9 @@ struct kwl_render_status {
  * without waiting, record and submit and present a job, and wait for the
  * job's fence (at most timeout_ns; VK_TIMEOUT to be asked again), and
  * the clock of the main thread's lines in microseconds (NULL for the
- * monotonic clock).
+ * monotonic clock); and submit a task's command buffer with its fence
+ * and wait for that fence (at most timeout_ns; VK_TIMEOUT to be asked
+ * again).
  */
 struct kwl_render_ops {
 	VkResult (*acquire_output)(void *context, uint64_t timeout_ns, uint32_t *image, uint64_t *cycles, uint64_t *at_us);
@@ -231,6 +252,8 @@ struct kwl_render_ops {
 	void (*run)(void *context, const struct kwl_render_job *job, struct kwl_render_outcome *outcome);
 	VkResult (*wait)(void *context, unsigned slot, uint64_t timeout_ns);
 	uint64_t (*now_us)(void);
+	VkResult (*submit_task)(void *context, VkCommandBuffer command, VkFence fence);
+	VkResult (*wait_task)(void *context, VkFence fence, uint64_t timeout_ns);
 };
 
 /*
@@ -244,14 +267,15 @@ struct kwl_render_ops {
  * the held images (the thread's, written by the main thread only while
  * parked) and whether the output's may be acquired ahead (a frame's
  * acquire succeeded since the output was last forgotten); the numbers of the last ready and the last completion posted
- * (for kwl_render_status); and sequence, which counts every change the
- * thread waits for.
+ * (for kwl_render_status); the tasks given and not submitted yet, oldest
+ * first; and sequence, which counts every change the thread waits for.
  * The thread's own: the operations and their context, where it is in the
  * pull (state), the number of the ready it waits to have answered, the
  * completion message of the next job (made before the job is taken, so
  * that a completion is never lost), the completions of the jobs in flight,
  * oldest first (flight_count of them; busy says any is, or a job runs),
- * and the main thread's wake pipe.
+ * the tasks submitted and not seen complete, oldest first, and the main
+ * thread's wake pipe.
  */
 struct kwl_render_thread {
 	pthread_mutex_t lock;
@@ -275,6 +299,8 @@ struct kwl_render_thread {
 	unsigned ahead;
 	uint64_t last_ready;
 	uint64_t last_completed;
+	struct kwl_render_message *tasks;
+	struct kwl_render_message *tasks_tail;
 	struct kwl_render_ops ops;
 	void *context;
 	enum kwl_render_state state;
@@ -282,6 +308,8 @@ struct kwl_render_thread {
 	struct kwl_render_message *completion;
 	struct kwl_render_message *flights[KWL_RENDER_FLIGHTS];
 	unsigned flight_count;
+	struct kwl_render_message *task_flights;
+	struct kwl_render_message *task_flights_tail;
 	uint64_t seen_sequence;
 	int wake_main;
 	pthread_t thread;
@@ -300,7 +328,7 @@ int kwl_render_wait_message(struct kwl_render_thread *render, unsigned wait_ms);
 int kwl_render_park(struct kwl_render_thread *render, unsigned wait_ms);
 void kwl_render_unpark(struct kwl_render_thread *render);
 void kwl_render_forget(struct kwl_render_thread *render, unsigned output, unsigned heads_mask);
-void kwl_render_wait_idle(struct kwl_render_thread *render);
+void kwl_render_task(struct kwl_render_thread *render, struct kwl_render_message *task);
 int kwl_render_running(struct kwl_render_thread *render);
 void kwl_render_status(struct kwl_render_thread *render, struct kwl_render_status *status);
 

@@ -10,7 +10,7 @@ include config/ci/config-amd64.mk
 # A release build: uname's release is VERSION itself, without the source's revision (ws129-p003).
 ZEDBSD_RELEASE_BUILD := y
 
-# Nobody logs in as root: its password is locked (U10).  kei is the user.
+# Nobody logs in as root: its password is locked (U10).  user is the user (kei in the beta2 release itself).
 ZEDBSD_ROOT_LOCKED := y
 
 # The development environment (the headers, clang and libc++) and Emacs are in.  (The old installer, U2, is gone from the tree.)

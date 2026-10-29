@@ -14,7 +14,7 @@ WS143 p006 の desktop: app（Settings）→ libkeiland `kl_system_bluetooth_*` 
 自分の機器・周りの機器の一覧、scan、pairing（数字の確認・同意・他の人が始めた pairing の窓・lock の間の断り）、削除が動くことを確かめる。
 
 ## 準備
-`plan/ws143/tests/config-amd64-bt-desktop.mk` の image（AAT の image に試験の kernel の loopback の controller・bluetoothd・bt）。desktop に kei で login。
+`plan/ws143/tests/config-amd64-bt-desktop.mk` の image（AAT の image に試験の kernel の loopback の controller・bluetoothd・bt）。desktop に user で login。
 root で `service stop bluetoothd`（boot で rc.conf が起動した物を止める）の後に `/sbin/bluetoothd >/tmp/btd.log 2>&1 &` を起動し 3 秒待つ。前の pairing の鍵が残っていれば root で
 `bt forget 0A:0B:0C:0D:0E:01` と `bt forget 0A:0B:0C:0D:0E:07`、`bt power on`。loopback の機器: 01 は数字の比較（123456）、07 は Just Works。
 
@@ -34,7 +34,7 @@ root で `service stop bluetoothd`（boot で rc.conf が起動した物を止�
    `KWL BT answer no via=escape`、`ZSETTINGS BLUETOOTH result kind=pair errno=<EACCES>`（EACCES の値: zedBSD は 25、Linux は 13）と「The pairing was refused.」。確認方法: log、撮影。
 5. 操作: root で `echo y | bt pair 0A:0B:0C:0D:0E:07 &`。窓が出たら撮り、Cancel を click。
    確認事項: 他の人の pairing。正解: `KWL BT ask kind=… own=0`、窓に「Asked by root」、Cancel で `KWL BT answer no via=press`、bt の出力が `ERROR rejected`。確認方法: log、撮影。
-6. 操作: Super+L で lock し、root で `echo y | bt pair 0A:0B:0C:0D:0E:07`、終わったら kei で解除。
+6. 操作: Super+L で lock し、root で `echo y | bt pair 0A:0B:0C:0D:0E:07`、終わったら user で解除。
    確認事項: lock の間の問い。正解: 窓は出ず `KWL BT answer no via=locked error=0`、bt の出力が `ERROR rejected`。確認方法: log、撮影（lock の画面のまま）。
 7. 操作: My Devices の 01 の Remove を click。
    確認事項: 削除。正解: `ZSETTINGS BLUETOOTH ask kind=forget error=0`、`ZSETTINGS BLUETOOTH result kind=forget errno=0`、「The device is removed.」、01 が Other Devices へ戻る。確認方法: log、撮影。

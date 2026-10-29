@@ -284,6 +284,60 @@ socket_file_write(
 	return result;
 }
 
+/*
+ * Tells whether write(2) on the file is taken straight from the caller's
+ * pinned pages: a stream socket whose protocol copies from them.
+ */
+int
+socket_file_takes_pinned(
+	struct file *file)
+{
+	struct socket *socket;
+
+	/* A socket file of a protocol that takes the pages. */
+	socket = socket_from_file(file);
+	if (socket == NULL || socket->type != SOCK_STREAM || socket->ops == NULL ||
+	    socket->ops->send_pinned == NULL)
+		return 0;
+
+	/* Succeeded: it does. */
+	return 1;
+}
+
+/*
+ * Writes to a socket file from the caller's pinned pages, as a send
+ * without an address: the protocol copies the bytes into its own buffers.
+ */
+ssize_t
+socket_file_write_pinned(
+	struct file *file,
+	const struct uaccess_pin *pin,
+	size_t length)
+{
+	struct socket *socket;
+	ssize_t result;
+	int status_flags;
+	int flags;
+
+	/* Rejects a file that does not take the pages. */
+	socket = socket_from_file(file);
+	if (socket == NULL || socket->ops == NULL || socket->ops->send_pinned == NULL)
+		return -EOPNOTSUPP;
+
+	/* A non-blocking file sends without waiting. */
+	status_flags = file_status_flags_get(file);
+	if ((status_flags & O_NONBLOCK) != 0)
+		flags = MSG_DONTWAIT;
+	else
+		flags = 0;
+
+	/* Sends through the socket. */
+	result = socket->ops->send_pinned(socket, pin, 0, length, flags);
+
+	/* Reports the send result. */
+	return result;
+}
+
 /* Forwards an ioctl to the socket. */
 static int
 socket_file_ioctl(
@@ -349,6 +403,9 @@ socket_file_poll(
 	socket = socket_from_file(file);
 	if (socket == NULL)
 		return EBADF;
+
+	/* Marks the socket watched before its readiness is read, so a change after the read is told. */
+	socket_poll_watch(socket);
 
 	/* Uses the socket's poll, or the common queue-based one. */
 	if (socket->ops != NULL && socket->ops->poll != NULL)

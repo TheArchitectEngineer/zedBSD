@@ -24,6 +24,7 @@
 
 static VkResult import_image(struct kwl_compose *compose, VkFormat format, struct kwl_import *import);
 static VkResult import_layout(struct kwl_compose *compose, struct kwl_import *import);
+static void import_let_go(struct kwl_compose *compose, struct kwl_import *import);
 static void import_release(struct kwl_compose *compose, struct kwl_import *import);
 
 /*
@@ -71,7 +72,7 @@ kwl_import_adopt(
 	/* The view and descriptor sets that sample it, and its move to the general layout. */
 	status = import_image(compose, format, import);
 	if (status != VK_SUCCESS) {
-		import_release(compose, import);
+		import_let_go(compose, import);
 		free(import);
 		return status;
 	}
@@ -107,7 +108,8 @@ kwl_import_set_alpha(
 }
 
 /*
- * Releases a buffer's Vulkan image; the caller guarantees that no frame in flight still samples it (the frame holds the buffer until it completes).
+ * Releases a buffer's Vulkan image: now when nothing given before may
+ * still sample it, otherwise once that has completed, with no wait.
  */
 void
 kwl_import_destroy(
@@ -137,9 +139,9 @@ kwl_import_destroy_with(
 	if (buffer->import == NULL)
 		return;
 
-	/* The Vulkan objects, then the record. */
+	/* The Vulkan objects let go, then the record. */
 	if (compose != NULL)
-		import_release(compose, buffer->import);
+		import_let_go(compose, buffer->import);
 
 	/* Retires the buffer-owned record after its Vulkan objects are released. */
 	free(buffer->import);
@@ -246,7 +248,7 @@ import_image(
 
 	/*
 	 * The image goes to the layout it is sampled in, once: in the next
-	 * frame's commands, or now when too many images wait.
+	 * frame's commands, or in a task ahead of it when too many images wait.
 	 */
 	if (compose->layout_count < KWL_LAYOUTS_MAX) {
 		compose->layouts[compose->layout_count] = import;
@@ -288,7 +290,12 @@ import_image(
 	return VK_SUCCESS;
 }
 
-/* Moves an imported image to the shader-readable general layout. */
+/*
+ * Moves an imported image to the shader-readable general layout: in the
+ * task being recorded while the render thread runs (the frames given
+ * after it come after it in the queue), or submitted and waited for alone
+ * before it does.
+ */
 static VkResult
 import_layout(
 	struct kwl_compose *compose,
@@ -301,15 +308,31 @@ import_layout(
 	VkCommandBuffer command;
 	VkResult status;
 
-	/*
-	 * The render thread records and submits nothing meanwhile: the frames'
-	 * pool and the queue are used here, at an import, outside a walk
-	 * (ws213-p004).
-	 */
-	if (compose->render_started)
-		kwl_render_wait_idle(&compose->render);
+	/* The barrier to the general layout. */
+	memset(&barrier, 0, sizeof(barrier));
+	barrier.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
+	barrier.srcAccessMask = 0U;
+	barrier.dstAccessMask = VK_ACCESS_SHADER_READ_BIT;
+	barrier.oldLayout = VK_IMAGE_LAYOUT_UNDEFINED;
+	barrier.newLayout = VK_IMAGE_LAYOUT_GENERAL;
+	barrier.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+	barrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+	barrier.image = import->image;
+	barrier.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+	barrier.subresourceRange.levelCount = 1U;
+	barrier.subresourceRange.layerCount = 1U;
 
-	/* A one-time command buffer. */
+	/* The render thread submits it as a task, which the image is let go after. */
+	if (compose->render_started) {
+		status = kwl_compose_task_record(compose, &command);
+		if (status != VK_SUCCESS)
+			return status;
+		vkCmdPipelineBarrier(command, VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT, VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT, 0U, 0U, NULL, 0U, NULL, 1U, &barrier);
+		import->task = kwl_compose_task_current(compose);
+		return VK_SUCCESS;
+	}
+
+	/* A one-time command buffer (before the render thread, which records from the same pool). */
 	memset(&allocate, 0, sizeof(allocate));
 	allocate.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO;
 	allocate.commandPool = compose->pool;
@@ -329,20 +352,8 @@ import_layout(
 	/* Begins the transition; failure skips recording and still releases the command. */
 	status = vkBeginCommandBuffer(command, &begin);
 
-	/* The barrier to the general layout. */
+	/* The barrier recorded. */
 	if (status == VK_SUCCESS) {
-		memset(&barrier, 0, sizeof(barrier));
-		barrier.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
-		barrier.srcAccessMask = 0U;
-		barrier.dstAccessMask = VK_ACCESS_SHADER_READ_BIT;
-		barrier.oldLayout = VK_IMAGE_LAYOUT_UNDEFINED;
-		barrier.newLayout = VK_IMAGE_LAYOUT_GENERAL;
-		barrier.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
-		barrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
-		barrier.image = import->image;
-		barrier.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
-		barrier.subresourceRange.levelCount = 1U;
-		barrier.subresourceRange.layerCount = 1U;
 		vkCmdPipelineBarrier(command, VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT, VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT, 0U, 0U, NULL, 0U, NULL, 1U, &barrier);
 
 		/* Finishes the barrier recording before it can be submitted. */
@@ -357,12 +368,14 @@ import_layout(
 		submit.pCommandBuffers = &command;
 
 		/* Submits the finished barrier before the first sampling frame. */
+		kwl_queue_lock(compose);
 		status = vkQueueSubmit(compose->queue, 1U, &submit, VK_NULL_HANDLE);
-	}
 
-	/* The barrier is done before the first frame samples the image. */
-	if (status == VK_SUCCESS)
-		status = vkQueueWaitIdle(compose->queue);
+		/* The barrier is done before the first frame samples the image (the cursor's thread waits for the queue's lock meanwhile). */
+		if (status == VK_SUCCESS)
+			status = vkQueueWaitIdle(compose->queue);
+		kwl_queue_unlock(compose);
+	}
 
 	/* The command buffer is not kept. */
 	vkFreeCommandBuffers(compose->device, compose->pool, 1U, &command);
@@ -375,9 +388,13 @@ import_layout(
 	return VK_SUCCESS;
 }
 
-/* Destroys what an import made, whatever part of it was made. */
+/*
+ * Lets go of an import: it waits for no layout from now on, and its
+ * objects go now when nothing given before may still use them, otherwise
+ * once that has completed (kwl_compose_bury).  The record is cleared.
+ */
 static void
-import_release(
+import_let_go(
 	struct kwl_compose *compose,
 	struct kwl_import *import)
 {
@@ -401,6 +418,16 @@ import_release(
 		import->layout_pending = 0U;
 	}
 
+	/* Its objects, once nothing given uses them. */
+	kwl_compose_bury(compose, import, import_release);
+}
+
+/* Destroys what an import made, whatever part of it was made. */
+static void
+import_release(
+	struct kwl_compose *compose,
+	struct kwl_import *import)
+{
 	/* Each object, in the reverse order of its making. */
 	if (import->set != VK_NULL_HANDLE)
 		kwl_compose_set_put(compose, import->set);
@@ -424,6 +451,6 @@ import_release(
 	/* Clears the record so partial cleanup remains harmless. */
 	memset(import, 0, sizeof(*import));
 
-	/* Succeeded: the import retains no layout queue entry or Vulkan object. */
+	/* Succeeded: the import retains no Vulkan object. */
 	return;
 }

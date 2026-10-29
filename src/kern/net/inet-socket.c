@@ -673,6 +673,15 @@ inet_socket_ioctl(
 	case SIOCGIFMTU:
 		request.ifr_mtu = (int)device->mtu;
 		break;
+	case SIOCSIFMTU:
+		/* A new MTU for the device, 0 for its own, then IPv6's link MTU follows it. */
+		error = EINVAL;
+		if (request.ifr_mtu >= 0)
+			error = net_device_set_mtu(device, (unsigned)request.ifr_mtu);
+		if (error == 0)
+			ipv6_device_mtu_changed(device);
+		net_device_release(device);
+		return error;
 	case SIOCGIFSTATS:
 		kern_memset(&request.ifr_data, 0, sizeof(request.ifr_data));
 		request.ifr_data.ifi_mtu = device->mtu;
@@ -754,9 +763,10 @@ inet_socket_ioctl(
 		netmask = interface->netmask;
 		interface_unlock(enabled);
 
-		/* Replaces the connected route. */
+		/* Replaces the connected route; what senders kept of the old address is looked up again. */
 		interface_update_route(device, old_address, old_netmask, address,
 				       netmask);
+		route_changed();
 		net_device_release(device);
 		return 0;
 	default:
@@ -848,6 +858,9 @@ inet_interface_purge_device(
 	}
 
 	interface_unlock(enabled);
+
+	/* What senders kept of the device's address is looked up again. */
+	route_changed();
 	for (index = 0; index < count; index++)
 		net_device_release(references[index]);
 }

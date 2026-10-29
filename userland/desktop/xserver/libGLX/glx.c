@@ -34,6 +34,8 @@
 
 #include "userland/desktop/libGL/zgl-glx.h"
 
+#include "include/kern/os-name.h"
+
 #include <EGL/egl.h>
 #include <EGL/eglext.h>
 #include <GL/glx.h>
@@ -251,7 +253,7 @@ glXGetClientString(
 	(void)dpy;
 	switch (name) {
 	case GLX_VENDOR:
-		return "Kei";
+		return ZEDBSD_OS_NAME;
 	case GLX_VERSION:
 		return "1.4";
 	case GLX_EXTENSIONS:

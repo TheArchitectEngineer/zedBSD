@@ -110,6 +110,21 @@ kwl_media_tick(
 }
 
 /*
+ * Stops following volumed at the compositor's end: its connection's
+ * thread ends.
+ */
+void
+kwl_media_close(
+	void)
+{
+	/* Only an open one. */
+	if (media_view.volumes == NULL)
+		return;
+	kl_backend_volumes_close(media_view.volumes);
+	media_view.volumes = NULL;
+}
+
+/*
  * Copies the volumes of the last report.
  */
 size_t

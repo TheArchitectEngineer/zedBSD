@@ -175,7 +175,7 @@ program_announce_language(
 	/* Told to the compositor, and kept so that a change of mode is told too. */
 	kl_ime_status_v1_language(program->status, id, label);
 	snprintf(program->announced, sizeof(program->announced), "%s", id);
-	printf("KEI-IME LANGUAGE id=%s\n", id);
+	printf("ZEDBSD-IME LANGUAGE id=%s\n", id);
 }
 
 /*
@@ -413,7 +413,7 @@ method_done(
 			program->engines[i].ops->reset(&program->engines[i], false, program->out);
 		program->composing = 0;
 		kl_ime_status_v1_composing(program->status, 0);
-		printf("KEI-IME %s\n", program->active ? "ACTIVATE" : "DEACTIVATE");
+		printf("ZEDBSD-IME %s\n", program->active ? "ACTIVATE" : "DEACTIVATE");
 
 		/* The candidate window goes, and no key repeats into the new text input. */
 		program->repeat.key = 0;
@@ -440,7 +440,7 @@ method_unavailable(
 	/* main's loop ends on this. */
 	program = data;
 	program->unavailable = 1;
-	printf("KEI-IME UNAVAILABLE\n");
+	printf("ZEDBSD-IME UNAVAILABLE\n");
 }
 
 /*
@@ -610,7 +610,7 @@ status_select(
 	}
 
 	/* An unknown language is ignored. */
-	printf("KEI-IME SELECT unknown\n");
+	printf("ZEDBSD-IME SELECT unknown\n");
 }
 
 /*
@@ -829,7 +829,7 @@ status_predict(
 
 	/* The answer, with the request's serial. */
 	kl_ime_status_v1_predictions(status, serial, list);
-	printf("KEI-IME PREDICT serial=%u reading=%s bytes=%zu\n", serial, reading, length);
+	printf("ZEDBSD-IME PREDICT serial=%u reading=%s bytes=%zu\n", serial, reading, length);
 }
 
 /*
@@ -862,5 +862,5 @@ status_learn(
 	}
 
 	/* The log line the tests read. */
-	printf("KEI-IME LEARN reading=%s word=%s\n", reading, word);
+	printf("ZEDBSD-IME LEARN reading=%s word=%s\n", reading, word);
 }

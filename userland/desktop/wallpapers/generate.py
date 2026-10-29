@@ -3,7 +3,7 @@
 
     userland/desktop/wallpapers/generate.py OUTDIR [--width=1920] [--height=1080] [--preview=PNG]
 
-Each picture is a quiet gradient with a few soft, blurred shapes in the Kei look (pale sky blues, young greens,
+Each picture is a quiet gradient with a few soft, blurred shapes in the desktop's look (pale sky blues, young greens,
 warm light), written as a PNG named after it, e.g. OUTDIR/Aurora.png (ws138-p002: 8-bit RGB, each row filtered by
 the best of the five filters, zlib level 9, through ppm-to-png.py's write_png); the Wallpaper page of Settings shows
 the file's name without .png.  The pictures are not kept in git: the image builds make them.

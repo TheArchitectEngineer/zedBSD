@@ -1,11 +1,12 @@
 #!/usr/bin/env python3
-"""Makes the Kei boot splash the loaders draw full-screen (ws035-p107).
+"""Makes the boot splash the loaders draw full-screen (ws035-p107).
 
 Copyright (C) 2026 Awe Morris; SPDX-License-Identifier: Zlib
 
-The splash is userland/desktop/artwork/kei-boot-splash.png (the project
-owner's picture, allowed in the tree on 2026-09-28): the glass mark, the word
-Kei, "powered by zedBSD" and a dotted spinner over a bright blurred lake.
+The splash is userland/desktop/artwork/zedbsd-boot-splash.png (the project
+owner's picture with the system's name, artwork/README.md): the glass mark,
+the word zedBSD, "operating system" and a dotted spinner over a bright
+blurred lake.
 This script turns it into what the UEFI and the BIOS loaders read (logo=):
 
 - the spinner is taken out of the picture (its place is filled from the

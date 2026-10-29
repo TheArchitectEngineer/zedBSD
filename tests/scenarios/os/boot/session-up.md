@@ -1,6 +1,6 @@
 ---
 id: os.boot.session-up
-title: 起動の後に kei の desktop が出る
+title: 起動の後に user の desktop が出る
 status: active
 areas: [boot, sessiond, compositor]
 paths: [src/, userland/desktop/sessiond/, userland/desktop/wayland/, userland/desktop/include/]
@@ -10,7 +10,7 @@ since: ws159-p005
 ---
 
 ## 目的
-image が起動し、自動の login（`/etc/keiland/autologin`）で kei の desktop が使える状態になることを確かめる。ほかの全部のシナリオの前提で、画面の大きさもここで知る。
+image が起動し、自動の login（`/etc/keiland/autologin`）で user の desktop が使える状態になることを確かめる。ほかの全部のシナリオの前提で、画面の大きさもここで知る。
 
 ## 準備
 AAT の image（`plan/tools/aat/config-amd64-aat.mk`）で起動した。エージェントは SSH で入っている。

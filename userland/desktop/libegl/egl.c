@@ -20,6 +20,8 @@
 
 #include "zegl.h"
 
+#include "include/kern/os-name.h"
+
 #include <dlfcn.h>
 #include <pthread.h>
 #include <stdio.h>
@@ -207,7 +209,7 @@ eglGetPlatformDisplayEXT(
 }
 
 /*
- * eglInitialize, timed when KEI_GLES_COMPUTE_TRACE is 2 (ws101-p016; timed_initialize).
+ * eglInitialize, timed when ZEDBSD_GLES_COMPUTE_TRACE is 2 (timed_initialize).
  */
 EGLBoolean EGLAPIENTRY
 eglInitialize(
@@ -317,9 +319,9 @@ eglQueryString(
 	(void)egl_succeed();
 	switch (name) {
 	case EGL_VENDOR:
-		return "Kei";
+		return ZEDBSD_OS_NAME;
 	case EGL_VERSION:
-		return "1.5 Kei";
+		return "1.5 " ZEDBSD_OS_NAME;
 	case EGL_CLIENT_APIS:
 		return "OpenGL_ES";
 	case EGL_EXTENSIONS:
@@ -540,7 +542,7 @@ eglCreatePlatformWindowSurfaceEXT(
 }
 
 /*
- * eglCreatePbufferSurface, timed when KEI_GLES_COMPUTE_TRACE is 2 (ws101-p016; timed_create_pbuffer_surface).
+ * eglCreatePbufferSurface, timed when ZEDBSD_GLES_COMPUTE_TRACE is 2 (timed_create_pbuffer_surface).
  */
 EGLSurface EGLAPIENTRY
 eglCreatePbufferSurface(
@@ -790,7 +792,7 @@ eglQueryAPI(void)
 }
 
 /*
- * eglCreateContext, timed when KEI_GLES_COMPUTE_TRACE is 2 (ws101-p016; timed_create_context).
+ * eglCreateContext, timed when ZEDBSD_GLES_COMPUTE_TRACE is 2 (timed_create_context).
  */
 EGLContext EGLAPIENTRY
 eglCreateContext(
@@ -899,7 +901,7 @@ eglDestroyContext(
 }
 
 /*
- * eglMakeCurrent, timed when KEI_GLES_COMPUTE_TRACE is 2 (ws101-p016; timed_make_current).
+ * eglMakeCurrent, timed when ZEDBSD_GLES_COMPUTE_TRACE is 2 (timed_make_current).
  */
 EGLBoolean EGLAPIENTRY
 eglMakeCurrent(
@@ -1623,7 +1625,7 @@ egl_window_surface(
 }
 
 /*
- * Starts timing a step when KEI_GLES_COMPUTE_TRACE is 2 or more
+ * Starts timing a step when ZEDBSD_GLES_COMPUTE_TRACE is 2 or more
  * (ws101-p016): the monotonic time in microseconds, else 0.
  */
 static uint64_t
@@ -1636,7 +1638,7 @@ egl_time_begin(void)
 
 	/* The environment, read once. */
 	if (timing < 0) {
-		setting = getenv("KEI_GLES_COMPUTE_TRACE");
+		setting = getenv("ZEDBSD_GLES_COMPUTE_TRACE");
 		level = 0;
 		if (setting != NULL)
 			level = atoi(setting);

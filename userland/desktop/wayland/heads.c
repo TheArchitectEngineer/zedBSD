@@ -48,7 +48,6 @@
 
 #include <errno.h>
 #include <fcntl.h>
-#include <pthread.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -79,41 +78,32 @@ struct heads_write {
 };
 
 /*
- * The thread that writes displays.conf for a choice of an angle (WS217,
- * BUG-306): the file's flush (fsync, which writes the whole volume out on
- * zedBSD's UFS and asks the disk to flush) took seconds in the event loop,
- * where no frame was drawn and no client served meanwhile.  The main
- * thread makes the writing ready and gives it; the thread writes the
- * latest one given, one at a time, and a writing given while it writes is
- * written after it.  The other writings of displays.conf (heads_save) wait
- * for it first, so that the file always ends with the latest choice.
+ * One writing of displays.conf given to the file I/O thread (io.c): the
+ * lane's job, the writing's ticket (the choices given up to it are in
+ * it), the writing, and how it went (its error, and the times given,
+ * started and ended, for the log).  A newer writing replaces one not
+ * started yet: the file ends with the latest choice either way.
  */
-struct heads_writer {
-	/* Guards every field below but thread and started, which only the main thread uses (made when the thread starts). */
-	pthread_mutex_t lock;
-
-	/* Signalled when a writing is given or the thread is to end. */
-	pthread_cond_t wake;
-
-	/* Signalled when the thread has written everything it was given. */
-	pthread_cond_t idle;
-
-	/* The latest writing given and not taken yet, and whether there is one. */
-	struct heads_write given;
-	unsigned pending;
-
-	/* The thread writes a writing it took (pending or busy: the file is not final yet). */
-	unsigned busy;
-
-	/* The thread ends once nothing is pending (the compositor's end). */
-	unsigned stop;
-
-	/* When the writing pending was given (kwl_milliseconds), for the log. */
+struct heads_file_job {
+	struct kwl_lane_job lane;
+	uint64_t ticket;
+	struct heads_write write;
+	int error;
 	uint64_t given_ms;
+	uint64_t started_ms;
+	uint64_t ended_ms;
+};
 
-	/* The thread, and whether it runs. */
-	pthread_t thread;
-	unsigned started;
+/*
+ * The writings of displays.conf: the ticket of the last one given, the
+ * last one written (every choice given up to it is in the file, or failed
+ * to be), and the error of that writing.  Only the event loop's thread
+ * reads and writes it.
+ */
+struct heads_saving {
+	uint64_t given;
+	uint64_t written;
+	int error;
 };
 
 /*
@@ -153,12 +143,11 @@ static void heads_record_mirror(struct kwl_server *server, struct kwl_list *comm
 static void heads_record_extended(struct kwl_server *server, struct kwl_list *command, struct kwl_head *head);
 static void heads_barrier(struct kwl_list *command, VkImage image, VkImageLayout from, VkImageLayout to, VkAccessFlags source_access, VkAccessFlags destination_access, VkPipelineStageFlags source_stage, VkPipelineStageFlags destination_stage);
 static int heads_path(char *path, size_t size, int folder);
-static int heads_save(const struct kwl_display_config *config);
 static int heads_write_ready(const struct kwl_display_config *config, struct heads_write *write_job);
 static int heads_write_file(struct heads_write *write_job);
-static int heads_writer_start(void);
-static void heads_writer_drain(void);
-static void *heads_writer_run(void *argument);
+static void heads_file_run(struct kwl_lane_job *job);
+static void heads_file_done(void *context, struct kwl_lane_job *job);
+static void heads_file_drop(struct kwl_lane_job *job);
 static void heads_mkdir(char *folder);
 static void heads_changed(struct kwl_server *server);
 static void heads_evacuate(struct kwl_server *server, unsigned slot);
@@ -172,85 +161,94 @@ static void heads_redraw(struct kwl_server *server);
 static int heads_index(const struct kwl_compose *compose, VkDisplayKHR display);
 static int heads_off(const struct kwl_compose *compose, unsigned index);
 
-/* The writer of displays.conf for the angles (struct heads_writer): its lock guards it once started is set. */
-static struct heads_writer heads_writer;
+/* The writings of displays.conf (struct heads_saving), the event loop's thread's alone. */
+static struct heads_saving heads_saving;
+
+/* The operations of a writing of displays.conf on the file I/O thread. */
+static const struct kwl_lane_ops heads_file_ops = {
+	heads_file_run,
+	heads_file_done,
+	heads_file_drop
+};
 
 /*
  * Gives the displays' choice as it is now to be written to displays.conf
- * (an output's angle chosen, WS217) by the writer's thread, so that the
- * event loop does not wait for the file's flush (BUG-306); without the
- * thread it is written here.  Returns 0 (given, or written) or an errno
- * value; a failure leaves the file as it was, and a failure of the
- * thread's writing is logged ("KWL DISPLAYS saved ... errno=").
+ * by the file I/O thread, so that the event loop does not wait for the
+ * file's flush (seconds on UFS); without the thread it is written here.
+ * Returns 0 (given, or written) or an errno value; a failure leaves the
+ * file as it was.  The writing that holds the choice is the ticket
+ * kwl_heads_config_ticket gives now, and kwl_displays_written answers the
+ * requests that wait for it.
  */
 int
 kwl_heads_config_save(
 	struct kwl_server *server)
 {
-	struct heads_write write_job;
+	struct heads_file_job *job;
 	int error;
 
+	/* The job's record. */
+	job = calloc(1U, sizeof(*job));
+	if (job == NULL)
+		return ENOMEM;
+
 	/* The text and the paths, made here. */
-	error = heads_write_ready(&server->compose->config, &write_job);
+	error = heads_write_ready(&server->compose->config, &job->write);
+	if (error != 0) {
+		free(job);
+		return error;
+	}
+
+	/* A ticket after every one given before. */
+	heads_saving.given++;
+	job->ticket = heads_saving.given;
+	job->given_ms = kwl_milliseconds();
+
+	/* The thread writes it, after the writings given before; a newer one replaces it while it waits. */
+	error = kwl_io_file_submit(server, &job->lane, &heads_file_ops, KWL_IO_KEY_DISPLAYS);
+	if (error == 0)
+		return 0;
+
+	/* Without the thread the file is written here. */
+	error = heads_write_file(&job->write);
+	heads_saving.written = job->ticket;
+	heads_saving.error = error;
+	free(job);
 	if (error != 0)
 		return error;
 
-	/* The thread, started at the first choice; without it the file is written now. */
-	error = heads_writer_start();
-	if (error != 0) {
-		/* Written here instead; a failure is the file's. */
-		printf("KWL DISPLAYS writer unavailable errno=%d\n", error);
-		error = heads_write_file(&write_job);
-		if (error != 0)
-			return error;
-
-		/* The file holds the choice. */
-		return 0;
-	}
-
-	/* The latest choice replaces one not taken yet: the file ends with it either way. */
-	pthread_mutex_lock(&heads_writer.lock);
-
-	heads_writer.given = write_job;
-	heads_writer.pending = 1U;
-	heads_writer.given_ms = kwl_milliseconds();
-	pthread_cond_signal(&heads_writer.wake);
-
-	pthread_mutex_unlock(&heads_writer.lock);
-
-	/* Succeeded: the thread writes the choice. */
+	/* Succeeded: the file holds the choice. */
 	return 0;
 }
 
 /*
- * Ends the writer of displays.conf at the compositor's end: the choice
- * given last reaches its file first.
+ * Gives the ticket of the writing of displays.conf that holds the choice
+ * as it was last given (0: none given yet).
  */
-void
-kwl_heads_config_close(void)
+uint64_t
+kwl_heads_config_ticket(void)
 {
-	/* Nothing runs without the thread. */
-	if (!heads_writer.started)
-		return;
+	/* The last writing given holds every choice given before it. */
+	return heads_saving.given;
+}
 
-	/* Everything given is written first. */
-	heads_writer_drain();
+/*
+ * Tells whether the writing of a ticket is over (the file holds its
+ * choice, or failed to): 1 with its error in *error, or 0 while it waits.
+ */
+int
+kwl_heads_config_settled(
+	uint64_t ticket,
+	int *error)
+{
+	/* Not written yet. */
+	*error = 0;
+	if (ticket > heads_saving.written)
+		return 0;
 
-	/* Then the thread ends. */
-	pthread_mutex_lock(&heads_writer.lock);
-
-	heads_writer.stop = 1U;
-	pthread_cond_signal(&heads_writer.wake);
-
-	pthread_mutex_unlock(&heads_writer.lock);
-
-	/* The thread joined, and its lock and conditions let go. */
-	(void)pthread_join(heads_writer.thread, NULL);
-	pthread_cond_destroy(&heads_writer.idle);
-	pthread_cond_destroy(&heads_writer.wake);
-	pthread_mutex_destroy(&heads_writer.lock);
-	heads_writer.started = 0U;
-	heads_writer.stop = 0U;
+	/* Succeeded: written by this writing or a later one, whose error it is. */
+	*error = heads_saving.error;
+	return 1;
 }
 
 /*
@@ -783,7 +781,7 @@ kwl_displays_apply(
 	}
 
 	/* Written apart from the choice applied (D-STORE). */
-	*saved = heads_save(&compose->config);
+	*saved = kwl_heads_config_save(server);
 	if (*saved != 0)
 		printf("KWL DISPLAYS save failed errno=%d\n", *saved);
 
@@ -1077,7 +1075,7 @@ heads_close(
 	 */
 	kwl_compose_park(server);
 	kwl_compose_forget(server, 0U, 1U << (unsigned)(head - compose->heads));
-	(void)vkDeviceWaitIdle(compose->device);
+	kwl_device_wait_idle(compose);
 
 	/* Its objects, then the display given back once its swapchain is gone. */
 	heads_targets_destroy(compose, head);
@@ -1690,36 +1688,6 @@ heads_mkdir(
 }
 
 /*
- * Writes a choice to displays.conf now (the displays' mode, a display
- * turned off or on): after the writer's thread has written what it was
- * given, so that the file ends with this choice.  Returns 0 or an errno
- * value; a failure leaves the file as it was.
- */
-static int
-heads_save(
-	const struct kwl_display_config *config)
-{
-	struct heads_write write_job;
-	int error;
-
-	/* The angle's choice given before this one is written first. */
-	heads_writer_drain();
-
-	/* The text and the paths. */
-	error = heads_write_ready(config, &write_job);
-	if (error != 0)
-		return error;
-
-	/* The file. */
-	error = heads_write_file(&write_job);
-	if (error != 0)
-		return error;
-
-	/* Succeeded: the file keeps the choice. */
-	return 0;
-}
-
-/*
  * Makes a writing of displays.conf ready on the main thread: the choice's
  * text, the file's path and its folder's.  Returns 0, ENOSPC for a text
  * longer than the file may be, or the error of the paths.
@@ -1754,7 +1722,7 @@ heads_write_ready(
  * Writes displays.conf: a new file beside it, flushed, then renamed over
  * it (D-STORE), in the folder made when it is missing (made the user's
  * alone: a new home has no .config).  It touches nothing but the writing
- * given, so the writer's thread runs it too.  Returns 0 or an errno value;
+ * given, so the file I/O thread runs it.  Returns 0 or an errno value;
  * a failure leaves the file as it was.
  */
 static int
@@ -1827,115 +1795,57 @@ heads_write_file(
 	return 0;
 }
 
-/*
- * Starts the writer's thread once (the first choice of an angle).  Returns
- * 0 (it runs) or the errno value of making it.
- */
-static int
-heads_writer_start(void)
-{
-	int error;
-
-	/* Already running. */
-	if (heads_writer.started)
-		return 0;
-
-	/* Its lock and conditions, then the thread. */
-	memset(&heads_writer, 0, sizeof(heads_writer));
-	error = pthread_mutex_init(&heads_writer.lock, NULL);
-	if (error != 0)
-		return error;
-	error = pthread_cond_init(&heads_writer.wake, NULL);
-	if (error != 0) {
-		pthread_mutex_destroy(&heads_writer.lock);
-		return error;
-	}
-	error = pthread_cond_init(&heads_writer.idle, NULL);
-	if (error != 0) {
-		pthread_cond_destroy(&heads_writer.wake);
-		pthread_mutex_destroy(&heads_writer.lock);
-		return error;
-	}
-	error = pthread_create(&heads_writer.thread, NULL, heads_writer_run, NULL);
-	if (error != 0) {
-		pthread_cond_destroy(&heads_writer.idle);
-		pthread_cond_destroy(&heads_writer.wake);
-		pthread_mutex_destroy(&heads_writer.lock);
-		return error;
-	}
-
-	/* Succeeded: the thread waits for a choice. */
-	heads_writer.started = 1U;
-	return 0;
-}
-
-/* Waits until the writer's thread has written everything it was given (none: nothing waits). */
+/* Writes displays.conf on the file I/O thread, timed for the log. */
 static void
-heads_writer_drain(void)
+heads_file_run(
+	struct kwl_lane_job *lane_job)
 {
-	/* Nothing is written without the thread. */
-	if (!heads_writer.started)
-		return;
+	struct heads_file_job *job;
 
-	/* Until nothing is pending and nothing is being written. */
-	pthread_mutex_lock(&heads_writer.lock);
-
-	while (heads_writer.pending || heads_writer.busy)
-		(void)pthread_cond_wait(&heads_writer.idle, &heads_writer.lock);
-
-	pthread_mutex_unlock(&heads_writer.lock);
+	/* The writing, and when it started and ended. */
+	job = (struct heads_file_job *)lane_job;
+	job->started_ms = kwl_milliseconds();
+	job->error = heads_write_file(&job->write);
+	job->ended_ms = kwl_milliseconds();
 }
 
-/* Writes each writing given, the latest one each time, until it is told to end with nothing pending. */
-static void *
-heads_writer_run(
-	void *argument)
+/*
+ * Takes a writing of displays.conf that ran, on the event loop's thread:
+ * the choices given up to its ticket are written (or failed to be), and
+ * the requests that wait for them are answered.
+ */
+static void
+heads_file_done(
+	void *context,
+	struct kwl_lane_job *lane_job)
 {
-	struct heads_write write_job;
-	uint64_t given_ms;
-	uint64_t started;
-	int error;
+	struct kwl_server *server;
+	struct heads_file_job *job;
 
-	(void)argument;
+	/* How it went, logged with how long it waited and took. */
+	server = context;
+	job = (struct heads_file_job *)lane_job;
+	printf("KWL DISPLAYS saved by=io-file ticket=%llu errno=%d wait_ms=%llu ms=%llu\n", (unsigned long long)job->ticket, job->error,
+	    (unsigned long long)(job->started_ms - job->given_ms), (unsigned long long)(job->ended_ms - job->started_ms));
 
-	/* One writing at a time. */
-	pthread_mutex_lock(&heads_writer.lock);
+	/* The file holds every choice up to its ticket. */
+	heads_saving.written = job->ticket;
+	heads_saving.error = job->error;
 
-	for (;;) {
-		/* Asleep until a writing is given or the end. */
-		while (!heads_writer.pending && !heads_writer.stop)
-			(void)pthread_cond_wait(&heads_writer.wake, &heads_writer.lock);
+	/* The requests that waited for it are answered. */
+	kwl_displays_written(server, job->ticket, job->error);
 
-		/* The end, with everything written. */
-		if (!heads_writer.pending)
-			break;
+	/* The record. */
+	free(job);
+}
 
-		/* The writing taken: busy until it is written, so a drain waits for it. */
-		write_job = heads_writer.given;
-		given_ms = heads_writer.given_ms;
-		heads_writer.pending = 0U;
-		heads_writer.busy = 1U;
-
-		pthread_mutex_unlock(&heads_writer.lock);
-
-		/* The file, outside the lock; how long it took after it was given is logged. */
-		started = kwl_milliseconds();
-		error = heads_write_file(&write_job);
-		printf("KWL DISPLAYS saved by=writer errno=%d wait_ms=%llu ms=%llu\n", error, (unsigned long long)(started - given_ms),
-		    (unsigned long long)(kwl_milliseconds() - started));
-
-		/* Written: whoever drains goes on when nothing else was given meanwhile. */
-		pthread_mutex_lock(&heads_writer.lock);
-
-		heads_writer.busy = 0U;
-		if (!heads_writer.pending)
-			pthread_cond_broadcast(&heads_writer.idle);
-	}
-
-	pthread_mutex_unlock(&heads_writer.lock);
-
-	/* Succeeded: the thread ends with every choice written. */
-	return NULL;
+/* Frees a writing that did not run: a newer one, which holds its choice too, replaced it, or the thread stopped. */
+static void
+heads_file_drop(
+	struct kwl_lane_job *lane_job)
+{
+	/* The record; the newer writing answers its requests. */
+	free(lane_job);
 }
 
 /* Tells the clients the displays changed and draws everything again. */
@@ -2483,7 +2393,7 @@ kwl_displays_set_shown(
 	error = kwl_displays_set_off(&compose->config, key, !shown);
 	if (error != 0)
 		return error;
-	*saved = heads_save(&compose->config);
+	*saved = kwl_heads_config_save(server);
 	if (*saved != 0)
 		printf("KWL DISPLAYS save failed errno=%d\n", *saved);
 
@@ -2579,7 +2489,7 @@ kwl_displays_move_failed(
 	}
 
 	/* The choice written, apart from the displays as they are (D-STORE). */
-	saved = heads_save(&compose->config);
+	saved = kwl_heads_config_save(server);
 	if (saved != 0)
 		printf("KWL DISPLAYS save failed errno=%d\n", saved);
 

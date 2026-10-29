@@ -1006,3 +1006,278 @@ Linux 6.12.5（/home/awe/visionfive-linux、GPL、値と手順の参照だけ）
 - underflow: bench の間の guard の 5 回の読みで underflow=0・timing_underflow=0・hung=0、window の run の後の amdrdnactl status も 0。
 - 機械の状態（23:40）: cfg amdrdna.smu.memory=2、kernel vmunix-m2j、/lib/libvulkan.so は 7650291df の build、/bin/wayland は b574fbf6a の build
   （元は /bin/wayland.p2old）、/bin/mview は 10d72c341。
+
+## q1663（2026-10-29 P2、worktree p2-ws291j、基点 main 61630bb0b）
+
+- 承認: ユーザーの原文「P2にWS291の続き」、案 4・5 はユーザーの回答（クリック）「両方 (推し)」→ 案 5 を先に、続けて案 4。q1658 と同じ自律の承認（共有の code は Q1 に先に）。
+- 機械: zedBSD は NVMe（Boot0004）、cfg は amdrdna.vk.ngg=2・amdrdna.smu.memory=2、/bin/wayland は q1661 の build（main の物は /bin/wayland.p2b574）。
+  libvulkan・mview・amdrdnactl は main 61630bb0b の build と cksum が同じ。
+
+### 案 5: gpu.c の起床の抑制（Q1 の条件つきの OK、2026-10-29）
+
+- 前: 1 つの transaction（GPU_COMMAND_SUBMIT → GPU_COMMAND_WAIT の consume）ごとに、drv_gpu_complete と gpu_completion_observer_leave が
+  それぞれ poll_notify（system 全体で 1 本の poll の channel、眠っている poll・select を全部起こす）を呼び、gpu_capacity_changed_locked が
+  監視の thread（monitor_waitq）を起こして全 session を scan させていた。subs-1000 は 1 frame 約 1000 transaction。
+- 直し（src/drivers/gpu/gpu.c だけ）:
+  1. gpu_session に poll_scanned。gpu_poll が registry lock の下（readiness を読むのと同じ区間）で立てる。drv_gpu_complete は fence を
+     signal した時（drv_gpu_fence_signal_deferred は呼び手が notify する約束）か poll_scanned が立っている時だけ poll_notify し、notify する時に
+     下ろす。gpu_completion_observer_leave も poll_scanned の時だけ notify して下ろす。
+  2. 同じ 2 か所の gpu_capacity_changed_locked を gpu_retirement_changed_locked(session) に: capacity の sequence と capacity_waitq は
+     今どおり、monitor_waitq はその session の stop_state が REQUESTED・PENDING の時だけ起こす。
+- 条件 (a)（Q1）: 立て・下ろし・notify の判断は全部 registry lock の下。順の論証: kern_poll_wait は scan の前に channel の sequence q を読み
+  （src/kern/poll.c poll_wait_ready）、各 fd を scan してから q で眠る（sequence が q でなければ眠らない）。gpu_poll の readiness の読みと
+  印の立ては同じ lock の区間なので、completion はその前（gpu_poll が completed を見て POLLIN を返す）か後（印を見て notify、sequence が
+  q を越え、眠りは断られるか起こされる）のどちらか。印を下ろすのは notify と同じ時だけなので、「scan の後・sleep の前に completion が来る」
+  並びは後の場合に当たり、起床は失われない。複数の poll が同じ open を scan しても、1 回の notify で全部が起き、それぞれ scan し直して印を
+  立て直す。POLLERR（session・device の error）と POLLPRI（display の event）は別の道（drv_gpu_report_error・report_session_error・
+  gpu_close・gpu_job_action_ioctl・monitor の deadline・display）が今どおり無条件で notify する（code で確かめた）。fence の handle の poll は
+  fence の signal の notify で起きる（signal_deferred の呼び手は全部 notify する: 本体の 2 か所は印に関係なく signaled で notify）。
+  host の試験は無い（kern の poll と GPU の core の模型が無い）。
+- 条件 (b): stop の要求（gpu_session_fail_locked が stop_state を REQUESTED にし、末尾の gpu_capacity_changed_locked で monitor を起こす）と
+  completion は同じ registry lock の下で順が付く。completion が先なら要求の起床で monitor が scan して completed を見る。要求が先なら
+  completion は REQUESTED を見て起こす。gpu_monitor_step の stop_begin（lock の外）の間は REQUESTED のまま、終わりに PENDING にして自分で
+  monitor_waitq を起こす。monitor と gpu_monitor_close は lock の下で sequence を読んでから scan・眠りに入るので、その間の起床は眠りを断る。
+  FINISHED・QUARANTINED への移りは monitor 自身（と report_error）が起こす。→ 永久に待つ並びは無い。job の deadline は完了で 0 になり、
+  monitor が前の deadline で 1 回余分に起きて scan するだけ。
+- 条件 (c): build（-Werror）: amd64 の ws291 の config（amdrdna・nvrtx・i915・venus）、config-rpi4（bcm2711）、config-visionfive2（PowerVR）、
+  plan/ws290/tests の config-amd64-ghci・config-visionfive2-ghci（GHCI）の vmunix が rc=0・warning 0（build/ws291-c5a.log、build/ws291-k-*.log）。
+  QEMU Venus の回帰 `plan/ws291/tests/venus-reg.sh build/ws291/venus5 build/ws291/forge/hdd-image.img build/ws291/forge/dynamic/libvulkan.so`
+  （image はこの tree の build-forge-image.sh、kernel は案 5 込み）: forge-guest・fence-guest・wltest・mview-mailbox・mview-submits・compositor
+  が ok、PASS。
+- 実機（kernel だけを差し替え、build/ws291/r-base・r-c5a、bench は timing 無し、game mailbox 4 枚）:
+
+| run | 前（main 61630bb0b） | 案 5 | Linux（q1658 の bench-linux） |
+| --- | --- | --- | --- |
+| scene-1 | 1599.1 | 2275.0 | 9380.1 |
+| scene-1500 | 200.70 | 207.07 | 200.4 |
+| scene-6500 | 49.18（frame 20.28） | 49.59（20.12） | 50.12（19.90） |
+| big-100 | 207.3 | 209.1 | 517.8 |
+| big-1000（record / submit） | 34.44（11.57 / 11.90） | 35.53（10.82 / 11.58） | 87.0（5.41 / 0.02） |
+| subs-10 | 495.9 | 990.9 | |
+| subs-100（submit） | 61.23（14.94） | 137.32（6.28） | 510.8（0.91） |
+| subs-1000（submit） | 5.97（153.5） | 14.23（61.5） | 58.2（10.26） |
+
+- round の他の段（案 5 の kernel、build/ws291/r-c5a2）: nggshape 14 種 ok、shot 1 体 max 0・6500 体 max 1（over15 0）、hang 回復 ok（vkhang lost →
+  queue reset → vkhang --loops・--compute --loops ok、後の mview 1086 fps）。
+- design-reviewer（opus、2026-10-29 02:05）: blocker・major 0（(a)〜(d) の並びを全部たどって、取りこぼしも永久の待ちも作れない）。minor を入れた
+  （commit は下の案 4 と同じ）: (1) gpu_completion_observer_leave の notify は不要（consume は readable を減らすだけ、空いた slot は poll が
+  報告しない capacity）→ 外した。(2) POLLPRI（display の event）だけを聞く poll では印を立てない（POLLIN・POLLRDNORM の時だけ）。(3) gpu_submit_ioctl
+  の job_action の解除の monitor の起床も同じ条件（gpu_stop_waiting_locked: stop_state が REQUESTED・PENDING）に。reserve・commit などの job の道は
+  新しい deadline を出すので今どおり無条件。(4) comment の直し。直しの後の build も (c) の 6 config で warning 0（build/ws291-k2-*.log）。
+
+### window mode の shot の SURFACE_LOST（errno 24）の解析（案 4 の前提、2026-10-29 02:10）
+
+- 再現: main の kernel（vmunix-base）でも shot の段の mview（FIFO、900 frame）が 2 回とも frames=338・279 で SURFACE_LOST（build/ws291/r-base2）。
+  案 4 にも案 5 にもよらない。
+- errno 24 は zedBSD の EAGAIN（include/uapi/errno.h、EMFILE ではない）。mview が失敗の時に出す errno は直前の別の呼び出しの残りで、原因ではない。
+- 診断の libvulkan（SURFACE_LOST を返す所ごとに行番号を出す、commit しない、build/ws291/libvulkan-diag.so、LD_LIBRARY_PATH で mview だけに、
+  build/tmp/diag-shot.sh）: 最初の失敗は wsi-wayland.c wayland_commit の FIFO の watchdog（wayland_wait が WAYLAND_WAIT_NS = 10 s の間に
+  前の frame の frame callback を受けず VK_TIMEOUT → surface を lost に）。keiland-shot を撮らない同じ run は 900 frame で DONE。compositor は
+  生きたまま（pid は前後で同じ）。→ keiland-shot の capture の後、compositor がその window に frame callback を送らなくなる（Keiland の側）。
+  libvulkan・amdrdna の不具合ではない。Keiland は P1（WS309）の所有なので触らない（Q1 へ）。
+
+### 案 4: 小さな transaction を呼び手の thread で同期の GPU_COMMAND（2026-10-29 02:00〜02:20）
+
+- 元: q1655 の build/ws291/case4.patch（p2-ws291g、sha256 先頭 43ba7cc415bab73f）。amdrdna の runtime_command は、session の worker の queue
+  （queued: 待っている・走っている frame と marker）が空の時に呼び手の thread で executor を走らせ、走る間は pending に数える（stop・drain が待つ）。
+  executor の失敗は EIO（一部が走った frame は session の stream を失う、queue の frame の失敗と同じ扱い）。capset を 176 byte にし native word
+  （"TANZ"）の flag 2 = 同期の command。libvulkan は flag 2 と GPU_CAP_NOTIFICATION がある時だけ transaction を GPU_COMMAND で送り、EAGAIN なら
+  今の SUBMIT と WAIT。他の backend（venus など）は capset が違うので今の道のまま。
+- 直した所（patch の誤り）: patch は worker が marker を queue から外す（queued--）のを marker が session の runs を写す（runtime_park）前に
+  していた → その間に同期の frame が走ると marker が後の run まで待つ。さらに park の後に外すと completer が先に retire して session が
+  消えうる。→ marker は runtime_park の中、runs を写した後・park と同じ queue_lock の区間で外す。frame は実行の後・完了の前に外す
+  （runtime_dequeued）。
+- 上限の時間と hang（Q1 の条件）: 同期の frame の GPU の待ち（ring の空き・slot）は worker の時と同じ executor の待ちで、同じ上限。hang の時は
+  executor が EIO を返し、libvulkan は device lost（worker の道の「decoder failed」と同じ結果）。同期の間、その open の他の ioctl は今の
+  admission（gpu_session_enter、割り込める待ち）で待つ。実機の hang 段（vkhang の lost → queue reset → 後の vkhang・mview）は ok。
+- 確かめ: amd64 の vmunix・libvulkan warning 0、arm64（config-rpi4）・riscv64（config-visionfive2）の libvulkan.so warning 0（rpi4 の最初の
+  1 回は既存の float の math の sysroot の依存の競合で失敗、sysroot ができた後の 2 回目 rc=0）、QEMU Venus の回帰（build/ws291/venus6、
+  image はこの tree、libvulkan sha256 先頭 f0bb28668843d123 = 実機に入れた物）PASS。
+- 実機（kernel vmunix-c45b = 案 5 と review の直しと案 4、libvulkan-c4a、build/ws291/r-c45b・b-c45b-2・b-c45b-3）: nggshape 14 ok、shot
+  1 体 max 0・6500 体 max 1、hang 回復 ok。bench:
+
+| run | main（前） | 案 5 | 案 5 + 案 4（3 回） | Linux |
+| --- | --- | --- | --- | --- |
+| scene-1500 | 200.70 | 207.07 | 208.07・207.50・208.62 | 200.4 |
+| scene-6500 | 49.18 | 49.59 | 49.53・49.47・49.59（fence 19.82） | 50.12（19.54） |
+| big-1000 | 34.44 | 35.53 | 35.52 | 87.0 |
+| subs-10 | 495.9 | 990.9 | 1329・1293・1274 | |
+| subs-100 | 61.23 | 137.32 | 130.3・132.2・169.1（r-c4a 179.0） | 510.8 |
+| subs-1000（submit ms） | 5.97（153.5） | 14.23（61.5） | 17.64（48.0）・17.79（47.9）・18.56（46.0） | 58.2（10.26） |
+
+- desktop（`measure.sh desktop build/ws291/desk-c45b`、compositor も同期の道）: launch 65・type 61・keys 154・output 67・drag 60・home 66・wiseview 67 fps、
+  scroll 20・hover 23（入力の間隔で決まる、p001 と同じ）、work の max 8 ms。p001 の形のまま。
+- 読み: subs-N の 1 submit は 153 → 約 47 µs（Linux 10）。subs-100 は run により 130 か 170 の二つの値。scene-6500 の差（−1.2 %）は fence
+  （GPU の時間 19.8 対 19.5 ms）。big-1000 は record（libvulkan の encode 10.9 ms）と submit（executor 11.4 ms）で Linux の 1/2.5。
+- 機械の状態: kernel vmunix-c45b、/lib/libvulkan.so は案 4 の build（main の物は /lib/libvulkan.so.main61630）、cfg は ngg=2・memory=2。
+
+## q1668（2026-10-29 P2、worktree p2-ws291k、基点 main 9402d4c74）
+
+- 承認: ユーザーの回答（クリック、2026-10-29）「WS291 の続き (推し)」（big-N・subs-N、RDNA で shot の直しの確かめ）。q1658・q1663 と同じ自律の承認。
+  ユーザーの決定（2026-10-29）「まずはデフォルト有効で実装して、NGGはゲーム用に作り替えます。つまりWSに依存関係があります。」→ 案 4・5 は既定で有効のまま、
+  NGG の既定は変えない（WS306 で option に）。
+- 機械: zedBSD は NVMe（Boot0004）、cfg は ngg=2・memory=2。終わりの状態: kernel は 1132ec5b6 の build（build/ws291/vmunix-e4）、/lib/libvulkan.so は
+  1824111c8 の build（build/ws291/libvulkan-i2.so）、/bin/wayland は main 9402d4c74 の build（前の q1661 の物は /bin/wayland.q1661）。
+
+### keiland-shot の直し（P1、ws309-p019 の ab0c3a934）の RDNA での確かめ
+
+- main 9402d4c74 の /bin/wayland（plan/ws291/tests/config.mk、warning 0）を入れ、`measure.sh shot` を 1 体・6500 体 × 2 回（build/ws291/shotchk）:
+  4 回とも `MVIEW DONE frames=900`、SURFACE_LOST 0、Linux との差 max 0・max 1（over15 0）。前の /bin/wayland では r-base2・r-c4a・r-c5a2・r-c45b の
+  8 回とも frames 280〜343 で SURFACE_LOST だった。→ 直った（RDNA の実機の証拠）。以後の round の shot も全部 DONE。
+
+### 計測（timing あり、build/ws291/prof1・prof2・prof3）
+
+- big-1000（1 frame 16000 draw、約 54000 の vkCmd*）: kernel の decode の op（132 push・103 sets・107 draw・93 pipeline）は timing の上乗せ（op 1 つ約 0.1 µs）
+  を引くと 1 op 約 0.03〜0.06 µs、1 frame 約 3 ms（record の中の 1 MB ごとの transaction の hold の和）。libvulkan の encode（mview の loop 込み）は
+  record の残りの約 6 ms（1 vkCmd* 約 0.11 µs）。executor（op 18）約 6〜11 ms。
+- subs-N の 1 submit（libvulkan の timing）: GPU_COMMAND の transaction 約 27 µs（kernel の frame 約 13 µs + libvulkan と system call）、private fence
+  約 6〜7 µs（queue_private_fence: 64 回に 1 回の vkResetFences と INFLIGHT の slot ごとの GPU_COMMAND_WAIT）、JOB_RESERVE 約 6 µs、JOB_COMMIT 約 3 µs。
+- system call の費用（plan/ws291/tests/ioctl-cost.c、実機）: getppid 190 ns、GPU_GET_INFO 1150 ns。1 submit で GPU の ioctl が 4〜5 本。
+- libvulkan の timing（VULKAN_ZEDBSD_SUBMIT_TIMING）自体が subs-1000 の 1 submit に約 25 µs を足す（timing なし 39 µs、あり 64〜67 µs）。部分の比べだけに使う。
+
+### 直した事（commit、全部 worktree p2-ws291k）
+
+1. 8f8533e87（amdrdna executor）: draw の表を program ごとの読む set で再利用（set の bit mask）、combined image sampler の image・sampler の descriptor を
+   vkUpdateDescriptorSets の時に作って slot に置く（作れなければ draw の時に作る、今どおり）、pipeline が替わっても同じ viewport・guard band（soft float）・
+   scissor・blend・raster・depth・culling の語は書かない（fixed_written、target の書き直しで忘れる）、copy の表は clear しない。試験の道具
+   plan/ws291/tests/each-shot.sh（--draws=each と instanced の画の比べ）。
+2. b3173b786: dispatch の route の順で record（vkCmd*）を先頭に。PM4 writer に context register の shadow（同じ値の単独の再書き込みをしない、
+   context_known、IB の頭（pm4_start）と CLEAR_STATE（context_start）で忘れる、full で落ちた run は unknown）。ws039 の host 試験の期待の追従
+   （同じ値を 2 回書いて full を作る試験は別の値に、viewport 2 つの packet 数 8 → 7）と shadow の試験（同じ値は書かない、CLEAR_STATE の後・新しい IB で
+   書く）。Q1 の OK（2026-10-29）。
+3. 790aa60d1（libvulkan sync.c、全 GPU 共通）: vulkan_sync_job_reserve は毎回の GPU_JOB_CAPACITY の query をやめ、JOB_RESERVE がすぐ通らない（EAGAIN）時
+   だけ query して 1 回だけ reserve し直し、それも EAGAIN なら NOT_READY（query の sequence で待つ）。
+   - 解放を見落とさない順の論証: capacity の解放は kernel の capacity の sequence を進める。1 回目の EAGAIN の後に query した sequence を S とする。
+     (i) 解放が query より前なら、2 回目の reserve はその空きを見て通る（2 回目の前の reap も同じ）。(ii) 解放が query より後なら、sequence は S を越え、
+     vulkan_sync_capacity_wait(S) は kernel の observed_sequence の比べで EAGAIN（「raced capacity observation」）を返して眠らない（眠っていれば起こされる）。
+     どちらでも、空きがあるのに S で永く待つ並びは無い。前の形（query → reap → reserve → EAGAIN なら S で待つ）と同じ保証で、成功の道から ioctl が 1 本減る。
+     local の device・context の error の確かめ（query の中にあった）は reserve の前に残した。
+   - 確かめ: QEMU Venus の回帰 PASS（build/ws291/venus7、forge image はこの tree）、arm64（config-rpi4、1 回目は既知の sysroot の競合で失敗・2 回目 rc=0）・
+     riscv64（config-visionfive2）の libvulkan.so warning 0。Q1 の OK（2026-10-29）。
+4. bc65b40c0（amdrdna executor）: push constants の変わった最初の byte（push_changed_from）を覚え、program の表（byte 0〜push_bytes）が変わらない時は
+   表を保つ（mview の色だけが変わる draw で vertex の表を写さない）。
+5. 1824111c8（libvulkan、全 GPU 共通）: vkCmd* の記録の encode を inline に。internal.h に static __inline の vulkan_record_u32・vulkan_record_u64・
+   vulkan_record_handle（vulkan_write_u32・vulkan_write_u64・vulkan_encode_handle と同じ wire、storage が足りない時だけ out-of-line の
+   vulkan_writer_reserve）。tools/maintain-commands.noct がそれを出すように直して commands-generated.inc を再生成（再生成の出力 = 今の file の 3 つの名前の
+   置換と一致を cmp で確かめた）、commands.c の record の頭も。public な関数と他の file は不変。libvulkan.so 277 → 290 KB（全部を inline にした試しは 351 KB
+   で同じ速さだったので採らない）。確かめ: Venus の回帰 PASS（build/ws291/venus8）、arm64・riscv64 の libvulkan.so warning 0、ws039 の amdrdna の host 試験と
+   plan/tools/nvrtx/nvrtx-vk-host-test.sh PASS。
+6. 1132ec5b6（amdrdna PM4 writer）: user configuration register（draw の primitive・index の type、GE の groups など）の shadow と、draw の packet の
+   instance 数・index buffer の大きさの shadow（同じなら書かない、IB の頭と CLEAR_STATE で忘れる）。host 試験 205/205（足した試験 5 つ）。
+- preempt からの再開について（Q1 の条件）: amdrdna は gfx queue を IB の途中で preempt して同じ IB を続ける道を持たない（cp.c の detach の preempt は queue の
+  reset の道で、その run は落とされる）。各 session の executor は自分の pm4 を持ち、IB ごとに pm4_start と CLEAR_STATE を通るので、context の切り替え・
+  別の session・queue の reset の後の IB は全部 shadow を忘れた所から始まる（host 試験の「新しい buffer」「CLEAR_STATE の後」）。
+
+### 実機（RDNA、全部 round の nggshape 14 ok・shot 1 体 max 0・6500 体 max 1・each と instanced の画の差 0（1・100 体）・hang 回復 ok・guard の異常 0）
+
+| run | 前（c45b、q1663） | e1（1） | e2（2+3） | e3（4） | i2（5、kernel e3） | e4（6、最後） | Linux |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| scene-1500 | 208.1 | 208.8 | 209.3 | 209.6 | | 209.3 | 200.4 |
+| scene-6500 | 49.5 | 49.6 | 49.6 | 49.5 | | 49.6 | 50.1 |
+| big-100 | | 245.3 | 332.9 | 338.8 | | 360.7 | 517.8 |
+| big-1000（record / submit / fence ms） | 35.5（10.9 / 11.4） | 37.8（10.5 / 8.3 / 5.5） | 51.7（9.4 / 6.7 / 3.1） | 52.3 | 58.0〜59.4（7.4 / 6.5 / 2.8〜3.2） | 57.4（7.7 / 6.2 / 3.4） | 87.0（5.41 / 0.02） |
+| subs-100 | 130〜169 | 140.4 | 208.0 | 178〜207 | 211〜216 | 183.7 | 510.8 |
+| subs-1000（submit ms / frame） | 17.6〜18.6（48） | 19.4（43.5） | 21.3（39.1） | 15.3〜20.8 | 21.7〜22.3（38.8〜40.0） | 22.2（38.9） | 58.2（10.3） |
+
+- 表の元: build/ws291/r-e1b・r-e2b・r-e3b・rep-e3・rep-i1・rep-i2・r-e4b の bench/table.txt（timing 無し、game mailbox 4 枚 8 s）。
+- subs-N は同じ build でも run により二つの値に分かれる（subs-1000 15.3 と 20.8、subs-100 178 と 207）。q1663 の subs-100 の 130・170 と同じ形で、code の差では
+  ない（record も同じ割合で動くので CPU 側の状態の見込み、未確かめ）。
+- 読み: big-1000 は 35.5 → 57〜59 fps（Linux の 2/3）。残りは record 7.4 ms（encode 約 4.4 + kernel の decode 約 3）と、executor が IB を出す速さに GPU が
+  ついて回る submit + fence 約 9.5 ms（Linux の GPU は約 6 ms）。subs-1000 は 1 submit 48 → 39 µs（Linux 10）。scene は不変（GPU 律速）。
+
+### 残り（次の担当へ）
+
+- subs-N（1 submit 39 µs 対 10）: 1 submit に GPU の ioctl が 4〜5 本（JOB_RESERVE・GPU_COMMAND・JOB_COMMIT・reap の CONSUME の WAIT・private fence の
+  状態の WAIT）。Linux は CS の 1 本。次の手は GPU core の job の ABI で reserve・command・commit を 1 本にする（gpu.c と uapi、全 driver に効くので Q1 と
+  設計から）、private fence の状態の確かめを ledger だけで済ませる（libvulkan）。
+- big-N: kernel の decode（1 op 約 0.05 µs、1 frame 3 ms）、executor の draw（約 0.39 µs）、GPU 側（IB の flush ごとの全 barrier、表の領域 768 KiB で 1 frame
+  約 8 回）。kernel と libvulkan は -Os（全体の方針、変えていない）。
+
+## q1668-i02（2026-10-29 P2、worktree p2-ws291l、基点 main d94ceac00）
+
+- 承認: ユーザーの回答（クリック、2026-10-29）「WS291 の続き (推し)」、q1663 と同じ自律の承認。範囲は前の節の「残り」のうち GPU core の job の ABI を
+  変えない物（big-N、subs-N の private fence）と、1 本の ioctl の設計の案（実装しない）。
+- kernel の大きさ: main d94ceac00 の plan/ws291/tests/config.mk の vmunix は AMD64_KERNEL_MAX_BYTES を 4 KiB 越えて link できない（網の packet の pool
+  256 → 1024）。Q1 の指示（2026-10-29）で config.mk に `CONFIG_DRIVER_PCI_NVRTX := n`（pool の直しが main に入ったら戻す）。kernel は BUILD=build/ws291/k。
+- 実機の状態（04:20、未変更）: kernel は 1132ec5b6 の build（vmunix-e4、cksum 3189798377）、/lib/libvulkan.so は 1824111c8 の build（cksum 2490346689）、
+  /bin/wayland は main 9402d4c74 の build、cfg は ngg=2・memory=2、timing は off。zedBSD は 10.0.30.5。
+- 再開点（04:25、未完）: subs-N の private fence を ledger だけで確かめる直し（queue.c queue_reset_completed は reap を 1 回して ledger の検索だけ、
+  sync.c vulkan_sync_job_status は ledger に無い record では reap しない、timing に private_fence・reap）を build（warning 0）、実機は未実施。
+- 再開点（04:35、未完）: big-N の IB の flush（execute_room で buffer・表が埋まった時）を barrier 無しに（execute_put、ring の fence が EOP で
+  L2 を書き戻すので slot の再利用はそれで足り、次の run は cache を空にして始まる）。kernel build warning 0（build/ws291/vmunix-l1）、ws039 の
+  amdrdna-vk-host-test 205/205 PASS。実機は未実施。
+- 2026-10-29 ユーザーの回答（クリック）: 1 本の ioctl の案 A「採る (推し)」、案 B「案 A と一緒に」。ユーザー原文「WS291: 足してみて効果のなかったioctlは、
+  採用しなくてもいいです。」→ 効果の基準（測る前、[job-submit-design.md](../job-submit-design.md) の「効果の基準」）: 実機（timing 無し）で同じ組の前後を
+  3 run ずつ交互に、subs-1000 の submit の ms/frame の差が同じ build の run の揺れ（最大 − 最小、二つの値に分かれる時は同じ側どうし）を越えて減った時だけ
+  採る。A だけと A + B を別に測る。効果の無い ioctl は main に入れない（branch に残し、値と判断をここに）。
+
+### 直した事（commit、worktree p2-ws291l）
+
+1. 2753b6adc・7d953d9f8・92ebb8190（libvulkan queue.c・sync.c、全 GPU 共通）: fence 無しの submit の private fence の終わりを ledger だけで確かめる
+   （queue_reset_completed は ledger を 1 回 reap（全部）して各 slot の sequence を ledger で探すだけ、slot ごとの GPU_COMMAND_WAIT を無くした）。
+   vulkan_sync_job_status は ledger に無い（consume 済み）record では reap しない（vkResetFences の quiesce が fence ごとに reap していた）。
+   reset は 32 個以上の batch で（それより少なければ cache を 256 個まで増やす: reset の transaction は 1 回 約 25 µs）。
+   timing に private_fence・reap・command_ran・command_deferred（baa1ca65c）。
+2. 82e4f0559（amdrdna executor）: command buffer の途中で IB・表が埋まった時の flush を barrier 無しに（execute_put）。slot の再利用は ring の fence
+   （CACHE_FLUSH_AND_INV_TS の EOP、L2 の書き戻し）で足り、次の run は space_commands の cache_sync で始まる。最後の IB の barrier は今どおり。
+3. c013da454（amdrdna record）: vkCmd* の record を command buffer の配列の場所へ直に decode（push constants の byte も push の run へ直に）、
+   stack の record からの copy を無くした。command buffer の lookup を decode の前に（副作用なし）。
+- 確かめ: amd64 の vmunix（ws291 の config、NVRTX=n）・libvulkan warning 0、ws039 amdrdna-vk-host-test 205/205（2 回）、venus-reg PASS
+  （build/ws291/venus1、libvulkan-l3 sha256 先頭 9f76f34996d0bc6f）、arm64・riscv64 の libvulkan.so warning 0（rpi4 の 1 回目は既知の sysroot の競合）。
+
+### 実機（RDNA、timing 無し、game mailbox 4 枚 8 s、build/ws291/ab1〜ab3 の bench、plan/ws291/tests/lib-ab.sh）
+
+| run | base（kernel d94ceac00+NVRTX=n、lib main） | lib l3 | lib l3 + kernel l2（2+3） |
+| --- | --- | --- | --- |
+| scene-6500 | 49.37 | 49.69 | 49.74 |
+| big-100 | 360.8 | 363.3 | 373.1 |
+| big-1000 a・b | 45.9（外れ）・58.4 | 58.6・58.5 | 53.8・60.5 |
+| subs-100 a・b | 215.1・210.3 | 231.8・204.4 | 188.0・176.7 |
+| subs-1000 a・b（submit ms） | 22.2（39.3）・23.0（37.6） | 24.3（35.1）・25.0（34.3） | 24.4（35.2）・18.0（46.7、低い側） |
+| profile big-1000（lib の timing あり） | 58.1 | 57.9 | 60.3 |
+
+- 読み: lib の直し（1）は subs-1000 の submit を 37.6〜39.3 → 34.3〜35.1 ms/frame（1 submit 約 3.5 µs 減、run の揺れ 1.7 ms を越える）。
+  kernel の直し（2+3）は big の差が run の揺れ（big-1000 の外れ）と同じ程度で未確定 → 交互の A/B（build/ws291/ab4）で確かめる。
+  subs-100・subs-1000 は同じ build でも二つの値に分かれる（前の節と同じ形）。
+
+### 再開点（2026-10-29 04:55 P2、q1668-i02、未完）
+
+- 済み: 上の 1〜3 の commit（先頭 2753b6adc、末尾は git log）。1（lib）は効果あり、venus-reg・arm64・riscv64 の build 済み。1 本の ioctl の
+  案 A・B の design（[job-submit-design.md](../job-submit-design.md)、design-reviewer の指摘を末尾の節に反映、6d48cd6ea）。Q1 へ design の
+  反映の報告はまだ（次の起動で送る）、実装は Q1 の OK の後。
+- 測りの途中: build/ws291/ab4（plan/ws291/tests/lib-ab.sh、list plan/ws291/tests/kab.list、lib は libvulkan-l4 = baa1ca65c の build で
+  command_ran・command_deferred を数える）で kernel の base（build/ws291/vmunix-base）と l2（build/ws291/vmunix-l2 = c013da454）を交互に 2 回ずつ。
+  結果は build/ws291/ab4.out（各 label の table と subs-1000 の profile の VULKAN TIMING 行の command_deferred の数 = 案 A の M1 の率）。
+- 実機（10.0.30.5）: ab4 の最後の組（kernel vmunix-l2、/lib/libvulkan.so は libvulkan-l4）が入る。cfg は ngg=2・memory=2、timing off、
+  /bin/wayland は main 9402d4c74 の build のまま。ab4 が途中で止まっていたら、どれが入っているかは `cksum /boot/boot0/vmunix /lib/libvulkan.so`
+  を build/ws291/vmunix-* と libvulkan-* に照らす。
+- 次: ab4 を読んで kernel の 2・3 の採否（効果の基準: 差が同じ build の run の揺れを越える時だけ）→ Q1 に merge の依頼（採る物だけ）→
+  案 A の実装の前に command_deferred の率で M1 を判断して Q1 と相談 → 実装・host 試験・実機で base・A・B・A+B。
+
+### kernel の交互の A/B（build/ws291/ab4、lib は libvulkan-l4 = baa1ca65c、kernel base = vmunix-base、l2 = vmunix-l2 = c013da454）
+
+| run | base 1 | l2 1 | base 2 | l2 2 |
+| --- | --- | --- | --- | --- |
+| big-100 a・b | 330.0・364.0 | 362.5・369.1 | 365.8・349.6 | 289.3（外れ）・371.6 |
+| big-1000 a・b | 58.16・58.45 | 44.98（外れ）・60.71 | 58.60・58.46 | 59.81・59.62 |
+| subs-100 a・b | 240.1・198.9 | 201.8・175.9 | 232.0・229.9 | 232.2・210.6 |
+| subs-1000 a・b（submit ms） | 25.2（34.0）・18.0（46.9、低い側） | 23.8（36.0）・24.4（35.3） | 23.1（37.4）・19.7（43.4、低い側） | 24.8（34.3）・23.1（37.0） |
+
+- 読み: big-1000 は base 58.16〜58.60（揺れ 0.44）に対し l2 59.62〜60.71（外れの 1 つを除く）で、揺れを越えて +1.0〜2.1 fps（約 +2.5 %）→
+  kernel の 2・3 は効果あり（小さい）。big-100・subs は揺れの中（kernel の変更は subs に効く所ではない）。外れの run（big-1000 45 fps、big-100 289、
+  subs の低い側）は base・l2 の両方に出る（機械の状態、未確かめ）。
+- 案 A の M1: subs-1000 の profile で同期の GPU_COMMAND の後戻り（command_deferred）は 4・6・9・12 回 / 約 7 万回（0.02 % 未満）→ 今の形では
+  DEFERRED の率は問題にならない（案 A で submit が速くなった後の率は実装の後に測る）。private_fence は timing ありで平均 2 µs（前は 5〜9）。
+
+### 再開点（2026-10-29 05:05 P2、ユーザーの指示「P2は計測を中断して停止し、再開できる地点で終了し、再開を待ちます。」で返却）
+
+- 済み: libvulkan の直し（1、効果あり、venus-reg PASS、arm64・riscv64 build 済み）、kernel の直し（2・3、big-1000 で +2.5 %、host 205/205）。
+  merge の候補は 2753b6adc〜（この branch の全部。timing の count の baa1ca65c は venus-reg・arm64・riscv64 の build を l4 で取り直していない:
+  context.c の timing だけの差、merge の前に Q1 の条件なら取り直す）。
+- 実機（10.0.30.5、NVMe の zedBSD）: kernel は build/ws291/vmunix-l2（c013da454 の build、cksum は下）、/lib/libvulkan.so は build/ws291/libvulkan-l4.so
+  （baa1ca65c）、cfg は ngg=2・memory=2・timing off、/bin/wayland は main 9402d4c74 の build のまま。zedBSD が起動して idle。
+- 次: (a) 案 A・B（[job-submit-design.md](../job-submit-design.md)、design-reviewer の指摘は末尾の節）を Q1 に送って OK の後に実装（gpu.c の reserve・
+  commit の内部の関数への分割、uapi、amdrdna の jobs->command、7 driver の ops の初期化、libvulkan、plan/ws014/tests の host の harness）→ 実機で
+  base・A・B・A+B を効果の基準で。(b) big-N の残り（record の encode・decode、executor の draw）。
+  - cksum: build/ws291/vmunix-l2 1192076577
+  - cksum: build/ws291/libvulkan-l4.so 3046047400

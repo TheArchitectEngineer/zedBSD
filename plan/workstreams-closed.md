@@ -240,3 +240,6 @@ WS が完了・取り下げになったら、行を master.md からここへ移
 | [WS298](ws298/ws.md) | MG003 | Intel VMD の driver（5330 の NVMe を BIOS を変えずに使う） | completed（2026-10-27 08:33） | NVMe から zedBSD が起動 |
 | [WS119](ws119/ws.md) | MG003 | インストーラの作り直し | canceled（2026-10-28 ユーザー、Keiland のアプリの新しいインストーラ WS307 へ） | — |
 | [WS308](ws308/ws.md) | MG004 | read/write の syscall の lock の取り合いを無くす（NVMe の command_lock、heap、timecounter、cred の読み）と、見つけた前からの不具合 3 つ（retired_creds、cred の競争、memory 圧迫の ENOMEM）の直し | completed（2026-10-28、5330 の乱読み QD32 が Debian の 99.3%） | p005 は Future Work、fork の飢えは Future Work |
+| [WS312](ws312/ws.md) | MG005 | IPv6 の fragment の受け取りと再組立て（2026-10-29 ユーザー） | completed（2026-10-29） | QEMU で大きい UDP・ping6 の fragment を受け取る |
+| [WS235](ws235/ws.md) | MG006 | Realtek RTL8125 系の共通の Ethernet driver（PCIe の RTL8127 10GbE） | completed（2026-10-29） | 10.0.10.3 の RTL8127 で 10000Mbps・ssh・tcp-perf 両向き、driver は律速でない |
+| [WS311](ws311/ws.md) | MG005 | TCP の CUBIC と既定の切り替え（2026-10-29 ユーザー） | completed（2026-10-29） | 既定を CUBIC に（遅延の経路で 1.158 倍、LAN は同じ） |

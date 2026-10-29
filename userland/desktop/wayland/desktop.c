@@ -35,6 +35,10 @@
  * (the setting welcome.done is 0) starts Settings' Welcome once, after the
  * desktop program (settings --welcome; it is not started again when it
  * ends, and the login screen and --testing never start it).
+ *
+ * The installer's image (the one with the installer's index) starts the
+ * installer in its place, once a session, and no Welcome: the image is
+ * for installing, and the installed system has its own Welcome.
  */
 
 #include "desktop.h"
@@ -76,6 +80,10 @@
 /* Settings' Welcome, started once at a session's start while welcome.done is 0 (ws164-p002). */
 #define DESKTOP_WELCOME			KEILAND_BINDIR "/settings --welcome"
 #define DESKTOP_SWITCH			KEILAND_SYSCONFDIR "/keiland/desktop"
+
+/* The installer, and the index only the installer's image has. */
+#define DESKTOP_INSTALLER		KEILAND_BINDIR "/installer"
+#define DESKTOP_INSTALLER_INDEX		"/opt/installer/index"
 
 /* How long after it ends the program is started again, and how many starts a minute are allowed. */
 #define DESKTOP_RESTART_MS		2000U
@@ -851,13 +859,14 @@ desktop_start(
 /*
  * Starts Settings' Welcome once in a login session, after the desktop
  * program was started (or was decided against), while welcome.done is 0
- * (logged either way).
+ * (logged either way); on the installer's image, the installer instead.
  */
 static void
 desktop_welcome(
 	struct kwl_server *server)
 {
 	pid_t pid;
+	int installer;
 	int done;
 	int error;
 
@@ -867,6 +876,21 @@ desktop_welcome(
 	if (!server->session || server->greeter)
 		return;
 	desk.welcome_decided = 1;
+
+	/* The installer's image opens the installer, not the Welcome. */
+	installer = access(DESKTOP_INSTALLER_INDEX, R_OK);
+	if (installer == 0) {
+		/* Starts the installer, which is not started again when it ends. */
+		pid = kwl_spawn(server, "exec " DESKTOP_INSTALLER);
+		if (pid < 0) {
+			printf("KWL INSTALLER start-failed errno=%d\n", errno);
+			return;
+		}
+
+		/* Logs the installer's start. */
+		printf("KWL INSTALLER start pid=%d\n", (int)pid);
+		return;
+	}
 
 	/* The account took or skipped it already (a store that cannot tell starts nothing). */
 	done = 1;

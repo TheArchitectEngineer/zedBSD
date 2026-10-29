@@ -181,7 +181,7 @@ enum nvrtx_gsp_state {
 	NVRTX_GSP_REGION_SET,
 	NVRTX_GSP_RUNNING,
 	NVRTX_GSP_FAILED,
-	/* A falcon did not halt or the region could not be torn down: memory is kept until power-off. */
+	/* A program did not end: the GPU is cut off the system memory, its falcons reset, its memory kept until power-off. */
 	NVRTX_GSP_FAILED_HOLD
 };
 
@@ -336,47 +336,106 @@ struct nvrtx_bo {
 };
 
 /*
- * The work channel (work-channel, nvrtx.work=1): the graphics channel the GPU
- * device keeps for the work it is given (nvrtx-work.h has its layout).
+ * One graphics channel of the work space (nvrtx-work.h has its layout):
+ * the driver's own work channel, or a channel of one session's.
  *
- * The arena is a buffer object of the VRAM allocator holding the space's
- * page tables, the channel's instance block and USERD, and the channel's
- * own context buffers (the global ones are the golden context's).  The
- * system-memory buffers are the ring, the semaphore, the fences' push
- * buffers (one slot per ring entry) and the method buffer.  The made flags
- * say which resource-manager objects exist, so the stop frees only those.
+ * chid is its number on the graphics runlist and the handles name the
+ * channel and its 3D and compute objects for the resource manager.
+ * instance and userd are its instance block and USERD in the VRAM (in
+ * the space's arena for the driver's channel, in the channel's own arena
+ * for a session's, which also holds the channel's own context buffers).
+ * physical and virtual_address are where each context buffer lies and
+ * where the channel's promote names it: the golden context's addresses for
+ * the driver's channel, the channel's region of the space for a session's.
+ * region is that 2 MiB of the space (0 for the driver's channel), and the
+ * ring, the semaphore and the fences' push buffers are reached at ring_va,
+ * semaphore_va and fences_va.  The system-memory buffers are the ring, the
+ * semaphore, the fences' push buffers (one slot per ring entry) and the
+ * method buffer.  The made flags say which resources exist, so the stop and
+ * the close free only those.
  *
- * lock serializes the submissions and the mappings: put is the next ring
- * entry, fence the last value a submission asked the semaphore to reach,
- * entry_fence the fence each ring entry's submission ended with (so an
- * entry and its fence slot are reused only after that work is done).  va
- * hands out the addresses of the runs mapped for users.  ready is set once
- * the channel ran its first fence; nothing is submitted before.  timed,
- * set at the start when the boot asks for the counts (nvrtx.vk.perf=1),
- * puts a start stamp before every segment and the GPU's timer in every
- * fence, so the GPU's own time for a run can be read.
+ * lock serializes the submissions: put is the next ring entry, fence the
+ * last value a submission asked the semaphore to reach (also read without
+ * the lock, by nvrtx_work_channel_passed()), entry_fence the fence each ring
+ * entry's submission ended with (so an entry and its fence slot are reused
+ * only after that work is done), submitted_us the CPU's time each of the
+ * last runs was submitted (by the fence's low bits, read without the lock
+ * by the recovery).  ready is set once the channel ran its first fence;
+ * nothing is submitted before.  Every run gets a start stamp with the GPU's
+ * timer before its segment (so the recovery sees which run began, and
+ * when); timed, set when the boot asks for the counts (nvrtx.vk.perf=1),
+ * adds an end stamp after it, so the GPU's own time for a run can be read
+ * after later runs.
+ *
+ * state, rc_type and lost_reason are the renderer's (under its node's
+ * queue_lock, read without it where a racy look is harmless): the channel's
+ * state, the GSP's error report on it (its kind plus one, 0 before any) and
+ * why it was lost.
  */
-struct nvrtx_work_state {
+struct nvrtx_work_channel {
+	uint32_t chid;
+	uint32_t handle_channel;
+	uint32_t handle_threed;
+	uint32_t handle_compute;
 	struct nvrtx_bo arena;
+	uint64_t instance;
+	uint64_t userd;
 	uint64_t physical[NVRTX_GR_BUFFER_MAX];
+	uint64_t virtual_address[NVRTX_GR_BUFFER_MAX];
+	uint64_t region;
+	uint64_t ring_va;
+	uint64_t semaphore_va;
+	uint64_t fences_va;
 	struct nvrtx_buffer ring;
 	struct nvrtx_buffer semaphore;
 	struct nvrtx_buffer fences;
 	struct nvrtx_buffer methods;
-	struct nvrtx_heap va;
 	struct mutex lock;
 	uint32_t put;
 	uint32_t fence;
 	uint32_t entry_fence[NVRTX_WORK_RING_ENTRIES];
+	uint64_t submitted_us[NVRTX_WORK_RUN_RECORDS];
 	int arena_made;
-	int space_made;
-	int root_set;
+	int region_made;
 	int channel_made;
 	int threed_made;
 	int compute_made;
 	int scheduled;
 	int ready;
 	int timed;
+	uint32_t state;
+	uint32_t rc_type;
+	int lost_reason;
+};
+
+/*
+ * The work space and the driver's work channel (work-channel, nvrtx.work=1):
+ * the address space the GPU device keeps for the work it is given, and the
+ * graphics channel it made first (nvrtx-work.h has the layout).
+ *
+ * The arena is a buffer object of the VRAM allocator holding the space's
+ * page tables, the driver's channel's instance block and USERD, and its own
+ * context buffers (the global ones are the golden context's).  lock
+ * serializes the space's mappings: va hands out the addresses of the runs
+ * mapped for users and of the sessions' channels' regions.  ready is set
+ * once the driver's channel ran its first fence (the space takes mappings
+ * and channels from then on, even after that channel was stopped), and
+ * cleared by the stop.  timed is set at the start when the boot asks for the
+ * counts (nvrtx.vk.perf=1); every channel made afterwards times its runs as
+ * well.
+ */
+struct nvrtx_work_state {
+	struct nvrtx_bo arena;
+	/* How many times a full space for the users' runs was told. */
+	uint32_t va_full_marks;
+	struct nvrtx_heap va;
+	struct mutex lock;
+	int arena_made;
+	int space_made;
+	int root_set;
+	int ready;
+	int timed;
+	struct nvrtx_work_channel driver;
 };
 
 /*
@@ -442,6 +501,11 @@ struct nvrtx_memory_state {
 	uint64_t bar1_bus;
 	/* Where the CPU's mapping of the window starts: after the console's part, else 0. */
 	uint64_t bar1_cpu_from;
+	/* The most of the window in use at once, and how many times a full window was told. */
+	uint64_t bar1_peak;
+	uint32_t bar1_full_marks;
+	/* How many times a full VRAM allocator was told. */
+	uint32_t vram_full_marks;
 	int bar1_claimed;
 	struct drv_pci_mapping bar1_mapping;
 	int bar1_mapped;
@@ -622,6 +686,24 @@ struct nvrtx_gpu {
 	 * objects (the reboot's unload) stays short.
 	 */
 	int rpc_unanswered;
+	/*
+	 * Serializes the calls to the resource manager and the reading of the
+	 * GSP's messages once more than one thread reaches the GSP (the
+	 * message drain, a session's channel, the recovery): gpu->call and
+	 * gpu->reply are one pair, so a caller that reads a reply holds the
+	 * lock from the call to the read (nvrtx_rpc_lock()); a call alone takes
+	 * it itself.  rpc_wanted counts the threads waiting for it (atomically):
+	 * the drain gives the lock up between its turns while it is not zero.
+	 */
+	struct mutex rpc_lock;
+	uint32_t rpc_wanted;
+	/*
+	 * Told of every channel error the GSP reports (its channel number and
+	 * its kind), by whichever thread reads the message under rpc_lock; set
+	 * once by the renderer's start, NULL before.  It takes only spinlocks.
+	 */
+	void (*channel_error)(void *argument, uint32_t chid, uint32_t type);
+	void *channel_error_argument;
 
 	/* The first address space and channel. */
 	struct nvrtx_engine_state engine;
@@ -651,9 +733,12 @@ struct nvrtx_gpu {
 	/*
 	 * Serializes the register window onto the VRAM (PRAMIN) and the TLB
 	 * invalidate, which every thread that writes the VRAM or the page
-	 * tables shares; set up when the function is kept.
+	 * tables shares; set up when the function is kept.  window_wanted
+	 * counts the users other than a fill that wait for it (atomic): a
+	 * fill steps aside between its pieces while it is not zero.
 	 */
 	struct mutex window_lock;
+	uint32_t window_wanted;
 
 	/*
 	 * The static information static-info read, and the resource manager's
@@ -721,6 +806,8 @@ uint32_t nvrtx_frts_result(struct nvrtx_gpu *gpu);
 
 int nvrtx_rpc_send(struct nvrtx_gpu *gpu, uint32_t function, const uint8_t *payload, size_t length, int with_sequence, uint32_t *sequence);
 int nvrtx_rpc_wait(struct nvrtx_gpu *gpu, uint32_t function, uint32_t sequence, uint32_t timeout_us, size_t *length);
+void nvrtx_rpc_lock(struct nvrtx_gpu *gpu);
+void nvrtx_rpc_unlock(struct nvrtx_gpu *gpu);
 
 int nvrtx_rm_allocate(struct nvrtx_gpu *gpu, uint32_t parent, uint32_t handle, uint32_t class_number, const uint8_t *parameters, size_t length);
 int nvrtx_rm_control(struct nvrtx_gpu *gpu, uint32_t client, uint32_t object, uint32_t command, const uint8_t *parameters, size_t length, const uint8_t **reply, size_t *reply_length);
@@ -745,6 +832,8 @@ int nvrtx_console_check(struct nvrtx_gpu *gpu);
 void nvrtx_console_restore(struct nvrtx_gpu *gpu);
 int nvrtx_bo_alloc(struct nvrtx_gpu *gpu, uint64_t size, uint64_t align, struct nvrtx_bo *bo);
 int nvrtx_bo_map(struct nvrtx_gpu *gpu, struct nvrtx_bo *bo);
+int nvrtx_bo_clear(struct nvrtx_gpu *gpu, struct nvrtx_bo *bo);
+void nvrtx_bo_window_use(struct nvrtx_gpu *gpu, uint64_t *used, uint64_t *peak, uint64_t *size);
 void nvrtx_bo_free(struct nvrtx_gpu *gpu, struct nvrtx_bo *bo);
 volatile uint8_t *nvrtx_bo_cpu(struct nvrtx_gpu *gpu, const struct nvrtx_bo *bo);
 uint64_t nvrtx_bo_bus(struct nvrtx_gpu *gpu, const struct nvrtx_bo *bo);
@@ -752,7 +841,7 @@ uint64_t nvrtx_bo_bus(struct nvrtx_gpu *gpu, const struct nvrtx_bo *bo);
 int nvrtx_gr_start(struct nvrtx_gpu *gpu);
 void nvrtx_gr_stop(struct nvrtx_gpu *gpu);
 void nvrtx_gr_release(struct nvrtx_gpu *gpu);
-int nvrtx_gr_promote(struct nvrtx_gpu *gpu, uint32_t channel, const uint64_t *physical, bool golden);
+int nvrtx_gr_promote(struct nvrtx_gpu *gpu, uint32_t channel, const uint64_t *physical, const uint64_t *virtual_address, bool golden);
 
 int nvrtx_compute_start(struct nvrtx_gpu *gpu);
 void nvrtx_compute_stop(struct nvrtx_gpu *gpu);
@@ -766,9 +855,18 @@ void nvrtx_work_release(struct nvrtx_gpu *gpu);
 int nvrtx_work_map_vram(struct nvrtx_gpu *gpu, uint64_t physical, uint64_t size, uint64_t *va);
 int nvrtx_work_map_system(struct nvrtx_gpu *gpu, const uint64_t *pages, size_t count, uint64_t *va);
 int nvrtx_work_unmap(struct nvrtx_gpu *gpu, uint64_t va, uint64_t size);
-int nvrtx_work_submit(struct nvrtx_gpu *gpu, uint64_t push_va, size_t length, uint32_t *fence);
-int nvrtx_work_wait(struct nvrtx_gpu *gpu, uint32_t fence, uint32_t timeout_us);
-int nvrtx_work_run_time(struct nvrtx_gpu *gpu, uint32_t fence, uint64_t *gpu_ns);
+int nvrtx_work_channel_open(struct nvrtx_gpu *gpu, struct nvrtx_work_channel *channel, uint32_t chid);
+int nvrtx_work_channel_close(struct nvrtx_gpu *gpu, struct nvrtx_work_channel *channel);
+void nvrtx_work_channel_look(struct nvrtx_work_channel *channel, struct nvrtx_recover_view *view);
+bool nvrtx_work_channel_resident(struct nvrtx_gpu *gpu, const struct nvrtx_work_channel *channel);
+int nvrtx_work_channel_stop(struct nvrtx_gpu *gpu, struct nvrtx_work_channel *channel);
+int nvrtx_work_channel_reset(struct nvrtx_gpu *gpu, struct nvrtx_work_channel *channel, int reported);
+int nvrtx_work_channel_free(struct nvrtx_gpu *gpu, struct nvrtx_work_channel *channel);
+int nvrtx_work_channel_submit(struct nvrtx_gpu *gpu, struct nvrtx_work_channel *channel, uint64_t push_va, size_t length, uint32_t *fence);
+int nvrtx_work_channel_wait(struct nvrtx_work_channel *channel, uint32_t fence, uint32_t timeout_us);
+int nvrtx_work_channel_wait_late(struct nvrtx_work_channel *channel, uint32_t fence, uint32_t timeout_us, uint32_t quiet_us);
+bool nvrtx_work_channel_passed(struct nvrtx_work_channel *channel, uint32_t fence);
+int nvrtx_work_channel_run_time(struct nvrtx_work_channel *channel, uint32_t fence, uint64_t *gpu_ns);
 
 void nvrtx_perf_start(struct nvrtx_gpu *gpu);
 

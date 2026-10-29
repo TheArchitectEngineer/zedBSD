@@ -72,6 +72,9 @@
 /* The largest part of the window the driver's tables map: one first-level directory entry (512 MiB). */
 #define VRAM_BAR1_WINDOW_MAX		0x20000000ULL
 
+/* How many times a full window is told in the log (the first ones say why an allocation failed). */
+#define VRAM_BAR1_FULL_MARKS		8U
+
 /* The window's page tables are on a 64 KiB boundary, so one window position of PRAMIN starts them. */
 #define VRAM_TABLES_ALIGN		0x10000ULL
 
@@ -348,7 +351,14 @@ nvrtx_bo_alloc(
 
 	mutex_unlock(&memory->lock);
 
-	/* Reports a missing allocator or a full one. */
+	/* Reports a missing allocator or a full one (a full one is told, the first few times). */
+	if (error == ENOSPC && memory->vram_full_marks < VRAM_BAR1_FULL_MARKS) {
+		memory->vram_full_marks++;
+		nvrtx_stage_mark("vram full: %llu KiB asked, %llu KiB free in %u runs",
+		    (unsigned long long)(size >> 10),
+		    (unsigned long long)(memory->vram.free_bytes >> 10),
+		    (unsigned)memory->vram.count);
+	}
 	if (error != 0)
 		return error;
 
@@ -363,6 +373,8 @@ nvrtx_bo_alloc(
 /*
  * Maps a buffer object into the CPU's window.
  *
+ * Two callers may map the same object at once (an object is mapped when the
+ * CPU first needs it), so the check and the mapping are under the lock.
  * Returns ENODEV without a working window, or ENOSPC when the window has
  * no room.
  */
@@ -373,16 +385,19 @@ nvrtx_bo_map(
 {
 	struct nvrtx_memory_state *memory;
 	uint64_t address;
+	uint64_t used;
+	int full;
 	int error;
 
 	memory = &gpu->memory_state;
 
-	/* A mapped object stays where it is. */
-	if (bo->bar1_mapped != 0)
-		return 0;
-
-	/* Takes a run of the window and points its pages at the object's VRAM. */
+	/* Takes a run of the window and points its pages at the object's VRAM; a mapped object stays where it is. */
 	mutex_lock(&memory->lock);
+
+	if (bo->bar1_mapped != 0) {
+		mutex_unlock(&memory->lock);
+		return 0;
+	}
 
 	error = ENODEV;
 	if (memory->bar1_ready != 0)
@@ -392,17 +407,91 @@ nvrtx_bo_map(
 		if (error != 0)
 			(void)nvrtx_heap_free(&memory->bar1, address, bo->size);
 	}
+	if (error == 0) {
+		bo->bar1 = address;
+		bo->bar1_mapped = 1;
+	}
+
+	/* The window's use, its highest, and the first few times it was full. */
+	used = (memory->bar1.top - memory->bar1.base) - memory->bar1.free_bytes;
+	if (used > memory->bar1_peak)
+		memory->bar1_peak = used;
+	full = 0;
+	if (error == ENOSPC && memory->bar1_full_marks < VRAM_BAR1_FULL_MARKS) {
+		memory->bar1_full_marks++;
+		full = 1;
+	}
 
 	mutex_unlock(&memory->lock);
+
+	if (full != 0)
+		nvrtx_stage_mark("window full: %llu KiB asked, %llu of %llu KiB used",
+		    (unsigned long long)(bo->size >> 10),
+		    (unsigned long long)(used >> 10),
+		    (unsigned long long)((memory->bar1.top - memory->bar1.base) >> 10));
 
 	/* Reports a missing window, a full one or a write that failed. */
 	if (error != 0)
 		return error;
 
 	/* Succeeded: the CPU reaches the object at its place in the window. */
-	bo->bar1 = address;
-	bo->bar1_mapped = 1;
 	return 0;
+}
+
+/*
+ * Clears a buffer object's VRAM: through the window when the object is
+ * mapped, else through the register window (PRAMIN), so an object the CPU
+ * never reads takes no part of the window.
+ */
+int
+nvrtx_bo_clear(
+	struct nvrtx_gpu *gpu,
+	struct nvrtx_bo *bo)
+{
+	volatile uint8_t *cpu;
+	uint64_t at;
+
+	/* An unmapped object: the register window in 64 KiB pieces. */
+	if (bo->bar1_mapped == 0)
+		return nvrtx_vram_fill(gpu, bo->vram, 0U, (size_t)bo->size);
+
+	/* A mapped one: word by word through the uncached window. */
+	cpu = nvrtx_bo_cpu(gpu, bo);
+	for (at = 0U; at < bo->size; at += 4U)
+		*(volatile uint32_t *)(volatile void *)(cpu + at) = 0U;
+
+	/* Succeeded: the object reads as zero. */
+	return 0;
+}
+
+/*
+ * Reports the window's bytes in use now, the most it has held, and its size
+ * (the part after the console), all 0 before the window is set up.
+ */
+void
+nvrtx_bo_window_use(
+	struct nvrtx_gpu *gpu,
+	uint64_t *used,
+	uint64_t *peak,
+	uint64_t *size)
+{
+	struct nvrtx_memory_state *memory;
+
+	memory = &gpu->memory_state;
+
+	/* Read under the lock, so the three agree. */
+	mutex_lock(&memory->lock);
+
+	*used = 0U;
+	*peak = 0U;
+	*size = 0U;
+	if (memory->bar1_ready != 0) {
+		*size = memory->bar1.top - memory->bar1.base;
+		*used = *size - memory->bar1.free_bytes;
+		*peak = memory->bar1_peak;
+	}
+
+	mutex_unlock(&memory->lock);
 }
 
 /*

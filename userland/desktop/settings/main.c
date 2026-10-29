@@ -6,7 +6,7 @@
  */
 
 /*
- * settings: the Settings application of the Kei desktop (WS089), in a
+ * settings: the Settings application of the desktop, in a
  * Wayland window drawn on the CPU and shown with Vulkan.
  *
  *   settings [--display=NAME] [--font=PATH] [--fallback-font=PATH]

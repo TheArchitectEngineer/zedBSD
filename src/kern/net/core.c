@@ -522,8 +522,14 @@ poll_devices(
 	unsigned total;
 	unsigned index;
 	unsigned count;
+	int wanted;
 
 	total = 0;
+
+	/* No device asked for a poll: nothing to walk. */
+	wanted = net_device_poll_wanted();
+	if (wanted == 0)
+		return 0;
 
 	/* Polls the devices in registry order until the budget is spent. */
 	for (index = 0; total < NET_WORK_BUDGET; index++) {
@@ -548,6 +554,7 @@ work_pending(
 	unsigned index;
 	unsigned long irq;
 	int pending;
+	int wanted;
 
 	/* Queued input is work. */
 	irq = spin_lock_irqsave(&input_lock);
@@ -559,8 +566,12 @@ work_pending(
 	if (pending)
 		return 1;
 
-	/* A device with a pending poll is work. */
+	/* A device with a pending poll is work; none has one when the count says so. */
 	for (index = 0;; index++) {
+		wanted = net_device_poll_wanted();
+		if (wanted == 0)
+			break;
+
 		device = net_device_at_ref(index);
 		if (device == NULL)
 			break;
@@ -617,6 +628,9 @@ network_worker(
 			spin_unlock_irqrestore(&input_lock, irq);
 			work++;
 		}
+
+		/* The acknowledgements TCP delayed for the end of the batch. */
+		tcp_ack_flush();
 
 		/* Yields between full budgets while work remains. */
 		if (work >= NET_WORK_BUDGET && work_pending()) {

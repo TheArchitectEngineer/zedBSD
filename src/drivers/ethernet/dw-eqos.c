@@ -10,9 +10,14 @@
  *
  * The controller moves frames between memory and the wire through one DMA
  * channel with a ring of descriptors in each direction.  Each descriptor
- * owns one fixed 2 KiB buffer for the life of the system: a transmitted
+ * owns one fixed buffer for the life of the system, large enough for the
+ * longest frame the interface takes (a jumbo frame where the packet pool
+ * has jumbo packets, else 2 KiB): a transmitted
  * frame is copied into the buffer of the next free transmit descriptor,
- * and a received frame is copied out of its buffer into a network packet
+ * unless the controller reaches the packet's own bytes (a coherent DMA and
+ * a packet of the pool, whose physical address is known), when the
+ * descriptor points at the packet, which the driver keeps until the
+ * frame is sent; and a received frame is copied out of its buffer into a network packet
  * before the descriptor goes back to the controller.  One receive
  * descriptor is always kept back, so the ring's tail never meets its
  * head.  No checksum, segmentation or VLAN offload is used.
@@ -57,7 +62,7 @@
  *
  * Values referenced: OpenBSD sys/dev/ic/dwqereg.h, master
  * 859883f17cb8e20088fece5398547e4264ad30b3 (GMAC_MAC_CONF,
- * GMAC_MAC_PACKET_FILTER, GMAC_MAC_HASH_TAB_REG0/1, GMAC_RXQ_CTRL0,
+ * GMAC_MAC_CONF_JE, GMAC_MAC_PACKET_FILTER, GMAC_MAC_HASH_TAB_REG0/1, GMAC_RXQ_CTRL0,
  * GMAC_INT_STATUS, GMAC_INT_EN, GMAC_MAC_1US_TIC_CTR, GMAC_VERSION,
  * GMAC_MAC_HW_FEATURE, GMAC_MAC_ADDR0_HI/LO, GMAC_MMC_RX/TX_INT_MASK and
  * their bits).
@@ -66,6 +71,7 @@
 #define EQOS_MAC_CONFIG_RX		0x00000001U
 #define EQOS_MAC_CONFIG_TX		0x00000002U
 #define EQOS_MAC_CONFIG_FULL_DUPLEX	0x00002000U
+#define EQOS_MAC_CONFIG_JUMBO		0x00010000U
 #define EQOS_MAC_CONFIG_FAST		0x00004000U
 #define EQOS_MAC_CONFIG_MII		0x00008000U
 #define EQOS_MAC_CONFIG_SPEED_MASK	0x0000c000U
@@ -240,13 +246,26 @@
 					 EQOS_CHANNEL_RX_DONE | EQOS_CHANNEL_TX_DONE)
 #define EQOS_INTERRUPTS_DRAINING	(EQOS_CHANNEL_ABNORMAL | EQOS_CHANNEL_BUS_ERROR)
 
-/* The rings' geometry and the frames that fit in one buffer. */
+/*
+ * The rings' geometry and the frames that fit in one buffer.  A frame is
+ * its Ethernet header, a VLAN tag and the MTU (EQOS_FRAME_OVERHEAD), and
+ * the controller writes its CRC after it into the receive buffer.  Where
+ * the pool has jumbo packets the buffers hold a 9000-byte MTU's frame and
+ * the MAC takes jumbo frames (the controller's limit with JE is 9018
+ * bytes untagged); the interface still starts at 1500.
+ */
 #define EQOS_TX_COUNT			128U
 #define EQOS_RX_COUNT			128U
 #define EQOS_DESCRIPTOR_BYTES		16U
+#if NET_MTU_MAX > 1500U
+#define EQOS_BUFFER_BYTES		9216U
+#else
 #define EQOS_BUFFER_BYTES		2048U
+#endif
+#define EQOS_BUFFER_ALIGNMENT		4096U
 #define EQOS_MIN_FRAME			60U
-#define EQOS_MAX_FRAME			1518U
+#define EQOS_FRAME_OVERHEAD		18U
+#define EQOS_DEFAULT_MTU		1500U
 #define EQOS_HEADER_BYTES		14U
 #define EQOS_CRC_BYTES			4U
 
@@ -294,10 +313,26 @@ struct eqos_device {
 	uint32_t mdio_range;
 	uint32_t features[4];
 	unsigned address_bits;
+	/*
+	 * The largest MTU the interface takes and the longest frame (without
+	 * its CRC) that goes with it, fixed at attach: the buffers' size, and
+	 * in store-and-forward mode the transmit FIFO, which must hold a
+	 * whole frame.
+	 */
+	unsigned mtu_max;
+	size_t frame_max;
 	int phy_is_yt8531;
 	struct drv_dma_device *dma;
 	struct drv_dma_buffer descriptors;
 	struct drv_dma_buffer tx_buffers;
+	/*
+	 * The packets the transmit descriptors point at in place, by slot (NULL
+	 * for a frame copied into the slot's buffer), and the ones the
+	 * controller has finished, linked by next, which the caller of
+	 * reclaim_tx frees once the lock is released.  Guarded by the lock.
+	 */
+	struct packet_buf *tx_packets[EQOS_TX_COUNT];
+	struct packet_buf *tx_done;
 	struct drv_dma_buffer rx_buffers;
 	struct eqos_descriptor *tx_ring;
 	struct eqos_descriptor *rx_ring;
@@ -339,6 +374,7 @@ static const struct net_device_ops eqos_operations = {
 	eqos_transmit,
 	eqos_poll,
 	NULL,
+	NULL,
 	NULL
 };
 
@@ -350,6 +386,7 @@ static int deadline_passed(uint64_t deadline);
 static int mdio_read(void *context, unsigned phy, unsigned reg, uint16_t *data);
 static int mdio_write(void *context, unsigned phy, unsigned reg, uint16_t data);
 static uint32_t mdio_range_for(uint64_t rate);
+static void choose_mtu_max(struct eqos_device *device);
 static int choose_mac(struct eqos_device *device);
 static int reset_controller(struct eqos_device *device);
 static void configure_bus(struct eqos_device *device);
@@ -364,6 +401,8 @@ static void arm_rx_slot(struct eqos_device *device, unsigned slot);
 static void configure_queues(struct eqos_device *device);
 static void apply_link(struct eqos_device *device);
 static unsigned reclaim_tx(struct eqos_device *device);
+static struct packet_buf *take_tx_done_locked(struct eqos_device *device);
+static void free_tx_done(struct packet_buf *list);
 static unsigned receive_frames(struct net_device *net, unsigned budget);
 static void report_tx_errors(struct net_device *net, unsigned errors);
 static void eqos_interrupt(int irq, kern_irq_ack_t acknowledge, void *argument);
@@ -452,6 +491,9 @@ drv_dw_eqos_attach(
 	default:
 		break;
 	}
+
+	/* Works out the largest MTU the buffers and the transmit FIFO allow. */
+	choose_mtu_max(device);
 
 	/* Picks the station address before the reset clears the registers that may hold it. */
 	stage = "MAC address";
@@ -760,6 +802,42 @@ mdio_range_for(
 }
 
 /*
+ * Works out the largest MTU the interface takes: what the buffers hold,
+ * and in store-and-forward mode no more than the transmit FIFO holds with
+ * the frame's header, tag and CRC (threshold mode streams a frame longer
+ * than the FIFO).  Never below the 1500 every Ethernet port takes.
+ */
+static void
+choose_mtu_max(
+	struct eqos_device *device)
+{
+	uint32_t fifo;
+	unsigned mtu;
+
+	/* The buffers' limit, and the pool's. */
+	mtu = EQOS_BUFFER_BYTES - EQOS_FRAME_OVERHEAD - EQOS_CRC_BYTES;
+	if (mtu > NET_MTU_MAX)
+		mtu = NET_MTU_MAX;
+
+	/* The transmit FIFO's, when it must hold a whole frame. */
+	if (!device->config.threshold_mode) {
+		fifo = device->config.tx_fifo_bytes;
+		if (fifo == 0)
+			fifo = 128U << ((device->features[1] >> EQOS_FEATURE1_TX_FIFO_SHIFT) & EQOS_FEATURE1_FIFO_MASK);
+		if (fifo < mtu + EQOS_FRAME_OVERHEAD + EQOS_CRC_BYTES)
+			mtu = fifo - EQOS_FRAME_OVERHEAD - EQOS_CRC_BYTES;
+	}
+
+	/* No less than Ethernet's own. */
+	if (mtu < EQOS_DEFAULT_MTU)
+		mtu = EQOS_DEFAULT_MTU;
+
+	/* The MTU and the frame that goes with it. */
+	device->mtu_max = mtu;
+	device->frame_max = (size_t)mtu + EQOS_FRAME_OVERHEAD;
+}
+
+/*
  * Picks the station address: the board's, else the one the firmware left
  * in the controller, else a random locally administered one.
  *
@@ -980,8 +1058,8 @@ burst_bit(
 }
 
 /*
- * Identifies the PHY, resets it, writes a YT8531's board settings and
- * starts autonegotiation.
+ * Identifies the PHY, resets it, writes a YT8531's board settings or has
+ * the board set up another PHY, and starts autonegotiation.
  */
 static int
 bring_up_phy(
@@ -1019,6 +1097,13 @@ bring_up_phy(
 	/* Writes a YT8531's delays and drive strengths. */
 	if (device->phy_is_yt8531) {
 		error = drv_yt8531_configure(&device->mdio, phy, &device->config.yt8531);
+		if (error != 0)
+			return error;
+	}
+
+	/* Lets the board set up any other PHY it knows, such as its RGMII delays. */
+	if (!device->phy_is_yt8531 && device->config.configure_phy != NULL) {
+		error = device->config.configure_phy(device->config.phy_context, &device->mdio, phy, identity);
 		if (error != 0)
 			return error;
 	}
@@ -1064,7 +1149,7 @@ allocate_rings(
 	/* Allocates the transmit buffers. */
 	error = drv_dma_alloc_coherent(device->dma,
 				       EQOS_TX_COUNT * EQOS_BUFFER_BYTES,
-				       EQOS_BUFFER_BYTES,
+				       EQOS_BUFFER_ALIGNMENT,
 				       &device->tx_buffers);
 	if (error != 0)
 		return error;
@@ -1072,7 +1157,7 @@ allocate_rings(
 	/* Allocates the receive buffers. */
 	error = drv_dma_alloc_coherent(device->dma,
 				       EQOS_RX_COUNT * EQOS_BUFFER_BYTES,
-				       EQOS_BUFFER_BYTES,
+				       EQOS_BUFFER_ALIGNMENT,
 				       &device->rx_buffers);
 	if (error != 0)
 		return error;
@@ -1157,7 +1242,8 @@ publish_interface(
 
 	/* Describes an Ethernet port with the controller's address. */
 	kern_memcpy(device->net->name, device->config.name, length + 1U);
-	device->net->mtu = 1500U;
+	device->net->mtu = EQOS_DEFAULT_MTU;
+	device->net->mtu_max = device->mtu_max;
 	device->net->hwaddr_len = 6U;
 	kern_memcpy(device->net->hwaddr, device->mac, 6U);
 	device->net->flags = NET_DEVICE_BROADCAST | NET_DEVICE_MULTICAST;
@@ -1288,8 +1374,10 @@ eqos_close(
 	struct net_device *net)
 {
 	struct eqos_device *device;
+	struct packet_buf *done;
 	unsigned long irq;
 	uint32_t value;
+	unsigned slot;
 	int error;
 
 	/* Stops the PLIC from delivering another interrupt. */
@@ -1324,7 +1412,22 @@ eqos_close(
 	write_register(device, EQOS_MAC_CONFIG, value & ~EQOS_MAC_CONFIG_TX);
 	write_register(device, EQOS_CHANNEL_STATUS, 0xffffffffU);
 
+	/* The packets descriptors still held go on the list to free: the DMA has stopped. */
+	for (slot = 0; slot < EQOS_TX_COUNT; slot++) {
+		if (device->tx_packets[slot] == NULL)
+			continue;
+		device->tx_packets[slot]->next = device->tx_done;
+		device->tx_done = device->tx_packets[slot];
+		device->tx_packets[slot] = NULL;
+	}
+
+	/* Takes the list of packets whose transmission is finished. */
+	done = take_tx_done_locked(device);
+
 	spin_unlock_irqrestore(&device->lock, irq);
+
+	/* Frees them outside the lock. */
+	free_tx_done(done);
 
 	/* Withdraws the carrier. */
 	(void)net_device_set_carrier(net, 0);
@@ -1344,27 +1447,43 @@ eqos_transmit(
 {
 	struct eqos_device *device;
 	struct eqos_descriptor *descriptor;
+	struct packet_buf *done;
 	uint8_t *buffer;
 	uint64_t address;
+	uint64_t physical;
 	unsigned long irq;
 	unsigned errors;
 	unsigned slot;
 	size_t length;
+	int in_place;
 	int error;
 
 	/* Refuses a missing packet. */
 	if (packet == NULL)
 		return EINVAL;
 
-	/* Drops a frame too short for a header or too long for a buffer. */
+	/* Drops a frame too short for a header or too long for the interface. */
+	device = net->driver_data;
 	length = packet->length;
-	if (length < EQOS_HEADER_BYTES || length > EQOS_MAX_FRAME) {
+	if (length < EQOS_HEADER_BYTES || length > device->frame_max) {
 		packet_buf_free(packet);
 		return EMSGSIZE;
 	}
 
+	/*
+	 * Points the descriptor at the packet itself when the controller
+	 * reaches its bytes; a short frame, which is padded, is copied.
+	 */
+	in_place = 0;
+	if (length >= EQOS_MIN_FRAME) {
+		error = packet_buf_physical(packet, &physical);
+		if (error == 0)
+			error = drv_dma_physical_address(device->dma, physical, length, 0, &address);
+		if (error == 0)
+			in_place = 1;
+	}
+
 	/* Takes a free descriptor, if the interface runs and has a link. */
-	device = net->driver_data;
 	error = 0;
 	errors = 0;
 	irq = spin_lock_irqsave(&device->lock);
@@ -1372,26 +1491,40 @@ eqos_transmit(
 	if (!device->opened || device->speed == 0) {
 		error = ENETDOWN;
 	} else {
-		/* Frees what the controller finished, then checks one descriptor is left. */
-		errors = reclaim_tx(device);
+		/*
+		 * Frees what the controller finished only when the ring looks
+		 * full (the network worker's poll frees the rest), then checks
+		 * one descriptor is left.
+		 */
+		if (device->tx_producer - device->tx_consumer >= EQOS_TX_COUNT / 2U)
+			errors = reclaim_tx(device);
 		if (device->tx_producer - device->tx_consumer >= EQOS_TX_COUNT - 1U)
 			error = ENOBUFS;
 	}
 
 	/* Fills the descriptor and hands it over. */
 	if (error == 0) {
-		/* Copies the frame, padding a short one so no old bytes go out. */
+		/*
+		 * The packet in place, kept until the frame is sent; or the frame
+		 * copied, a short one padded so no old bytes go out.
+		 */
 		slot = device->tx_producer % EQOS_TX_COUNT;
-		buffer = (uint8_t *)device->tx_buffers.address + slot * EQOS_BUFFER_BYTES;
-		kern_memcpy(buffer, packet->data, length);
-		if (length < EQOS_MIN_FRAME) {
-			kern_memset(buffer + length, 0, EQOS_MIN_FRAME - length);
-			length = EQOS_MIN_FRAME;
+		if (in_place) {
+			device->tx_packets[slot] = packet;
+		} else {
+			buffer = (uint8_t *)device->tx_buffers.address + slot * EQOS_BUFFER_BYTES;
+			kern_memcpy(buffer, packet->data, length);
+			if (length < EQOS_MIN_FRAME) {
+				kern_memset(buffer + length, 0, EQOS_MIN_FRAME - length);
+				length = EQOS_MIN_FRAME;
+			}
+
+			/* The bus address of the copy the controller reads. */
+			address = device->tx_buffers.device_address + slot * EQOS_BUFFER_BYTES;
 		}
 
-		/* Points the descriptor at the buffer as one whole frame, interrupting when sent. */
+		/* Points the descriptor at the bytes as one whole frame, interrupting when sent. */
 		descriptor = &device->tx_ring[slot];
-		address = device->tx_buffers.device_address + slot * EQOS_BUFFER_BYTES;
 		descriptor->word0 = (uint32_t)address;
 		descriptor->word1 = (uint32_t)(address >> 32);
 		descriptor->word2 = EQOS_TX_INTERRUPT | (uint32_t)length;
@@ -1408,10 +1541,18 @@ eqos_transmit(
 					  (device->tx_producer % EQOS_TX_COUNT) * EQOS_DESCRIPTOR_BYTES));
 	}
 
+	/* Takes the list of packets whose transmission is finished. */
+	done = take_tx_done_locked(device);
+
 	spin_unlock_irqrestore(&device->lock, irq);
 
-	/* Releases the packet and counts finished frames that failed, outside the lock. */
-	packet_buf_free(packet);
+	/*
+	 * Releases the packet unless a descriptor holds it, the packets of the
+	 * frames finished, and counts the ones that failed, outside the lock.
+	 */
+	if (!in_place || error != 0)
+		packet_buf_free(packet);
+	free_tx_done(done);
 	report_tx_errors(net, errors);
 
 	/* Reports a closed interface, no link or a full ring. */
@@ -1432,6 +1573,7 @@ eqos_poll(
 	unsigned budget)
 {
 	struct eqos_device *device;
+	struct packet_buf *done;
 	unsigned long irq;
 	unsigned errors;
 	unsigned count;
@@ -1444,8 +1586,12 @@ eqos_poll(
 
 	if (device->opened)
 		errors = reclaim_tx(device);
+	done = take_tx_done_locked(device);
 
 	spin_unlock_irqrestore(&device->lock, irq);
+
+	/* The packets of the sent frames, outside the lock. */
+	free_tx_done(done);
 
 	/* Counts sent frames that failed. */
 	report_tx_errors(net, errors);
@@ -1632,6 +1778,10 @@ apply_link(
 	if (device->full_duplex)
 		value |= EQOS_MAC_CONFIG_FULL_DUPLEX;
 
+	/* Takes jumbo frames when the interface may run above 1500 (the stack drops what exceeds the MTU). */
+	if (device->mtu_max > EQOS_DEFAULT_MTU)
+		value |= EQOS_MAC_CONFIG_JUMBO;
+
 	/* Starts the transmitter and receiver. */
 	value |= EQOS_MAC_CONFIG_TX | EQOS_MAC_CONFIG_RX;
 	write_register(device, EQOS_MAC_CONFIG, value);
@@ -1651,6 +1801,7 @@ reclaim_tx(
 	struct eqos_device *device)
 {
 	struct eqos_descriptor *descriptor;
+	struct packet_buf *packet;
 	uint32_t status;
 	unsigned errors;
 
@@ -1668,13 +1819,54 @@ reclaim_tx(
 		if ((status & EQOS_TX_ERROR) != 0)
 			errors++;
 
-		/* Frees the descriptor. */
+		/* Frees the descriptor, and puts the packet it held on the list to free. */
 		descriptor->word3 = 0;
+		packet = device->tx_packets[device->tx_consumer % EQOS_TX_COUNT];
+		if (packet != NULL) {
+			device->tx_packets[device->tx_consumer % EQOS_TX_COUNT] = NULL;
+			packet->next = device->tx_done;
+			device->tx_done = packet;
+		}
 		device->tx_consumer++;
 	}
 
 	/* Reports the failed frames. */
 	return errors;
+}
+
+/*
+ * Takes the list of the packets whose frames the controller has finished,
+ * for the caller to free once it has released the lock.  The caller holds
+ * the lock.
+ */
+static struct packet_buf *
+take_tx_done_locked(
+	struct eqos_device *device)
+{
+	struct packet_buf *list;
+
+	/* The whole list, the device's emptied. */
+	list = device->tx_done;
+	device->tx_done = NULL;
+
+	/* Succeeded: the list, or none. */
+	return list;
+}
+
+/* Frees a list of packets linked by next. */
+static void
+free_tx_done(
+	struct packet_buf *list)
+{
+	struct packet_buf *next;
+
+	/* Each packet in turn. */
+	while (list != NULL) {
+		next = list->next;
+		list->next = NULL;
+		packet_buf_free(list);
+		list = next;
+	}
 }
 
 /*
@@ -1699,14 +1891,14 @@ receive_frames(
 	unsigned slot;
 	unsigned count;
 	size_t length;
+	int alloc_error;
 	int valid;
 	int empty;
 
 	/* Takes at most the budget, so one port cannot starve the worker. */
 	device = net->driver_data;
 	for (count = 0; count < budget; count++) {
-		/* Takes a packet before the lock; without one the frame is dropped. */
-		packet = packet_buf_alloc(PACKET_BUF_DEFAULT_HEADROOM);
+		packet = NULL;
 		valid = 0;
 		empty = 0;
 		irq = spin_lock_irqsave(&device->lock);
@@ -1728,10 +1920,18 @@ receive_frames(
 			if ((status & (EQOS_RX_FIRST | EQOS_RX_LAST)) == (EQOS_RX_FIRST | EQOS_RX_LAST) &&
 			    (status & (EQOS_RX_ERROR | EQOS_RX_CONTEXT)) == 0 &&
 			    length >= EQOS_HEADER_BYTES + EQOS_CRC_BYTES &&
-			    length <= EQOS_MAX_FRAME + EQOS_CRC_BYTES) {
-				/* Copies the frame without its checksum. */
+			    length <= device->frame_max + EQOS_CRC_BYTES) {
+				/*
+				 * Copies the frame without its checksum into a packet of the
+				 * class it needs (a driver's receive may take the reserved
+				 * jumbo packets); without one the frame is dropped.
+				 */
 				length -= EQOS_CRC_BYTES;
 				payload = NULL;
+				packet = packet_buf_alloc_for(PACKET_BUF_DEFAULT_HEADROOM,
+							      length,
+							      PACKET_BUF_ALLOC_RECEIVE,
+							      &alloc_error);
 				if (packet != NULL)
 					payload = packet_buf_append(packet, length);
 				if (payload != NULL) {

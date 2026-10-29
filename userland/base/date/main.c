@@ -39,6 +39,7 @@
 #include <string.h>
 #include <sys/stat.h>
 #include <time.h>
+#include "include/kern/os-name.h"
 
 /* The format without a + operand. */
 #define DATE_DEFAULT_FORMAT "%a %b %e %H:%M:%S %Z %Y"
@@ -185,7 +186,7 @@ read_options(
 			options->format = iso_format(scan.value);
 			break;
 		case OPTION_VERSION:
-			printf("date (Kei) 1.0\n");
+			printf("date (" ZEDBSD_OS_NAME ") 1.0\n");
 			exit(0);
 			break;
 		default:

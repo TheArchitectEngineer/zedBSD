@@ -176,7 +176,7 @@ AMD64_NVRTX_SOURCES += src/drivers/gpu/nvrtx/products.c
 # The GSP boot path's parts that touch no hardware (ws037-p004 4a).
 AMD64_NVRTX_SOURCES += src/drivers/gpu/nvrtx/wire.c src/drivers/gpu/nvrtx/image.c \
 	src/drivers/gpu/nvrtx/layout.c src/drivers/gpu/nvrtx/radix3.c src/drivers/gpu/nvrtx/queue.c \
-	src/drivers/gpu/nvrtx/vbios.c
+	src/drivers/gpu/nvrtx/vbios.c src/drivers/gpu/nvrtx/hold.c
 # P0 of the GSP boot: firmware files, DMA memory, VBIOS (ws037-p004 4b).
 AMD64_NVRTX_SOURCES += src/drivers/gpu/nvrtx/file.c src/drivers/gpu/nvrtx/memory.c \
 	src/drivers/gpu/nvrtx/rom.c src/drivers/gpu/nvrtx/gsp.c
@@ -219,7 +219,7 @@ ifneq ($(CONFIG_DRIVER_PCI_I915),y)
 AMD64_NVRTX_SOURCES += src/drivers/gpu/i915/vk/vk-codec.c
 endif
 # P9w: the work channel the GPU device keeps (ws037-p007 stage D1, nvrtx.work=1).
-AMD64_NVRTX_SOURCES += src/drivers/gpu/nvrtx/work-records.c src/drivers/gpu/nvrtx/work.c
+AMD64_NVRTX_SOURCES += src/drivers/gpu/nvrtx/work-records.c src/drivers/gpu/nvrtx/work.c src/drivers/gpu/nvrtx/recover.c
 # P9p: the GPU's performance state, and its boost with nvrtx.boost=1 (ws241-p001).
 AMD64_NVRTX_SOURCES += src/drivers/gpu/nvrtx/perf.c
 # P8c: the GPU device, its display (events, refresh, cursor) and blob sharing (ws037-p006, nvrtx.resident=1).
@@ -371,6 +371,10 @@ ifeq ($(CONFIG_DRIVER_ACPI),y)
 AMD64_I2C_SOURCES += src/drivers/i2c/i2c-hid.c src/drivers/gpio/intel-gpio.c
 endif
 endif
+AMD64_RTL8125_SOURCES :=
+ifeq ($(CONFIG_DRIVER_PCI_RTL8125),y)
+AMD64_RTL8125_SOURCES += src/drivers/ethernet/rtl8125.c
+endif
 AMD64_INTEL_WLAN_SOURCES :=
 ifeq ($(CONFIG_DRIVER_PCI_INTEL_AX211),y)
 AMD64_INTEL_WLAN_SOURCES += src/drivers/wifi/intel-ax211/intel-ax211.c \
@@ -466,6 +470,7 @@ AMD64_KERNEL_SOURCES := \
 	$(AMD64_AMDRDNA_VK_SOURCES) \
 	$(AMD64_GHCI_SOURCES) \
 	$(AMD64_INTEL_WLAN_SOURCES) \
+	$(AMD64_RTL8125_SOURCES) \
 	$(AMD64_ACPI_SOURCES) \
 	$(AMD64_I2C_SOURCES) \
 	src/drivers/platform/pcat/pcat-ide.c src/drivers/ethernet/dp8390.c \
@@ -749,7 +754,8 @@ $(BUILD)/uefi/bootx64.o: $(UEFI_LOADER)/bootx64.c \
 	$(UEFI_LOADER)/include/uefi.h $(UEFI_LOADER)/elf64.h \
 	$(UEFI_LOADER)/framebuffer.h $(UEFI_LOADER)/video.h $(UEFI_LOADER)/logo.h $(UEFI_LOADER)/memory-map.h \
 	$(UEFI_LOADER)/volume-discovery.h \
-	$(UEFI_LOADER)/zedbsd-config.h \
+	$(UEFI_LOADER)/zedbsd-config.h $(UEFI_LOADER)/root-config.h \
+	bootloader/common/ufs-read.h \
 	$(UEFI_LOADER)/boot-keys.h bootloader/common/boot-override.h \
 	bootloader/include/amd64-handoff.h \
 	bootloader/include/amd64-kernel-image.h \
@@ -776,6 +782,14 @@ $(BUILD)/uefi/logo.o: $(UEFI_LOADER)/logo.c $(UEFI_LOADER)/logo.h \
 $(BUILD)/uefi/common-logo-path.o: bootloader/common/logo-path.c bootloader/common/logo-path.h
 	@mkdir -p $(dir $@)
 	$(EFI_CC) $(EFI_CFLAGS) -I. -c $< -o $@
+
+$(BUILD)/uefi/common-ufs-read.o: bootloader/common/ufs-read.c bootloader/common/ufs-read.h
+	@mkdir -p $(dir $@)
+	$(EFI_CC) $(EFI_CFLAGS) -I. -c $< -o $@
+
+$(BUILD)/uefi/root-config.o: $(UEFI_LOADER)/root-config.c $(UEFI_LOADER)/root-config.h
+	@mkdir -p $(dir $@)
+	$(EFI_CC) $(EFI_CFLAGS) -c $< -o $@
 
 $(BUILD)/uefi/common-boot-override.o: bootloader/common/boot-override.c bootloader/common/boot-override.h \
 	bootloader/include/boot-parameter-handoff.h include/kern/boot.h
@@ -824,6 +838,7 @@ $(BUILD)/uefi/BOOTX64.EFI: $(BUILD)/uefi/bootx64.o \
 	$(BUILD)/uefi/common-boot-override.o $(BUILD)/uefi/boot-keys.o \
 	$(BUILD)/uefi/memory-map.o $(BUILD)/uefi/memory-map-v6.o $(BUILD)/uefi/common-memory-map.o \
 	$(BUILD)/uefi/volume-discovery.o $(BUILD)/uefi/zedbsd-config.o \
+	$(BUILD)/uefi/root-config.o $(BUILD)/uefi/common-ufs-read.o \
 	$(BUILD)/uefi/transition.o \
 	platform/amd64/tools/check-bootx64.noct
 	$(EFI_LD) /subsystem:efi_application /entry:efi_main /base:0 \
@@ -1238,16 +1253,17 @@ endif
 $(eval $(call ZEDBSD_ROOTFS_UFS_IMAGE_RULE,$(AMD64_ARCH_UFS_IMAGE),amd64))
 rootfs: $(BUILD)/rootfs/.stamp
 
+
 # ws035-p096: the boot logo on the boot FAT (/logo.ppm: the ZEDBSD FAT32 partition of the native layout (WS238), the payload FAT of the BIOS image), drawn by the
-# UEFI and the BIOS loaders when zedbsd.cfg names it (logo=logo.ppm).  ws035-p107: it is the Kei boot splash
-# (userland/desktop/artwork/kei-boot-splash.png, 1920x1080 without its spinner, "fit=contain" since ws035-p112: the loaders draw it in the
+# UEFI and the BIOS loaders when zedbsd.cfg names it (logo=logo.ppm).  ws035-p107: it is the boot splash
+# (userland/desktop/artwork/zedbsd-boot-splash.png, 1920x1080 without its spinner, "fit=contain" since ws035-p112: the loaders draw it in the
 # middle over black bars, shrunk only when the screen is smaller, and the
 # kernel's quiet console draws the spinner, src/drivers/platform/pcat/graphics/splash.c).
 AMD64_BOOT_LOGO := $(BUILD)/boot-logo.ppm
 
-$(AMD64_BOOT_LOGO): tools/build/make-boot-splash.py userland/desktop/artwork/kei-boot-splash.png
+$(AMD64_BOOT_LOGO): tools/build/make-boot-splash.py userland/desktop/artwork/zedbsd-boot-splash.png
 	@mkdir -p $(dir $@)
-	$(PYTHON) tools/build/make-boot-splash.py userland/desktop/artwork/kei-boot-splash.png $@.tmp
+	$(PYTHON) tools/build/make-boot-splash.py userland/desktop/artwork/zedbsd-boot-splash.png $@.tmp
 	mv -f $@.tmp $@
 
 # The BIOS image's zedbsd.cfg gets the graphical boot's lines too when ZEDBSD_GRAPHICAL_BOOT is y
@@ -1855,3 +1871,6 @@ $(BUILD)/bootloader/common-memory-map.i386.o: bootloader/common/memory-map.c boo
 
 # The copied boot-source record is part of the UEFI producer ABI.
 $(BUILD)/uefi/bootx64.o $(BUILD)/uefi/volume-discovery.o: include/kern/boot.h
+
+# The installer's units and image (make installer-image), after the native image's variables it uses.
+include platform/amd64/installer-image.mk

@@ -193,6 +193,23 @@ kwl_volume_tick(
 }
 
 /*
+ * Stops following audiod at the compositor's end (after the volume is
+ * kept): its connection's thread ends.
+ */
+void
+kwl_volume_close(
+	struct kwl_server *server)
+{
+	UNUSED_PARAMETER(server);
+
+	/* Only an open one. */
+	if (volume_view.audio == NULL)
+		return;
+	kl_backend_audio_close(volume_view.audio);
+	volume_view.audio = NULL;
+}
+
+/*
  * Writes the session's volume to the preferences, once, when the session
  * ends (Log Out, or the compositor told to stop; BUG-161).  Nothing is written
  * when the file already holds it, or without preferences (the login

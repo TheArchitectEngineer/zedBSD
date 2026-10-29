@@ -2606,6 +2606,7 @@ test_units(void)
 	uint32_t components;
 	uint32_t bytes;
 	uint32_t layout;
+	uint32_t before;
 	bool alternate;
 
 	/* Rows on 256 bytes. */
@@ -2677,7 +2678,9 @@ test_units(void)
 	viewport[5] = 0;
 	amdrdna_vk_state_viewport(&pm4, viewport);
 	check(!pm4.full && decode_buffer(words, pm4.count, 0) == 0, "units: the viewports decode");
-	check(packet_count == 8 && packet_log[0].body[1] == 0x42000000U && packet_log[0].body[2] == 0x42000000U &&
+
+	/* Seven packets: the second's scissor corner at 0, 0 is the first's, which the buffer holds already. */
+	check(packet_count == 7 && packet_log[0].body[1] == 0x42000000U && packet_log[0].body[2] == 0x42000000U &&
 	    packet_log[0].body[3] == 0xc2000000U && packet_log[0].body[4] == 0x42000000U && packet_log[0].body[5] == 0x3f000000U &&
 	    packet_log[0].body[6] == 0x3e800000U, "units: the flipped viewport's transform (x 32 32, y -32 32, z 0.5 0.25)");
 	check(packet_log[1].body[1] == 0x3e800000U && packet_log[1].body[2] == 0x3f400000U && packet_log[2].body[1] == (0x80000000U | (0U << 16)) &&
@@ -2756,9 +2759,44 @@ test_units(void)
 	/* A buffer too small: the packet that does not fit is not written, nor any after it. */
 	amdrdna_vk_pm4_start(&pm4, words, 5);
 	amdrdna_vk_pm4_set_context(&pm4, 0x28238U, 0xf);
-	amdrdna_vk_pm4_set_context(&pm4, 0x28238U, 0xf);
+	amdrdna_vk_pm4_set_context(&pm4, 0x28238U, 0xe);
 	amdrdna_vk_pm4_event(&pm4, 16, 4);
 	check(pm4.full && pm4.count == 3, "units: a full buffer holds whole packets only");
+
+	/* A context register set again to the value it holds is not written; after the context's reset it is. */
+	amdrdna_vk_pm4_start(&pm4, words, 64);
+	amdrdna_vk_pm4_set_context(&pm4, 0x28238U, 0xf);
+	amdrdna_vk_pm4_set_context(&pm4, 0x28238U, 0xf);
+	check(pm4.count == 3, "units: a context register set again to its value is not written");
+	amdrdna_vk_pm4_set_context(&pm4, 0x28238U, 0xe);
+	amdrdna_vk_pm4_context_start(&pm4);
+	before = pm4.count;
+	amdrdna_vk_pm4_set_context(&pm4, 0x28238U, 0xe);
+	check(pm4.count == before + 3U, "units: after the context's reset a context register is written again");
+
+	/* A new buffer (the next indirect buffer, another session's or after a queue reset) knows no register either. */
+	amdrdna_vk_pm4_start(&pm4, words, 64);
+	amdrdna_vk_pm4_set_context(&pm4, 0x28238U, 0xe);
+	check(pm4.count == 3U, "units: a new buffer writes a context register again");
+
+	/* The draws' user configuration registers and counts: written once while they hold, again in a new buffer. */
+	amdrdna_vk_pm4_start(&pm4, words, 64);
+	amdrdna_vk_pm4_set_user_config(&pm4, 0x3096cU, 7U);
+	amdrdna_vk_pm4_set_user_config(&pm4, 0x3096cU, 7U);
+	check(pm4.count == 3U, "units: a user configuration register set again to its value is not written");
+	before = pm4.count;
+	amdrdna_vk_pm4_draw_indexed(&pm4, 0x1000U, 300U, 30U, 2U);
+	check(pm4.count == before + 10U, "units: the first indexed draw writes its instances and index buffer size");
+	before = pm4.count;
+	amdrdna_vk_pm4_draw_indexed(&pm4, 0x1000U, 300U, 60U, 2U);
+	check(pm4.count == before + 6U, "units: a draw of the same instances and index buffer size writes the draw alone");
+	before = pm4.count;
+	amdrdna_vk_pm4_draw_indexed(&pm4, 0x1000U, 300U, 60U, 3U);
+	check(pm4.count == before + 8U, "units: a draw of other instances writes the count");
+	amdrdna_vk_pm4_start(&pm4, words, 64);
+	amdrdna_vk_pm4_set_user_config(&pm4, 0x3096cU, 7U);
+	amdrdna_vk_pm4_draw_indexed(&pm4, 0x1000U, 300U, 60U, 3U);
+	check(pm4.count == 13U, "units: a new buffer writes the user configuration register and the counts again");
 	amdrdna_vk_pm4_start(&pm4, words, 16);
 	amdrdna_vk_pm4_event(&pm4, 16, 4);
 	amdrdna_vk_pm4_pad(&pm4, 8);

@@ -31,7 +31,7 @@
  * DOUBLE_CLICK_MS takes that dock back before it sends the window to the
  * back.
  *
- * The system bar has three zones: on the left the launcher (the Kei mark,
+ * The system bar has three zones: on the left the launcher (the mark,
  * ws035-p117) and the docked window; towards the right four virtual
  * desktops; at the right edge the network, the battery and the clock.  The
  * network's icon opens its menu (network.c, ws035-p013); the battery shows
@@ -78,6 +78,7 @@
  */
 
 #include "language.h"
+#include "threads.h"
 #include "desktop.h"
 #include "extras.h"
 #include "menu.h"
@@ -165,7 +166,7 @@ static uint32_t desktop_key_eaten;
 #define BAR_BUTTON_SPACING	34
 
 /*
- * The launcher at the bar's left end: the Kei mark's square, its place and
+ * The launcher at the bar's left end: the mark's square, its place and
  * its side in pixels (ws035-p117; App Home's press area, home.c, is the
  * bar's first 40 pixels).
  */
@@ -3447,6 +3448,12 @@ kwl_glass_tick(
 	/* What audiod reported, and the volume's sends held back (volume.c). */
 	kwl_volume_tick(server);
 
+	/* The bar's daemons' connections, each with its thread, are open from the first tick on: the register is told once more. */
+	if (!server->threads_told) {
+		server->threads_told = 1U;
+		kwl_threads_report();
+	}
+
 	/* The desktops' slide draws every frame until it is done. */
 	if (server->desktop_moving) {
 		server->dirty = 1;
@@ -4700,7 +4707,7 @@ draw_system_bar(
 	/* The strip. */
 	draw_bar_strip(server, command, &colours, 0, 0, (int32_t)server->width);
 
-	/* The launcher: the Kei mark (ws035-p117) in the bar's deeper colours (ws035-p118). */
+	/* The launcher: the mark in the bar's deeper colours. */
 	glass_draw_mark(server, command, BAR_LAUNCHER_X, BAR_LAUNCHER_Y, BAR_LAUNCHER_SIZE, GLASS_MARK_BAR, 1.0f);
 
 	/* The line after the launcher. */

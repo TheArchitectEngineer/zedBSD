@@ -19,19 +19,35 @@
 
 | 担当 | Queue | WS と次の手 | 実機 |
 | --- | --- | --- | --- |
-| P1 | q1662 in-progress | [ws309](ws309/ws.md): 設計の確定（pool の N は CPU 数で固定、ユーザーの回答「CPU 数で固定 (推し)」）→ design-reviewer → Phase の分割（Q1 に表を送る）→ 実装と試験 | — |
-| P2 | q1663 in-progress | [ws291](ws291/ws.md) p006 の続き: 案 5 → 案 4（ユーザーの回答「両方 (推し)」）、実機 10.0.10.3 | 10.0.10.3 |
-| P3 | q1664 in-progress | [ws221](ws221/ws.md) p002〜p009: §9 は全部推し（ユーザーの回答「全部 推しで (推し)」） | 5330（10.0.30.3）、相手は 10.0.10.2 |
-| P4 | q1665 in-progress | [ws307](ws307/ws.md) p002〜p014: spec.md どおりに実装 | QEMU |
-| P5 | q1666 in-progress | 詳細の決まっていない WS の設計: code は書かない | — |
-| P6 | q1667 in-progress | WS223・WS282〜WS284・WS243・WS296 の実装: 試験なし、main に merge しない、incomplete のまま | — |
+| P1 | q1662-i06 in-progress | [ws309](ws309/ws.md) Keiland の compositor の thread の整理を p008 の残り 1 から再開（WS235 は 2026-10-29 completed） | — |
+| P2 | q1670-i02 in-progress | [ws291](ws291/ws.md) の NVIDIA の段（RTX 2070）、RDNA の案 A・B は host・QEMU まで | 10.0.10.3（時間の枠） |
+| P3 | q1664-i04 in-progress | [ws221](ws221/ws.md) p004・p005 cleared、受けの窓を byte・window scale shift 5。残り p008・p009 の残り・p006・p007、その後 WS311（CUBIC）、p010 は WS235 の後 | VF2 |
+| P4 | q1665-i07 in-progress（p009 install-admin の段 5 から） | [ws307](ws307/ws.md) p002〜p014: spec.md どおりに実装 | QEMU |
+| P5 | q1666-i04 停止（ユーザー） | 詳細の決まっていない WS の設計: code は書かない | — |
+| P6 | q1667-i04 返却（ラップアップ） | 実装だけ（merge しない）: WS296 全 Phase（agent/p6-ws296c 1809873bd）、WS282 p002〜p004b（agent/p6-ws282c 677277d8f）、WS284 p002 script・p003 CPU の参照（同じ branch、zedBSD の libyolox.so の build 規則は共有の userland-dynamic.mk に要る、未決）。試験は全部未実施 | — |
 
 止めたまま: [WS305](ws305/ws.md) VFIO、[WS304](ws304/ws.md) Pi 5 の NVMe、[WS290](ws290/ws.md) GHCI（保留）、[WS299](ws299/ws.md)（継続の判断待ち）。
+
+**06:15 に P1〜P4 を再開した（P5・P6 は返却のまま）。**
+
+**ラップアップ（2026-10-29 04:5x ユーザー「P2とP3は継続、それ以外をラップアップしてください。」）: P1・P4・P6 は返却、P5 は停止（ユーザー）、P3 は返却、P2 は停止（返却）（ユーザー「P2は計測を中断して停止し、再開できる地点で終了し、再開を待ちます。中断は強制的ではなく、次の計測が終わった後でいいです。」）。**
+
+**再開の予定（2026-10-29 05:01 ユーザー「午前6時15分になったら、P1, P2だけ再開してください。」、訂正「間違いました、タイマーでP1, P2, P3だけの再開です、」、再訂正「訂正します、タイマーでP1, P2, P3, P4だけの再開です。計測の項目が多く、調査の項目ガスないので、トークン消費が少ないと見込まれるため、増やしました。」）: 06:15 に P1（WS309 p008 の残り 1 から）・P2（WS291、停止の時の再開点から）・P3（WS221、止まっていれば Resume point から）・P4（WS307、p008-4k の kernel の boot の探索の 4096 から）だけを起動する。P1 は WS309 を止め、WS235 の RTL8127 の driver（q1669）から（2026-10-29 ユーザー「P1は、RTL8159というPCIeの10GbEアダプタのドライバを書いてほしいです。」、WS309 は「止める」）。RDNA 機は plan/tools.md の「RDNA 機の時間の枠」で P1・P2・P3 が分ける。Q1 はこのセッションに 06:15 の 1 回の予定を入れた（セッションが終わっていれば手で）。
+
+**中断からの復旧（2026-10-29 04:5x、5 時間の利用の上限の見込み）**: 担当は全員こまめに WIP commit している。復旧は各 branch の先頭と phase.md の再開点から、同じ名前の新しい起動で。
+main に未 merge の branch: `agent/p2-ws291l`（WS291、merge の前に venus-reg と arm64・riscv64 の libvulkan、実機の A/B の結果を見て効果の無い ioctl は入れない）、`agent/p3-ws221`（WS221、他 platform の build を確かめてから）、`agent/p6-ws282c`・`agent/p6-ws296c`（P6、merge しない）。P1・P4・P5 は先頭まで merge 済み（P4 は試験の走行中、P5 は WS301・WS303 の review の走行中）。
+web の取得は禁止のまま。HAL の差分の承認は無い（WS307 の hal-fw-variables.md はユーザーの review 待ち）。
 <!-- master:agents:end -->
+
+**ユーザー不在の間の自律実行（2026-10-29 12:4x ユーザー「夜まで寝ます。しばらく質問に回答できないので、疑問で止まったphaseがあれば、質問はメッセージ表示だけしてクリック回答にはせず、別なphaseに移って作業を進めてください。」）**: 判断が要る Phase は uncleared・止めにして理由と要る判断を記録し、Q1 は問いをメッセージで書くだけ（クリックの問いにしない）。担当は別の Phase に移る。
+
+**手が空いた担当の進め方（2026-10-29 ユーザー「作業の手が空いてしまったら、テストなしで実装だけ進める戦略で、残っているWSのphaseをまんべんなく進めましょう。」）**: 手の空いた担当は、残っている WS の Phase を試験なしで実装だけ進める（build warning 0 と host の試験まで、実機・QEMU は無し）。Phase は「実装済み・試験未実施」と記録し cleared にしない。branch は試験の後に merge する（P6 の 2026-10-29 の運用と同じ、Q1 の解釈）。
 
 ### 統合の注意
 
 <!-- master:merge:start -->
+- web の取得（2026-10-29）: 一度禁止（Fable の配下が bot の確認の回避で権限の判定に 3 回止められた件）、その後ユーザー「Webから取得してOKです。サブエージェントにWebの取得(GET)を許可して下さい。GETはパラメータなしなら安全と見なしていいです。」→ 担当と配下に web の GET を許す。条件: WebFetch・WebSearch の tool と、パラメータの無い GET の取得（BSD の source の tarball など）。bot の確認・拒否に当たったら即やめて Q1 に報告、User-Agent の変更・別の取り方の再試行はしない。
+- サブエージェントの起動は番号の小さい担当を優先（2026-10-29 ユーザー「P1,P2,..というふうに、数字の小さなエージェントに優先してサブエージェントを起動させてください。必要なら優先度の低いものを停止してください。」）。上限に当たったら Q1 が番号の大きい担当の配下を止める。今の枠: P5 の配下は同時 2 本、P6 は 1 本、P7 は 2 本（2026-10-29 ユーザー「WS313は調査、コード作成などで、2つまでサブエージェントを作って並列化し、効率化してください。」）。
 - 全担当の成果は main に merge 済み（上の Queue の作業中の物を除く）。`agent/p2-ws288-p006` は WS288 の終了で使わない。
 - 既定の config: Pi の BT は config-rpi4.mk・config-rpi5.mk で n（ユーザー）、Pi 5 の GPU（CONFIG_DRIVER_BCM2712_GPU）は CI で n、
   fan（CONFIG_DRIVER_RPI5_FAN）は y、CI の VF2 は CONFIG_POWERVR_DEBUG n。
@@ -42,7 +58,7 @@
 
 <!-- master:focus:start -->
 - 公開は rev.5 まで（実質のベータ2）。次に何をやるか（以前の「ベータ3・ベータ4」の段は取り消し）は Q1 とユーザーが整理中。下の「保留の WS」はその整理の対象。
-- **Keiland の thread の整理**（[WS309](ws309/ws.md)、planning）: main loop が待たない thread の構成をユーザーと検討中。構成の表とユーザーの決定の原文は ws309/ws.md。未決は手書きの照合の pool の N。ゲームモードは Vulkan display（VK_KHR_display）の仕様の中で実装する（ユーザー「工数が多くてもかまいません。」）。
+- **Keiland の thread の整理**（[WS309](ws309/ws.md)、incomplete）: 設計は確定（design.md、J1 は V2 swapchain 共有）、p001〜p010・p019 cleared（2026-10-29）、P1 が p011 から実装中。構成の表とユーザーの決定の原文は ws309/ws.md（手書きの照合の pool の N は 2026-10-29 ユーザーの回答「CPU 数で固定 (推し)」で決定済み）。ゲームモードは Vulkan display（VK_KHR_display）の仕様の中で実装する（ユーザー「工数が多くてもかまいません。」）。
 - **GPU の描画の速さ**（[WS291](ws291/ws.md)）: RDNA は重い scene で Linux と同等（scene-1500 201.8 対 200.4 fps、scene-6500 49.2 対 50.1）、小さな submit の多い run（big・subs）は Linux の 1/3〜1/10。次は案 4・5（ユーザーの判断）、その後 NVIDIA → PowerVR、Linux 以上の後に WS306。
 - **5330 の電源と性能**（[WS299](ws299/ws.md)）: direct の書き 88%、UFS の file の書き 52%、CPU の速さは Debian の 70〜90%（idle が C1 だけ・HWP 無し・hybrid を知らない、別の WS が要る）。継続はユーザーの判断。その後は WS300 → WS052 → WS301 → WS302 → 熱と fan（[pm-plan.md](agents/P1/pm-plan.md)）。
 - **GHCI 1.0 の driver**（[WS290](ws290/ws.md)）: 保留（FPGA 側の設計の完了と、ユーザーの明示の再開の指示を待つ）。p017 は実装・host 試験・QEMU 済み、残りは実機（p014・M9）と p015。
@@ -53,7 +69,7 @@
 
 <!-- master:priority:start -->
 優先順位（依存による順とは別。Queue の権限は変えない）:
-1. WS309（Keiland の thread の整理）: P1（q1662）が設計の確定 → Phase の分割 → 実装。
+1. WS309（Keiland の thread の整理）: P1（q1662-i02）が p005 から実装。
 2. WS291: P2（q1663）が案 5 → 案 4。並べて WS221（P3）・WS307（P4）・設計の全般（P5）・実装だけ（P6）。
 3. WS299: ユーザーの継続の判断の後（UFS の書き・mkfs の write-through・p007・p008、または区切る）。
 4. すぐ取り組む物（2026-10-27 ユーザー）: WS221（Jumbo frame、p008・p009 は WS220 から移した物）、WS242（RTX 30/40）・WS243（NVDEC）・WS250（nvrtx の取り消しと復帰）、WS223（全画面は合成、推しで実装）、WS009 の DOC-54（/dev/gpu の UAPI の文書）。
@@ -90,7 +106,7 @@
 ### 次の番号
 
 <!-- master:next:start -->
-BUG-349 · q1668 · WS310 · KL_VERSION 96。使う前に衝突を確かめる（`ls plan/bugs`・`ls -d plan/ws*`・`grep q16 plan/queue.md`）。
+BUG-358 · q1686 · WS314 · KL_VERSION 97。使う前に衝突を確かめる（`ls plan/bugs`・`ls -d plan/ws*`・`grep q16 plan/queue.md`）。
 <!-- master:next:end -->
 
 ## 目的
@@ -135,10 +151,10 @@ BUG-349 · q1668 · WS310 · KL_VERSION 96。使う前に衝突を確かめる�
 | WS | Primary | 内容 | 状態 | 再開点 |
 | --- | --- | --- | --- | --- |
 | [WS299](ws299/ws.md) | MG004 | 5330 の NVMe の読み書きを速くする（512 MiB の崖、転送・queue・readahead）（2026-10-27 ユーザー） | incomplete | p001〜p003・p009 cleared（raw の読み 583 MB/s ≒ Debian の 50%）。受け入れは Debian の 95% 以上、HMB はやる（ユーザー）。q1634（P1）で p004 raw の先読み → p005〜p008 |
-| [WS300](ws300/ws.md) | MG003 | NVMe と VMD の低電力（S0 idle の VMD の suspend・NVMe の状態、APST・ASPM・LTR）（2026-10-27 ユーザー） | planning | p001・p002（VMD の suspend、WS052 の前提）、約 27 LW |
-| [WS301](ws301/ws.md) | MG004 | CPU の DVFS と P/E core の相対性能の枠組み（UAPI は /dev/system 推し、fan は別 WS 案）（2026-10-27 ユーザー） | planning | p001 調査・設計・HAL と UAPI の案、約 40 LW |
+| [WS300](ws300/ws.md) | MG003 | NVMe と VMD の低電力（S0 idle の VMD の suspend・NVMe の状態、APST・ASPM・LTR）（2026-10-27 ユーザー） | incomplete（p001 cleared、p002〜p005 実装済み・試験未実施、branch agent/p6-ws300 は 5330 の試験の後に merge） | p006（5330、WS052 p014 と一緒）。Q300-6（_OSC 無しの ASPM）はユーザーの判断待ち |
+| [WS301](ws301/ws.md) | MG004 | CPU の DVFS と P/E core の相対性能の枠組み（UAPI は /dev/thermal、HAL は変えない、HWP の無い CPU も P-state を driver で）（2026-10-27・29 ユーザー） | planning | 設計 第 3 版の改訂 2（P5）、review の minor の反映と再 review、約 25 LW |
 | [WS302](ws302/ws.md) | MG006 | デスクトップスレッドバランサ DTB（CONFIG_DTB、sched への hint）（2026-10-27 ユーザー） | planning | p001 検討（WS301 p001 の後）、約 32 LW |
-| [WS303](ws303/ws.md) | MG004 | 熱と fan（温度・fan の回転数・thermal mode、/dev/system）（2026-10-27 ユーザー） | planning | p001（WS301 p002 の後） |
+| [WS303](ws303/ws.md) | MG004 | 熱と fan（/dev/thermal・/sbin/thermal、strategy performance・balanced・powersave・manual、fan は上げるだけ、非常の停止）（2026-10-27・29 ユーザー） | planning | 設計 第 5 版（P5）、design-reviewer の後に Q303-15〜19、約 35 LW、passive は WS301 に依存 |
 | [WS304](ws304/ws.md) | MG003 | Raspberry Pi 5 の外の PCIe（pcie1、M.2）と NVMe（2026-10-27 ユーザー、実機の試験はまだ） | incomplete | p001・p002 cleared（e616b4128、host 試験・build のみ）、p003 の実機は新しい SwitchBot の後、HAT の型番をユーザーに確認 |
 | [WS305](ws305/ws.md) | MG006 | デスクトップの GPU の passthrough の試験環境（Linux＋VFIO＋QEMU、素の起動と使い分け）（2026-10-27 ユーザー） | incomplete（再開待ち） | P4 はラップアップ（2026-10-27）。script と guest の image は用意済み、host（10.0.10.3）では未着手。再開は ws.md の「状態と再開点」 |
 | [WS306](ws306/ws.md) | MG006 | GPU の driver の枠組みの「ゲーム最適化」の UAPI（ON/OFF と option の文字列、GPU の名前と driver の版の取得）（2026-10-27 ユーザー） | planning | p001 の設計（使用量が戻ってから） |
@@ -155,7 +171,9 @@ BUG-349 · q1668 · WS310 · KL_VERSION 96。使う前に衝突を確かめる�
 | [WS250](ws250/ws.md) | MG006 | nvrtx の終わらない GPU の仕事の取り消しと復帰、system は動き続ける（2026-10-15 ユーザー） | incomplete（すぐ取り組む物、2026-10-27 ユーザー「すぐ取り組むものの一つです。」） | p001 の設計（草稿は main 64f05b2c7） |
 | [WS290](ws290/ws.md) | MG006 | zedBSD の GHCI の driver を GHCI 1.0（amaterrace-gpu の docs/ghci.md 89529de）だけに書き直す。試験は host だけ | incomplete・保留（2026-10-28 ユーザー: FPGA 側の設計が終わるまで P3 終了、再開は明示の指示。p017 は実機待ち） | q1636（P3）で p001 の design 版 4 → p002〜（host 試験、実機は VF2＋KC705 の用意の後） |
 | [WS291](ws291/ws.md) | MG006 | GPU の driver の描画の速さ（desktop 60 fps・重い 3D の model 50 fps）: AMD RDNA（P2）→ NVIDIA（P2、GPU を入れ替え）→ PowerVR（VF2、P3） | incomplete（p001〜p005 cleared、p006 in-progress） | q1635（P2）で p006 の続き → p008〜p009、Linux 以上の後に WS306 |
-| [WS309](ws309/ws.md) | MG006 | Keiland の compositor の thread の構成を整理し main loop が待たないようにする。ゲームモードは Vulkan display の仕様の中で | planning（構成はユーザーと検討中、手書きの pool の N が未決） | 設計の確定 → Phase の分割 |
+| [WS309](ws309/ws.md) | MG006 | Keiland の compositor の thread の構成を整理し main loop が待たないようにする。ゲームモードは Vulkan display の仕様の中で | incomplete（p001〜p007・p019 cleared、P1 q1662-i05） | p008 の残り（fence 付きの task）から |
+| [WS310](ws310/ws.md) | MG004 | ACPI の _OSC を呼び、システム全体の挙動を厳重に確かめる（WS301 の Q301-3、2026-10-29 ユーザー「最終的には呼ぶが、別なWSにして…今は呼ばない。」） | planning | p001（WS301 の後） |
+| [WS313](ws313/ws.md) | MG008 | ODROID-C5（Amlogic S905X5M）の BSP（bsp-s905x5m）と Mali の GPU で、起動して desktop を表示する（2026-10-29 ユーザー） | incomplete（全 block の code を揃えた、実装済み・実機未試験。2026-10-29 夜にユーザーが実機で試験） | 夜の試験（plan/ws313/tests/README.md）→ 直し、Mali の desktop（render pass の LOAD など） |
 | [WS292](ws292/ws.md) | MG006 | GHCI の session の保護（PROT）を zedBSD の driver に（WS290 の後） | planning | p001 設計（WS290 と G29 の回答の後） |
 | [WS295](ws295/ws.md) | MG006 | Intel の xe の driver（Meteor Lake 以降の iGPU と discrete の Arc、GuC の submission、i915 の使える所は写して重複） | planning | p001 調査（担当の起動はユーザーの指示の時） |
 | [WS296](ws296/ws.md) | MG001 | src/drivers（gpu/ を除く）の comment から開発の管理情報を消し、XXX の規約の当て直し（usb など 11 file） | planned | 18 LW、担当の起動はユーザーの指示の時 |
@@ -201,7 +219,6 @@ BUG-349 · q1668 · WS310 · KL_VERSION 96。使う前に衝突を確かめる�
 | [WS222](ws222/ws.md) | MG006 | 画像・PDF・字形の library を menuconfig の Desktop へ戻す（PNG・PDF・JPEG・TrueType）（2026-10-13 ユーザー、今の作業が全部終わってから） | planned・保留（後日） | p001 |
 | [WS225](ws225/ws.md) | MG006 | Vulkan の header を仕様から導ける内容だけで書き直し、Khronos の著作権表示を外す（2026-10-13 ユーザー） | planning・保留（ブロック） | p001 |
 | [WS234](ws234/ws.md) | MG006 | libkeiland の DLL 版（zedBSD 用と Windows 用）で、同じ .exe が zedBSD と Windows の両方で動く | planning・保留 | p001 |
-| [WS235](ws235/ws.md) | MG006 | Realtek RTL8127・8125・8126・8122・8121・8120 の共通の Ethernet driver（まず PCIe の RTL8127 10GbE） | planning・保留（見積もりだけ） | p001〜p007 |
 | [WS240](ws240/ws.md) | MG006 | nvrtx の RTX 50（Blackwell）（2026-10-15 ユーザー） | planning・保留（開始しない） | — |
 | [WS251](ws251/ws.md) | MG001 | source の tree 全体から開発の管理情報を削除する（2026-10-15 ユーザー） | incomplete・保留（作業対象になった時） | p001 の棚卸し、drivers の外の群 |
 | [WS257](ws257/ws.md) | MG006 | i915 を Haswell・Broadwell（Gen7.5・Gen8）に対応（2026-10-18 ユーザー） | planning・保留（今は取り組まない） | — |

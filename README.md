@@ -380,7 +380,7 @@ how Windows and macOS work, and it is something Linux lacks.
 - **Native Vulkan** — a GPU stack that does not sit on Linux DRM/KMS
     or Mesa, and does not use user-space drivers.
 
-- **Kei** — the zedBSD-based operating system image.
+- **Disk images** — bootable zedBSD images with the Keiland desktop.
 
 ---
 

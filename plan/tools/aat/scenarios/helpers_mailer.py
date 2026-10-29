@@ -11,7 +11,7 @@ certificate made here.  The target reaches this host at the address its SSH conn
 server listens there and the account names its servers by that address (zedBSD's resolver does not read /etc/hosts,
 so a name would need a DNS server); the certificate is for the name mail.test and that address, and the target gets
 the CA in /tmp/aat-work, which Mail trusts through OpenSSL's SSL_CERT_FILE.  The servers are given with ports that are not the
-TLS ones, so Mail uses STARTTLS (the fake server's IMAP and submission ports).  Kei's Mail accounts are removed on the
+TLS ones, so Mail uses STARTTLS (the fake server's IMAP and submission ports).  The session user's Mail accounts are removed on the
 target before and after.
 
 The places in Mail's window are view.c's layout at the size MAIL READY gives (the window is started outside App Home,
@@ -107,12 +107,12 @@ class Server:
 
 
 def forget_accounts() -> None:
-	"""Removes kei's Mail accounts on the target (its mailer.conf and the passwords' file)."""
-	run.sh("rm -f /home/kei/.config/keiland/mailer.conf /home/kei/.config/keiland/mailer-accounts")
+	"""Removes the session user's Mail accounts on the target (its mailer.conf and the passwords' file)."""
+	run.sh(f"rm -f {aatlib.HOME}/.config/keiland/mailer.conf {aatlib.HOME}/.config/keiland/mailer-accounts")
 
 
 def open_mail(item):
-	"""Mail started as kei with the tests' CA; returns its window with the size MAIL READY gives, and the glass."""
+	"""Mail started as the session's user with the tests' CA; returns its window with the size MAIL READY gives, and the glass."""
 	mark = run.mark()
 	window = run.open_as_user(item, f"env SSL_CERT_FILE={CA} /bin/mailer")
 	ready = run.wait(r"MAIL READY width=\d+ height=\d+", mark, 15)

@@ -34,6 +34,7 @@
 #define VULKAN_NATIVE_CAPSET_BYTES 176U
 #define VULKAN_NATIVE_CAPSET_MAGIC 0x5a4e4154U
 #define VULKAN_NATIVE_CAPSET_VIDEO_DECODE_H264 1U
+#define VULKAN_NATIVE_CAPSET_SYNC_COMMAND 2U
 
 /* Retains mapped transport backing through growth, rollback and descriptor close. */
 struct vulkan_transport_storage {
@@ -215,7 +216,9 @@ vulkan_context_open(
 	/*
 	 * Only the native renderer's record carries the native word.  The video
 	 * decode bit is the renderer's promise that a video decode queue family
-	 * exists; unknown bits are ignored so a later renderer stays usable.
+	 * exists, the command bit its promise that GPU_COMMAND runs at once
+	 * (used only with the decoder's notifications); unknown bits are
+	 * ignored so a later renderer stays usable.
 	 */
 	if (capset.bytes == VULKAN_NATIVE_CAPSET_BYTES) {
 		native_magic = vulkan_load_word(capset.data + 168);
@@ -223,6 +226,10 @@ vulkan_context_open(
 		if (native_magic == VULKAN_NATIVE_CAPSET_MAGIC &&
 		    (native_flags & VULKAN_NATIVE_CAPSET_VIDEO_DECODE_H264) != 0)
 			context->video_h264 = VK_TRUE;
+		if (native_magic == VULKAN_NATIVE_CAPSET_MAGIC &&
+		    (native_flags & VULKAN_NATIVE_CAPSET_SYNC_COMMAND) != 0 &&
+		    (context->capabilities & GPU_CAP_NOTIFICATION) != 0)
+			context->sync_command = VK_TRUE;
 	}
 
 	/* Succeeded: the caller owns one compatible session with no fixed reply allocation. */
@@ -779,9 +786,11 @@ vulkan_context_transaction(
 	struct gpu_command request;
 	struct gpu_command_submit submission;
 	uint64_t sequence;
+	uint64_t mark;
 	uint8_t *response;
 	size_t storage_bytes;
 	VkResult error;
+	VkBool32 ran;
 	int status;
 
 	/* Requires room for the reply opcode separately from the completion trailer. */
@@ -854,9 +863,38 @@ vulkan_context_transaction(
 		return VK_ERROR_OUT_OF_HOST_MEMORY;
 	}
 
-	/* Request decoder-timeline notification when the kernel advertises it. */
+	/*
+	 * A renderer that runs a command at once takes it on this thread: the
+	 * replies are written when the call returns.  EAGAIN (earlier work of
+	 * the session still queued) sends it the queued way instead.
+	 */
 	sequence = 0;
-	if (context->capabilities & GPU_CAP_NOTIFICATION) {
+	ran = VK_FALSE;
+	status = 0;
+	if (context->sync_command != VK_FALSE) {
+		memset(&request, 0, sizeof(request));
+		request.version = GPU_ABI_VERSION;
+		request.size = sizeof(request);
+		request.address = (uintptr_t)command.data;
+		request.bytes = (uint32_t)command.bytes;
+		mark = vulkan_timing_start();
+		status = ioctl(context->fd, GPU_COMMAND, &request);
+		if (status == 0) {
+			ran = VK_TRUE;
+			vulkan_timing_add(VULKAN_TIMING_COMMAND_RAN, mark, 0);
+		}
+		if (status != 0 && errno == EAGAIN) {
+			status = 0;
+			vulkan_timing_add(VULKAN_TIMING_COMMAND_DEFERRED, mark, 0);
+		}
+	}
+
+	/*
+	 * Otherwise request decoder-timeline notification when the kernel
+	 * advertises it (a command that ran, or failed, on this thread is
+	 * done).
+	 */
+	if (ran == VK_FALSE && status == 0 && (context->capabilities & GPU_CAP_NOTIFICATION)) {
 		memset(&submission, 0, sizeof(submission));
 		submission.version = GPU_ABI_VERSION;
 		submission.size = sizeof(submission);
@@ -866,7 +904,7 @@ vulkan_context_transaction(
 		submission.timeline = 0;
 		status = ioctl(context->fd, GPU_COMMAND_SUBMIT, &submission);
 		sequence = submission.sequence;
-	} else {
+	} else if (ran == VK_FALSE && status == 0) {
 		/* An older backend retains decoder-trailer observation without notifications. */
 		memset(&request, 0, sizeof(request));
 		request.version = GPU_ABI_VERSION;
@@ -888,7 +926,7 @@ vulkan_context_transaction(
 
 	/* A decoder notification wakes the waiter before the reply trailer is validated. */
 	error = VK_SUCCESS;
-	if (context->capabilities & GPU_CAP_NOTIFICATION)
+	if (ran == VK_FALSE && (context->capabilities & GPU_CAP_NOTIFICATION))
 		error = vulkan_decoder_wait(context, sequence);
 
 	/* Notification is supplementary evidence; only a valid trailer authorizes reply use. */

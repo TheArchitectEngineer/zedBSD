@@ -12,6 +12,8 @@
 #include "language.h"
 #include "desktop.h"
 #include "kwl.h"
+#include "threads.h"
+#include "media.h"
 #include "role.h"
 #include "toplevel.h"
 #include "keymap.h"
@@ -29,8 +31,6 @@
 #include <time.h>
 #include <unistd.h>
 
-/* How long a login session goes without input before it locks, unless --lock-idle says. */
-#define MAIN_LOCK_IDLE_MS	(10U * 60U * 1000U)
 #include <errno.h>
 #include <stdarg.h>
 #include <stddef.h>
@@ -150,9 +150,11 @@ main(
 	/* The desktop's size until the display is known: the size asked for, unrotated. */
 	kwl_output_size_set(&server, server.size_width, server.size_height, KWL_ROTATE_0);
 
-	/* A login session locks after ten minutes without input unless told otherwise. */
-	if (server.session && !server.lock_idle_given)
-		server.lock_idle_ms = MAIN_LOCK_IDLE_MS;
+	/*
+	 * A login session locks after the time without input its settings
+	 * give (settings.c, power.lock: never unless chosen), or the time
+	 * --lock-idle gave; the time counts from now.
+	 */
 	server.lock_input_ms = kwl_milliseconds();
 
 	/* The times without input before a sleep until the settings say others (the login screen keeps them, N9). */
@@ -221,6 +223,18 @@ main(
 		backend_options.greeter_descriptor = server.auth_fd;
 	else
 		backend_options.session_descriptor = server.control_fd;
+
+	/*
+	 * The threads' wake pipe first, lent to the backend with the thread
+	 * register for the daemons' connections' threads (without the pipe
+	 * the backend's updates find their state on their own).
+	 */
+	error = kwl_wake_open(&server);
+	if (error != 0)
+		printf("KWL FAILED site=wake errno=%d\n", error);
+	backend_options.threads.wake_descriptor = server.wake[1];
+	backend_options.threads.start = kwl_thread_start_lent;
+	backend_options.threads.ended = kwl_thread_ended;
 	error = kl_backend_open(&backend_options, &backend_host, &server.backend);
 	if (error != 0)
 		printf("KWL BACKEND unavailable errno=%d\n", error);
@@ -261,6 +275,14 @@ main(
 			printf("KWL FAILED site=threads errno=%d\n", error);
 	}
 
+	/* The device I/O thread, which opens and closes the input devices away from the event loop (io.c). */
+	if (error == 0)
+		kwl_io_start(&server);
+
+	/* A session's printers, opened before the clients come; their file is the file I/O thread's from then on (printers-shell.c). */
+	if (error == 0 && !server.greeter)
+		kwl_printers_prepare(&server);
+
 	/* How long the notifications' bus, the wallpaper's reading thread and the threads' pipe took to start. */
 	step_start = startup_step("prepare", step_start);
 
@@ -291,7 +313,11 @@ main(
 			printf("KWL FAILED site=input-thread errno=%d\n", error);
 	}
 
-	/* Input devices are found before READY; a seat without devices is still valid. */
+	/*
+	 * The input devices are looked for before READY (where the device I/O
+	 * thread opens them they join a moment later, from the event loop); a
+	 * seat without devices is still valid.
+	 */
 	if (error == 0) {
 		kwl_input_scan(&server);
 		step_start = startup_step("input", step_start);
@@ -327,6 +353,9 @@ main(
 	/* READY appears only after the hardware contract and socket namespace are both usable. */
 	if (error == 0) {
 		printf("KWL READY socket=%s width=%u height=%u timeout_ms=%llu pid=%ld role=%s\n", server.socket_path, server.width, server.height, (unsigned long long)server.timeout_ms, (long)getpid(), kwl_role_name(server.role));
+
+		/* The threads of the compositor's register, by name (threads.c). */
+		kwl_threads_report();
 		error = event_loop(&server);
 	}
 
@@ -1070,6 +1099,9 @@ event_loop(
 		/* The input thread computes the motions from now on with the settings and outputs as they are. */
 		kwl_input_sync(server);
 
+		/* The images' moves to their layout recorded in this pass go to the render thread before the loop waits. */
+		kwl_compose_give_tasks(server);
+
 		/* Poll sees sockets only; typed image fds are consumed immediately during import. */
 		mark = kwl_cycles();
 		ready = poll(descriptors, count, timeout);
@@ -1117,6 +1149,9 @@ event_loop(
 		/* Device authority changes before the old snapshot can read revoked input or complete a frame. */
 		kwl_os_poll_done(server, descriptors + first_os);
 
+		/* The input devices the device I/O thread opened are offered to the seat (io.c). */
+		kwl_io_take(server);
+
 		/* A finished frame releases its buffers and sends its callbacks; a fence without an fd is asked. */
 		part = kwl_cycles();
 		if (frame_slot != 0 && descriptors[frame_slot].revents != 0)
@@ -1125,6 +1160,8 @@ event_loop(
 			kwl_scanout_ended(server);
 		kwl_compose_poll(server);
 		kwl_glass_glyphs_poll(server);
+		kwl_glass_blur_take(server);
+		kwl_keyboard_hand_take(server);
 		server->perf.frame_done_cycles += kwl_cycles() - part;
 
 		/*
@@ -1284,12 +1321,28 @@ service_cleanup(
 	kwl_input_threads_stop(server);
 	kwl_input_cleanup(server);
 
-	/* The session's volume and settings are kept for the next login (volume.c; settings.c). */
+	/* The handwriting's recognition pool ends (keyboard.c). */
+	kwl_keyboard_hand_stop();
+
+	/* The device I/O thread ends; the devices it opened and the closes it was given are closed (io.c). */
+	kwl_io_stop(server);
+
+	/* The session's volume is kept for the next login (volume.c). */
 	kwl_volume_keep(server, "end");
+
+	/* The file I/O thread writes everything given (displays.conf, the Log Out's settings), then ends (io.c). */
+	kwl_io_file_finish(server);
+
+	/* The session's settings are kept for the next login (settings.c). */
 	kwl_settings_close(server);
 
-	/* The system extension's threads end before the backend closes (system.c). */
+	/* The system extension's threads end before the backend closes (system.c), with the Bluetooth's and the phone's connections. */
 	kwl_system_close(server);
+
+	/* The daemons' connections the bar follows, each with its thread (network.c, media.c, volume.c). */
+	kwl_network_close();
+	kwl_media_close();
+	kwl_volume_close(server);
 
 	/* Returns the OS resources after input and display cleanup. */
 	kwl_os_close(server);
@@ -1302,6 +1355,9 @@ service_cleanup(
 	/* Closes the operating system's side last, after everything that used it. */
 	kl_backend_close(server->backend);
 	server->backend = NULL;
+
+	/* No thread writes to the wake pipe any more. */
+	kwl_wake_close(server);
 
 	/* Succeeded: the service retains no listener, client or Vulkan object. */
 	return;

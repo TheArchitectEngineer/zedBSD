@@ -5,7 +5,12 @@ QEMU_FLAGS ?= -machine raspi4b -m 2G -display none -serial mon:stdio \
 	-serial null
 
 .PHONY: run
-ifeq ($(ZEDBSD_BOARD),rpi5)
+ifeq ($(ZEDBSD_BOARD),odroid-c5)
+# QEMU has no Amlogic machine: the image boots on the board alone.
+run:
+	@echo "run: QEMU has no ODROID-C5 machine; write $(DISK_IMAGE_ARTIFACT) to an SD card" >&2
+	@false
+else ifeq ($(ZEDBSD_BOARD),rpi5)
 # QEMU has no Raspberry Pi 5 machine: the image boots on the board alone.
 run:
 	@echo "run: QEMU has no Raspberry Pi 5 machine; write $(DISK_IMAGE_ARTIFACT) to an SD card" >&2

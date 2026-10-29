@@ -97,10 +97,27 @@ struct kl_backend {
 	 * events are heard: the periodic scan passes them by until an input
 	 * device comes or goes, because each open of such a node can block
 	 * the event loop for tens of milliseconds (a PS/2 mouse port without
-	 * a mouse answers EIO only after its timeout).
+	 * a mouse answers EIO only after its timeout).  Only the code that
+	 * opens the nodes reads and writes them: the event loop's scan, or the
+	 * thread that runs kl_backend_input_find (never both in one run).
 	 */
 	uint64_t input_refused[KL_BACKEND_INPUT_REFUSED_WORDS];
+	/*
+	 * The refusals' forgetting: the system's events count
+	 * input_refused_generation up (on the event loop's thread) when an
+	 * input device came or went; the opening code empties input_refused
+	 * when the count it was given differs from input_refused_seen, the
+	 * count it last emptied them at (its own).
+	 */
+	uint64_t input_refused_generation;
+	uint64_t input_refused_seen;
 };
+
+/*
+ * Gives the compositor's threads lent to the backend's own (backend.c):
+ * the open backend's, or none when no backend is open.
+ */
+void kl_backend_threads(struct kl_backend_threads *threads);
 
 /*
  * The session's work in kl_backend_tick: each operating system's session

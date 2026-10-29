@@ -1,0 +1,24 @@
+#version 450
+// The Mali compiler's host check: storage image loads, stores, an atomic and a size.
+layout(local_size_x = 4, local_size_y = 2) in;
+layout(set = 0, binding = 0, rgba32f) uniform image2D colors;
+layout(set = 0, binding = 1, r32ui) uniform uimage2DArray counts;
+layout(set = 0, binding = 2, rgba8i) uniform iimage2D small;
+layout(set = 0, binding = 3, r32i) uniform iimage2D totals;
+layout(std430, set = 0, binding = 4) buffer B { uint data[]; } b;
+void main()
+{
+	ivec2 p = ivec2(gl_GlobalInvocationID.xy);
+	uint i = gl_LocalInvocationIndex;
+	vec4 f = imageLoad(colors, p);
+	imageStore(colors, p + ivec2(1, 0), f * 2.0);
+	uint u = imageLoad(counts, ivec3(p, 1)).x;
+	imageStore(counts, ivec3(p.yx, 2), uvec4(u + 1u));
+	ivec4 s = imageLoad(small, p);
+	imageStore(small, p, s + ivec4(1, 2, 3, 4));
+	int old = imageAtomicAdd(totals, p, 5);
+	b.data[i] = uint(old) + u;
+	ivec2 size = imageSize(colors);
+	ivec3 depth = imageSize(counts);
+	b.data[8u + i] = uint(size.x + size.y * 3 + depth.z * 7);
+}

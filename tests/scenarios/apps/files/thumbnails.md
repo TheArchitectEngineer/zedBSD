@@ -13,10 +13,10 @@ since: ws168
 Files と Settings が画像・PDF の縮小画像を自分で復号せず、`keiland-preview` を `sandbox_spawn` で起こした子に作らせ、子が許された call だけで動くことを確かめる（WS168 p004）。
 
 ## 準備
-AAT の samples（`/tmp/aat-samples` の sample.png・sample.jpg・sample.pdf）を kei の `~/AATThumbs` に複写し、壊れた PNG（signature の後に `broken`）を足す。縮小画像の cache（`~/.cache/keiland/thumbnails`）は空。
+AAT の samples（`/tmp/aat-samples` の sample.png・sample.jpg・sample.pdf）を user の `~/AATThumbs` に複写し、壊れた PNG（signature の後に `broken`）を足す。縮小画像の cache（`~/.cache/keiland/thumbnails`）は空。
 
 ## 操作と確認
-1. 操作: kei として `/bin/files /home/kei/AATThumbs`。
+1. 操作: user として `/bin/files /home/user/AATThumbs`。
    確認事項: 子の縮小画像。正解: sample.png・sample.jpg・sample.pdf の `ZFILES THUMB path=… error=0 … cached=0 status=0 pid=<0 でない>`、broken.png は error が 0 でない。最初の終わり（`ZFILES THUMB path=…`）の前に `ZFILES THUMB start` が 2 つ（子は 2 つ同時、ws177-p010）。icon が絵（PDF は 1 頁目、埋め込まれていない Helvetica の「AAT page 1」が program の持つ font で描かれる）、壊れた PNG は種類の icon。確認方法: log、撮影。
 2. 操作: Files を閉じ、もう一度開く。
    確認事項: cache。正解: sample.png の `ZFILES THUMB … error=0 … cached=1`、broken.png の `… cached=1 failed=1`（失敗の印、ws177-p010）。確認方法: log。

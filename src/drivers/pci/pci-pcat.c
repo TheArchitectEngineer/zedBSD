@@ -22,6 +22,14 @@
 #define PCI_CONFIG_ADDRESS 0x0cf8U
 #define PCI_CONFIG_DATA 0x0cfcU
 
+/*
+ * The MSI-X capability's message control register and its table size, the
+ * number of entries less one (PCI Local Bus Specification 3.0, the MSI-X
+ * capability structure).
+ */
+#define PCAT_MSIX_CONTROL 0x02U
+#define PCAT_MSIX_TABLE_SIZE 0x07ffU
+
 static volatile unsigned config_lock;
 static struct drv_dma_device *pcat_dma;
 static uint32_t pci_small_mmio_next = 0xf0800000U;
@@ -624,7 +632,12 @@ pcat_unmap_bar(
 	kern_memset(mapping, 0, sizeof(*mapping));
 }
 
-/* Supports the pcat allocate irqs operation. */
+/*
+ * Supports the pcat allocate irqs operation.
+ *
+ * MSI-X gives from minimum up to maximum vectors, as many as the table
+ * holds, entry i for vector i; MSI and the pin give one.
+ */
 static int
 pcat_allocate_irqs(
 	void *context,
@@ -637,7 +650,11 @@ pcat_allocate_irqs(
 {
 	uint8_t id;
 	uint8_t line;
+	uint16_t control;
 	unsigned capability;
+	unsigned entries;
+	unsigned index;
+	int error;
 
 	(void)context;
 
@@ -645,14 +662,53 @@ pcat_allocate_irqs(
 	if (device == NULL || irqs == NULL || count == NULL)
 		return EINVAL;
 
-	/* Handles the minimum condition. */
-	if (minimum != 1U || maximum < minimum)
+	/* Refuses an empty or inverted range. */
+	if (minimum == 0U || maximum < minimum)
+		return ENOTSUP;
+
+	/* Gives several vectors from the MSI-X table. */
+	if (type == DRV_PCI_IRQ_MSIX) {
+		/* Finds the capability; a device without one has no MSI-X. */
+		error = drv_pci_device_find_capability(device, 0x11U, &capability);
+		if (error != 0)
+			return ENOTSUP;
+
+		/* Reads how many entries the table holds. */
+		error = drv_pci_device_config_read16(device, capability + PCAT_MSIX_CONTROL, &control);
+		if (error != 0)
+			return EIO;
+		entries = (unsigned)(control & PCAT_MSIX_TABLE_SIZE) + 1U;
+
+		/* A table smaller than the minimum cannot serve the caller. */
+		if (entries < minimum)
+			return ENOTSUP;
+
+		/* Gives no more vectors than the caller asked for. */
+		if (entries > maximum)
+			entries = maximum;
+
+		/* Names one table entry for each vector. */
+		for (index = 0; index < entries; index++) {
+			irqs[index].type = type;
+			irqs[index].index = index;
+			irqs[index].vector = 0;
+			irqs[index].private_data[0] = capability;
+			irqs[index].private_data[1] = 0;
+		}
+
+		/* Succeeded: the caller establishes each vector it was given. */
+		*count = entries;
+		return 0;
+	}
+
+	/* MSI and the pin give one vector only. */
+	if (minimum != 1U)
 		return ENOTSUP;
 
 	/* Handles the type condition. */
-	if (type == DRV_PCI_IRQ_MSI || type == DRV_PCI_IRQ_MSIX) {
+	if (type == DRV_PCI_IRQ_MSI) {
 		/* Checks the drv pci device find capability result. */
-		id = type == DRV_PCI_IRQ_MSI ? 0x05U : 0x11U;
+		id = 0x05U;
 		if (drv_pci_device_find_capability(device, id, &capability) !=
 		    0) {
 			/* Failed. */

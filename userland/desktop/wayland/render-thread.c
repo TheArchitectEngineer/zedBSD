@@ -32,6 +32,9 @@ static enum kwl_render_step render_ahead(struct kwl_render_thread *render);
 static uint64_t render_now_us(const struct kwl_render_thread *render);
 static enum kwl_render_step render_answer(struct kwl_render_thread *render);
 static enum kwl_render_step render_reap(struct kwl_render_thread *render, uint64_t timeout_ns);
+static void render_tasks_submit(struct kwl_render_thread *render, struct kwl_render_message *tasks);
+static enum kwl_render_step render_tasks_reap(struct kwl_render_thread *render, uint64_t timeout_ns);
+static void render_messages_free(struct kwl_render_message *messages);
 static void render_post(struct kwl_render_thread *render, struct kwl_render_message *message);
 static void render_deadline(struct timespec *deadline, unsigned wait_ms);
 static void render_wake(int descriptor);
@@ -92,21 +95,23 @@ kwl_render_init(
 }
 
 /*
- * Frees what the stopped render thread leaves: messages not taken, and
- * its lock and signals.
+ * Frees what the stopped render thread leaves: messages not taken, tasks
+ * never seen complete (a thread never started), and its lock and signals.
  */
 void
 kwl_render_destroy(
 	struct kwl_render_thread *render)
 {
-	struct kwl_render_message *message;
-
-	/* The messages not taken. */
-	while (render->messages != NULL) {
-		message = render->messages;
-		render->messages = message->next;
-		free(message);
-	}
+	/* The messages not taken, and the tasks' records (their command buffers and fences are the main thread's). */
+	render_messages_free(render->messages);
+	render->messages = NULL;
+	render->messages_tail = NULL;
+	render_messages_free(render->tasks);
+	render->tasks = NULL;
+	render->tasks_tail = NULL;
+	render_messages_free(render->task_flights);
+	render->task_flights = NULL;
+	render->task_flights_tail = NULL;
 
 	/* A completion never posted, and those of jobs never seen complete. */
 	free(render->completion);
@@ -168,8 +173,9 @@ kwl_render_stop(
 }
 
 /*
- * Runs one step of the render thread: looks for a want and acquires its
- * images, takes an answer to its ready, or waits a while for the frame in
+ * Runs one step of the render thread: submits the tasks given and tells
+ * those completed, looks for a want and acquires its images, takes an
+ * answer to its ready, or waits a while for the frame or the task in
  * flight.  It never waits for the main thread: it reports that it is
  * blocked instead.  The thread calls it in a loop; a host test calls it
  * step by step.
@@ -178,8 +184,28 @@ enum kwl_render_step
 kwl_render_step(
 	struct kwl_render_thread *render)
 {
+	struct kwl_render_message *tasks;
 	enum kwl_render_step step;
 	unsigned listed;
+	unsigned tasks_left;
+
+	/* The tasks given up to now, taken together with the look at the changes. */
+	pthread_mutex_lock(&render->lock);
+
+	render->seen_sequence = render->sequence;
+	tasks = render->tasks;
+	render->tasks = NULL;
+	render->tasks_tail = NULL;
+
+	pthread_mutex_unlock(&render->lock);
+
+	/* Submitted before any list given after them; those completed are told without waiting. */
+	render_tasks_submit(render, tasks);
+	if (render->task_flights != NULL) {
+		step = render_tasks_reap(render, 0U);
+		if (step == KWL_RENDER_STEP_WORKED)
+			return step;
+	}
 
 	/*
 	 * The requests first, except while a frame is in flight or its list
@@ -188,28 +214,43 @@ kwl_render_step(
 	 */
 	pthread_mutex_lock(&render->lock);
 
-	render->seen_sequence = render->sequence;
 	listed = 0U;
 	if (render->state == KWL_RENDER_STATE_ANSWER &&
 	    render->answer == KWL_RENDER_ANSWER_LIST &&
 	    render->answer_number == render->ready_number)
 		listed = 1U;
+	tasks_left = 0U;
+	if (render->tasks != NULL || render->task_flights != NULL)
+		tasks_left = 1U;
 	if (render->flight_count == 0U && !listed) {
-		/* A stop ends the thread. */
-		if (render->stop) {
+		/* A stop ends the thread once every task given has completed. */
+		if (render->stop && !tasks_left) {
 			pthread_mutex_unlock(&render->lock);
 			return KWL_RENDER_STEP_STOP;
 		}
 
-		/* A park is answered once; the thread calls no Vulkan until it ends. */
+		/* Asked to stop with a task in flight: its fence for a moment, then the next look. */
+		if (render->stop) {
+			pthread_mutex_unlock(&render->lock);
+			(void)render_tasks_reap(render, KWL_RENDER_POLL_NS);
+			return KWL_RENDER_STEP_WORKED;
+		}
+
+		/* A park is answered once; the thread calls no Vulkan but its tasks' until it ends. */
 		if (render->park) {
 			if (!render->parked) {
 				render->parked = 1U;
 				pthread_cond_broadcast(&render->answered);
 			}
 
-			/* Parked until the main thread ends the park. */
+			/* Parked with a task in flight: its fence for a moment, then the next look. */
 			pthread_mutex_unlock(&render->lock);
+			if (render->task_flights != NULL) {
+				(void)render_tasks_reap(render, KWL_RENDER_POLL_NS);
+				return KWL_RENDER_STEP_WORKED;
+			}
+
+			/* Parked until the main thread ends the park. */
 			return KWL_RENDER_STEP_BLOCKED;
 		}
 
@@ -242,10 +283,14 @@ kwl_render_step(
 
 	/*
 	 * Blocked with a job in flight: the oldest's fence for a moment, so
-	 * that the main thread's next want or answer is looked at soon too.
+	 * that the main thread's next want or answer is looked at soon too;
+	 * with only a task in flight, the oldest task's fence so.
 	 */
 	if (step == KWL_RENDER_STEP_BLOCKED && render->flight_count > 0U) {
 		(void)render_reap(render, KWL_RENDER_POLL_NS);
+		step = KWL_RENDER_STEP_WORKED;
+	} else if (step == KWL_RENDER_STEP_BLOCKED && render->task_flights != NULL) {
+		(void)render_tasks_reap(render, KWL_RENDER_POLL_NS);
 		step = KWL_RENDER_STEP_WORKED;
 	}
 
@@ -458,20 +503,33 @@ kwl_render_forget(
 }
 
 /*
- * Waits until the render thread has no job in flight: it then records,
- * submits and presents nothing until the main thread gives it the next
- * list, so the main thread may use the frames' command pool and the queue
- * (an image's layout moved now, outside a walk).
+ * Gives the render thread a task: the message the main thread made with
+ * its number, its recorded command buffer and its fence.  The thread
+ * submits it before any list given after it and posts the same message
+ * back once the fence is signalled; until then the main thread keeps the
+ * command buffer, the fence and what the commands name.
  */
 void
-kwl_render_wait_idle(
-	struct kwl_render_thread *render)
+kwl_render_task(
+	struct kwl_render_thread *render,
+	struct kwl_render_message *task)
 {
-	/* Until the job in flight completed. */
+	/* A completion, once it is posted back. */
+	task->kind = KWL_RENDER_TASK_DONE;
+	task->next = NULL;
+	task->result = VK_SUCCESS;
+
+	/* After the tasks given before it, and the thread woken for it. */
 	pthread_mutex_lock(&render->lock);
 
-	while (render->busy)
-		(void)pthread_cond_wait(&render->answered, &render->lock);
+	if (render->tasks_tail == NULL) {
+		render->tasks = task;
+	} else {
+		render->tasks_tail->next = task;
+	}
+	render->tasks_tail = task;
+	render->sequence++;
+	pthread_cond_broadcast(&render->changed);
 
 	pthread_mutex_unlock(&render->lock);
 }
@@ -726,6 +784,7 @@ render_answer(
 	struct kwl_render_thread *render)
 {
 	struct kwl_render_message *completion;
+	struct kwl_render_message *tasks;
 	enum kwl_render_answer answer;
 	struct kwl_render_job job;
 	unsigned slot;
@@ -767,11 +826,17 @@ render_answer(
 			render->held.heads[slot] = 0U;
 	}
 
-	/* A job in flight from now on, being run. */
+	/* A job in flight from now on, being run; the tasks given before the list are taken with it. */
 	render->busy = 1U;
 	render->running = 1U;
+	tasks = render->tasks;
+	render->tasks = NULL;
+	render->tasks_tail = NULL;
 
 	pthread_mutex_unlock(&render->lock);
+
+	/* The tasks go first, so that the list's commands come after them in the queue. */
+	render_tasks_submit(render, tasks);
 
 	/* Recorded, submitted and presented; the thread looks for the next want from now on. */
 	completion = render->completion;
@@ -848,6 +913,92 @@ render_reap(
 	/* Told in order, before any ready that follows. */
 	render_post(render, completion);
 	return KWL_RENDER_STEP_WORKED;
+}
+
+/* Submits tasks in their order after those submitted before; a submission that failed is told in its turn. */
+static void
+render_tasks_submit(
+	struct kwl_render_thread *render,
+	struct kwl_render_message *tasks)
+{
+	struct kwl_render_message *task;
+	VkResult result;
+
+	/* Each task, oldest first. */
+	while (tasks != NULL) {
+		task = tasks;
+		tasks = task->next;
+		task->next = NULL;
+
+		/* Its commands with its fence, under the owner's lock of the queue. */
+		result = render->ops.submit_task(render->context, task->task_command, task->task_fence);
+		task->result = result;
+
+		/* In flight after the tasks before it. */
+		if (render->task_flights_tail == NULL) {
+			render->task_flights = task;
+		} else {
+			render->task_flights_tail->next = task;
+		}
+		render->task_flights_tail = task;
+	}
+}
+
+/*
+ * Tells the main thread of the tasks in flight that completed, oldest
+ * first: the oldest's fence is waited for at most timeout_ns, the later
+ * ones' not at all.  Returns WORKED when one was told, BLOCKED when the
+ * oldest is still running.
+ */
+static enum kwl_render_step
+render_tasks_reap(
+	struct kwl_render_thread *render,
+	uint64_t timeout_ns)
+{
+	struct kwl_render_message *task;
+	enum kwl_render_step step;
+	VkResult result;
+
+	/* While the oldest has completed (or its submission or its wait failed). */
+	step = KWL_RENDER_STEP_BLOCKED;
+	while (render->task_flights != NULL) {
+		/* A submitted task's fence, for a while. */
+		task = render->task_flights;
+		if (task->result == VK_SUCCESS) {
+			result = render->ops.wait_task(render->context, task->task_fence, timeout_ns);
+			if (result == VK_TIMEOUT)
+				break;
+			task->result = result;
+		}
+
+		/* Out of the flights; the next is only looked at. */
+		timeout_ns = 0U;
+		render->task_flights = task->next;
+		if (render->task_flights == NULL)
+			render->task_flights_tail = NULL;
+
+		/* Told in order. */
+		render_post(render, task);
+		step = KWL_RENDER_STEP_WORKED;
+	}
+
+	/* Reports whether one was told. */
+	return step;
+}
+
+/* Frees a chain of messages. */
+static void
+render_messages_free(
+	struct kwl_render_message *messages)
+{
+	struct kwl_render_message *message;
+
+	/* Each, oldest first. */
+	while (messages != NULL) {
+		message = messages;
+		messages = message->next;
+		free(message);
+	}
 }
 
 /* Queues a message for the main thread after every earlier one, and wakes it when it was not woken for the queue yet. */

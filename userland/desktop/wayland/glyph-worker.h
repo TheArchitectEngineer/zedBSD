@@ -6,9 +6,11 @@
  */
 
 /*
- * The glyph worker (ws213-p005, the work thread W): renders glyphs the main
+ * The font thread (the glyph worker of ws213-p005): renders glyphs the main
  * thread asks for away from the event loop, on fonts of its own opened over
- * the same bytes.
+ * the same bytes, decodes the colour emoji font's glyphs, and reads the
+ * fonts the look opens after its start (the fallback and the emoji fonts)
+ * from their files.
  */
 
 #ifndef KWL_GLYPH_WORKER_H
@@ -20,8 +22,19 @@
 
 #include <truetype/truetype.h>
 
+#include "threads.h"
+#include "../picture/color-glyph.h"
+
 /* The fonts the worker can be given (the look's first font, its fallback and the colour emoji font). */
 #define KWL_GLYPH_FONTS		3U
+
+/* The most bytes of a font file the worker reads. */
+#define KWL_GLYPH_FILE_MAX	(16U * 1024U * 1024U)
+
+/* What a job asks of the worker. */
+#define KWL_GLYPH_TASK_RENDER	0U	/* a glyph's coverage */
+#define KWL_GLYPH_TASK_READ	1U	/* a font file's bytes */
+#define KWL_GLYPH_TASK_COLOR	2U	/* a colour glyph's pixels */
 
 /*
  * A font as the main thread opened it, for the worker to open its own face
@@ -36,28 +49,36 @@ struct kwl_glyph_font {
 };
 
 /*
- * One glyph to render, from the main thread's ask to its taking of the
- * result.  The main thread fills the ask: the font, the size in pixels per
- * em, the glyph, the box it measured (the worker draws only a glyph of
- * that box) and its own marks (kind, slot and generation, which the worker
- * leaves alone).  The worker fills the result: error 0 with the coverage
- * (width times height bytes, its own allocation) and the metrics of the box
- * drawn, or the reason it could not.  The job belongs to the worker from
- * its submission to its taking.
+ * One job of the worker, from the main thread's ask to its taking of the
+ * result.  The main thread fills the ask: the task, and for a glyph the
+ * font, the size in pixels per em, the glyph, the box it measured (the
+ * worker draws only a glyph of that box), for a font file its path (kept
+ * by the main thread until the job is taken), and its own marks (kind,
+ * slot and generation, which the worker leaves alone).  The worker fills
+ * the result: error 0 with the coverage (width times height bytes) and the
+ * metrics of the box drawn, a colour glyph's image, or a file's bytes (each
+ * its own allocation, freed with the job unless the main thread took it),
+ * or the reason it could not.  The job belongs to the worker from its
+ * submission to its taking.
  */
 struct kwl_glyph_job {
 	struct kwl_glyph_job *next;
+	unsigned task;
 	unsigned font;
 	unsigned pixels;
 	unsigned glyph;
 	uint32_t width;
 	uint32_t height;
+	const char *path;
 	unsigned kind;
 	unsigned slot;
 	uint64_t generation;
 	int error;
 	struct truetype_glyph metrics;
 	uint8_t *bitmap;
+	struct kl_color_image image;
+	void *data;
+	size_t size;
 };
 
 /*
@@ -67,7 +88,8 @@ struct kwl_glyph_job {
  * jobs rendered and not taken (in the same order), the fonts given, the
  * stop request and whether the main thread was woken for the rendered
  * ones.  work wakes the worker.  The faces are the worker's own; wake_main
- * is the main thread's wake pipe's write end.
+ * is the main thread's wake pipe's write end; thread is the worker's
+ * thread in the compositor's register (font).
  */
 struct kwl_glyph_worker {
 	pthread_mutex_t lock;
@@ -81,8 +103,7 @@ struct kwl_glyph_worker {
 	unsigned stop;
 	unsigned main_woken;
 	int wake_main;
-	pthread_t thread;
-	unsigned started;
+	struct kwl_thread thread;
 };
 
 int kwl_glyph_worker_start(struct kwl_glyph_worker *worker, int wake_main);

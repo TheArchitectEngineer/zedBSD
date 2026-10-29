@@ -70,7 +70,7 @@ static void pipeline_decode_viewport(struct nvrtx_vk_session *session, struct i9
 static void pipeline_decode_blend(struct nvrtx_vk_session *session, struct i915_wire_reader *reader, struct nvrtx_vk_pipeline *pipeline);
 static void pipeline_decode_dynamic(struct nvrtx_vk_session *session, struct i915_wire_reader *reader, struct nvrtx_vk_pipeline *pipeline);
 static int pipeline_compile(struct nvrtx_vk_session *session, struct nvrtx_vk_pipeline *pipeline, struct pipeline_build *build);
-static int pipeline_compile_stage(const struct nvrtx_vk_shader *module, enum drv_gpu_shader_stage stage, struct nvrtx_sm75_binary **binary);
+static int pipeline_compile_stage(const struct nvrtx_vk_shader *module, enum drv_gpu_shader_stage stage, uint32_t shader_model, struct nvrtx_sm75_binary **binary);
 static int pipeline_program(struct nvrtx_vk_program *program, const struct nvrtx_sm75_binary *binary, uint8_t *cpu, uint64_t va);
 static uint32_t pipeline_program_bytes(const struct nvrtx_sm75_binary *binary);
 static void pipeline_build_free(struct pipeline_build *build);
@@ -337,11 +337,20 @@ pipeline_decode(
 			refused = ENOTSUP;
 	}
 
-	/* The depth state is read (no pass of the executor's has depth). */
+	/* The depth test (no stencil test, no depth bounds). */
 	present = drv_i915_wire_read_u64(reader);
 	if (present != 0U) {
 		kern_memset(&depth, 0, sizeof(depth));
 		i915_vkc_dec_VkPipelineDepthStencilStateCreateInfo(reader, &session->arena, &depth);
+		pipeline->depth_test = 0U;
+		if (depth.depthTestEnable != VK_FALSE)
+			pipeline->depth_test = 1U;
+		pipeline->depth_write = 0U;
+		if (depth.depthWriteEnable != VK_FALSE)
+			pipeline->depth_write = 1U;
+		pipeline->depth_compare = depth.depthCompareOp;
+		if ((depth.stencilTestEnable != VK_FALSE || depth.depthBoundsTestEnable != VK_FALSE) && refused == 0)
+			refused = ENOTSUP;
 	}
 
 	/* The colour blend; without it every channel is written unblended. */
@@ -624,23 +633,25 @@ pipeline_compile(
 	uint64_t va;
 	uint32_t vertex_bytes;
 	uint32_t fragment_bytes;
+	uint32_t shader_model;
 	int error;
 
-	/* Compiles the two programs. */
-	error = pipeline_compile_stage(build->vertex_module, DRV_GPU_STAGE_VERTEX, &build->vertex);
+	/* Compiles the two programs for the owner's shader model. */
+	shader_model = nvrtx_vk_shader_model(session->owner);
+	error = pipeline_compile_stage(build->vertex_module, DRV_GPU_STAGE_VERTEX, shader_model, &build->vertex);
 	if (error != 0)
 		return error;
 
-	error = pipeline_compile_stage(build->fragment_module, DRV_GPU_STAGE_FRAGMENT, &build->fragment);
+	error = pipeline_compile_stage(build->fragment_module, DRV_GPU_STAGE_FRAGMENT, shader_model, &build->fragment);
 	if (error != 0)
 		return error;
 
-	/* The vertex program samples nothing and neither reads buffers through descriptors. */
+	/* The vertex program samples nothing; neither reads storage buffers; each reads a few uniform buffers. */
 	if (build->vertex->texture_count != 0U || build->fragment->texture_count > NVRTX_VK_TEXTURES_MAX)
 		return ENOTSUP;
-	if (build->vertex->storage_count != 0U || build->vertex->uniform_count != 0U)
+	if (build->vertex->storage_count != 0U || build->vertex->uniform_count > NVRTX_VK_UNIFORMS_MAX)
 		return ENOTSUP;
-	if (build->fragment->storage_count != 0U || build->fragment->uniform_count != 0U)
+	if (build->fragment->storage_count != 0U || build->fragment->uniform_count > NVRTX_VK_UNIFORMS_MAX)
 		return ENOTSUP;
 
 	/* The run holding both, each on the boundary. */
@@ -666,14 +677,15 @@ static int
 pipeline_compile_stage(
 	const struct nvrtx_vk_shader *module,
 	enum drv_gpu_shader_stage stage,
+	uint32_t shader_model,
 	struct nvrtx_sm75_binary **binary)
 {
 	struct nvrtx_sm75_diagnostic diagnostic;
 	int error;
 
-	/* Compiled for SM75. */
+	/* Compiled for the shader model asked for. */
 	kern_memset(&diagnostic, 0, sizeof(diagnostic));
-	error = nvrtx_sm75_compile_stage(module->words, module->word_count, stage, binary, &diagnostic);
+	error = nvrtx_sm75_compile_stage_sm(module->words, module->word_count, stage, shader_model, binary, &diagnostic);
 	if (error != 0) {
 		kern_logf("nvrtx: vk: a stage %u module of %u words did not compile (%d at %u: %s)\n",
 			  (unsigned)stage,
@@ -694,7 +706,7 @@ pipeline_compile_stage(
 
 /*
  * Copies a compiled program to its place (its header, then its code) and
- * keeps its address, registers and texture sources.
+ * keeps its address, registers, texture sources and uniform buffer sources.
  */
 static int
 pipeline_program(
@@ -718,6 +730,15 @@ pipeline_program(
 			return ENOTSUP;
 		program->textures[index].set = binary->textures[index].set;
 		program->textures[index].binding = binary->textures[index].binding;
+	}
+
+	/* Where each uniform buffer comes from, in the order of its constant buffer. */
+	program->uniform_count = binary->uniform_count;
+	for (index = 0U; index < binary->uniform_count; index++) {
+		if (binary->uniforms[index].set >= NVRTX_VK_SETS_MAX || binary->uniforms[index].binding >= NVRTX_VK_BINDINGS_MAX)
+			return ENOTSUP;
+		program->uniforms[index].set = binary->uniforms[index].set;
+		program->uniforms[index].binding = binary->uniforms[index].binding;
 	}
 
 	/* Succeeded: the program is in place. */

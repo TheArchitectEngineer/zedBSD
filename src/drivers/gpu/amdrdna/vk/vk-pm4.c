@@ -22,6 +22,8 @@
 #include <stddef.h>
 #include <stdint.h>
 
+#include <kern/kcrt.h>
+
 #include "drivers/gpu/amdrdna/amdrdna-hw.h"
 #include "drivers/gpu/amdrdna/vk/amdrdna-vk-gfx10.h"
 
@@ -29,6 +31,10 @@
 #define PM4_CONTEXT_START_WORDS		5U
 
 static bool pm4_room(struct amdrdna_vk_pm4 *pm4, uint32_t words);
+static void pm4_context_forget(struct amdrdna_vk_pm4 *pm4);
+static void pm4_context_note(struct amdrdna_vk_pm4 *pm4, uint32_t reg, const uint32_t *values, uint32_t count);
+static bool pm4_user_holds(const struct amdrdna_vk_pm4 *pm4, uint32_t reg, uint32_t value);
+static void pm4_user_note(struct amdrdna_vk_pm4 *pm4, uint32_t reg, uint32_t value);
 static void pm4_set_run(struct amdrdna_vk_pm4 *pm4, enum amdrdna_register_space space, uint32_t reg, const uint32_t *values, uint32_t count);
 
 /* Starts a buffer over words of capacity words. */
@@ -46,6 +52,9 @@ amdrdna_vk_pm4_start(
 
 	/* What drew before this buffer is not known, so the first draw flushes first. */
 	pm4->vertex_stage = AMDRDNA_VK_STAGE_UNKNOWN;
+
+	/* Nor what its context registers hold. */
+	pm4_context_forget(pm4);
 }
 
 /*
@@ -110,6 +119,9 @@ amdrdna_vk_pm4_context_start(
 		return;
 	pm4->count += amdrdna_pm4_context_loads(pm4->words + pm4->count);
 	pm4->count += amdrdna_pm4_state_reset(pm4->words + pm4->count);
+
+	/* The reset leaves the context registers at their clear state, which is not tracked. */
+	pm4_context_forget(pm4);
 }
 
 /* Sets one context register (byte offset from 0x28000 on). */
@@ -119,8 +131,20 @@ amdrdna_vk_pm4_set_context(
 	uint32_t reg,
 	uint32_t value)
 {
-	/* A run of one. */
+	uint32_t index;
+	uint32_t bit;
+
+	/* A register the buffer set to the value already is left as it is. */
+	index = (reg >> 2) - AMDRDNA_PM4_CONTEXT_FIRST;
+	if (index < AMDRDNA_VK_CONTEXT_REGISTERS) {
+		bit = 1U << (index % 32U);
+		if ((pm4->context_known[index / 32U] & bit) != 0U && pm4->context_values[index] == value)
+			return;
+	}
+
+	/* A run of one, then what the register holds. */
 	pm4_set_run(pm4, AMDRDNA_SPACE_CONTEXT, reg, &value, 1U);
+	pm4_context_note(pm4, reg, &value, 1U);
 }
 
 /* Sets count consecutive context registers from reg. */
@@ -131,8 +155,9 @@ amdrdna_vk_pm4_set_context_run(
 	const uint32_t *values,
 	uint32_t count)
 {
-	/* One packet for the run. */
+	/* One packet for the run, then what the registers hold. */
 	pm4_set_run(pm4, AMDRDNA_SPACE_CONTEXT, reg, values, count);
+	pm4_context_note(pm4, reg, values, count);
 }
 
 /* Sets one shader register (byte offset from 0xb000 on). */
@@ -165,8 +190,16 @@ amdrdna_vk_pm4_set_user_config(
 	uint32_t reg,
 	uint32_t value)
 {
-	/* A run of one. */
+	bool held;
+
+	/* A register the buffer set to the value already is left as it is. */
+	held = pm4_user_holds(pm4, reg, value);
+	if (held)
+		return;
+
+	/* A run of one, then what the register holds. */
 	pm4_set_run(pm4, AMDRDNA_SPACE_USER, reg, &value, 1U);
+	pm4_user_note(pm4, reg, value);
 }
 
 /*
@@ -183,10 +216,18 @@ amdrdna_vk_pm4_set_user_config_indexed(
 	uint32_t index,
 	uint32_t value)
 {
-	/* The register's place and its index, then the value. */
+	bool held;
+
+	/* A register the buffer set to the value already is left as it is. */
+	held = pm4_user_holds(pm4, reg, value);
+	if (held)
+		return;
+
+	/* The register's place and its index, then the value, then what the register holds. */
 	amdrdna_vk_pm4_packet(pm4, AMDRDNA_PM4_OP_USER_REGISTERS_INDEXED, 2U, false);
 	amdrdna_vk_pm4_word(pm4, ((reg >> 2) - AMDRDNA_PM4_USER_FIRST) | (index << AMDRDNA_PM4_REGISTER_INDEX_SHIFT));
 	amdrdna_vk_pm4_word(pm4, value);
+	pm4_user_note(pm4, reg, value);
 }
 
 /*
@@ -347,9 +388,15 @@ amdrdna_vk_pm4_draw(
 	uint32_t vertex_count,
 	uint32_t instance_count)
 {
-	/* The instances. */
-	amdrdna_vk_pm4_packet(pm4, AMDRDNA_PM4_OP_INSTANCES, 1U, false);
-	amdrdna_vk_pm4_word(pm4, instance_count);
+	/* The instances, unless the processor holds the count already. */
+	if (!pm4->instances_known || pm4->instances != instance_count) {
+		amdrdna_vk_pm4_packet(pm4, AMDRDNA_PM4_OP_INSTANCES, 1U, false);
+		amdrdna_vk_pm4_word(pm4, instance_count);
+		pm4->instances = instance_count;
+		pm4->instances_known = true;
+		if (pm4->full)
+			pm4->instances_known = false;
+	}
 
 	/* The vertices, their indices generated. */
 	amdrdna_vk_pm4_packet(pm4, AMDRDNA_PM4_OP_DRAW_GENERATED, 2U, false);
@@ -375,13 +422,25 @@ amdrdna_vk_pm4_draw_indexed(
 	uint32_t index_count,
 	uint32_t instance_count)
 {
-	/* The instances. */
-	amdrdna_vk_pm4_packet(pm4, AMDRDNA_PM4_OP_INSTANCES, 1U, false);
-	amdrdna_vk_pm4_word(pm4, instance_count);
+	/* The instances, unless the processor holds the count already. */
+	if (!pm4->instances_known || pm4->instances != instance_count) {
+		amdrdna_vk_pm4_packet(pm4, AMDRDNA_PM4_OP_INSTANCES, 1U, false);
+		amdrdna_vk_pm4_word(pm4, instance_count);
+		pm4->instances = instance_count;
+		pm4->instances_known = true;
+		if (pm4->full)
+			pm4->instances_known = false;
+	}
 
-	/* How many indices the buffer holds from the address. */
-	amdrdna_vk_pm4_packet(pm4, AMDRDNA_PM4_OP_INDEX_BUFFER_SIZE, 1U, false);
-	amdrdna_vk_pm4_word(pm4, index_room);
+	/* How many indices the buffer holds from the address, unless the processor holds that already. */
+	if (!pm4->index_room_known || pm4->index_room != index_room) {
+		amdrdna_vk_pm4_packet(pm4, AMDRDNA_PM4_OP_INDEX_BUFFER_SIZE, 1U, false);
+		amdrdna_vk_pm4_word(pm4, index_room);
+		pm4->index_room = index_room;
+		pm4->index_room_known = true;
+		if (pm4->full)
+			pm4->index_room_known = false;
+	}
 
 	/* The indices, read from memory. */
 	amdrdna_vk_pm4_packet(pm4, AMDRDNA_PM4_OP_DRAW_INDEXED, 5U, false);
@@ -469,4 +528,99 @@ pm4_set_run(
 	if (!room)
 		return;
 	pm4->count += amdrdna_pm4_registers(pm4->words + pm4->count, space, reg >> 2, values, count, false);
+}
+
+/* Forgets what every context register holds. */
+static void
+pm4_context_forget(
+	struct amdrdna_vk_pm4 *pm4)
+{
+	/* No register is known, nor the draw packets' counts. */
+	kern_memset(pm4->context_known, 0, sizeof(pm4->context_known));
+	kern_memset(pm4->user_known, 0, sizeof(pm4->user_known));
+	pm4->instances_known = false;
+	pm4->index_room_known = false;
+}
+
+/*
+ * Notes the values of count context registers from reg written to the
+ * buffer; a run the full buffer dropped leaves them unknown.
+ */
+static void
+pm4_context_note(
+	struct amdrdna_vk_pm4 *pm4,
+	uint32_t reg,
+	const uint32_t *values,
+	uint32_t count)
+{
+	uint32_t first;
+	uint32_t index;
+	uint32_t place;
+	uint32_t bit;
+
+	/* Each register of the run inside the context's space. */
+	first = (reg >> 2) - AMDRDNA_PM4_CONTEXT_FIRST;
+	for (index = 0U; index < count; index++) {
+		place = first + index;
+		if (place >= AMDRDNA_VK_CONTEXT_REGISTERS)
+			break;
+		bit = 1U << (place % 32U);
+
+		/* Known when written, unknown when dropped. */
+		if (pm4->full) {
+			pm4->context_known[place / 32U] &= ~bit;
+		} else {
+			pm4->context_values[place] = values[index];
+			pm4->context_known[place / 32U] |= bit;
+		}
+	}
+}
+
+/* Reports whether the buffer set a tracked user configuration register to value already. */
+static bool
+pm4_user_holds(
+	const struct amdrdna_vk_pm4 *pm4,
+	uint32_t reg,
+	uint32_t value)
+{
+	uint32_t index;
+	uint32_t bit;
+
+	/* Only a tracked register, known, with the value. */
+	index = (reg >> 2) - AMDRDNA_PM4_USER_FIRST;
+	if (index >= AMDRDNA_VK_USER_REGISTERS)
+		return false;
+	bit = 1U << (index % 32U);
+	if ((pm4->user_known[index / 32U] & bit) == 0U)
+		return false;
+	if (pm4->user_values[index] != value)
+		return false;
+
+	/* Succeeded: the register holds the value. */
+	return true;
+}
+
+/* Notes the value of a user configuration register written to the buffer; one the full buffer dropped is unknown. */
+static void
+pm4_user_note(
+	struct amdrdna_vk_pm4 *pm4,
+	uint32_t reg,
+	uint32_t value)
+{
+	uint32_t index;
+	uint32_t bit;
+
+	/* Only a tracked register. */
+	index = (reg >> 2) - AMDRDNA_PM4_USER_FIRST;
+	if (index >= AMDRDNA_VK_USER_REGISTERS)
+		return;
+	bit = 1U << (index % 32U);
+
+	/* Known when written, unknown when dropped. */
+	if (pm4->full) {
+		pm4->user_known[index / 32U] &= ~bit;
+	} else {
+		pm4->user_values[index] = value;
+		pm4->user_known[index / 32U] |= bit;
+	}
 }

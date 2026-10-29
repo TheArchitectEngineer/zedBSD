@@ -27,6 +27,7 @@
 #include "kern/poll.h"
 #include "kern/process.h"
 #include "kern/sched.h"
+#include "kern/uaccess.h"
 #include "kern/signal.h"
 #include "kern/syscall.h"
 #include "kern/thread.h"
@@ -117,9 +118,10 @@ model_deliver(
 {
 	struct packet_buf *packet;
 	void *payload;
+	int error;
 
-	/* A packet from the pool, as a driver takes one for each frame it receives. */
-	packet = packet_buf_alloc(PACKET_BUF_DEFAULT_HEADROOM);
+	/* A packet from the pool, as a driver takes one for each frame it receives (a jumbo one for a large frame). */
+	packet = packet_buf_alloc_for(PACKET_BUF_DEFAULT_HEADROOM, length, PACKET_BUF_ALLOC_RECEIVE, &error);
 	if (packet == NULL)
 		return ENOBUFS;
 
@@ -136,6 +138,15 @@ model_deliver(
 
 	/* Succeeded: delivered. */
 	return 0;
+}
+
+/* Sets both devices' MTU (--mtu: a jumbo link). */
+void
+model_device_mtu_set(
+	unsigned mtu)
+{
+	model_devices[0].mtu = mtu;
+	model_devices[1].mtu = mtu;
 }
 
 /*
@@ -432,6 +443,49 @@ route_lookup_ref(
 	return ENETUNREACH;
 }
 
+/* The model's writer never sends from pinned user pages (ws221-p008). */
+int
+copyin_pinned(
+	const struct uaccess_pin *pin,
+	size_t offset,
+	void *destination,
+	size_t size)
+{
+	(void)pin;
+	(void)offset;
+	(void)destination;
+	(void)size;
+	return EFAULT;
+}
+
+/* The model's table never changes (ws221-p008). */
+unsigned long
+route_generation(
+	void)
+{
+	return 0;
+}
+
+/* The way to the other host through a device: as route_lookup_ref (ws221-p008). */
+int
+route_lookup_device_ref(
+	uint32_t destination,
+	const struct net_device *device,
+	struct net_route *result)
+{
+	(void)device;
+	return route_lookup_ref(destination, result);
+}
+
+/* Neither host's address is the other's (ws221-p008). */
+int
+inet_address_is_local(
+	uint32_t address)
+{
+	(void)address;
+	return 0;
+}
+
 /* A route holds no reference in the model. */
 void
 route_release(
@@ -457,6 +511,34 @@ inet_interface_address(
 	else
 		*address = MODEL_ADDRESS_B;
 	return 0;
+}
+
+/* As ipv4_output, the next hop being the destination in the model (ws221-p008). */
+int
+ipv4_output_routed(
+	struct net_device *device,
+	uint32_t destination,
+	uint32_t next_hop,
+	uint8_t protocol,
+	uint32_t source,
+	struct packet_buf *packet)
+{
+	(void)next_hop;
+	(void)source;
+	return ipv4_output(device, destination, protocol, packet);
+}
+
+/* As ipv4_output: the model's device takes the source from its own address (ws221-p008). */
+int
+ipv4_output_sourced(
+	struct net_device *device,
+	uint32_t destination,
+	uint8_t protocol,
+	uint32_t source,
+	struct packet_buf *packet)
+{
+	(void)source;
+	return ipv4_output(device, destination, protocol, packet);
 }
 
 /* IPv4 hands the segment to the link out of the device it was routed to. */
@@ -538,6 +620,63 @@ ipv6_route_source(
 	(void)source;
 	(void)mtu;
 	return ENETUNREACH;
+}
+
+/* The model has no IPv6. */
+int
+ipv6_route_way(
+	struct net_device *device,
+	const struct in6_addr *destination,
+	struct net_device **output,
+	struct ipv6_way *way)
+{
+	(void)device;
+	(void)destination;
+	(void)output;
+	(void)way;
+	return ENETUNREACH;
+}
+
+/* The model has no IPv6. */
+int
+ipv6_output_way(
+	struct net_device *device,
+	const struct in6_addr *source,
+	const struct in6_addr *destination,
+	const struct ipv6_way *way,
+	uint8_t next_header,
+	struct packet_buf *packet)
+{
+	(void)device;
+	(void)source;
+	(void)destination;
+	(void)way;
+	(void)next_header;
+	packet_buf_free(packet);
+	return ENETUNREACH;
+}
+
+/* The model has no IPv6 addresses of its own. */
+int
+ipv6_address_is_local(
+	const struct in6_addr *address)
+{
+	(void)address;
+	return 0;
+}
+
+/* A device's largest frame, as the kernel reckons it (the model's devices are Ethernet, never the loopback). */
+size_t
+net_device_frame_max(
+	const struct net_device *device)
+{
+	size_t frame;
+
+	/* The header and the MTU, within the largest packet after its headroom. */
+	frame = 14U + (size_t)device->mtu;
+	if (frame > PACKET_BUF_MAX_STORAGE_SIZE - PACKET_BUF_DEFAULT_HEADROOM)
+		frame = PACKET_BUF_MAX_STORAGE_SIZE - PACKET_BUF_DEFAULT_HEADROOM;
+	return frame;
 }
 
 /* An IPv4 TCP socket, as the internet layer makes one. */

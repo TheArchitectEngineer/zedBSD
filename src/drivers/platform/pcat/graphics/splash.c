@@ -6,9 +6,9 @@
  */
 
 /*
- * The Kei boot splash's spinner (ws035-p107).
+ * The boot splash's spinner.
  *
- * On a quiet boot (kmsg=quiet) the loaders draw the Kei splash in the
+ * On a quiet boot (kmsg=quiet) the loaders draw the boot splash in the
  * middle of the screen over black bars (tools/build/make-boot-splash.py:
  * the picture 1920x1080, "fit=contain", without its spinner; ws035-p112).  The spinner is drawn here instead, eight blue dots
  * in a ring whose brightness turns one step every SPLASH_STEP_MS of the HAL's

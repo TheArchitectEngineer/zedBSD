@@ -124,9 +124,9 @@ enum nvrtx_falcon_style {
  * generation's differences from it instead of testing chip numbers.  The
  * records are constant and live as long as the kernel.
  *
- * A family not yet seen working on real hardware (verified zero) is booted
- * only when the boot asks for it (nvrtx.gsp=1); by default its GPU is left
- * to the firmware's picture.
+ * verified records whether the family was seen working on real hardware;
+ * a family not yet seen (verified zero) is booted all the same, and its
+ * boot says so in the marks.
  */
 struct nvrtx_profile {
 	const char *name;
@@ -194,6 +194,26 @@ struct nvrtx_chip {
 	const char *name;
 	/* The chip's family record; NULL for a known chip the GSP boot path does not cover. */
 	const struct nvrtx_profile *profile;
+};
+
+/*
+ * What the attach does with one GPU, and the reason its mark gives.
+ *
+ * Decided by nvrtx_boot_choose() from the family record, whether the
+ * firmware's picture is on the GPU and the boot's nvrtx.gsp parameter, so
+ * every combination can be checked on the host.
+ */
+enum nvrtx_boot_choice {
+	/* Boots the GSP on a family seen working on real hardware. */
+	NVRTX_BOOT_START = 0,
+	/* Boots the GSP on a family not yet seen working on real hardware. */
+	NVRTX_BOOT_START_UNSEEN,
+	/* Leaves the GPU to the firmware because the boot says nvrtx.gsp=0. */
+	NVRTX_BOOT_LEAVE_OFF,
+	/* Leaves the GPU to the firmware because the chip has no GSP path. */
+	NVRTX_BOOT_LEAVE_NO_PATH,
+	/* Leaves a GPU the firmware showed no picture on (nvrtx.gsp=1 boots it). */
+	NVRTX_BOOT_LEAVE_NO_PICTURE
 };
 
 /*
@@ -298,6 +318,16 @@ nvrtx_identify(
 	uint32_t ident0,
 	uint32_t ident1,
 	struct nvrtx_chip *chip);
+
+/*
+ * Decides whether the attach boots the GSP on a GPU or leaves it to the firmware.
+ */
+enum nvrtx_boot_choice
+nvrtx_boot_choose(
+	const struct nvrtx_profile *profile,
+	int gop_on_gpu,
+	bool gsp_wanted,
+	bool gsp_forced);
 
 /*
  * Finds the product a PCI device ID names.
@@ -447,6 +477,20 @@ bool
 nvrtx_stage_vk_perf_wanted(void);
 
 /*
+ * Reports whether each session gets a channel of its own (nvrtx.channels=0
+ * shares the work channel instead).
+ */
+bool
+nvrtx_stage_channels_wanted(void);
+
+/*
+ * Reports whether a session's channel whose work did not end is stopped
+ * (nvrtx.kill=0 only reports the loss).
+ */
+bool
+nvrtx_stage_kill_wanted(void);
+
+/*
  * Reports whether the GPU stays up as a GPU device after the takeover: by
  * default, unless the boot says nvrtx.resident=0.
  */
@@ -459,6 +503,14 @@ nvrtx_stage_resident_wanted(void);
 bool
 nvrtx_stage_allowed(
 	const char *stage);
+
+/*
+ * Reports whether the boot asks the GSP boot to give up at a point on purpose
+ * (nvrtx.fail=<point>, a test of the way back to the firmware's picture).
+ */
+bool
+nvrtx_stage_fail_wanted(
+	const char *point);
 
 /*
  * Writes one stage-mark line to the console and the kernel log.

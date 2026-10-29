@@ -295,6 +295,43 @@ amdrdna_vk_sampler_descriptor(
 }
 
 /*
+ * Writes the image and the sampler descriptors of a combined image
+ * sampler binding.  Returns 0, EINVAL for a binding without both or a view
+ * the descriptor cannot read, or EIO for an image without storage.
+ */
+int
+amdrdna_vk_texture_descriptors(
+	const struct amdrdna_vk_descriptor_slot *slot,
+	uint32_t *image_words,
+	uint32_t *sampler_words)
+{
+	const struct amdrdna_vk_view *view;
+	const struct amdrdna_vk_image *image;
+	uint64_t va;
+	uint8_t *cpu;
+	int error;
+
+	/* The view's image, with storage, and the sampler. */
+	if (slot->view == NULL || slot->sampler == NULL)
+		return EINVAL;
+	view = slot->view->payload;
+	image = view->image->payload;
+	error = amdrdna_vk_image_address(image, &va, &cpu);
+	if (error != 0)
+		return error;
+
+	/* The two descriptors; the image's from the start of its mip chain, with the view's levels. */
+	error = amdrdna_vk_image_descriptor(va, image->width, image->height, view->format, view->swizzle, image_words);
+	if (error != 0)
+		return error;
+	amdrdna_vk_image_descriptor_levels(image_words, view->base_level, view->base_level + view->level_count - 1U, image->levels);
+	amdrdna_vk_sampler_descriptor(slot->sampler->payload, sampler_words);
+
+	/* Succeeded: the binding's descriptors are written. */
+	return 0;
+}
+
+/*
  * Reports the buffer descriptor format of a vertex attribute format, its
  * channels and its bytes; false for a format the executor does not fetch.
  */

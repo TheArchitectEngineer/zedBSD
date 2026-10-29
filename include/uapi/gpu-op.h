@@ -6,7 +6,7 @@
  */
 
 /*
- * The Kei GPU command protocol, version 1: the numbers of
+ * The zedBSD GPU command protocol, version 1: the numbers of
  * the Vulkan commands in the stream libvulkan submits to a GPU node
  * (GPU_COMMAND, GPU_COMMAND_SUBMIT in uapi/gpu.h), which the i915 Vulkan
  * executor and the bcm2711 (V3D) Vulkan executor read and a virtual

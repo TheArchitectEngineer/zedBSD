@@ -114,7 +114,30 @@ nd6_output(
 	int known;
 	int error;
 
-	/* The device's retransmission timer. */
+	/*
+	 * A neighbor whose link address is known, its state moved on for the
+	 * packet (a known entry never needs the retransmission timer): the
+	 * frame goes at once.
+	 */
+	known = 0;
+	irq = spin_lock_irqsave(&nd6_lock);
+
+	neighbor = nd6_find_locked(device, next_hop);
+	if (neighbor != NULL && neighbor->have_link) {
+		(void)in6_neighbor_resolve(neighbor, ipv6_now_ms(), 0U);
+		kern_memcpy(address, neighbor->link, sizeof(address));
+		known = 1;
+	}
+
+	spin_unlock_irqrestore(&nd6_lock, irq);
+
+	/* Known: sent. */
+	if (known) {
+		error = ethernet_output(device, address, ETHERNET_TYPE_IPV6, packet);
+		return error;
+	}
+
+	/* The device's retransmission timer, for a neighbor to solicit. */
 	error = ipv6_link_get(device, &link);
 	if (error != 0) {
 		packet_buf_free(packet);

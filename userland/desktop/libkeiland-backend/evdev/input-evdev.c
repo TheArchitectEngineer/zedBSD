@@ -192,6 +192,50 @@ kl_backend_input_read(
 }
 
 /*
+ * Tells that the nodes are opened through the seat service, whose state is
+ * the event loop's: the compositor scans on its own thread
+ * (kl_backend_input_scan).
+ */
+int
+kl_backend_input_find_supported(void)
+{
+	/* The seat opens the nodes. */
+	return 0;
+}
+
+/*
+ * Prepares a finding that opens nothing (the seat opens the nodes).
+ */
+void
+kl_backend_input_find_begin(
+	struct kl_backend *backend,
+	struct kl_backend_input_find *find)
+{
+	(void)backend;
+
+	/* Nothing is opened. */
+	find->count = 0U;
+	find->events_heard = 0U;
+	find->refused_generation = 0U;
+}
+
+/*
+ * Refuses a finding away from the event loop: the seat's devices are
+ * opened by kl_backend_input_scan.
+ */
+int
+kl_backend_input_find(
+	struct kl_backend *backend,
+	struct kl_backend_input_find *find)
+{
+	(void)backend;
+
+	/* Nothing is opened here. */
+	find->count = 0U;
+	return ENOTSUP;
+}
+
+/*
  * Closes an input device descriptor.
  *
  * The seat module returns both descriptor and service ownership.

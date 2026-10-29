@@ -763,9 +763,9 @@ command_record_begin(
 	if (command->object.context != NULL)
 		writer->external_memory_type = command->object.context->external_memory_type;
 	command->record_start = writer->bytes;
-	vulkan_write_u32(writer, opcode);
-	vulkan_write_u32(writer, 0);
-	vulkan_write_u64(writer, command->object.wire_id);
+	vulkan_record_u32(writer, opcode);
+	vulkan_record_u32(writer, 0);
+	vulkan_record_u64(writer, command->object.wire_id);
 
 	/* Succeeded: typed argument encoders may append to this recording operation. */
 	return VK_TRUE;

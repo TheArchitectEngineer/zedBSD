@@ -41,6 +41,7 @@
 #include <sys/stat.h>
 #include <time.h>
 #include <unistd.h>
+#include "include/kern/os-name.h"
 
 /* The fewest X's a template may have. */
 #define MKTEMP_X_MIN 3
@@ -187,7 +188,7 @@ read_options(
 			options->suffix = scan.value;
 			break;
 		case OPTION_VERSION:
-			printf("mktemp (Kei) 1.0\n");
+			printf("mktemp (" ZEDBSD_OS_NAME ") 1.0\n");
 			exit(0);
 			break;
 		default:

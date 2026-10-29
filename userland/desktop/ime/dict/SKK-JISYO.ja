@@ -1,17 +1,17 @@
 ;; -*- mode: fundamental; coding: utf-8 -*-
-;; SKK-JISYO.ja - the dictionary of Kei's input method (Japanese).
+;; SKK-JISYO.ja - the dictionary of zedBSD's input method (Japanese).
 ;;
 ;; Copyright (C) 2026 Awe Morris
 ;; SPDX-License-Identifier: Zlib
 ;;
 ;; One file of two parts (ws095-p017), read in this order:
 ;;
-;;   1. Kei's supplement (formerly SKK-JISYO.kei): about a thousand everyday
-;;      words written for Kei (WS095 decision D3), with the annotations of
+;;   1. zedBSD's supplement (formerly SKK-JISYO.kei): about a thousand everyday
+;;      words written for zedBSD (WS095 decision D3), with the annotations of
 ;;      how verbs and adjectives conjugate.
 ;;   2. REmacs's dictionary (formerly SKK-JISYO.X), from the line
 ;;      ";; ==== part: system ====" on.  Its copyright holder, Awe Morris,
-;;      relicensed it under zlib for Kei on 2026-09-29 (WS095 decision D1;
+;;      relicensed it under zlib for zedBSD on 2026-09-29 (WS095 decision D1;
 ;;      its own header below is kept as it was published).
 ;;
 ;; Both parts are SKK dictionaries; an SKK tool reads the file as one.  The
@@ -20,12 +20,12 @@
 ;;
 ;; ==== part: supplement ====
 ;; -*- mode: fundamental; coding: utf-8 -*-
-;; SKK-JISYO.kei - the supplement of Kei's input method, looked in before SKK-JISYO.X.
+;; SKK-JISYO.kei - the supplement of zedBSD's input method, looked in before SKK-JISYO.X.
 ;;
 ;; Copyright (C) 2026 Awe Morris
 ;; SPDX-License-Identifier: Zlib
 ;;
-;; An original work written for Kei (WS095, decision D3): about a thousand
+;; An original work written for zedBSD (WS095, decision D3): about a thousand
 ;; everyday words that REmacs's SKK-JISYO.X lacks or orders for other texts,
 ;; pronouns, greetings, time and counters, family, basic nouns, loanwords of
 ;; daily life and of computing, and the basic verbs and adjectives.  No entry

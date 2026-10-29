@@ -316,7 +316,7 @@ static void fragment_fat32_root_file(const char *image,uint64_t offset,const cha
 static void pc98_chs(uint8_t out[4],uint32_t lba,uint32_t heads){uint32_t cyl=lba/(heads*17),rem=lba%(heads*17),head=rem/17,sec=rem%17;if(cyl>65535)fail("PC-98 CHS overflow");out[0]=sec;out[1]=head;p16(out+2,cyl);}
 static void gpt_entry(uint8_t *e,const uint8_t type[16],const uint8_t unique[16],uint64_t first,uint64_t last,const char *name){memcpy(e,type,16);memcpy(e+16,unique,16);p64(e+32,first);p64(e+40,last);for(size_t i=0;name[i]&&i<36;i++)p16(e+56+2*i,(uint8_t)name[i]);}
 static void gpt_header(uint8_t h[512],uint64_t cur,uint64_t backup,uint64_t entries,uint64_t first,uint64_t last,const uint8_t diskid[16],uint32_t ecrc){memset(h,0,512);memcpy(h,"EFI PART",8);p32(h+8,0x10000);p32(h+12,92);p64(h+24,cur);p64(h+32,backup);p64(h+40,first);p64(h+48,last);memcpy(h+56,diskid,16);p64(h+72,entries);p32(h+80,128);p32(h+84,128);p32(h+88,ecrc);p32(h+16,crc32_more(0,h,92));}
-struct diskopt {const char *machine,*stage1,*stage2,*pbr,*bootzbsd,*kernel,*bootx64,*kern_config,*logo,*arch,*data,*swap,*ufs_root,*output,*layout;int gpt,force,fragment_kernel,size_mib,fat_mib;};
+struct diskopt {const char *machine,*stage1,*stage2,*pbr,*bootzbsd,*kernel,*bootx64,*kern_config,*logo,*arch,*data,*swap,*ufs_root,*output,*layout,*root_partuuid,*swap_partuuid;int gpt,force,fragment_kernel,size_mib,fat_mib;};
 static void disk_create_variant(struct diskopt *o);
 static uint64_t parse_size_bytes(const char *text);
 static uint64_t native_copy_sparse(FILE *image, uint64_t offset, const char *path);
@@ -325,6 +325,8 @@ static uint64_t native_align(uint64_t sector);
 static uint64_t pc98_whole_cylinders(uint64_t sectors, uint32_t heads);
 static void pc98_cylinder_layout(uint32_t heads, uint64_t root_blocks, uint64_t *sectors, uint64_t *start, uint64_t *blocks);
 static void disk_create_native(struct diskopt *o);
+static int parse_guid_text(const char *text, uint8_t guid[16]);
+static int hex_digit_value(char character);
 static void ufs_command(int argc, char **argv);
 static void disk_create(struct diskopt *o){
     if(o->layout){disk_create_variant(o);return;}
@@ -611,6 +613,76 @@ pc98_cylinder_layout(
 }
 
 /*
+ * Reads a GUID written as text (8-4-4-4-12 hexadecimal digits) into the
+ * order GPT stores it in: the first three fields little-endian, the last
+ * two as written.  Returns 0, or -1 when the text is not a GUID.
+ */
+static int
+parse_guid_text(
+	const char *text,
+	uint8_t guid[16])
+{
+	static const int text_offsets[16] = {
+		6, 4, 2, 0, 11, 9, 16, 14, 19, 21, 24, 26, 28, 30, 32, 34
+	};
+	size_t length;
+	size_t index;
+	int high;
+	int low;
+
+	/* Rejects text of another length or without the four dashes. */
+	length = strlen(text);
+	if (length != 36)
+		return -1;
+	if (text[8] != '-')
+		return -1;
+	if (text[13] != '-')
+		return -1;
+	if (text[18] != '-')
+		return -1;
+	if (text[23] != '-')
+		return -1;
+
+	/* Takes each byte from its two digits, in the order GPT keeps them. */
+	for (index = 0; index < 16U; index++) {
+		high = hex_digit_value(text[text_offsets[index]]);
+		low = hex_digit_value(text[text_offsets[index] + 1]);
+		if (high < 0)
+			return -1;
+		if (low < 0)
+			return -1;
+		guid[index] = (uint8_t)(high * 16 + low);
+	}
+
+	/* Succeeded: the text is a GUID and the bytes are in GPT's order. */
+	return 0;
+}
+
+/*
+ * The value of one hexadecimal digit, either case, or -1 for another
+ * character.
+ */
+static int
+hex_digit_value(
+	char character)
+{
+	/* A decimal digit. */
+	if (character >= '0' && character <= '9')
+		return character - '0';
+
+	/* A lower-case letter digit. */
+	if (character >= 'a' && character <= 'f')
+		return character - 'a' + 10;
+
+	/* An upper-case letter digit. */
+	if (character >= 'A' && character <= 'F')
+		return character - 'A' + 10;
+
+	/* Not a digit. */
+	return -1;
+}
+
+/*
  * Builds the amd64 UEFI native disk: a GPT with the EFI system partition,
  * the boot FAT32 partition, the UFS root partition and the swap partition.
  *
@@ -763,6 +835,29 @@ disk_create_native(
 			if (!repeated)
 				break;
 		}
+	}
+
+	/*
+	 * Takes the root's and the swap's GUIDs from the command line when they
+	 * are given, so that zedbsd.cfg can name the partitions by them
+	 * (rootpart=PARTUUID=, swap0=PARTUUID=), and rejects one that repeats
+	 * another GUID of the disk.
+	 */
+	if (o->root_partuuid != NULL) {
+		error = parse_guid_text(o->root_partuuid, partition_guids[2]);
+		if (error != 0)
+			fail("invalid --root-partuuid");
+	}
+	if (o->swap_partuuid != NULL) {
+		error = parse_guid_text(o->swap_partuuid, partition_guids[3]);
+		if (error != 0)
+			fail("invalid --swap-partuuid");
+	}
+	for (index = 0; index < 4U; index++) {
+		differs = memcmp(partition_guids[index], disk_guid, 16);
+		repeated = guid_matches_any(partition_guids[index], partition_guids[0], index);
+		if (differs == 0 || repeated)
+			fail("a partition GUID repeats another GUID of the disk");
 	}
 
 	/* Describes the four partitions. */
@@ -943,7 +1038,7 @@ static void disk_create_variant(struct diskopt *o){
         fail("invalid Stage 1 layout metadata or Stage 2 LBA");
     o->layout=NULL;o->gpt=!strcmp(layout,"hybrid");disk_create(o);o->layout=layout;
 }
-static void parse_disk(int argc,char **argv){struct diskopt o={.size_mib=129,.fat_mib=128};for(int i=2;i<argc;i++){char*a=argv[i];if(!strcmp(a,"--gpt"))o.gpt=1;else if(!strcmp(a,"--force"))o.force=1;else if(!strcmp(a,"--fragment-kernel"))o.fragment_kernel=1;else if(!strcmp(a,"--machine")&&++i<argc)o.machine=argv[i];else if(!strcmp(a,"--stage1")&&++i<argc)o.stage1=argv[i];else if(!strcmp(a,"--stage2")&&++i<argc)o.stage2=argv[i];else if(!strcmp(a,"--partition-pbr")&&++i<argc)o.pbr=argv[i];else if(!strcmp(a,"--bootzbsd")&&++i<argc)o.bootzbsd=argv[i];else if(!strcmp(a,"--kernel")&&++i<argc)o.kernel=argv[i];else if(!strcmp(a,"--bootx64")&&++i<argc)o.bootx64=argv[i];else if(!strcmp(a,"--zedbsd-config")&&++i<argc)o.kern_config=argv[i];else if(!strcmp(a,"--logo")&&++i<argc)o.logo=argv[i];else if(!strcmp(a,"--arch-image")&&++i<argc)o.arch=argv[i];else if(!strcmp(a,"--data-image")&&++i<argc)o.data=argv[i];else if(!strcmp(a,"--swapfile")&&++i<argc)o.swap=argv[i];else if(!strcmp(a,"--ufs-root")&&++i<argc)o.ufs_root=argv[i];else if(!strcmp(a,"--layout")&&++i<argc)o.layout=argv[i];else if(!strcmp(a,"--size-mib")&&++i<argc)o.size_mib=parse_positive_int(argv[i],"invalid disk size");else if(!strcmp(a,"--fat-size-mib")&&++i<argc)o.fat_mib=parse_positive_int(argv[i],"invalid FAT size");else if((!strcmp(a,"--checker")||!strcmp(a,"--arch-profile")||!strcmp(a,"--arch-format"))&&++i<argc){}else if(a[0]!='-')o.output=a;else fail("unsupported disk argument");}if(o.layout&&o.size_mib==129&&o.fat_mib==128){o.size_mib=177;o.fat_mib=176;}disk_create(&o);}
+static void parse_disk(int argc,char **argv){struct diskopt o={.size_mib=129,.fat_mib=128};for(int i=2;i<argc;i++){char*a=argv[i];if(!strcmp(a,"--gpt"))o.gpt=1;else if(!strcmp(a,"--force"))o.force=1;else if(!strcmp(a,"--fragment-kernel"))o.fragment_kernel=1;else if(!strcmp(a,"--machine")&&++i<argc)o.machine=argv[i];else if(!strcmp(a,"--stage1")&&++i<argc)o.stage1=argv[i];else if(!strcmp(a,"--stage2")&&++i<argc)o.stage2=argv[i];else if(!strcmp(a,"--partition-pbr")&&++i<argc)o.pbr=argv[i];else if(!strcmp(a,"--bootzbsd")&&++i<argc)o.bootzbsd=argv[i];else if(!strcmp(a,"--kernel")&&++i<argc)o.kernel=argv[i];else if(!strcmp(a,"--bootx64")&&++i<argc)o.bootx64=argv[i];else if(!strcmp(a,"--zedbsd-config")&&++i<argc)o.kern_config=argv[i];else if(!strcmp(a,"--logo")&&++i<argc)o.logo=argv[i];else if(!strcmp(a,"--arch-image")&&++i<argc)o.arch=argv[i];else if(!strcmp(a,"--data-image")&&++i<argc)o.data=argv[i];else if(!strcmp(a,"--swapfile")&&++i<argc)o.swap=argv[i];else if(!strcmp(a,"--ufs-root")&&++i<argc)o.ufs_root=argv[i];else if(!strcmp(a,"--layout")&&++i<argc)o.layout=argv[i];else if(!strcmp(a,"--root-partuuid")&&++i<argc)o.root_partuuid=argv[i];else if(!strcmp(a,"--swap-partuuid")&&++i<argc)o.swap_partuuid=argv[i];else if(!strcmp(a,"--size-mib")&&++i<argc)o.size_mib=parse_positive_int(argv[i],"invalid disk size");else if(!strcmp(a,"--fat-size-mib")&&++i<argc)o.fat_mib=parse_positive_int(argv[i],"invalid FAT size");else if((!strcmp(a,"--checker")||!strcmp(a,"--arch-profile")||!strcmp(a,"--arch-format"))&&++i<argc){}else if(a[0]!='-')o.output=a;else fail("unsupported disk argument");}if((o.root_partuuid||o.swap_partuuid)&&(!o.layout||strcmp(o.layout,"native")))fail("--root-partuuid and --swap-partuuid are for the native layout");if(o.layout&&o.size_mib==129&&o.fat_mib==128){o.size_mib=177;o.fat_mib=176;}disk_create(&o);}
 /*
  * Runs `zedimage-host ufs SIZE ROOT OUTPUT [OPTION...]`: builds one UFS
  * image of ROOT's tree.

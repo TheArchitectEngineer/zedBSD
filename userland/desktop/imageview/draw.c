@@ -11,7 +11,7 @@
  * they change.  The canvas is clear wherever the image or the window's
  * glass should show.
  *
- * It holds the empty window (the Kei mark, what to do, the Open button),
+ * It holds the empty window (the mark, what to do, the Open button),
  * the card of an image that cannot be shown, the chip at the bottom (the
  * image's name, its place in the folder, its size and the zoom), a
  * message (the file chooser is libkeiland's window of its own, ws090-p008).
@@ -112,7 +112,7 @@ iv_draw(
 	app->ui_dirty = 0;
 }
 
-/* Draws the empty window: the Kei mark, what to do, and the Open button. */
+/* Draws the empty window: the mark, what to do, and the Open button. */
 static void
 draw_empty(
 	struct iv_app *app,
@@ -273,7 +273,7 @@ draw_message(
 }
 
 /*
- * Draws the Kei mark in a square of a size at (x, y): its seven layers
+ * Draws the mark in a square of a size at (x, y): its seven layers
  * (userland/desktop/artwork/mark.c), each in its colour, as the file
  * manager draws it.  The layers are rendered once for a size and kept.
  */

@@ -33,5 +33,6 @@ struct kl_color_image {
 };
 
 int kl_color_glyph(struct truetype_face *face, unsigned glyph, unsigned pixels, struct kl_color_image *out);
+int kl_color_glyph_metrics(struct truetype_face *face, unsigned glyph, unsigned pixels, struct kl_color_image *out);
 
 #endif

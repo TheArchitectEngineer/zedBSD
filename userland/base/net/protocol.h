@@ -77,6 +77,12 @@ enum networkd_opcode {
 	NETWORKD_OP_CONFIRMED_ROLLBACK = 18,
 	NETWORKD_OP_CONFIRMED_CHECK = 19,
 	NETWORKD_OP_ROUTE6_REMOVE = 20,
+
+	/*
+	 * An interface's MTU (INTERFACE, MTU): a value the device takes, or 0
+	 * for its default.  The interface stays up while it changes.
+	 */
+	NETWORKD_OP_MTU = 21,
 	NETWORKD_OP_WIFI_ENABLE = 32,
 	NETWORKD_OP_WIFI_DISABLE = 33,
 	NETWORKD_OP_WIFI_LIST = 34,
@@ -193,6 +199,7 @@ enum networkd_field_type {
 	NETWORKD_FIELD_DNS = 21,
 	NETWORKD_FIELD_PATH = 22,
 	NETWORKD_FIELD_TOKEN = 23,
+	NETWORKD_FIELD_MTU = 24,
 	NETWORKD_FIELD_SSID = 32,
 	/* The numeric user ID of the account a session request is about. */
 	NETWORKD_FIELD_ACCOUNT = 33
@@ -244,6 +251,36 @@ void networkd_field_reader_init(struct networkd_field_reader *, const void *,
 	size_t);
 int networkd_field_read(struct networkd_field_reader *, struct networkd_field *);
 int networkd_field_read_u32(const struct networkd_field *, uint32_t *);
+/*
+ * One wired interface's record in a LAN_ENABLE request, as text:
+ * "IF disabled", "IF dhcp SECONDS" or "IF static ADDRESS NETMASK", the last
+ * two followed by "mtu N" when the configuration names an MTU.
+ */
+#define NETWORKD_LAN_RECORD_MAX		128U
+#define NETWORKD_LAN_RECORD_NAME_MAX	16U
+#define NETWORKD_LAN_RECORD_ADDRESS_MAX	16U
+#define NETWORKD_LAN_RECORD_MTU_MIN	1280U
+#define NETWORKD_LAN_RECORD_MTU_MAX	65535U
+
+/* What a record asks of its interface. */
+enum networkd_lan_record_mode {
+	NETWORKD_LAN_RECORD_DISABLED,
+	NETWORKD_LAN_RECORD_DHCP,
+	NETWORKD_LAN_RECORD_STATIC
+};
+
+/* A record's fields; an MTU of 0 leaves the interface's as it is. */
+struct networkd_lan_record {
+	char interface[NETWORKD_LAN_RECORD_NAME_MAX];
+	enum networkd_lan_record_mode mode;
+	char address[NETWORKD_LAN_RECORD_ADDRESS_MAX];
+	char netmask[NETWORKD_LAN_RECORD_ADDRESS_MAX];
+	unsigned dhcp_timeout;
+	unsigned mtu;
+};
+
+int networkd_lan_record_format(const struct networkd_lan_record *, char *, size_t, size_t *);
+int networkd_lan_record_parse(const char *, size_t, struct networkd_lan_record *);
 int networkd_protocol_write_frame(int,
 	const struct networkd_protocol_header *, const void *);
 int networkd_protocol_read_frame(int, struct networkd_protocol_header *,

@@ -29,8 +29,8 @@ vkCmdBindPipeline(
 		return;
 
 	/* Preserves argument order with explicit scalar widths and owned handle translation. */
-	vulkan_write_u32(&writer, pipelineBindPoint);
-	vulkan_encode_handle(&writer, (uint64_t)pipeline);
+	vulkan_record_u32(&writer, pipelineBindPoint);
+	vulkan_record_handle(&writer, (uint64_t)pipeline);
 
 	/* Retain this complete command independently of caller pointer lifetimes. */
 	command_record_finish(command, &writer);
@@ -62,8 +62,8 @@ vkCmdSetViewport(
 		return;
 
 	/* Preserves argument order with explicit scalar widths and owned handle translation. */
-	vulkan_write_u32(&writer, firstViewport);
-	vulkan_write_u32(&writer, viewportCount);
+	vulkan_record_u32(&writer, firstViewport);
+	vulkan_record_u32(&writer, viewportCount);
 
 	/* Keeps absent pViewports distinct from its count-selected payload. */
 	count = 0;
@@ -71,7 +71,7 @@ vkCmdSetViewport(
 		count = viewportCount;
 
 	/* Prefixes referenced contents with their exact 64-bit wire extent. */
-	vulkan_write_u64(&writer, count);
+	vulkan_record_u64(&writer, count);
 
 	/* Copies only complete caller elements while the command remains encodable. */
 	for (index = 0;
@@ -111,8 +111,8 @@ vkCmdSetScissor(
 		return;
 
 	/* Preserves argument order with explicit scalar widths and owned handle translation. */
-	vulkan_write_u32(&writer, firstScissor);
-	vulkan_write_u32(&writer, scissorCount);
+	vulkan_record_u32(&writer, firstScissor);
+	vulkan_record_u32(&writer, scissorCount);
 
 	/* Keeps absent pScissors distinct from its count-selected payload. */
 	count = 0;
@@ -120,7 +120,7 @@ vkCmdSetScissor(
 		count = scissorCount;
 
 	/* Prefixes referenced contents with their exact 64-bit wire extent. */
-	vulkan_write_u64(&writer, count);
+	vulkan_record_u64(&writer, count);
 
 	/* Copies only complete caller elements while the command remains encodable. */
 	for (index = 0;
@@ -223,7 +223,7 @@ vkCmdSetBlendConstants(
 		count = 4;
 
 	/* Prefixes referenced contents with their exact 64-bit wire extent. */
-	vulkan_write_u64(&writer, count);
+	vulkan_record_u64(&writer, count);
 
 	/* Copies only complete caller elements while the command remains encodable. */
 	for (index = 0;
@@ -290,8 +290,8 @@ vkCmdSetStencilCompareMask(
 		return;
 
 	/* Preserves argument order with explicit scalar widths and owned handle translation. */
-	vulkan_write_u32(&writer, faceMask);
-	vulkan_write_u32(&writer, compareMask);
+	vulkan_record_u32(&writer, faceMask);
+	vulkan_record_u32(&writer, compareMask);
 
 	/* Retain this complete command independently of caller pointer lifetimes. */
 	command_record_finish(command, &writer);
@@ -320,8 +320,8 @@ vkCmdSetStencilWriteMask(
 		return;
 
 	/* Preserves argument order with explicit scalar widths and owned handle translation. */
-	vulkan_write_u32(&writer, faceMask);
-	vulkan_write_u32(&writer, writeMask);
+	vulkan_record_u32(&writer, faceMask);
+	vulkan_record_u32(&writer, writeMask);
 
 	/* Retain this complete command independently of caller pointer lifetimes. */
 	command_record_finish(command, &writer);
@@ -350,8 +350,8 @@ vkCmdSetStencilReference(
 		return;
 
 	/* Preserves argument order with explicit scalar widths and owned handle translation. */
-	vulkan_write_u32(&writer, faceMask);
-	vulkan_write_u32(&writer, reference);
+	vulkan_record_u32(&writer, faceMask);
+	vulkan_record_u32(&writer, reference);
 
 	/* Retain this complete command independently of caller pointer lifetimes. */
 	command_record_finish(command, &writer);
@@ -387,10 +387,10 @@ vkCmdBindDescriptorSets(
 		return;
 
 	/* Preserves argument order with explicit scalar widths and owned handle translation. */
-	vulkan_write_u32(&writer, pipelineBindPoint);
-	vulkan_encode_handle(&writer, (uint64_t)layout);
-	vulkan_write_u32(&writer, firstSet);
-	vulkan_write_u32(&writer, descriptorSetCount);
+	vulkan_record_u32(&writer, pipelineBindPoint);
+	vulkan_record_handle(&writer, (uint64_t)layout);
+	vulkan_record_u32(&writer, firstSet);
+	vulkan_record_u32(&writer, descriptorSetCount);
 
 	/* Keeps absent pDescriptorSets distinct from its count-selected payload. */
 	count = 0;
@@ -398,18 +398,18 @@ vkCmdBindDescriptorSets(
 		count = descriptorSetCount;
 
 	/* Prefixes referenced contents with their exact 64-bit wire extent. */
-	vulkan_write_u64(&writer, count);
+	vulkan_record_u64(&writer, count);
 
 	/* Copies only complete caller elements while the command remains encodable. */
 	for (index = 0;
 	     index < count && writer.error == VK_SUCCESS;
 	     index++) {
 		/* Uses declared element widths rather than native array padding. */
-		vulkan_encode_handle(&writer, (uint64_t)pDescriptorSets[index]);
+		vulkan_record_handle(&writer, (uint64_t)pDescriptorSets[index]);
 	}
 
 	/* Preserves argument order with explicit scalar widths and owned handle translation. */
-	vulkan_write_u32(&writer, dynamicOffsetCount);
+	vulkan_record_u32(&writer, dynamicOffsetCount);
 
 	/* Keeps absent pDynamicOffsets distinct from its count-selected payload. */
 	count = 0;
@@ -417,14 +417,14 @@ vkCmdBindDescriptorSets(
 		count = dynamicOffsetCount;
 
 	/* Prefixes referenced contents with their exact 64-bit wire extent. */
-	vulkan_write_u64(&writer, count);
+	vulkan_record_u64(&writer, count);
 
 	/* Copies only complete caller elements while the command remains encodable. */
 	for (index = 0;
 	     index < count && writer.error == VK_SUCCESS;
 	     index++) {
 		/* Uses declared element widths rather than native array padding. */
-		vulkan_write_u32(&writer, pDynamicOffsets[index]);
+		vulkan_record_u32(&writer, pDynamicOffsets[index]);
 	}
 
 	/* Retain this complete command independently of caller pointer lifetimes. */
@@ -455,9 +455,9 @@ vkCmdBindIndexBuffer(
 		return;
 
 	/* Preserves argument order with explicit scalar widths and owned handle translation. */
-	vulkan_encode_handle(&writer, (uint64_t)buffer);
-	vulkan_write_u64(&writer, offset);
-	vulkan_write_u32(&writer, indexType);
+	vulkan_record_handle(&writer, (uint64_t)buffer);
+	vulkan_record_u64(&writer, offset);
+	vulkan_record_u32(&writer, indexType);
 
 	/* Retain this complete command independently of caller pointer lifetimes. */
 	command_record_finish(command, &writer);
@@ -490,8 +490,8 @@ vkCmdBindVertexBuffers(
 		return;
 
 	/* Preserves argument order with explicit scalar widths and owned handle translation. */
-	vulkan_write_u32(&writer, firstBinding);
-	vulkan_write_u32(&writer, bindingCount);
+	vulkan_record_u32(&writer, firstBinding);
+	vulkan_record_u32(&writer, bindingCount);
 
 	/* Keeps absent pBuffers distinct from its count-selected payload. */
 	count = 0;
@@ -499,14 +499,14 @@ vkCmdBindVertexBuffers(
 		count = bindingCount;
 
 	/* Prefixes referenced contents with their exact 64-bit wire extent. */
-	vulkan_write_u64(&writer, count);
+	vulkan_record_u64(&writer, count);
 
 	/* Copies only complete caller elements while the command remains encodable. */
 	for (index = 0;
 	     index < count && writer.error == VK_SUCCESS;
 	     index++) {
 		/* Uses declared element widths rather than native array padding. */
-		vulkan_encode_handle(&writer, (uint64_t)pBuffers[index]);
+		vulkan_record_handle(&writer, (uint64_t)pBuffers[index]);
 	}
 
 	/* Keeps absent pOffsets distinct from its count-selected payload. */
@@ -515,14 +515,14 @@ vkCmdBindVertexBuffers(
 		count = bindingCount;
 
 	/* Prefixes referenced contents with their exact 64-bit wire extent. */
-	vulkan_write_u64(&writer, count);
+	vulkan_record_u64(&writer, count);
 
 	/* Copies only complete caller elements while the command remains encodable. */
 	for (index = 0;
 	     index < count && writer.error == VK_SUCCESS;
 	     index++) {
 		/* Uses declared element widths rather than native array padding. */
-		vulkan_write_u64(&writer, pOffsets[index]);
+		vulkan_record_u64(&writer, pOffsets[index]);
 	}
 
 	/* Retain this complete command independently of caller pointer lifetimes. */
@@ -554,10 +554,10 @@ vkCmdDraw(
 		return;
 
 	/* Preserves argument order with explicit scalar widths and owned handle translation. */
-	vulkan_write_u32(&writer, vertexCount);
-	vulkan_write_u32(&writer, instanceCount);
-	vulkan_write_u32(&writer, firstVertex);
-	vulkan_write_u32(&writer, firstInstance);
+	vulkan_record_u32(&writer, vertexCount);
+	vulkan_record_u32(&writer, instanceCount);
+	vulkan_record_u32(&writer, firstVertex);
+	vulkan_record_u32(&writer, firstInstance);
 
 	/* Retain this complete command independently of caller pointer lifetimes. */
 	command_record_finish(command, &writer);
@@ -589,11 +589,11 @@ vkCmdDrawIndexed(
 		return;
 
 	/* Preserves argument order with explicit scalar widths and owned handle translation. */
-	vulkan_write_u32(&writer, indexCount);
-	vulkan_write_u32(&writer, instanceCount);
-	vulkan_write_u32(&writer, firstIndex);
-	vulkan_write_u32(&writer, vertexOffset);
-	vulkan_write_u32(&writer, firstInstance);
+	vulkan_record_u32(&writer, indexCount);
+	vulkan_record_u32(&writer, instanceCount);
+	vulkan_record_u32(&writer, firstIndex);
+	vulkan_record_u32(&writer, vertexOffset);
+	vulkan_record_u32(&writer, firstInstance);
 
 	/* Retain this complete command independently of caller pointer lifetimes. */
 	command_record_finish(command, &writer);
@@ -624,10 +624,10 @@ vkCmdDrawIndirect(
 		return;
 
 	/* Preserves argument order with explicit scalar widths and owned handle translation. */
-	vulkan_encode_handle(&writer, (uint64_t)buffer);
-	vulkan_write_u64(&writer, offset);
-	vulkan_write_u32(&writer, drawCount);
-	vulkan_write_u32(&writer, stride);
+	vulkan_record_handle(&writer, (uint64_t)buffer);
+	vulkan_record_u64(&writer, offset);
+	vulkan_record_u32(&writer, drawCount);
+	vulkan_record_u32(&writer, stride);
 
 	/* Retain this complete command independently of caller pointer lifetimes. */
 	command_record_finish(command, &writer);
@@ -658,10 +658,10 @@ vkCmdDrawIndexedIndirect(
 		return;
 
 	/* Preserves argument order with explicit scalar widths and owned handle translation. */
-	vulkan_encode_handle(&writer, (uint64_t)buffer);
-	vulkan_write_u64(&writer, offset);
-	vulkan_write_u32(&writer, drawCount);
-	vulkan_write_u32(&writer, stride);
+	vulkan_record_handle(&writer, (uint64_t)buffer);
+	vulkan_record_u64(&writer, offset);
+	vulkan_record_u32(&writer, drawCount);
+	vulkan_record_u32(&writer, stride);
 
 	/* Retain this complete command independently of caller pointer lifetimes. */
 	command_record_finish(command, &writer);
@@ -691,9 +691,9 @@ vkCmdDispatch(
 		return;
 
 	/* Preserves argument order with explicit scalar widths and owned handle translation. */
-	vulkan_write_u32(&writer, groupCountX);
-	vulkan_write_u32(&writer, groupCountY);
-	vulkan_write_u32(&writer, groupCountZ);
+	vulkan_record_u32(&writer, groupCountX);
+	vulkan_record_u32(&writer, groupCountY);
+	vulkan_record_u32(&writer, groupCountZ);
 
 	/* Retain this complete command independently of caller pointer lifetimes. */
 	command_record_finish(command, &writer);
@@ -722,8 +722,8 @@ vkCmdDispatchIndirect(
 		return;
 
 	/* Preserves argument order with explicit scalar widths and owned handle translation. */
-	vulkan_encode_handle(&writer, (uint64_t)buffer);
-	vulkan_write_u64(&writer, offset);
+	vulkan_record_handle(&writer, (uint64_t)buffer);
+	vulkan_record_u64(&writer, offset);
 
 	/* Retain this complete command independently of caller pointer lifetimes. */
 	command_record_finish(command, &writer);
@@ -756,9 +756,9 @@ vkCmdCopyBuffer(
 		return;
 
 	/* Preserves argument order with explicit scalar widths and owned handle translation. */
-	vulkan_encode_handle(&writer, (uint64_t)srcBuffer);
-	vulkan_encode_handle(&writer, (uint64_t)dstBuffer);
-	vulkan_write_u32(&writer, regionCount);
+	vulkan_record_handle(&writer, (uint64_t)srcBuffer);
+	vulkan_record_handle(&writer, (uint64_t)dstBuffer);
+	vulkan_record_u32(&writer, regionCount);
 
 	/* Keeps absent pRegions distinct from its count-selected payload. */
 	count = 0;
@@ -766,7 +766,7 @@ vkCmdCopyBuffer(
 		count = regionCount;
 
 	/* Prefixes referenced contents with their exact 64-bit wire extent. */
-	vulkan_write_u64(&writer, count);
+	vulkan_record_u64(&writer, count);
 
 	/* Copies only complete caller elements while the command remains encodable. */
 	for (index = 0;
@@ -809,11 +809,11 @@ vkCmdCopyImage(
 		return;
 
 	/* Preserves argument order with explicit scalar widths and owned handle translation. */
-	vulkan_encode_handle(&writer, (uint64_t)srcImage);
-	vulkan_write_u32(&writer, vulkan_wire_image_layout(srcImageLayout));
-	vulkan_encode_handle(&writer, (uint64_t)dstImage);
-	vulkan_write_u32(&writer, vulkan_wire_image_layout(dstImageLayout));
-	vulkan_write_u32(&writer, regionCount);
+	vulkan_record_handle(&writer, (uint64_t)srcImage);
+	vulkan_record_u32(&writer, vulkan_wire_image_layout(srcImageLayout));
+	vulkan_record_handle(&writer, (uint64_t)dstImage);
+	vulkan_record_u32(&writer, vulkan_wire_image_layout(dstImageLayout));
+	vulkan_record_u32(&writer, regionCount);
 
 	/* Keeps absent pRegions distinct from its count-selected payload. */
 	count = 0;
@@ -821,7 +821,7 @@ vkCmdCopyImage(
 		count = regionCount;
 
 	/* Prefixes referenced contents with their exact 64-bit wire extent. */
-	vulkan_write_u64(&writer, count);
+	vulkan_record_u64(&writer, count);
 
 	/* Copies only complete caller elements while the command remains encodable. */
 	for (index = 0;
@@ -868,11 +868,11 @@ vkCmdBlitImage(
 		return;
 
 	/* Preserves argument order with explicit scalar widths and owned handle translation. */
-	vulkan_encode_handle(&writer, (uint64_t)srcImage);
-	vulkan_write_u32(&writer, vulkan_wire_image_layout(srcImageLayout));
-	vulkan_encode_handle(&writer, (uint64_t)dstImage);
-	vulkan_write_u32(&writer, vulkan_wire_image_layout(dstImageLayout));
-	vulkan_write_u32(&writer, regionCount);
+	vulkan_record_handle(&writer, (uint64_t)srcImage);
+	vulkan_record_u32(&writer, vulkan_wire_image_layout(srcImageLayout));
+	vulkan_record_handle(&writer, (uint64_t)dstImage);
+	vulkan_record_u32(&writer, vulkan_wire_image_layout(dstImageLayout));
+	vulkan_record_u32(&writer, regionCount);
 
 	/* Keeps absent pRegions distinct from its count-selected payload. */
 	count = 0;
@@ -880,7 +880,7 @@ vkCmdBlitImage(
 		count = regionCount;
 
 	/* Prefixes referenced contents with their exact 64-bit wire extent. */
-	vulkan_write_u64(&writer, count);
+	vulkan_record_u64(&writer, count);
 
 	/* Copies only complete caller elements while the command remains encodable. */
 	for (index = 0;
@@ -891,7 +891,7 @@ vkCmdBlitImage(
 	}
 
 	/* Preserves argument order with explicit scalar widths and owned handle translation. */
-	vulkan_write_u32(&writer, filter);
+	vulkan_record_u32(&writer, filter);
 
 	/* Retain this complete command independently of caller pointer lifetimes. */
 	command_record_finish(command, &writer);
@@ -928,10 +928,10 @@ vkCmdCopyBufferToImage(
 		return;
 
 	/* Preserves argument order with explicit scalar widths and owned handle translation. */
-	vulkan_encode_handle(&writer, (uint64_t)srcBuffer);
-	vulkan_encode_handle(&writer, (uint64_t)dstImage);
-	vulkan_write_u32(&writer, vulkan_wire_image_layout(dstImageLayout));
-	vulkan_write_u32(&writer, regionCount);
+	vulkan_record_handle(&writer, (uint64_t)srcBuffer);
+	vulkan_record_handle(&writer, (uint64_t)dstImage);
+	vulkan_record_u32(&writer, vulkan_wire_image_layout(dstImageLayout));
+	vulkan_record_u32(&writer, regionCount);
 
 	/* Keeps absent pRegions distinct from its count-selected payload. */
 	count = 0;
@@ -939,7 +939,7 @@ vkCmdCopyBufferToImage(
 		count = regionCount;
 
 	/* Prefixes referenced contents with their exact 64-bit wire extent. */
-	vulkan_write_u64(&writer, count);
+	vulkan_record_u64(&writer, count);
 
 	/* Copies only complete caller elements while the command remains encodable. */
 	for (index = 0;
@@ -984,10 +984,10 @@ vkCmdCopyImageToBuffer(
 		return;
 
 	/* Preserves argument order with explicit scalar widths and owned handle translation. */
-	vulkan_encode_handle(&writer, (uint64_t)srcImage);
-	vulkan_write_u32(&writer, vulkan_wire_image_layout(srcImageLayout));
-	vulkan_encode_handle(&writer, (uint64_t)dstBuffer);
-	vulkan_write_u32(&writer, regionCount);
+	vulkan_record_handle(&writer, (uint64_t)srcImage);
+	vulkan_record_u32(&writer, vulkan_wire_image_layout(srcImageLayout));
+	vulkan_record_handle(&writer, (uint64_t)dstBuffer);
+	vulkan_record_u32(&writer, regionCount);
 
 	/* Keeps absent pRegions distinct from its count-selected payload. */
 	count = 0;
@@ -995,7 +995,7 @@ vkCmdCopyImageToBuffer(
 		count = regionCount;
 
 	/* Prefixes referenced contents with their exact 64-bit wire extent. */
-	vulkan_write_u64(&writer, count);
+	vulkan_record_u64(&writer, count);
 
 	/* Copies only complete caller elements while the command remains encodable. */
 	for (index = 0;
@@ -1035,9 +1035,9 @@ vkCmdUpdateBuffer(
 		return;
 
 	/* Preserves argument order with explicit scalar widths and owned handle translation. */
-	vulkan_encode_handle(&writer, (uint64_t)dstBuffer);
-	vulkan_write_u64(&writer, dstOffset);
-	vulkan_write_u64(&writer, dataSize);
+	vulkan_record_handle(&writer, (uint64_t)dstBuffer);
+	vulkan_record_u64(&writer, dstOffset);
+	vulkan_record_u64(&writer, dataSize);
 
 	/* Keeps absent pData distinct from its count-selected payload. */
 	count = 0;
@@ -1045,7 +1045,7 @@ vkCmdUpdateBuffer(
 		count = dataSize;
 
 	/* Prefixes referenced contents with their exact 64-bit wire extent. */
-	vulkan_write_u64(&writer, count);
+	vulkan_record_u64(&writer, count);
 	vulkan_write_bytes(&writer, pData, (size_t)count);
 
 	/* Retain this complete command independently of caller pointer lifetimes. */
@@ -1077,10 +1077,10 @@ vkCmdFillBuffer(
 		return;
 
 	/* Preserves argument order with explicit scalar widths and owned handle translation. */
-	vulkan_encode_handle(&writer, (uint64_t)dstBuffer);
-	vulkan_write_u64(&writer, dstOffset);
-	vulkan_write_u64(&writer, size);
-	vulkan_write_u32(&writer, data);
+	vulkan_record_handle(&writer, (uint64_t)dstBuffer);
+	vulkan_record_u64(&writer, dstOffset);
+	vulkan_record_u64(&writer, size);
+	vulkan_record_u32(&writer, data);
 
 	/* Retain this complete command independently of caller pointer lifetimes. */
 	command_record_finish(command, &writer);
@@ -1114,8 +1114,8 @@ vkCmdClearColorImage(
 		return;
 
 	/* Preserves argument order with explicit scalar widths and owned handle translation. */
-	vulkan_encode_handle(&writer, (uint64_t)image);
-	vulkan_write_u32(&writer, vulkan_wire_image_layout(imageLayout));
+	vulkan_record_handle(&writer, (uint64_t)image);
+	vulkan_record_u32(&writer, vulkan_wire_image_layout(imageLayout));
 
 	/* Keeps absent pColor distinct from its count-selected payload. */
 	count = 0;
@@ -1123,14 +1123,14 @@ vkCmdClearColorImage(
 		count = 1;
 
 	/* Prefixes referenced contents with their exact 64-bit wire extent. */
-	vulkan_write_u64(&writer, count);
+	vulkan_record_u64(&writer, count);
 
 	/* Does not inspect a record whose presence marker is absent. */
 	if (count != 0)
 		command_encode_color(&writer, pColor);
 
 	/* Preserves argument order with explicit scalar widths and owned handle translation. */
-	vulkan_write_u32(&writer, rangeCount);
+	vulkan_record_u32(&writer, rangeCount);
 
 	/* Keeps absent pRanges distinct from its count-selected payload. */
 	count = 0;
@@ -1138,7 +1138,7 @@ vkCmdClearColorImage(
 		count = rangeCount;
 
 	/* Prefixes referenced contents with their exact 64-bit wire extent. */
-	vulkan_write_u64(&writer, count);
+	vulkan_record_u64(&writer, count);
 
 	/* Copies only complete caller elements while the command remains encodable. */
 	for (index = 0;
@@ -1183,8 +1183,8 @@ vkCmdClearDepthStencilImage(
 		return;
 
 	/* Preserves argument order with explicit scalar widths and owned handle translation. */
-	vulkan_encode_handle(&writer, (uint64_t)image);
-	vulkan_write_u32(&writer, vulkan_wire_image_layout(imageLayout));
+	vulkan_record_handle(&writer, (uint64_t)image);
+	vulkan_record_u32(&writer, vulkan_wire_image_layout(imageLayout));
 
 	/* Keeps absent pDepthStencil distinct from its count-selected payload. */
 	count = 0;
@@ -1192,14 +1192,14 @@ vkCmdClearDepthStencilImage(
 		count = 1;
 
 	/* Prefixes referenced contents with their exact 64-bit wire extent. */
-	vulkan_write_u64(&writer, count);
+	vulkan_record_u64(&writer, count);
 
 	/* Does not inspect a record whose presence marker is absent. */
 	if (count != 0)
 		command_encode_depth_ranges(&writer, pDepthStencil, rangeCount, pRanges);
 
 	/* Preserves argument order with explicit scalar widths and owned handle translation. */
-	vulkan_write_u32(&writer, rangeCount);
+	vulkan_record_u32(&writer, rangeCount);
 
 	/* Keeps absent pRanges distinct from its count-selected payload. */
 	count = 0;
@@ -1207,7 +1207,7 @@ vkCmdClearDepthStencilImage(
 		count = rangeCount;
 
 	/* Prefixes referenced contents with their exact 64-bit wire extent. */
-	vulkan_write_u64(&writer, count);
+	vulkan_record_u64(&writer, count);
 
 	/* Copies only complete caller elements while the command remains encodable. */
 	for (index = 0;
@@ -1251,7 +1251,7 @@ vkCmdClearAttachments(
 		return;
 
 	/* Preserves argument order with explicit scalar widths and owned handle translation. */
-	vulkan_write_u32(&writer, attachmentCount);
+	vulkan_record_u32(&writer, attachmentCount);
 
 	/* Keeps absent pAttachments distinct from its count-selected payload. */
 	count = 0;
@@ -1259,7 +1259,7 @@ vkCmdClearAttachments(
 		count = attachmentCount;
 
 	/* Prefixes referenced contents with their exact 64-bit wire extent. */
-	vulkan_write_u64(&writer, count);
+	vulkan_record_u64(&writer, count);
 
 	/* Copies only complete caller elements while the command remains encodable. */
 	for (index = 0;
@@ -1270,7 +1270,7 @@ vkCmdClearAttachments(
 	}
 
 	/* Preserves argument order with explicit scalar widths and owned handle translation. */
-	vulkan_write_u32(&writer, rectCount);
+	vulkan_record_u32(&writer, rectCount);
 
 	/* Keeps absent pRects distinct from its count-selected payload. */
 	count = 0;
@@ -1278,7 +1278,7 @@ vkCmdClearAttachments(
 		count = rectCount;
 
 	/* Prefixes referenced contents with their exact 64-bit wire extent. */
-	vulkan_write_u64(&writer, count);
+	vulkan_record_u64(&writer, count);
 
 	/* Copies only complete caller elements while the command remains encodable. */
 	for (index = 0;
@@ -1321,11 +1321,11 @@ vkCmdResolveImage(
 		return;
 
 	/* Preserves argument order with explicit scalar widths and owned handle translation. */
-	vulkan_encode_handle(&writer, (uint64_t)srcImage);
-	vulkan_write_u32(&writer, vulkan_wire_image_layout(srcImageLayout));
-	vulkan_encode_handle(&writer, (uint64_t)dstImage);
-	vulkan_write_u32(&writer, vulkan_wire_image_layout(dstImageLayout));
-	vulkan_write_u32(&writer, regionCount);
+	vulkan_record_handle(&writer, (uint64_t)srcImage);
+	vulkan_record_u32(&writer, vulkan_wire_image_layout(srcImageLayout));
+	vulkan_record_handle(&writer, (uint64_t)dstImage);
+	vulkan_record_u32(&writer, vulkan_wire_image_layout(dstImageLayout));
+	vulkan_record_u32(&writer, regionCount);
 
 	/* Keeps absent pRegions distinct from its count-selected payload. */
 	count = 0;
@@ -1333,7 +1333,7 @@ vkCmdResolveImage(
 		count = regionCount;
 
 	/* Prefixes referenced contents with their exact 64-bit wire extent. */
-	vulkan_write_u64(&writer, count);
+	vulkan_record_u64(&writer, count);
 
 	/* Copies only complete caller elements while the command remains encodable. */
 	for (index = 0;
@@ -1373,8 +1373,8 @@ vkCmdSetEvent(
 		return;
 
 	/* Preserves argument order with explicit scalar widths and owned handle translation. */
-	vulkan_encode_handle(&writer, (uint64_t)event);
-	vulkan_write_u32(&writer, stageMask);
+	vulkan_record_handle(&writer, (uint64_t)event);
+	vulkan_record_u32(&writer, stageMask);
 
 	/* Retain this complete command independently of caller pointer lifetimes. */
 	command_record_finish(command, &writer);
@@ -1403,8 +1403,8 @@ vkCmdResetEvent(
 		return;
 
 	/* Preserves argument order with explicit scalar widths and owned handle translation. */
-	vulkan_encode_handle(&writer, (uint64_t)event);
-	vulkan_write_u32(&writer, stageMask);
+	vulkan_record_handle(&writer, (uint64_t)event);
+	vulkan_record_u32(&writer, stageMask);
 
 	/* Retain this complete command independently of caller pointer lifetimes. */
 	command_record_finish(command, &writer);
@@ -1443,7 +1443,7 @@ vkCmdWaitEvents(
 		return;
 
 	/* Preserves argument order with explicit scalar widths and owned handle translation. */
-	vulkan_write_u32(&writer, eventCount);
+	vulkan_record_u32(&writer, eventCount);
 
 	/* Keeps absent pEvents distinct from its count-selected payload. */
 	count = 0;
@@ -1451,20 +1451,20 @@ vkCmdWaitEvents(
 		count = eventCount;
 
 	/* Prefixes referenced contents with their exact 64-bit wire extent. */
-	vulkan_write_u64(&writer, count);
+	vulkan_record_u64(&writer, count);
 
 	/* Copies only complete caller elements while the command remains encodable. */
 	for (index = 0;
 	     index < count && writer.error == VK_SUCCESS;
 	     index++) {
 		/* Uses declared element widths rather than native array padding. */
-		vulkan_encode_handle(&writer, (uint64_t)pEvents[index]);
+		vulkan_record_handle(&writer, (uint64_t)pEvents[index]);
 	}
 
 	/* Preserves argument order with explicit scalar widths and owned handle translation. */
-	vulkan_write_u32(&writer, srcStageMask);
-	vulkan_write_u32(&writer, dstStageMask);
-	vulkan_write_u32(&writer, memoryBarrierCount);
+	vulkan_record_u32(&writer, srcStageMask);
+	vulkan_record_u32(&writer, dstStageMask);
+	vulkan_record_u32(&writer, memoryBarrierCount);
 
 	/* Keeps absent pMemoryBarriers distinct from its count-selected payload. */
 	count = 0;
@@ -1472,7 +1472,7 @@ vkCmdWaitEvents(
 		count = memoryBarrierCount;
 
 	/* Prefixes referenced contents with their exact 64-bit wire extent. */
-	vulkan_write_u64(&writer, count);
+	vulkan_record_u64(&writer, count);
 
 	/* Copies only complete caller elements while the command remains encodable. */
 	for (index = 0;
@@ -1483,7 +1483,7 @@ vkCmdWaitEvents(
 	}
 
 	/* Preserves argument order with explicit scalar widths and owned handle translation. */
-	vulkan_write_u32(&writer, bufferMemoryBarrierCount);
+	vulkan_record_u32(&writer, bufferMemoryBarrierCount);
 
 	/* Keeps absent pBufferMemoryBarriers distinct from its count-selected payload. */
 	count = 0;
@@ -1491,7 +1491,7 @@ vkCmdWaitEvents(
 		count = bufferMemoryBarrierCount;
 
 	/* Prefixes referenced contents with their exact 64-bit wire extent. */
-	vulkan_write_u64(&writer, count);
+	vulkan_record_u64(&writer, count);
 
 	/* Copies only complete caller elements while the command remains encodable. */
 	for (index = 0;
@@ -1502,7 +1502,7 @@ vkCmdWaitEvents(
 	}
 
 	/* Preserves argument order with explicit scalar widths and owned handle translation. */
-	vulkan_write_u32(&writer, imageMemoryBarrierCount);
+	vulkan_record_u32(&writer, imageMemoryBarrierCount);
 
 	/* Keeps absent pImageMemoryBarriers distinct from its count-selected payload. */
 	count = 0;
@@ -1510,7 +1510,7 @@ vkCmdWaitEvents(
 		count = imageMemoryBarrierCount;
 
 	/* Prefixes referenced contents with their exact 64-bit wire extent. */
-	vulkan_write_u64(&writer, count);
+	vulkan_record_u64(&writer, count);
 
 	/* Copies only complete caller elements while the command remains encodable. */
 	for (index = 0;
@@ -1556,10 +1556,10 @@ vkCmdPipelineBarrier(
 		return;
 
 	/* Preserves argument order with explicit scalar widths and owned handle translation. */
-	vulkan_write_u32(&writer, srcStageMask);
-	vulkan_write_u32(&writer, dstStageMask);
-	vulkan_write_u32(&writer, dependencyFlags);
-	vulkan_write_u32(&writer, memoryBarrierCount);
+	vulkan_record_u32(&writer, srcStageMask);
+	vulkan_record_u32(&writer, dstStageMask);
+	vulkan_record_u32(&writer, dependencyFlags);
+	vulkan_record_u32(&writer, memoryBarrierCount);
 
 	/* Keeps absent pMemoryBarriers distinct from its count-selected payload. */
 	count = 0;
@@ -1567,7 +1567,7 @@ vkCmdPipelineBarrier(
 		count = memoryBarrierCount;
 
 	/* Prefixes referenced contents with their exact 64-bit wire extent. */
-	vulkan_write_u64(&writer, count);
+	vulkan_record_u64(&writer, count);
 
 	/* Copies only complete caller elements while the command remains encodable. */
 	for (index = 0;
@@ -1578,7 +1578,7 @@ vkCmdPipelineBarrier(
 	}
 
 	/* Preserves argument order with explicit scalar widths and owned handle translation. */
-	vulkan_write_u32(&writer, bufferMemoryBarrierCount);
+	vulkan_record_u32(&writer, bufferMemoryBarrierCount);
 
 	/* Keeps absent pBufferMemoryBarriers distinct from its count-selected payload. */
 	count = 0;
@@ -1586,7 +1586,7 @@ vkCmdPipelineBarrier(
 		count = bufferMemoryBarrierCount;
 
 	/* Prefixes referenced contents with their exact 64-bit wire extent. */
-	vulkan_write_u64(&writer, count);
+	vulkan_record_u64(&writer, count);
 
 	/* Copies only complete caller elements while the command remains encodable. */
 	for (index = 0;
@@ -1597,7 +1597,7 @@ vkCmdPipelineBarrier(
 	}
 
 	/* Preserves argument order with explicit scalar widths and owned handle translation. */
-	vulkan_write_u32(&writer, imageMemoryBarrierCount);
+	vulkan_record_u32(&writer, imageMemoryBarrierCount);
 
 	/* Keeps absent pImageMemoryBarriers distinct from its count-selected payload. */
 	count = 0;
@@ -1605,7 +1605,7 @@ vkCmdPipelineBarrier(
 		count = imageMemoryBarrierCount;
 
 	/* Prefixes referenced contents with their exact 64-bit wire extent. */
-	vulkan_write_u64(&writer, count);
+	vulkan_record_u64(&writer, count);
 
 	/* Copies only complete caller elements while the command remains encodable. */
 	for (index = 0;
@@ -1643,9 +1643,9 @@ vkCmdBeginQuery(
 		return;
 
 	/* Preserves argument order with explicit scalar widths and owned handle translation. */
-	vulkan_encode_handle(&writer, (uint64_t)queryPool);
-	vulkan_write_u32(&writer, query);
-	vulkan_write_u32(&writer, flags);
+	vulkan_record_handle(&writer, (uint64_t)queryPool);
+	vulkan_record_u32(&writer, query);
+	vulkan_record_u32(&writer, flags);
 
 	/* Retain this complete command independently of caller pointer lifetimes. */
 	command_record_finish(command, &writer);
@@ -1674,8 +1674,8 @@ vkCmdEndQuery(
 		return;
 
 	/* Preserves argument order with explicit scalar widths and owned handle translation. */
-	vulkan_encode_handle(&writer, (uint64_t)queryPool);
-	vulkan_write_u32(&writer, query);
+	vulkan_record_handle(&writer, (uint64_t)queryPool);
+	vulkan_record_u32(&writer, query);
 
 	/* Retain this complete command independently of caller pointer lifetimes. */
 	command_record_finish(command, &writer);
@@ -1705,9 +1705,9 @@ vkCmdResetQueryPool(
 		return;
 
 	/* Preserves argument order with explicit scalar widths and owned handle translation. */
-	vulkan_encode_handle(&writer, (uint64_t)queryPool);
-	vulkan_write_u32(&writer, firstQuery);
-	vulkan_write_u32(&writer, queryCount);
+	vulkan_record_handle(&writer, (uint64_t)queryPool);
+	vulkan_record_u32(&writer, firstQuery);
+	vulkan_record_u32(&writer, queryCount);
 
 	/* Retain this complete command independently of caller pointer lifetimes. */
 	command_record_finish(command, &writer);
@@ -1737,9 +1737,9 @@ vkCmdWriteTimestamp(
 		return;
 
 	/* Preserves argument order with explicit scalar widths and owned handle translation. */
-	vulkan_write_u32(&writer, pipelineStage);
-	vulkan_encode_handle(&writer, (uint64_t)queryPool);
-	vulkan_write_u32(&writer, query);
+	vulkan_record_u32(&writer, pipelineStage);
+	vulkan_record_handle(&writer, (uint64_t)queryPool);
+	vulkan_record_u32(&writer, query);
 
 	/* Retain this complete command independently of caller pointer lifetimes. */
 	command_record_finish(command, &writer);
@@ -1773,13 +1773,13 @@ vkCmdCopyQueryPoolResults(
 		return;
 
 	/* Preserves argument order with explicit scalar widths and owned handle translation. */
-	vulkan_encode_handle(&writer, (uint64_t)queryPool);
-	vulkan_write_u32(&writer, firstQuery);
-	vulkan_write_u32(&writer, queryCount);
-	vulkan_encode_handle(&writer, (uint64_t)dstBuffer);
-	vulkan_write_u64(&writer, dstOffset);
-	vulkan_write_u64(&writer, stride);
-	vulkan_write_u32(&writer, flags);
+	vulkan_record_handle(&writer, (uint64_t)queryPool);
+	vulkan_record_u32(&writer, firstQuery);
+	vulkan_record_u32(&writer, queryCount);
+	vulkan_record_handle(&writer, (uint64_t)dstBuffer);
+	vulkan_record_u64(&writer, dstOffset);
+	vulkan_record_u64(&writer, stride);
+	vulkan_record_u32(&writer, flags);
 
 	/* Retain this complete command independently of caller pointer lifetimes. */
 	command_record_finish(command, &writer);
@@ -1812,10 +1812,10 @@ vkCmdPushConstants(
 		return;
 
 	/* Preserves argument order with explicit scalar widths and owned handle translation. */
-	vulkan_encode_handle(&writer, (uint64_t)layout);
-	vulkan_write_u32(&writer, stageFlags);
-	vulkan_write_u32(&writer, offset);
-	vulkan_write_u32(&writer, size);
+	vulkan_record_handle(&writer, (uint64_t)layout);
+	vulkan_record_u32(&writer, stageFlags);
+	vulkan_record_u32(&writer, offset);
+	vulkan_record_u32(&writer, size);
 
 	/* Keeps absent pValues distinct from its count-selected payload. */
 	count = 0;
@@ -1823,7 +1823,7 @@ vkCmdPushConstants(
 		count = size;
 
 	/* Prefixes referenced contents with their exact 64-bit wire extent. */
-	vulkan_write_u64(&writer, count);
+	vulkan_record_u64(&writer, count);
 	vulkan_write_bytes(&writer, pValues, (size_t)count);
 
 	/* Retain this complete command independently of caller pointer lifetimes. */
@@ -1859,14 +1859,14 @@ vkCmdBeginRenderPass(
 		count = 1;
 
 	/* Prefixes referenced contents with their exact 64-bit wire extent. */
-	vulkan_write_u64(&writer, count);
+	vulkan_record_u64(&writer, count);
 
 	/* Does not inspect a record whose presence marker is absent. */
 	if (count != 0)
 		command_encode_render_begin(&writer, pRenderPassBegin);
 
 	/* Preserves argument order with explicit scalar widths and owned handle translation. */
-	vulkan_write_u32(&writer, contents);
+	vulkan_record_u32(&writer, contents);
 
 	/* Retain this complete command independently of caller pointer lifetimes. */
 	command_record_finish(command, &writer);
@@ -1894,7 +1894,7 @@ vkCmdNextSubpass(
 		return;
 
 	/* Preserves argument order with explicit scalar widths and owned handle translation. */
-	vulkan_write_u32(&writer, contents);
+	vulkan_record_u32(&writer, contents);
 
 	/* Retain this complete command independently of caller pointer lifetimes. */
 	command_record_finish(command, &writer);
@@ -1949,7 +1949,7 @@ vkCmdExecuteCommands(
 		return;
 
 	/* Preserves argument order with explicit scalar widths and owned handle translation. */
-	vulkan_write_u32(&writer, commandBufferCount);
+	vulkan_record_u32(&writer, commandBufferCount);
 
 	/* Keeps absent pCommandBuffers distinct from its count-selected payload. */
 	count = 0;
@@ -1957,14 +1957,14 @@ vkCmdExecuteCommands(
 		count = commandBufferCount;
 
 	/* Prefixes referenced contents with their exact 64-bit wire extent. */
-	vulkan_write_u64(&writer, count);
+	vulkan_record_u64(&writer, count);
 
 	/* Copies only complete caller elements while the command remains encodable. */
 	for (index = 0;
 	     index < count && writer.error == VK_SUCCESS;
 	     index++) {
 		/* Uses declared element widths rather than native array padding. */
-		vulkan_encode_handle(&writer, (uint64_t)(uintptr_t)pCommandBuffers[index]);
+		vulkan_record_handle(&writer, (uint64_t)(uintptr_t)pCommandBuffers[index]);
 	}
 
 	/* Retain this complete command independently of caller pointer lifetimes. */

@@ -137,6 +137,37 @@ networkd_lan_set_interface(
 	return 0;
 }
 
+/* Records the MTU an interface was given, for its next configuration. */
+int
+networkd_lan_set_mtu(
+	struct networkd_lan *lan,
+	const char *interface,
+	unsigned mtu)
+{
+	size_t index;
+	int differs;
+	int valid;
+
+	/* Rejects what cannot be held. */
+	if (lan == NULL || interface == NULL)
+		return -1;
+	valid = name_valid(interface);
+	if (!valid)
+		return -1;
+
+	/* The interface's record, when the configuration names it. */
+	for (index = 0U; index < lan->policy_count; index++) {
+		differs = strcmp(lan->policy[index].interface, interface);
+		if (differs == 0) {
+			lan->policy[index].mtu = mtu;
+			break;
+		}
+	}
+
+	/* Reports successful completion. */
+	return 0;
+}
+
 /*
  * Implements the networkd lan enable operation.
  */

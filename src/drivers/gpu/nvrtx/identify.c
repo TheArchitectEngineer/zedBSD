@@ -71,9 +71,8 @@ struct identify_entry {
  * family the driver was brought up and seen working on (RTX 2070).
  *
  * Values referenced: Linux v6.19
- * drivers/gpu/drm/nouveau/nvkm/subdev/gsp/tu102.c, tu116.c, ga102.c and
- * ad102.c (the families' firmware and boot paths), and NVIDIA open-gpu-doc
- * (the class numbers).
+ * drivers/gpu/drm/nouveau/nvkm/subdev/gsp/tu102.c (the family's firmware
+ * and boot path), and NVIDIA open-gpu-doc (the class numbers).
  */
 static const struct nvrtx_profile identify_tu10x = {
 	"TU10x",
@@ -113,6 +112,10 @@ static const struct nvrtx_profile identify_tu10x = {
  * TU116 and TU117 (GeForce GTX 16): Turing as TU10x, with booters of their
  * own below tu116 and their own signature in the same GSP image, and no
  * scrubber channel.
+ *
+ * Values referenced: Linux v6.19
+ * drivers/gpu/drm/nouveau/nvkm/subdev/gsp/tu116.c (the family's firmware
+ * and boot path), and NVIDIA open-gpu-doc (the class numbers).
  */
 static const struct nvrtx_profile identify_tu11x = {
 	"TU11x",
@@ -153,6 +156,11 @@ static const struct nvrtx_profile identify_tu11x = {
  * load by DMA and check signatures in their boot ROM, the VRAM size in
  * MiB, the larger heap of the third operating-system version, Ampere's
  * classes and QMD 3.0.
+ *
+ * Values referenced: Linux v6.19
+ * drivers/gpu/drm/nouveau/nvkm/subdev/gsp/ga102.c (the family's firmware
+ * and boot path), and NVIDIA open-gpu-doc (the class numbers and the QMD
+ * version).
  */
 static const struct nvrtx_profile identify_ga10x = {
 	"GA10x",
@@ -192,6 +200,11 @@ static const struct nvrtx_profile identify_ga10x = {
  * AD102 to AD107 (GeForce RTX 40): Ampere's boot path with the bootloader
  * and booters below ad102 and the GSP image shared with GA10x (its Ada
  * signature), Ada's 3D, compute and display-core classes.
+ *
+ * Values referenced: Linux v6.19
+ * drivers/gpu/drm/nouveau/nvkm/subdev/gsp/ad102.c (the family's firmware
+ * and boot path), and NVIDIA open-gpu-doc (the class numbers and the QMD
+ * version).
  */
 static const struct nvrtx_profile identify_ad10x = {
 	"AD10x",
@@ -363,6 +376,51 @@ nvrtx_family_name(
 
 	/* An unknown generation has no name. */
 	return "unknown";
+}
+
+/*
+ * Decides whether the attach boots the GSP on a GPU or leaves it to the firmware.
+ *
+ * nvrtx.gsp=0 leaves every GPU to the firmware, and a chip without a family
+ * record has no GSP path.  Otherwise nvrtx.gsp=1 boots any chip with a
+ * path; without it the GSP is booted on every family, seen working on real
+ * hardware or not, but only where the firmware's picture is on the GPU (a
+ * GPU the firmware showed nothing on has nothing the default boot would
+ * keep).
+ */
+enum nvrtx_boot_choice
+nvrtx_boot_choose(
+	const struct nvrtx_profile *profile,
+	int gop_on_gpu,
+	bool gsp_wanted,
+	bool gsp_forced)
+{
+	/* The boot keeps every GPU away from the GSP path. */
+	if (!gsp_wanted)
+		return NVRTX_BOOT_LEAVE_OFF;
+
+	/* A recognized chip whose generation has no family record. */
+	if (profile == NULL)
+		return NVRTX_BOOT_LEAVE_NO_PATH;
+
+	/* A forced boot starts any family, seen on hardware or not. */
+	if (gsp_forced) {
+		if (profile->verified == 0)
+			return NVRTX_BOOT_START_UNSEEN;
+
+		return NVRTX_BOOT_START;
+	}
+
+	/* By default only a GPU that shows the firmware's picture is booted. */
+	if (gop_on_gpu == 0)
+		return NVRTX_BOOT_LEAVE_NO_PICTURE;
+
+	/* A family not yet seen on hardware is booted too, and says so. */
+	if (profile->verified == 0)
+		return NVRTX_BOOT_START_UNSEEN;
+
+	/* Boots a seen family that shows the firmware's picture. */
+	return NVRTX_BOOT_START;
 }
 
 /*

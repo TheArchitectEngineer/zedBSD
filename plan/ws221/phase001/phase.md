@@ -1,7 +1,7 @@
 <!-- awesome-plan project=zedbsd record=ws221-p001 -->
 # ws221-p001: 調べと設計（Jumbo frame: USB の有線 LAN で MTU 9000、GENET は 1500 のまま）— 第 2 版
 
-Status: in-progress（2026-10-13 P2: 第 2 版。review-1 の全 31 件（重大 8・中 11・軽微 12）に対応した。残り: design-reviewer の review-2、ユーザーの判断（§9）。cleared は Q1 の判定）
+Status: cleared（2026-10-29 Q1: ユーザーの回答「全部 推しで (推し)」で §9 の Q1〜Q13 を推しの案で確定、review-2 は行わない）。旧: in-progress（2026-10-13 P2: 第 2 版、review-1 の 31 件に対応）
 Parent: [WS221](../ws.md)
 Queue: （Q1 が記入）
 前の版: 第 1 版は git の履歴（commit `ecc1ef489` 以前の本 file）。review: [review-1.md](review-1.md)

@@ -6,12 +6,15 @@
  */
 
 /*
- * The About page: the Kei mark and name, then two cards of values, this
- * computer (its name, processor, graphics and screen) and its software
- * (Kei, the kernel, the architecture and how long it has run).
+ * The About page: the mark and the system's name, then two cards of
+ * values, this computer (its name, processor, graphics and screen) and its
+ * software (the system's version, the kernel, the architecture and how
+ * long it has run).
  */
 
 #include "settings.h"
+
+#include "include/kern/os-name.h"
 
 #include <stdio.h>
 #include <string.h>
@@ -21,6 +24,12 @@
 #define ABOUT_MARK		100U
 #define ABOUT_TEXT_NAME		44U
 #define ABOUT_TEXT_TAGLINE	14U
+
+/*
+ * The kernel's name as it is written, which the hero's tagline names
+ * ("powered by") while the system is called something else.
+ */
+#define ABOUT_KERNEL_NAME	"zedBSD"
 
 /*
  * How often the machine's monitor samples while About is open, in
@@ -96,9 +105,9 @@ se_about_draw(
 		se_log("ABOUT monitor open=%d", app->monitor != NULL);
 	}
 
-	/* Software: the system's version (Kei without os-release), the kernel, the architecture and the time since the machine started. */
+	/* Software: the system's version (the build's name without os-release), the kernel, the architecture and the time since the machine started. */
 	count = 0;
-	system = "Kei";
+	system = ZEDBSD_OS_NAME;
 	if (about->system[0] != '\0')
 		system = about->system;
 	count = about_add(rows, count, "Operating system", system);
@@ -130,7 +139,7 @@ se_about_press(
 		se_welcome_start(app);
 }
 
-/* Draws the hero card: the Kei mark, the word Kei and the tagline; returns the edge below it. */
+/* Draws the hero card: the mark, the system's name and the tagline; returns the edge below it. */
 static int
 about_hero(
 	struct se_app *app,
@@ -143,6 +152,8 @@ about_hero(
 	struct kl_text_line tagline;
 	int left;
 	int baseline;
+	int powered;
+	int differs;
 
 	/* The card, untitled. */
 	(void)se_card_begin(app, canvas, x, top, width, ABOUT_HERO_HEIGHT, NULL, NULL);
@@ -150,16 +161,29 @@ about_hero(
 	/* The mark at the card's left, in the middle of its height. */
 	se_mark_draw(canvas, x + 28, top + (ABOUT_HERO_HEIGHT - (int)ABOUT_MARK) / 2, ABOUT_MARK, 1.0f);
 
-	/* The word Kei (three letters, never a lone K), in slate, beside the mark. */
+	/*
+	 * The system's name, in slate, beside the mark: in the middle of the
+	 * card alone, or above the tagline that names the kernel while the
+	 * system is called something other than the kernel.
+	 */
 	kl_text_metrics(app->text, ABOUT_TEXT_NAME, &name);
 	kl_text_metrics(app->text, ABOUT_TEXT_TAGLINE, &tagline);
 	left = x + 28 + (int)ABOUT_MARK + 24;
-	baseline = top + (ABOUT_HERO_HEIGHT - name.height - 6 - tagline.height) / 2 + name.ascent;
-	(void)kl_text_draw(app->text, canvas, left, baseline, "Kei", 3U, ABOUT_TEXT_NAME, 0, SE_COLOR_TITLE);
+	differs = strcmp(ZEDBSD_OS_NAME, ABOUT_KERNEL_NAME);
+	powered = 0;
+	if (differs != 0)
+		powered = 1;
+	if (powered)
+		baseline = top + (ABOUT_HERO_HEIGHT - name.height - 6 - tagline.height) / 2 + name.ascent;
+	else
+		baseline = top + (ABOUT_HERO_HEIGHT - name.height) / 2 + name.ascent;
+	(void)kl_text_draw_fit(app->text, canvas, left, baseline, ZEDBSD_OS_NAME, ABOUT_TEXT_NAME, 0, width - (left - x) - 20, SE_COLOR_TITLE);
 
 	/* The tagline under it: the kernel's name as it is written. */
-	baseline += name.descent + 6 + tagline.ascent;
-	(void)kl_text_draw_fit(app->text, canvas, left, baseline, "powered by zedBSD", ABOUT_TEXT_TAGLINE, 0, width - (left - x) - 20, SE_COLOR_TEXT_SECONDARY);
+	if (powered) {
+		baseline += name.descent + 6 + tagline.ascent;
+		(void)kl_text_draw_fit(app->text, canvas, left, baseline, "powered by " ABOUT_KERNEL_NAME, ABOUT_TEXT_TAGLINE, 0, width - (left - x) - 20, SE_COLOR_TEXT_SECONDARY);
+	}
 
 	/* The edge below the card. */
 	return top + ABOUT_HERO_HEIGHT;

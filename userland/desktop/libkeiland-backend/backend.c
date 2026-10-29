@@ -23,6 +23,23 @@
 #include <string.h>
 
 /*
+ * The compositor's threads lent to the backend's own (a copy of the
+ * options' threads).
+ *
+ * Written by kl_backend_open and kl_backend_close on the event loop's
+ * thread, before any of the backend's threads starts and after the last
+ * has been joined; read on the event loop's thread by the code that starts
+ * them.  It means something only while backend_threads_set is 1.
+ */
+static struct kl_backend_threads backend_threads;
+
+/*
+ * Whether backend_threads holds the compositor's threads (1 from
+ * kl_backend_open to kl_backend_close, 0 otherwise).
+ */
+static unsigned backend_threads_set;
+
+/*
  * Opens the backend.
  *
  * The backend copies the callbacks and the options; the compositor's
@@ -45,6 +62,10 @@ kl_backend_open(
 	memset(opened, 0, sizeof(*opened));
 	opened->host = *host;
 	opened->options = *options;
+
+	/* The compositor's threads, for the threads the areas make of their own. */
+	backend_threads = options->threads;
+	backend_threads_set = 1U;
 
 	/* The system's events, when the system has them (ws132-p003). */
 	opened->events_descriptor = -1;
@@ -70,6 +91,31 @@ kl_backend_close(
 	kl_backend_notify_close(backend);
 	kl_backend_events_close(backend);
 	free(backend);
+
+	/* The compositor's threads are no longer lent. */
+	memset(&backend_threads, 0, sizeof(backend_threads));
+	backend_threads_set = 0U;
+}
+
+/*
+ * Gives the compositor's threads lent to the backend's own: those of the
+ * open backend, or none (no start, no wake descriptor) when no backend is
+ * open.
+ */
+void
+kl_backend_threads(
+	struct kl_backend_threads *threads)
+{
+	/* No backend is open: the threads are made with pthread_create and wake nothing. */
+	if (!backend_threads_set) {
+		memset(threads, 0, sizeof(*threads));
+		threads->wake_descriptor = -1;
+		return;
+	}
+
+	/* Succeeded: the open backend's copy. */
+	*threads = backend_threads;
+	return;
 }
 
 /*

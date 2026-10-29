@@ -25,6 +25,8 @@
 
 #include "settings.h"
 
+#include "include/kern/os-name.h"
+
 #include <stdio.h>
 #include <string.h>
 
@@ -309,7 +311,7 @@ se_network_press(
 
 	/* A network without a key cannot be saved yet (the store keeps WPA keys only). */
 	if (ap->secured == 0) {
-		(void)snprintf(network->message, sizeof(network->message), "%s is an open network; open networks come in a later version of Kei.", ap->ssid);
+		(void)snprintf(network->message, sizeof(network->message), "%s is an open network; open networks come in a later version of " ZEDBSD_OS_NAME ".", ap->ssid);
 		network->message_bad = 1;
 		return;
 	}

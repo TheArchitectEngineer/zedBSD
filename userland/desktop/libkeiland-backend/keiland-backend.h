@@ -93,6 +93,29 @@ struct kl_backend_host {
 #define KL_BACKEND_BUTTON_SLEEP		2U
 
 /*
+ * The compositor's threads, lent to the backend's own.
+ *
+ * wake_descriptor is the write end of the pipe the compositor's event loop
+ * polls: a thread of the backend writes one byte to it when the event
+ * loop's next update has something to take (-1 when there is none; the
+ * updates then find it on their own).  start makes a thread with every
+ * signal blocked, under a name the compositor reports with its own, and
+ * gives its handle (0, or an errno value and no thread); the backend joins
+ * the thread itself and then calls ended with the same name.  Without
+ * start the backend makes its threads with pthread_create.  The
+ * descriptor and the functions stay valid until kl_backend_close.
+ *
+ * The backend's threads never call a callback of struct kl_backend_host;
+ * the call that takes what one of them found (the area's update) is the
+ * event loop's, as before.
+ */
+struct kl_backend_threads {
+	int wake_descriptor;
+	int (*start)(const char *name, void *(*run)(void *), void *argument, pthread_t *thread);
+	void (*ended)(const char *name);
+};
+
+/*
  * How the compositor is started.
  *
  * flags is 0 so far; the areas that need to know (a windowed run, the
@@ -103,11 +126,13 @@ struct kl_backend_host {
  * (--control-fd), or -1 when no session manager started the session.  The
  * session (ws131-p006) and the power (ws131-p005) speak on them; the
  * compositor makes them nonblocking and keeps them from its children.
+ * threads are the compositor's threads lent to the backend's own.
  */
 struct kl_backend_options {
 	unsigned flags;
 	int greeter_descriptor;
 	int session_descriptor;
+	struct kl_backend_threads threads;
 };
 
 /*
@@ -430,7 +455,9 @@ void kl_backend_audio_close(struct kl_backend_audio *audio);
 
 /*
  * The descriptor to poll for the service's reports, or -1 when there is
- * none (an OSS mixer is read by the periodic updates).
+ * none (an OSS mixer is read by the periodic updates; zedBSD's audiod
+ * connection is read by a thread of the backend's, which wakes the event
+ * loop through the lent wake pipe).
  */
 int kl_backend_audio_fd(const struct kl_backend_audio *audio);
 
@@ -449,7 +476,9 @@ void kl_backend_audio_get_state(const struct kl_backend_audio *audio, struct kl_
 /*
  * Asks for a volume (0..100 each) and mute.  The new volume comes back
  * through kl_backend_audio_update.  Returns 0, ENOTCONN (not connected),
- * EINVAL (out of range) or the error of sending.
+ * EINVAL (out of range) or the error of sending (on zedBSD the thread
+ * sends it later: a failed send drops the connection, which an update
+ * reports as KL_BACKEND_AUDIO_CHANGED_REACHABLE).
  */
 int kl_backend_audio_set_volume(struct kl_backend_audio *audio, unsigned left, unsigned right, unsigned muted);
 
@@ -1230,9 +1259,11 @@ struct kl_backend_print *kl_backend_print_open(const char *config_path, const ch
 void kl_backend_print_close(struct kl_backend_print *print);
 
 /*
- * Tells whether printing can be offered: the daemon's program is there.
+ * Tells whether printing can be offered: the daemon's program is there,
+ * as it is now, or after kl_backend_print_host as the host's last check
+ * found (looked at by the open and by each kl_backend_print_check_run).
  */
-int kl_backend_print_can(const struct kl_backend_print *print);
+int kl_backend_print_can(struct kl_backend_print *print);
 
 /*
  * Reads what the daemon said and the settings file changed by another
@@ -1240,6 +1271,26 @@ int kl_backend_print_can(const struct kl_backend_print *print);
  * bits.  Returns 0.
  */
 int kl_backend_print_update(struct kl_backend_print *print, unsigned *changed);
+
+/*
+ * The settings file's writes and checks on a thread of the host's (the
+ * compositor's file I/O thread), so that its own thread neither starts a
+ * writer nor looks at the file: after kl_backend_print_host, the host
+ * calls kl_backend_print_write on its thread when
+ * kl_backend_print_write_wanted says changes wait (the update answers them
+ * once made), and checks the file for another session's change from time
+ * to time: kl_backend_print_check_begin and _end on its own thread,
+ * kl_backend_print_check_run between them on the other.  The close makes
+ * the changes still waiting.
+ */
+struct kl_backend_print_check;
+
+void kl_backend_print_host(struct kl_backend_print *print);
+int kl_backend_print_write_wanted(struct kl_backend_print *print);
+void kl_backend_print_write(struct kl_backend_print *print);
+struct kl_backend_print_check *kl_backend_print_check_begin(struct kl_backend_print *print);
+void kl_backend_print_check_run(struct kl_backend_print *print, struct kl_backend_print_check *check);
+void kl_backend_print_check_end(struct kl_backend_print *print, struct kl_backend_print_check *check);
 
 /*
  * Copy up to capacity printers or jobs and return how many were copied.

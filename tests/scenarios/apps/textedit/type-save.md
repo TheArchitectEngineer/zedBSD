@@ -13,7 +13,7 @@ since: ws128
 keyboard の入力が Text Editor に入り、Ctrl+S で file に保存されることを確かめる（UAT F8・F9）。
 
 ## 準備
-kei で `textedit /tmp/aat-work/textedit.txt`（新しい file）を開く。
+user で `textedit /tmp/aat-work/textedit.txt`（新しい file）を開く。
 
 ## 操作と確認
 1. 操作: 本文を click し、`hello from aat` と打つ。

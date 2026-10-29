@@ -190,7 +190,13 @@ struct print_change {
  * and writes it, so that a lock another session holds never stops the
  * compositor's thread.  lock guards the changes waiting (pending) and
  * made (made) and stop; the table is the compositor's thread's, replaced
- * by a made change's.
+ * by a made change's.  hosted says the host runs the writes and the
+ * checks of the file on a thread of its own instead
+ * (kl_backend_print_host), so no writer thread is started and the update
+ * does not look at the file; made_generation counts the made changes
+ * taken, so that a check read before one is not applied after it.  can
+ * says whether the daemon's program could be run when last looked at (at
+ * the open, and by each check of a hosted backend).
  */
 struct kl_backend_print {
 	char config[512];
@@ -206,6 +212,9 @@ struct kl_backend_print {
 	struct print_change *made[PRINT_CHANGES_MAX];
 	size_t made_count;
 	int stop;
+	int hosted;
+	uint64_t made_generation;
+	int can;
 	struct print_job jobs[KL_BACKEND_PRINT_JOBS_MAX];
 	size_t job_count;
 	struct print_result results[PRINT_RESULTS_MAX];
@@ -239,7 +248,24 @@ struct kl_backend_print {
 	time_t shut_until;
 };
 
+/*
+ * A check of the settings file for a change another session made, read on
+ * the host's thread (kl_backend_print_check_run): the file's time and the
+ * made changes taken when it was begun, whether the file was read, the
+ * table read, and whether the daemon's program can be run.
+ */
+struct kl_backend_print_check {
+	struct timespec known;
+	uint64_t generation;
+	int loaded;
+	struct print_table table;
+	int can;
+};
+
 static int print_load(const char *config, struct print_table *table);
+static int print_program_can(const char *program);
+static void print_write_one(struct kl_backend_print *print, struct print_change *change);
+static struct print_change *print_next_change(struct kl_backend_print *print, int wait);
 static int print_save(const char *config, struct print_table *table);
 static int print_lock(const char *config);
 static void print_unlock(int fd);
@@ -303,8 +329,9 @@ kl_backend_print_open(
 	(void)pthread_mutex_init(&print->lock, NULL);
 	(void)pthread_cond_init(&print->wake, NULL);
 
-	/* The printers kept. */
+	/* The printers kept, and whether the daemon can be run. */
 	(void)print_load(print->config, &print->table);
+	print->can = print_program_can(print->program);
 	return print;
 }
 
@@ -327,6 +354,10 @@ kl_backend_print_close(
 		if (print->jobs[index].fd >= 0)
 			(void)close(print->jobs[index].fd);
 	}
+
+	/* The host's writes: the changes waiting made here (the host's thread has ended). */
+	if (print->hosted)
+		kl_backend_print_write(print);
 
 	/* The writer: the changes waiting made, then it stops. */
 	if (print->writer_started) {
@@ -352,19 +383,24 @@ kl_backend_print_close(
 }
 
 /*
- * Tells whether the daemon's program can be run.
+ * Tells whether the daemon's program can be run: looked at now, or for a
+ * hosted backend as its last check found (the host's thread looks).
  */
 int
 kl_backend_print_can(
-	const struct kl_backend_print *print)
+	struct kl_backend_print *print)
 {
-	int status;
-
-	/* The program, executable. */
+	/* Nothing open. */
 	if (print == NULL)
 		return 0;
-	status = access(print->program, X_OK);
-	return status == 0;
+
+	/* The host's checks look at the program. */
+	if (print->hosted)
+		return print->can;
+
+	/* Succeeded: the program as it is now. */
+	print->can = print_program_can(print->program);
+	return print->can;
 }
 
 /*
@@ -395,8 +431,10 @@ kl_backend_print_update(
 	if (print->socket >= 0 && print->shut_until != 0 && now >= print->shut_until)
 		print_stopped(print);
 
-	/* The settings file changed by another session. */
-	error = stat(print->config, &status);
+	/* The settings file changed by another session (the host checks it on its thread instead). */
+	error = -1;
+	if (!print->hosted)
+		error = stat(print->config, &status);
 	if (error == 0 && (status.st_mtim.tv_sec != print->table.time.tv_sec || status.st_mtim.tv_nsec != print->table.time.tv_nsec)) {
 		(void)print_load(print->config, &print->table);
 		print->changed |= KL_BACKEND_PRINT_CHANGED_LIST;
@@ -406,6 +444,158 @@ kl_backend_print_update(
 	*changed = print->changed;
 	print->changed = 0;
 	return 0;
+}
+
+/*
+ * Gives the writes and the checks of the settings file to the host, which
+ * runs them on a thread of its own from now on: no writer thread is
+ * started, and the update does not look at the file.
+ */
+void
+kl_backend_print_host(
+	struct kl_backend_print *print)
+{
+	/* Nothing open. */
+	if (print == NULL)
+		return;
+
+	/* Succeeded: the host writes and checks (a writer started already stays, joined at the close). */
+	print->hosted = 1;
+}
+
+/*
+ * Tells whether changes wait for kl_backend_print_write.
+ */
+int
+kl_backend_print_write_wanted(
+	struct kl_backend_print *print)
+{
+	size_t count;
+
+	/* Nothing open. */
+	if (print == NULL)
+		return 0;
+
+	/* The changes waiting. */
+	(void)pthread_mutex_lock(&print->lock);
+
+	count = print->pending_count;
+
+	(void)pthread_mutex_unlock(&print->lock);
+
+	/* None waits. */
+	if (count == 0U)
+		return 0;
+
+	/* Succeeded: changes wait. */
+	return 1;
+}
+
+/*
+ * Makes the changes waiting, on the host's thread (it waits for the
+ * settings file's lock and the disk); the update takes them as made and
+ * answers them.
+ */
+void
+kl_backend_print_write(
+	struct kl_backend_print *print)
+{
+	struct print_change *change;
+
+	/* Nothing open. */
+	if (print == NULL)
+		return;
+
+	/* Each change waiting, in its turn. */
+	for (;;) {
+		/* The next; none left ends the writes. */
+		change = print_next_change(print, 0);
+		if (change == NULL)
+			break;
+
+		/* Made and handed back. */
+		print_write_one(print, change);
+	}
+}
+
+/*
+ * Begins a check of the settings file on the host's thread: the file's
+ * time as last read, and the changes made so far.  Returns the check, or
+ * NULL without memory.
+ */
+struct kl_backend_print_check *
+kl_backend_print_check_begin(
+	struct kl_backend_print *print)
+{
+	struct kl_backend_print_check *check;
+
+	/* Nothing open. */
+	if (print == NULL)
+		return NULL;
+
+	/* The record. */
+	check = calloc(1, sizeof(*check));
+	if (check == NULL)
+		return NULL;
+
+	/* Succeeded: what the file was when last read. */
+	check->known = print->table.time;
+	check->generation = print->made_generation;
+	return check;
+}
+
+/*
+ * Reads the settings file again on the host's thread when its time is not
+ * the one known (another session changed it).
+ */
+void
+kl_backend_print_check_run(
+	struct kl_backend_print *print,
+	struct kl_backend_print_check *check)
+{
+	struct stat status;
+	int error;
+
+	/* Whether the daemon's program can be run, looked at here too. */
+	check->can = print_program_can(print->program);
+
+	/* The file's time; a file that is not there is not read. */
+	error = stat(print->config, &status);
+	if (error != 0)
+		return;
+
+	/* The time known: nobody changed it. */
+	if (status.st_mtim.tv_sec == check->known.tv_sec && status.st_mtim.tv_nsec == check->known.tv_nsec)
+		return;
+
+	/* Read again. */
+	check->table.next_id = 1;
+	(void)print_load(print->config, &check->table);
+	check->loaded = 1;
+}
+
+/*
+ * Ends a check on the compositor's thread: a table read is the printers'
+ * from now on (told at the next update), unless a change was made after
+ * the check began (its table is newer); the check is freed.
+ */
+void
+kl_backend_print_check_end(
+	struct kl_backend_print *print,
+	struct kl_backend_print_check *check)
+{
+	/* Whether the daemon's program can be run, as the check found. */
+	if (print != NULL && check != NULL)
+		print->can = check->can;
+
+	/* A table read, and no change made since it began. */
+	if (print != NULL && check != NULL && check->loaded && check->generation == print->made_generation) {
+		print->table = check->table;
+		print->changed |= KL_BACKEND_PRINT_CHANGED_LIST;
+	}
+
+	/* The record. */
+	free(check);
 }
 
 /*
@@ -756,6 +946,22 @@ kl_backend_print_take_result(
 	*saved = print->results[0].saved;
 	memmove(&print->results[0], &print->results[1], (print->result_count - 1U) * sizeof(print->results[0]));
 	print->result_count--;
+	return 1;
+}
+
+/* Tells whether a program can be run (an executable file): 1 or 0. */
+static int
+print_program_can(
+	const char *program)
+{
+	int status;
+
+	/* The program, executable. */
+	status = access(program, X_OK);
+	if (status != 0)
+		return 0;
+
+	/* Succeeded: it can be run. */
 	return 1;
 }
 
@@ -1733,8 +1939,8 @@ print_change(
 {
 	int error;
 
-	/* The writer, started once. */
-	if (!print->writer_started) {
+	/* The writer, started once (the host writes when it is hosted). */
+	if (!print->writer_started && !print->hosted) {
 		error = pthread_create(&print->writer, NULL, print_writer, print);
 		if (error != 0) {
 			free(change);
@@ -1780,61 +1986,91 @@ print_writer(
 {
 	struct kl_backend_print *print;
 	struct print_change *change;
-	int written;
-	int lock;
 
 	/* Until asked to stop with nothing left. */
 	print = argument;
 	for (;;) {
-		/* The next change, waited for. */
-		(void)pthread_mutex_lock(&print->lock);
-
-		while (print->pending_count == 0U && !print->stop)
-			(void)pthread_cond_wait(&print->wake, &print->lock);
-		change = NULL;
-		if (print->pending_count > 0U) {
-			change = print->pending[0];
-			memmove(&print->pending[0], &print->pending[1], (print->pending_count - 1U) * sizeof(print->pending[0]));
-			print->pending_count--;
-		}
-
-		(void)pthread_mutex_unlock(&print->lock);
-
-		/* Nothing left and asked to stop. */
+		/* The next change, waited for; none left and asked to stop ends it. */
+		change = print_next_change(print, 1);
 		if (change == NULL)
 			break;
 
-		/* The file read again under its lock, changed and written. */
-		lock = print_lock(print->config);
-		change->table.next_id = 1;
-		(void)print_load(print->config, &change->table);
-		print_apply(change);
-		if (change->error == 0) {
-			written = print_save(print->config, &change->table);
-			change->saved = written == 0;
-		}
-
-		/* The lock let go. */
-		print_unlock(lock);
-
-		/* Handed back; a full list of made changes drops the oldest. */
-		(void)pthread_mutex_lock(&print->lock);
-
-		if (print->made_count == PRINT_CHANGES_MAX) {
-			free(print->made[0]);
-			memmove(&print->made[0], &print->made[1], (PRINT_CHANGES_MAX - 1U) * sizeof(print->made[0]));
-			print->made_count--;
-		}
-
-		/* This one, the newest. */
-		print->made[print->made_count] = change;
-		print->made_count++;
-
-		(void)pthread_mutex_unlock(&print->lock);
+		/* Made and handed back. */
+		print_write_one(print, change);
 	}
 
 	/* Stopped. */
 	return NULL;
+}
+
+/*
+ * Takes the oldest change waiting: with wait, until one is given or the
+ * backend stops (NULL then); without, NULL at once when none waits.
+ */
+static struct print_change *
+print_next_change(
+	struct kl_backend_print *print,
+	int wait)
+{
+	struct print_change *change;
+
+	/* The oldest, once there is one or the wait ends. */
+	(void)pthread_mutex_lock(&print->lock);
+
+	while (wait && print->pending_count == 0U && !print->stop)
+		(void)pthread_cond_wait(&print->wake, &print->lock);
+	change = NULL;
+	if (print->pending_count > 0U) {
+		change = print->pending[0];
+		memmove(&print->pending[0], &print->pending[1], (print->pending_count - 1U) * sizeof(print->pending[0]));
+		print->pending_count--;
+	}
+
+	(void)pthread_mutex_unlock(&print->lock);
+
+	/* The change, or none. */
+	return change;
+}
+
+/*
+ * Makes one change: the file read again under its lock, changed and
+ * written, and the change handed back as made (taken by the update).
+ */
+static void
+print_write_one(
+	struct kl_backend_print *print,
+	struct print_change *change)
+{
+	int written;
+	int lock;
+
+	/* The file read again under its lock, changed and written. */
+	lock = print_lock(print->config);
+	change->table.next_id = 1;
+	(void)print_load(print->config, &change->table);
+	print_apply(change);
+	if (change->error == 0) {
+		written = print_save(print->config, &change->table);
+		change->saved = written == 0;
+	}
+
+	/* The lock let go. */
+	print_unlock(lock);
+
+	/* Handed back; a full list of made changes drops the oldest. */
+	(void)pthread_mutex_lock(&print->lock);
+
+	if (print->made_count == PRINT_CHANGES_MAX) {
+		free(print->made[0]);
+		memmove(&print->made[0], &print->made[1], (PRINT_CHANGES_MAX - 1U) * sizeof(print->made[0]));
+		print->made_count--;
+	}
+
+	/* This one, the newest. */
+	print->made[print->made_count] = change;
+	print->made_count++;
+
+	(void)pthread_mutex_unlock(&print->lock);
 }
 
 /* Makes a change in its table (the file as it was read); its errno value in change->error. */
@@ -1995,7 +2231,8 @@ print_made(
 		if (change == NULL)
 			return;
 
-		/* The table as the file holds it now, and its answer. */
+		/* The table as the file holds it now, and its answer; a check read before it is not applied. */
+		print->made_generation++;
 		print->table = change->table;
 		print->changed |= KL_BACKEND_PRINT_CHANGED_LIST;
 		if (change->request != 0U)

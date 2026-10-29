@@ -33,6 +33,7 @@
  */
 
 #include "userland/desktop/libkeiland-backend/keiland-backend.h"
+#include "userland/desktop/libkeiland-backend-zedbsd/daemon-link-zedbsd.h"
 
 #include "userland/base/net/protocol.h"
 
@@ -65,6 +66,9 @@
 /* How long the daemon may take to answer a frame of the scans' connection before it is given up. */
 #define NETWORK_SCAN_ANSWER_MS 15000U
 
+/* How often the thread looks for an answer awaited, in milliseconds. */
+#define NETWORK_ANSWER_LOOK_MS 10
+
 /*
  * One watch of the network: the SUBSCRIBE connection, the state it last
  * reported, the request outstanding (its connection and kind), the last
@@ -79,10 +83,15 @@
  * (and not told to stop), scan_fd the frame outstanding on it (-1 for
  * none) with its opcode, ID and the time it is given up, scan_list_ms when
  * the scan is read next and scan_lease_ms when the lease is renewed.
- * The subscriber owns this allocation from open until close; completed
- * requests retain their outcome here after their connection is released.
+ * Completed requests retain their outcome here after their connection is
+ * released: finished_serial is the event loop's number of the request that
+ * finished last, request_serial that of the one outstanding.  changed has
+ * the KL_BACKEND_NETWORK_CHANGED_* bits found since the last publication.
+ *
+ * Only the link's thread reads and writes it, from the link's start until
+ * its stop; after the stop the record's close releases the connections.
  */
-struct kl_backend_network {
+struct network_link {
 	int watch;
 	uint64_t retry_ms;
 	struct kl_backend_network_state state;
@@ -103,19 +112,91 @@ struct kl_backend_network {
 	uint64_t scan_given_up_ms;
 	uint64_t scan_list_ms;
 	uint64_t scan_lease_ms;
+	uint32_t request_serial;
+	uint32_t finished_serial;
+	unsigned changed;
 };
 
+/* What a request handed to the thread asks. */
+#define NETWORK_OP_REQUEST	1U
+#define NETWORK_OP_SCANNING	2U
+
+/*
+ * What the event loop sees of the watch: the state, the last scan's
+ * networks, the last request that finished (its kind, errno value and the
+ * event loop's number of it), and whether the watch's connection is there.
+ */
+struct network_view {
+	struct kl_backend_network_state state;
+	struct kl_backend_network_ap scan[KL_BACKEND_NETWORK_SCAN_MAX];
+	size_t scan_count;
+	unsigned finished;
+	int finished_error;
+	uint32_t finished_serial;
+};
+
+/*
+ * One watch of the network: the link (its thread and lock), the thread's
+ * own record, the view the thread published with the changes the event
+ * loop has not taken (both under the link's lock), the event loop's copy
+ * of the view, and the event loop's last request: its number (0 before
+ * the first), its kind, and whether scans are asked for.
+ *
+ * The subscriber owns this allocation from open until close.  A request
+ * is outstanding while its number is not the view's finished_serial.
+ */
+struct kl_backend_network {
+	struct kl_daemon_link link;
+	struct network_link inner;
+	struct network_view published;
+	unsigned published_changed;
+	struct network_view view;
+	uint32_t serial;
+	unsigned request;
+	unsigned scan_wanted;
+};
+
+/*
+ * One request handed to the thread: a frame (its kind, opcode and payload,
+ * built by the event loop, with the event loop's number), or whether scans
+ * are asked for.
+ */
+struct network_op {
+	struct kl_daemon_link_op op;
+	unsigned kind;
+	unsigned request;
+	uint32_t opcode;
+	unsigned char payload[NETWORKD_REQUEST_MAX];
+	size_t length;
+	uint32_t serial;
+	unsigned on;
+};
+
+static void network_step(void *owner);
+static size_t network_poll_fill(void *owner, struct pollfd *descriptors, size_t capacity, int *timeout);
+static int network_publish(void *owner);
+
+/* What networkd's connections do on their link's thread. */
+static const struct kl_daemon_link_ops network_link_ops = {
+	network_step,
+	network_poll_fill,
+	network_publish,
+};
+
+static void network_op_run(void *owner, struct kl_daemon_link_op *op);
+static int network_submit(struct kl_backend_network *network, unsigned request, uint32_t opcode, const unsigned char *payload, size_t length);
+static void network_finish(struct network_link *network, unsigned request, uint32_t serial, int error);
 static int network_connect(int *descriptor);
 static int network_text_field(struct networkd_field_writer *writer, uint16_t type, const char *text, size_t room, int required);
-static int network_send(struct kl_backend_network *network, uint32_t opcode, const unsigned char *payload, size_t length, int *descriptor, uint32_t *request_id);
-static void network_scan_step(struct kl_backend_network *network, unsigned *changed);
-static void network_scan_answer(struct kl_backend_network *network, unsigned *changed);
-static void network_scan_send(struct kl_backend_network *network, uint32_t opcode);
-static int network_watch(struct kl_backend_network *network);
-static void network_unwatch(struct kl_backend_network *network, unsigned *changed);
+static int network_send(struct network_link *network, uint32_t opcode, const unsigned char *payload, size_t length, int *descriptor, uint32_t *request_id);
+static void network_scan_step(struct network_link *network, unsigned *changed);
+static void network_scan_answer(struct network_link *network, unsigned *changed);
+static void network_scan_send(struct network_link *network, uint32_t opcode);
+static int network_watch(struct network_link *network);
+static void network_unwatch(struct network_link *network, unsigned *changed);
 static int network_readable(int descriptor);
-static int network_read_watch(struct kl_backend_network *network, unsigned *changed);
-static int network_read_answer(struct kl_backend_network *network, unsigned *changed);
+static int network_read_watch(struct network_link *network, unsigned *changed);
+static int network_read_answer(struct network_link *network, unsigned *changed);
 static int network_fields(const unsigned char *payload, size_t length, uint32_t *status, uint32_t *error, const char **output, size_t *output_length);
 static void network_parse_state(struct kl_backend_network_state *state, const char *output, size_t length);
 static void network_parse_interface(struct kl_backend_network_state *state, const char *line, const char *radio, char *wired, size_t wired_size, unsigned *wifi_online);
@@ -123,36 +204,42 @@ static void network_parse_wifi(struct kl_backend_network_state *state, const cha
 static void network_parse_route(const char *line, char *route, size_t size);
 static unsigned network_wifi_state(const char *name);
 static int network_line(const char *output, size_t length, size_t *start, char *line, size_t size);
-static void network_parse_scan(struct kl_backend_network *network, const char *output, size_t length);
-static void network_parse_ap(struct kl_backend_network *network, const char *line);
+static void network_parse_scan(struct network_link *network, const char *output, size_t length);
+static void network_parse_ap(struct network_link *network, const char *line);
 static const char *network_word(const char *line, const char *key, char *field_text, size_t size);
 static void network_ssid_text(const char *hex, char *text, size_t size);
 static uint64_t network_milliseconds(void);
 
 /*
- * Starts watching the network.
+ * Starts watching the network; the link's thread makes the watch at once,
+ * and again a second after each watch that could not be made.
  *
- * A daemon that is not running yet is not a failure: the watch is made by a later update.
+ * A daemon that is not running yet is not a failure: the watch is made later.
  */
 struct kl_backend_network *
 kl_backend_network_open(
 	void)
 {
 	struct kl_backend_network *network;
+	int error;
 
 	/* The watch's record, with no connection. */
 	network = calloc(1, sizeof(*network));
 	if (network == NULL)
 		return NULL;
 
-	/* Starts both connections as unowned and reserves the watch request ID. */
-	network->watch = -1;
-	network->request_fd = -1;
-	network->scan_fd = -1;
-	network->next_id = NETWORK_WATCH_ID + 1U;
+	/* Starts the connections as unowned and reserves the watch request ID. */
+	network->inner.watch = -1;
+	network->inner.request_fd = -1;
+	network->inner.scan_fd = -1;
+	network->inner.next_id = NETWORK_WATCH_ID + 1U;
 
-	/* The watch, when the daemon is there (otherwise the updates try again). */
-	(void)network_watch(network);
+	/* The thread that makes the watch, sends the requests and reads the answers. */
+	error = kl_daemon_link_start(&network->link, "networkd", &network_link_ops, network);
+	if (error != 0) {
+		free(network);
+		return NULL;
+	}
 
 	/* Succeeded: the watch exists, connected or not. */
 	return network;
@@ -169,36 +256,35 @@ kl_backend_network_close(
 	if (network == NULL)
 		return;
 
-	/* The two connections, and the record. */
-	if (network->watch >= 0)
-		(void)close(network->watch);
+	/* The thread ends; its connections are this thread's to close. */
+	kl_daemon_link_stop(&network->link);
+	if (network->inner.watch >= 0)
+		(void)close(network->inner.watch);
 
 	/* Retires any independent request connection before freeing its record. */
-	if (network->request_fd >= 0)
-		(void)close(network->request_fd);
+	if (network->inner.request_fd >= 0)
+		(void)close(network->inner.request_fd);
 
 	/* The scans' connection too (a lease the daemon holds runs out by itself). */
-	if (network->scan_fd >= 0)
-		(void)close(network->scan_fd);
+	if (network->inner.scan_fd >= 0)
+		(void)close(network->inner.scan_fd);
 
-	/* Releases the watch record after neither connection can report to it. */
+	/* Releases the watch record after no connection can report to it. */
 	free(network);
 
-	/* Succeeded: both connections and the watch record are released. */
+	/* Succeeded: the connections and the watch record are released. */
 	return;
 }
 
 /*
- * Reads what has arrived on the watch and on the request without waiting, and makes the watch again when it went (at most once a second).
+ * Takes what the link's thread found since the last update: the state,
+ * the scan and the request that finished.
  */
 int
 kl_backend_network_update(
 	struct kl_backend_network *network,
 	unsigned *changed)
 {
-	uint64_t now;
-	int error;
-
 	/* Nothing has changed yet. */
 	*changed = 0;
 
@@ -206,29 +292,16 @@ kl_backend_network_update(
 	if (network == NULL)
 		return EINVAL;
 
-	/* A lost watch is made again when its wait is over. */
-	if (network->watch < 0) {
-		/* Retries only when the previous watch attempt's delay expires. */
-		now = network_milliseconds();
-		if (now >= network->retry_ms) {
-			error = network_watch(network);
-			if (error == 0)
-				*changed |= KL_BACKEND_NETWORK_CHANGED_STATE;
-		}
-	}
+	/* Copies the published view and takes its changes. */
+	kl_daemon_link_lock(&network->link);
 
-	/* The states the watch has reported. */
-	if (network->watch >= 0)
-		(void)network_read_watch(network, changed);
+	network->view = network->published;
+	*changed = network->published_changed;
+	network->published_changed = 0U;
 
-	/* The answer to the request outstanding. */
-	if (network->request_fd >= 0)
-		(void)network_read_answer(network, changed);
+	kl_daemon_link_unlock(&network->link);
 
-	/* The scans asked for, beside the request (ws089-p021). */
-	network_scan_step(network, changed);
-
-	/* Succeeded: *changed says what the reads found. */
+	/* Succeeded: *changed says what the thread found. */
 	return 0;
 }
 
@@ -247,8 +320,8 @@ kl_backend_network_get_state(
 	if (network == NULL)
 		return;
 
-	/* The state the watch keeps. */
-	*state = network->state;
+	/* The state as the last update took it. */
+	*state = network->view.state;
 
 	/* Succeeded: the caller holds the last reported network state. */
 	return;
@@ -270,16 +343,16 @@ kl_backend_network_get_scan(
 		return 0;
 
 	/* As many as fit. */
-	count = network->scan_count;
+	count = network->view.scan_count;
 	if (count > capacity)
 		count = capacity;
 
 	/* Copies retained access points when the caller provided room. */
 	if (count != 0)
-		memcpy(aps, network->scan, count * sizeof(*aps));
+		memcpy(aps, network->view.scan, count * sizeof(*aps));
 
 	/* Succeeded: reports the full scan size, even if the copy was bounded. */
-	return network->scan_count;
+	return network->view.scan_count;
 }
 
 /*
@@ -293,21 +366,13 @@ kl_backend_network_request(
 {
 	struct networkd_field_writer writer;
 	unsigned char payload[NETWORKD_REQUEST_MAX];
-	uint32_t request_id;
 	uint32_t opcode;
 	size_t length;
-	int descriptor;
 	int error;
-
-	/* One request at a time. */
 
 	/* Refuses an operation without its network watch record. */
 	if (network == NULL)
 		return EINVAL;
-
-	/* Keeps one request outstanding so its reply has an unambiguous owner. */
-	if (network->request_fd >= 0)
-		return EBUSY;
 
 	/* The daemon's operation for the request. */
 	switch (request) {
@@ -351,16 +416,10 @@ kl_backend_network_request(
 			return EINVAL;
 	}
 
-	/* The frame, on a connection of the request's own. */
-	error = network_send(network, opcode, payload, writer.used, &descriptor, &request_id);
+	/* The frame, sent by the thread on a connection of the request's own. */
+	error = network_submit(network, request, opcode, payload, writer.used);
 	if (error != 0)
 		return error;
-
-	/* The request is outstanding until its answer is read. */
-	network->request_fd = descriptor;
-	network->request = request;
-	network->request_opcode = opcode;
-	network->request_id = request_id;
 
 	/* Succeeded: the request is on its way. */
 	return 0;
@@ -374,7 +433,7 @@ kl_backend_network_set_scanning(
 	struct kl_backend_network *network,
 	unsigned on)
 {
-	uint64_t now;
+	struct network_op *asking;
 
 	/* Refuses an operation without its network watch record. */
 	if (network == NULL)
@@ -388,19 +447,19 @@ kl_backend_network_set_scanning(
 	if (on == 0U && network->scan_wanted == 0U)
 		return 0;
 
-	/* The asking begins: the daemon is asked now and the scan it has is read at once. */
-	now = network_milliseconds();
-	if (on != 0U) {
-		network->scan_wanted = 1U;
-		network->scan_lease_ms = now;
-		network->scan_list_ms = now;
-		return 0;
-	}
+	/* The change, the link's from the submit on. */
+	asking = calloc(1U, sizeof(*asking));
+	if (asking == NULL)
+		return ENOMEM;
+	asking->op.run = network_op_run;
+	asking->kind = NETWORK_OP_SCANNING;
+	asking->on = on;
+	kl_daemon_link_submit(&network->link, &asking->op);
 
-	/* The asking ends: the daemon is told on the next update. */
+	/* Succeeded: the asking is recorded; the thread tells the daemon. */
 	network->scan_wanted = 0U;
-
-	/* Succeeded: the asking is recorded. */
+	if (on != 0U)
+		network->scan_wanted = 1U;
 	return 0;
 }
 
@@ -416,18 +475,14 @@ kl_backend_network_configure_wired(
 {
 	struct networkd_field_writer writer;
 	unsigned char payload[NETWORKD_REQUEST_MAX];
-	uint32_t request_id;
 	size_t index;
-	int descriptor;
 	int error;
 
-	/* A watch, a configuration of a mode the daemon knows, and no request outstanding. */
+	/* A watch, and a configuration of a mode the daemon knows. */
 	if (network == NULL || config == NULL)
 		return EINVAL;
 	if (config->mode != KL_BACKEND_WIRED_DHCP && config->mode != KL_BACKEND_WIRED_STATIC)
 		return EINVAL;
-	if (network->request_fd >= 0)
-		return EBUSY;
 
 	/* The interface. */
 	networkd_field_writer_init(&writer, payload, sizeof(payload));
@@ -448,19 +503,35 @@ kl_backend_network_configure_wired(
 	if (error != 0)
 		return error;
 
-	/* The frame, on a connection of the request's own. */
-	error = network_send(network, NETWORKD_OP_LAN_CONFIGURE, payload, writer.used, &descriptor, &request_id);
+	/* The frame, sent by the thread on a connection of the request's own. */
+	error = network_submit(network, KL_BACKEND_NETWORK_REQUEST_WIRED, NETWORKD_OP_LAN_CONFIGURE, payload, writer.used);
 	if (error != 0)
 		return error;
 
-	/* The request is outstanding until its answer is read. */
-	network->request_fd = descriptor;
-	network->request = KL_BACKEND_NETWORK_REQUEST_WIRED;
-	network->request_opcode = NETWORKD_OP_LAN_CONFIGURE;
-	network->request_id = request_id;
-
 	/* Succeeded: the request is on its way. */
 	return 0;
+}
+
+/*
+ * Tells the request outstanding, or the one that finished last and its errno value.
+ */
+unsigned
+kl_backend_network_get_request(
+	const struct kl_backend_network *network,
+	int *error)
+{
+	/* No watch, no request. */
+	*error = 0;
+	if (network == NULL)
+		return KL_BACKEND_NETWORK_REQUEST_NONE;
+
+	/* The outstanding one: the thread has not finished the event loop's last request yet. */
+	if (network->serial != network->view.finished_serial)
+		return network->request;
+
+	/* Succeeded: reports the last request and its stored outcome. */
+	*error = network->view.finished_error;
+	return network->view.finished;
 }
 
 /*
@@ -502,26 +573,242 @@ network_text_field(
 	return 0;
 }
 
-/*
- * Tells the request outstanding, or the one that finished last and its errno value.
- */
-unsigned
-kl_backend_network_get_request(
-	const struct kl_backend_network *network,
-	int *error)
+/* Steps the watch on the link's thread: makes it again when its wait is over, reads the watch and the answers, and moves the scans. */
+static void
+network_step(
+	void *owner)
 {
-	/* No watch, no request. */
-	*error = 0;
-	if (network == NULL)
-		return KL_BACKEND_NETWORK_REQUEST_NONE;
+	struct kl_backend_network *record;
+	struct network_link *network;
+	uint64_t now;
+	int error;
 
-	/* The outstanding one. */
+	/* The thread's own part of the record. */
+	record = owner;
+	network = &record->inner;
+
+	/* A lost watch is made again when its wait is over. */
+	if (network->watch < 0) {
+		/* Retries only when the previous watch attempt's delay expires. */
+		now = network_milliseconds();
+		if (now >= network->retry_ms) {
+			error = network_watch(network);
+			if (error == 0)
+				network->changed |= KL_BACKEND_NETWORK_CHANGED_STATE;
+		}
+	}
+
+	/* The states the watch has reported. */
+	if (network->watch >= 0)
+		(void)network_read_watch(network, &network->changed);
+
+	/* The answer to the request outstanding. */
 	if (network->request_fd >= 0)
-		return network->request;
+		(void)network_read_answer(network, &network->changed);
 
-	/* Succeeded: reports the last request and its stored outcome. */
-	*error = network->finished_error;
-	return network->finished;
+	/* The scans asked for, beside the request (ws089-p021). */
+	network_scan_step(network, &network->changed);
+}
+
+/*
+ * Gives the watch to wait for, and the wait until what is due next: the
+ * watch's next try, the scans' next frame, or soon while an answer is
+ * awaited (a request's connection is not polled: zedBSD's poll reports its
+ * own shut-down side at once, network_readable).
+ */
+static size_t
+network_poll_fill(
+	void *owner,
+	struct pollfd *descriptors,
+	size_t capacity,
+	int *timeout)
+{
+	struct kl_backend_network *record;
+	struct network_link *network;
+	uint64_t due;
+	uint64_t now;
+	size_t count;
+
+	/* The thread's own part of the record. */
+	record = owner;
+	network = &record->inner;
+	now = network_milliseconds();
+
+	/* An answer awaited is looked for every few milliseconds, as the event loop's passes did. */
+	if (network->request_fd >= 0 || network->scan_fd >= 0)
+		*timeout = NETWORK_ANSWER_LOOK_MS;
+
+	/* The next try of a lost watch, and the scans' next frame while they are asked for. */
+	due = UINT64_MAX;
+	if (network->watch < 0)
+		due = network->retry_ms;
+	if (network->scan_wanted != 0U && network->scan_fd < 0) {
+		if (network->scan_lease_ms < due)
+			due = network->scan_lease_ms;
+		if (network->scan_list_ms < due)
+			due = network->scan_list_ms;
+	}
+
+	/* The scans' stop is told at the next step. */
+	if (network->scan_wanted == 0U && network->scan_leased != 0U && network->scan_fd < 0)
+		due = now;
+
+	/* Lowers the wait to what is due. */
+	if (due <= now) {
+		*timeout = 0;
+	} else if (due - now < (uint64_t)*timeout) {
+		*timeout = (int)(due - now);
+	}
+
+	/* The watch wakes the thread with each state. */
+	count = 0U;
+	if (network->watch >= 0 && capacity > 0U) {
+		descriptors[0].fd = network->watch;
+		descriptors[0].events = POLLIN;
+		descriptors[0].revents = 0;
+		count = 1U;
+	}
+
+	/* Succeeded: the descriptors to wait for. */
+	return count;
+}
+
+/* Publishes the state, the scan and the request finished to the event loop's side (under the link's lock); 1 when something changed. */
+static int
+network_publish(
+	void *owner)
+{
+	struct kl_backend_network *record;
+	struct network_link *network;
+
+	/* The thread's own part of the record. */
+	record = owner;
+	network = &record->inner;
+
+	/* Nothing new: no wake. */
+	if (network->changed == 0U)
+		return 0;
+
+	/* The view and the changes not taken yet. */
+	record->published.state = network->state;
+	memcpy(record->published.scan, network->scan, network->scan_count * sizeof(network->scan[0]));
+	record->published.scan_count = network->scan_count;
+	record->published.finished = network->finished;
+	record->published.finished_error = network->finished_error;
+	record->published.finished_serial = network->finished_serial;
+	record->published_changed |= network->changed;
+	network->changed = 0U;
+
+	/* Succeeded: the event loop has something to take. */
+	return 1;
+}
+
+/* Runs a request on the link's thread: sends a frame on a connection of its own, or changes whether scans are asked for. */
+static void
+network_op_run(
+	void *owner,
+	struct kl_daemon_link_op *op)
+{
+	struct kl_backend_network *record;
+	struct network_link *network;
+	struct network_op *request;
+	uint32_t request_id;
+	uint64_t now;
+	int descriptor;
+	int error;
+
+	/* The thread's own part of the record, and the request. */
+	record = owner;
+	network = &record->inner;
+	request = (struct network_op *)op;
+
+	/* The asking for scans begins: the daemon is asked now and the scan it has is read at once. */
+	if (request->kind == NETWORK_OP_SCANNING && request->on != 0U) {
+		now = network_milliseconds();
+		network->scan_wanted = 1U;
+		network->scan_lease_ms = now;
+		network->scan_list_ms = now;
+		return;
+	}
+
+	/* The asking ends: the daemon is told on the next step. */
+	if (request->kind == NETWORK_OP_SCANNING) {
+		network->scan_wanted = 0U;
+		return;
+	}
+
+	/* One request at a time (the event loop waits for each one's end). */
+	if (network->request_fd >= 0) {
+		network_finish(network, request->request, request->serial, EBUSY);
+		return;
+	}
+
+	/* The frame, on a connection of the request's own; one that cannot be sent finishes at once. */
+	error = network_send(network, request->opcode, request->payload, request->length, &descriptor, &request_id);
+	if (error != 0) {
+		network_finish(network, request->request, request->serial, error);
+		return;
+	}
+
+	/* The request is outstanding until its answer is read. */
+	network->request_fd = descriptor;
+	network->request = request->request;
+	network->request_opcode = request->opcode;
+	network->request_id = request_id;
+	network->request_serial = request->serial;
+}
+
+/* Numbers a frame and hands it to the link's thread; 0, EBUSY (one outstanding) or ENOMEM. */
+static int
+network_submit(
+	struct kl_backend_network *network,
+	unsigned request,
+	uint32_t opcode,
+	const unsigned char *payload,
+	size_t length)
+{
+	struct network_op *frame;
+
+	/* Keeps one request outstanding so its reply has an unambiguous owner. */
+	if (network->serial != network->view.finished_serial)
+		return EBUSY;
+
+	/* The request, the link's from the submit on. */
+	frame = calloc(1U, sizeof(*frame));
+	if (frame == NULL)
+		return ENOMEM;
+
+	/* The event loop's number of it (never 0, the number of none finished). */
+	network->serial++;
+	if (network->serial == 0U)
+		network->serial = 1U;
+	frame->op.run = network_op_run;
+	frame->kind = NETWORK_OP_REQUEST;
+	frame->request = request;
+	frame->opcode = opcode;
+	memcpy(frame->payload, payload, length);
+	frame->length = length;
+	frame->serial = network->serial;
+	kl_daemon_link_submit(&network->link, &frame->op);
+
+	/* Succeeded: outstanding until the thread publishes its end. */
+	network->request = request;
+	return 0;
+}
+
+/* Finishes a request that could not be sent, with its errno value, as the next update tells. */
+static void
+network_finish(
+	struct network_link *network,
+	unsigned request,
+	uint32_t serial,
+	int error)
+{
+	/* The outcome, kept as a request's whose answer came. */
+	network->finished = request;
+	network->finished_error = error;
+	network->finished_serial = serial;
+	network->changed |= KL_BACKEND_NETWORK_CHANGED_DONE;
 }
 
 /* Connects to the daemon's socket. */
@@ -567,7 +854,7 @@ network_connect(
  */
 static int
 network_send(
-	struct kl_backend_network *network,
+	struct network_link *network,
 	uint32_t opcode,
 	const unsigned char *payload,
 	size_t length,
@@ -615,7 +902,7 @@ network_send(
  */
 static void
 network_scan_step(
-	struct kl_backend_network *network,
+	struct network_link *network,
 	unsigned *changed)
 {
 	uint64_t now;
@@ -658,7 +945,7 @@ network_scan_step(
 /* Takes the answer of the scans' connection when it has arrived: a reading's networks are the new scan. */
 static void
 network_scan_answer(
-	struct kl_backend_network *network,
+	struct network_link *network,
 	unsigned *changed)
 {
 	struct networkd_protocol_header header;
@@ -703,7 +990,7 @@ network_scan_answer(
 /* Sends one frame on the scans' connection; a daemon not there is asked again at the next step that is due. */
 static void
 network_scan_send(
-	struct kl_backend_network *network,
+	struct network_link *network,
 	uint32_t opcode)
 {
 	uint32_t request_id;
@@ -734,7 +1021,7 @@ network_scan_send(
 /* Makes the watch: a connection that asked SUBSCRIBE. */
 static int
 network_watch(
-	struct kl_backend_network *network)
+	struct network_link *network)
 {
 	struct networkd_protocol_header header;
 	int descriptor;
@@ -767,7 +1054,7 @@ network_watch(
 /* Drops the watch, which leaves the state unknown until it is made again. */
 static void
 network_unwatch(
-	struct kl_backend_network *network,
+	struct network_link *network,
 	unsigned *changed)
 {
 	/* The connection. */
@@ -831,7 +1118,7 @@ network_readable(
 /* Reads the states the watch has reported, the last one standing. */
 static int
 network_read_watch(
-	struct kl_backend_network *network,
+	struct network_link *network,
 	unsigned *changed)
 {
 	struct networkd_protocol_header header;
@@ -882,7 +1169,7 @@ network_read_watch(
 /* Reads the answer to the request outstanding, when it has arrived. */
 static int
 network_read_answer(
-	struct kl_backend_network *network,
+	struct network_link *network,
 	unsigned *changed)
 {
 	struct networkd_protocol_header header;
@@ -904,6 +1191,7 @@ network_read_answer(
 	(void)close(network->request_fd);
 	network->request_fd = -1;
 	network->finished = network->request;
+	network->finished_serial = network->request_serial;
 	network->request = KL_BACKEND_NETWORK_REQUEST_NONE;
 	*changed |= KL_BACKEND_NETWORK_CHANGED_DONE;
 	if (failed != 0) {
@@ -1357,7 +1645,7 @@ network_wifi_state(
 /* Reads and sorts the strongest access point of each scanned SSID. */
 static void
 network_parse_scan(
-	struct kl_backend_network *network,
+	struct network_link *network,
 	const char *output,
 	size_t length)
 {
@@ -1414,7 +1702,7 @@ network_parse_scan(
 /* Reads one access point's line into the scan (the stronger of two of one SSID stays). */
 static void
 network_parse_ap(
-	struct kl_backend_network *network,
+	struct network_link *network,
 	const char *line)
 {
 	struct kl_backend_network_ap ap;

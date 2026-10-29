@@ -45,6 +45,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <sys/stat.h>
+#include "include/kern/os-name.h"
 
 /* The follow policy is the default of the -R choice. */
 #define CP_FOLLOW_DEFAULT (-1)
@@ -317,7 +318,7 @@ read_letter(
 		request->report_path = value;
 		break;
 	case CP_OPTION_VERSION:
-		printf("cp (Kei) 1.0\n");
+		printf("cp (" ZEDBSD_OS_NAME ") 1.0\n");
 		exit(0);
 		break;
 	default:

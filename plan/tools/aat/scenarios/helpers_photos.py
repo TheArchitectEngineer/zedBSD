@@ -6,7 +6,7 @@ Copyright (C) 2026 Awe Morris; SPDX-License-Identifier: Zlib
     helpers_photos.py --outdir OUTDIR [--only REGEX] -- TARGET-OPTIONS     (--list: the ids)
 
 The photos are the ones plan/tools/aat/make-photos.py --view makes on this host (PIL): nine pictures over three
-months of 2026, a JPEG turned by its EXIF, a PNG, a GIF and one damaged JPEG.  They are put in kei's ~/AATPhotos and
+months of 2026, a JPEG turned by its EXIF, a PNG, a GIF and one damaged JPEG.  They are put in the session user's ~/AATPhotos and
 imported with /bin/photos --import (ws157-p004: copied to ~/Pictures/Library/img/YYYY/MM/DD, the database in
 ~/Pictures/Library/db).  The library, the thumbnails' cache and ~/AATPhotos are taken away before and after.  The
 places in Photos' window are view.c's layout: the lists' column 0.24 of the window's width within 200 and 260, the
@@ -24,9 +24,9 @@ import common
 
 run = aatlib.Run.from_command_line("helpers_photos")
 
-SOURCE = "/home/kei/AATPhotos"
-LIBRARY = "/home/kei/Pictures/Library"
-CACHE = "/home/kei/.cache/keiland/photos"
+SOURCE = f"{aatlib.HOME}/AATPhotos"
+LIBRARY = f"{aatlib.HOME}/Pictures/Library"
+CACHE = f"{aatlib.HOME}/.cache/keiland/photos"
 MAKER = pathlib.Path(__file__).resolve().parents[4] / "plan/tools/aat/make-photos.py"
 
 
@@ -44,7 +44,7 @@ def sized(window, mark):
 
 
 def put_photos(item) -> None:
-	"""The photos, made on this host and put in kei's ~/AATPhotos; no library yet."""
+	"""The photos, made on this host and put in the session user's ~/AATPhotos; no library yet."""
 	folder = run.outdir / "photos"
 	subprocess.run([sys.executable, str(MAKER), "--view", str(folder)], check=True, timeout=120)
 	run.sh(f"rm -rf {SOURCE} {LIBRARY} {CACHE}; mkdir -p {SOURCE}/Family {SOURCE}/Trips")
@@ -56,7 +56,7 @@ def put_photos(item) -> None:
 			names.append(name)
 	# The files' times are the dates of the PNG, the GIF and the damaged JPEG (no EXIF).
 	run.sh(f"cd {SOURCE} && touch -t 202607141200 sticker.png && touch -t 202607101200 wave.gif && "
-		f"touch -t 202607011200 broken.jpg; chown -R kei {SOURCE}; chmod -R a+rX {SOURCE}")
+		f"touch -t 202607011200 broken.jpg; chown -R {aatlib.USER} {SOURCE}; chmod -R a+rX {SOURCE}")
 	item.step(f"{len(names)} files in ~/AATPhotos", ", ".join(names))
 
 

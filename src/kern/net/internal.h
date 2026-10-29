@@ -49,6 +49,13 @@ net_checksum_pseudo(
 	size_t);
 
 uint16_t
+net_checksum_pseudo_partial(
+	uint32_t source,
+	uint32_t destination,
+	uint8_t protocol,
+	size_t length);
+
+uint16_t
 net_checksum_pseudo6(
 	const uint8_t source[16],
 	const uint8_t destination[16],
@@ -93,6 +100,23 @@ ipv4_output(
 	struct net_device *,
 	uint32_t destination,
 	uint8_t protocol,
+	struct packet_buf *);
+
+int
+ipv4_output_routed(
+	struct net_device *,
+	uint32_t destination,
+	uint32_t next_hop,
+	uint8_t protocol,
+	uint32_t source,
+	struct packet_buf *);
+
+int
+ipv4_output_sourced(
+	struct net_device *,
+	uint32_t destination,
+	uint8_t protocol,
+	uint32_t source,
 	struct packet_buf *);
 
 int
@@ -149,6 +173,14 @@ tcp_socket_create(
 
 void
 tcp_timer_run(void);
+
+/*
+ * Sends the acknowledgements TCP delayed for the end of a batch of input
+ * (each connection that took a single segment since it last sent): the
+ * network worker calls it when it has taken every packet that had arrived.
+ */
+void
+tcp_ack_flush(void);
 
 uint64_t
 tcp_timer_next_deadline(void);

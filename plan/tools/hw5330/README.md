@@ -179,7 +179,7 @@ plan/tools/i915-hw/hdmi-h4-hw.sh ctl hmp info registers
   （`ls build` で確認）。次は使われていない番号にする。
 - USB への書き方と、image をユーザーの機械へ運ぶ方法は plan に記録が無い（**未確認**）。build の script の説明は「write it to a USB stick and boot
   the machine from it (UEFI)」だけ（`build-demo-image.sh:13-14`）。ユーザーには path を伝え、書き方はユーザーに任せる。
-- `tools/release/kei-nightly.mk` の `Kei-nightly.zip` は Windows の QEMU（Venus）の配布物であり、5330 の USB 用ではない（`kei-nightly.mk:1-11`）。
+- `tools/release/zedbsd-nightly.mk` の `zedbsd-nightly.zip` は Windows の QEMU（Venus）の配布物であり、5330 の USB 用ではない（`kei-nightly.mk:1-11`）。
 - 起動の後、boot の行は image の FAT32 の `ZEDBSD` の partition の `/zedbsd.cfg`（WS238 から。ESP は loader だけ。動いている system では `/boot/boot0/zedbsd.cfg`）を書き換えて変えられる（`build-demo-image.sh:13-14`、
   `docs/reference/kernel-boot-parameters.md:338-343`）。同じ名前の行を 2 回書くと起動が止まる（同 :56、3.4 節）。
 

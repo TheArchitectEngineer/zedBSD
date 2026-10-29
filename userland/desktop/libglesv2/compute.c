@@ -25,7 +25,7 @@
  * indirect sizes, copies, the host).  glMemoryBarrier has nothing left to
  * order and only checks its bits.
  *
- * With KEI_GLES_COMPUTE_TRACE set in the environment, each dispatch recorded
+ * With ZEDBSD_GLES_COMPUTE_TRACE set in the environment, each dispatch recorded
  * says so on stderr (ws101-p011: the evidence that a program such as Noct's
  * accelerator ran its kernel on the GPU and did not fall back to the CPU).
  */
@@ -78,7 +78,7 @@ glDispatchCompute(
 	GLuint groups[3];
 	uint64_t started;
 
-	/* The grid's three counts; the recording is timed when KEI_GLES_COMPUTE_TRACE is 2 (ws101-p016). */
+	/* The grid's three counts; the recording is timed when ZEDBSD_GLES_COMPUTE_TRACE is 2. */
 	groups[0] = num_groups_x;
 	groups[1] = num_groups_y;
 	groups[2] = num_groups_z;
@@ -491,7 +491,7 @@ compute_memory_barrier(
 		gles_error(context, GL_INVALID_VALUE);
 }
 
-/* Writes one line on stderr for a recorded dispatch when KEI_GLES_COMPUTE_TRACE is set (any value; 2 also times the steps, gles.c). */
+/* Writes one line on stderr for a recorded dispatch when ZEDBSD_GLES_COMPUTE_TRACE is set (any value; 2 also times the steps, gles.c). */
 static void
 compute_trace(
 	const GLuint *groups,
@@ -502,7 +502,7 @@ compute_trace(
 
 	/* The environment, read once. */
 	if (compute_tracing < 0) {
-		setting = getenv("KEI_GLES_COMPUTE_TRACE");
+		setting = getenv("ZEDBSD_GLES_COMPUTE_TRACE");
 		compute_tracing = 0;
 		if (setting != NULL)
 			compute_tracing = 1;

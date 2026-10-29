@@ -42,6 +42,7 @@
 #include <string.h>
 #include <sys/stat.h>
 #include <unistd.h>
+#include "include/kern/os-name.h"
 
 /* The codes of the long options that have no letter. */
 #define OPTION_INCLUDE		256
@@ -1093,7 +1094,7 @@ version(
 	void)
 {
 	/* The name and where it comes from. */
-	printf("grep (Kei) 1.0\n");
+	printf("grep (" ZEDBSD_OS_NAME ") 1.0\n");
 	exit(0);
 }
 

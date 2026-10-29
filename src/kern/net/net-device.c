@@ -74,10 +74,19 @@ static void device_put_locked(struct net_device *device, struct device_finalizer
 static void device_update_running_locked(struct net_device *device);
 static void device_wait_callbacks(struct net_device *device, int opening, int closing);
 static void device_wait_removed(struct net_device *device);
+/*
+ * How many devices have a poll scheduled: the network worker's passes
+ * skip the walk of the devices when none has (net_device_poll_wanted).
+ * Moved under the registry lock with each device's poll_scheduled, read
+ * without it.
+ */
+static unsigned poll_scheduled_devices;
+
 static bool device_lock(void);
 static void device_unlock(bool enabled);
 static int device_name_valid(const char *name);
 static void device_post_event(const struct net_device *device, unsigned ifindex, uint32_t action);
+static void device_poll_scheduled_set_locked(struct net_device *device, unsigned scheduled);
 
 /*
  * Empties the device registry.
@@ -152,6 +161,7 @@ net_device_create(
 	if (device == NULL ||
 	    !device_name_valid(device->name) ||
 	    device->mtu == 0 ||
+	    (device->mtu_max != 0 && device->mtu_max < device->mtu) ||
 	    device->hwaddr_len == 0 ||
 	    device->hwaddr_len > NET_DEVICE_HWADDR_MAX ||
 	    device->ops == NULL ||
@@ -179,6 +189,11 @@ net_device_create(
 		device_unlock(enabled);
 		return ENOSPC;
 	}
+
+	/* The MTU the device returns to, and the most it takes: its own when the driver named none. */
+	device->mtu_default = device->mtu;
+	if (device->mtu_max == 0)
+		device->mtu_max = device->mtu;
 
 	/* Assigns the identifiers; the driver's running flag becomes the carrier. */
 	device->ifindex = next_ifindex++;
@@ -299,7 +314,7 @@ net_device_gone(
 	event_ifindex = device->ifindex;
 	event_generation = device->generation;
 	event_flags = device->flags;
-	device->poll_scheduled = 0;
+	device_poll_scheduled_set_locked(device, 0);
 
 	/* Keeps the slot alive until close and every identity purge has finished. */
 	refcount_get(&device->refs);
@@ -961,7 +976,7 @@ net_device_close(
 	if (device->open_count == 0) {
 		last_close = 1;
 		device->closing = 1;
-		device->poll_scheduled = 0;
+		device_poll_scheduled_set_locked(device, 0);
 		device->flags &= ~(NET_DEVICE_UP | NET_DEVICE_RUNNING);
 		call_close = device->ops->close != NULL;
 	}
@@ -1026,11 +1041,18 @@ net_device_transmit(
 	device_unlock(enabled);
 	error = device->ops->transmit(device, packet);
 
-	/* Accounts the result. */
+	/*
+	 * Accounts the result.  A full transmit queue (ENOBUFS, EBUSY) is a
+	 * drop and not an error, as FreeBSD's struct if_data keeps the
+	 * queue's drops (ifi_oqdrops) apart from ifi_oerrors: the frame was
+	 * never tried, and a sender that keeps it (TCP) hands it over again.
+	 */
 	enabled = device_lock();
 	if (error == 0) {
 		device->tx_packets++;
 		device->tx_bytes += length;
+	} else if (error == ENOBUFS || error == EBUSY) {
+		device->tx_dropped++;
 	} else {
 		device->tx_errors++;
 		device->tx_dropped++;
@@ -1128,6 +1150,128 @@ net_device_ioctl(
 }
 
 /*
+ * Sets a device's MTU, through its driver's set_mtu when it has one.
+ *
+ * The driver is admitted as an ioctl is, so close, gone and shutdown_all
+ * join it; the new value is published under the registry lock after the
+ * driver took it, and the change is posted to the system's events.
+ */
+int
+net_device_set_mtu(
+	struct net_device *device,
+	unsigned mtu)
+{
+	bool enabled;
+	int error;
+	int live;
+
+	/* Rejects a missing device. */
+	if (device == NULL)
+		return ENODEV;
+
+	/* 0 is the MTU the device was created with. */
+	if (mtu == 0)
+		mtu = device->mtu_default;
+
+	/*
+	 * Refuses a value below the IPv6 minimum or beyond what the device
+	 * takes (a driver's mtu_max is within NET_MTU_MAX already; the loopback
+	 * device's 65535 is not, its frames stay standard packets).
+	 */
+	if (mtu < NET_MTU_MIN || mtu > device->mtu_max)
+		return EINVAL;
+
+	/* Decides in the registry's lock whether the device may change now. */
+	enabled = device_lock();
+
+	/* Driver callbacks run in thread context only. */
+	if (hal_irq_disable != NULL && !enabled) {
+		device_unlock(enabled);
+		return EWOULDBLOCK;
+	}
+
+	/* Only a stable live device changes. */
+	if (device->state != NET_DEVICE_LIVE || device->destroy_pending) {
+		device_unlock(enabled);
+		return ENODEV;
+	}
+
+	/* A device changing its open state, or a registry shutting down, is not touched. */
+	if (device->opening || device->closing || registry_stopping) {
+		device_unlock(enabled);
+		return EBUSY;
+	}
+
+	/* Setting the MTU it has changes nothing (networkd sets it again on every cable plug). */
+	if (device->mtu == mtu) {
+		device_unlock(enabled);
+		return 0;
+	}
+
+	/* Admits the driver's callback the way an ioctl is admitted. */
+	device->ioctl_active++;
+	refcount_get(&device->refs);
+
+	device_unlock(enabled);
+
+	/* The driver checks the value against its hardware. */
+	error = 0;
+	if (device->ops != NULL && device->ops->set_mtu != NULL)
+		error = device->ops->set_mtu(device, mtu);
+
+	/* Retires the callback and publishes the value the driver took. */
+	enabled = device_lock();
+
+	if (device->ioctl_active == 0)
+		__builtin_trap();
+	device->ioctl_active--;
+	live = device->state == NET_DEVICE_LIVE && !device->destroy_pending;
+	if (live && error == 0)
+		device->mtu = mtu;
+
+	device_unlock(enabled);
+
+	/* Tells the system's listeners of the new MTU while the reference still holds the device. */
+	if (live && error == 0)
+		device_post_event(device, device->ifindex, KERN_SYSTEM_EVENT_CHANGE);
+	net_device_release(device);
+
+	/* Reports a device that went away, or the driver's refusal. */
+	if (!live)
+		return ENODEV;
+	if (error != 0)
+		return error;
+
+	/* Succeeded: the device runs at the new MTU. */
+	return 0;
+}
+
+/*
+ * Reports the longest frame the stack hands the device, from its Ethernet
+ * header on.
+ */
+size_t
+net_device_frame_max(
+	const struct net_device *device)
+{
+	size_t frame;
+	size_t limit;
+
+	/* The loopback device's frames stay in standard packets, whatever its MTU says. */
+	if ((device->flags & NET_DEVICE_LOOPBACK) != 0)
+		return PACKET_BUF_STORAGE_SIZE - PACKET_BUF_DEFAULT_HEADROOM;
+
+	/* The header and the MTU, no more than the largest packet holds after its headroom. */
+	frame = 14U + (size_t)device->mtu;
+	limit = PACKET_BUF_MAX_STORAGE_SIZE - PACKET_BUF_DEFAULT_HEADROOM;
+	if (frame > limit)
+		frame = limit;
+
+	/* Succeeded: the frame's limit. */
+	return frame;
+}
+
+/*
  * Counts a transmit error reported by the driver.
  */
 void
@@ -1178,6 +1322,19 @@ net_device_receive(
 	length = packet->length;
 
 	/*
+	 * A frame longer than the MTU allows (its header, a VLAN tag and the
+	 * MTU) is counted as an error and dropped: the driver may take frames
+	 * up to its hardware's limit while the interface runs at a smaller
+	 * MTU.  The loopback device's frames are the stack's own.
+	 */
+	if ((device->flags & NET_DEVICE_LOOPBACK) == 0 && length > 18U + (size_t)device->mtu) {
+		device->rx_errors++;
+		device_unlock(enabled);
+		packet_buf_free(packet);
+		return;
+	}
+
+	/*
 	 * One reference follows the packet; the other protects stats
 	 * publication if the queue consumer frees that packet before enqueue
 	 * returns.
@@ -1226,7 +1383,7 @@ net_device_schedule_poll(
 	    !device->opening &&
 	    !device->closing &&
 	    device->ops->poll_receive != NULL) {
-		device->poll_scheduled = 1;
+		device_poll_scheduled_set_locked(device, 1);
 		wake = 1;
 	}
 
@@ -1264,7 +1421,8 @@ net_device_poll(
 		return 0;
 	}
 
-	device->poll_scheduled = 0;
+	/* Takes the scheduled poll, and keeps the device alive until it is done. */
+	device_poll_scheduled_set_locked(device, 0);
 	device->poll_active++;
 	refcount_get(&device->refs);
 	device_unlock(enabled);
@@ -1282,7 +1440,7 @@ net_device_poll(
 	    !device->opening &&
 	    !device->closing &&
 	    count >= budget)
-		device->poll_scheduled = 1;
+		device_poll_scheduled_set_locked(device, 1);
 	device_unlock(enabled);
 	net_device_release(device);
 
@@ -1528,8 +1686,8 @@ device_name_valid(
 }
 
 /*
- * Posts a device's ADD or REMOVE to the system's events: its name, and in
- * the detail its interface index and hardware address length.
+ * Posts a device's ADD, REMOVE or CHANGE (of its MTU) to the system's
+ * events: its name, and in the detail its interface index and MTU.
  */
 static void
 device_post_event(
@@ -1546,4 +1704,39 @@ device_post_event(
 	/* The detail, then the event. */
 	kern_snprintf(detail, sizeof(detail), "ifindex=%u mtu=%u", ifindex, (unsigned)device->mtu);
 	kern_system_event_post(KERN_SYSTEM_EVENT_NETWORK, action, 0, device->name, detail);
+}
+
+/*
+ * Tells whether any device has a poll scheduled, without the registry
+ * lock: a scheduling that races the answer also wakes the worker, which
+ * then looks again.
+ */
+int
+net_device_poll_wanted(
+	void)
+{
+	unsigned scheduled;
+
+	/* The count, read after whatever the waker published. */
+	scheduled = __atomic_load_n(&poll_scheduled_devices, __ATOMIC_ACQUIRE);
+
+	/* Succeeded: whether one waits. */
+	return scheduled != 0;
+}
+
+/*
+ * Sets or clears a device's scheduled poll and keeps the count of devices
+ * with one.  The caller holds the registry lock.
+ */
+static void
+device_poll_scheduled_set_locked(
+	struct net_device *device,
+	unsigned scheduled)
+{
+	/* A change of the flag moves the count. */
+	if (scheduled != 0 && device->poll_scheduled == 0)
+		__atomic_store_n(&poll_scheduled_devices, poll_scheduled_devices + 1U, __ATOMIC_RELEASE);
+	else if (scheduled == 0 && device->poll_scheduled != 0)
+		__atomic_store_n(&poll_scheduled_devices, poll_scheduled_devices - 1U, __ATOMIC_RELEASE);
+	device->poll_scheduled = scheduled;
 }

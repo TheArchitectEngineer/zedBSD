@@ -21,6 +21,8 @@
 
 #include "window.h"
 
+#include "include/kern/os-name.h"
+
 #include <errno.h>
 #include <string.h>
 
@@ -75,7 +77,7 @@ static const struct kl_menu_entry menu_items[] = {
 	{ MENU_ACTION_ID(SE_ACTION_MINIMIZE), MENU_WINDOW, KL_MENU_ITEM_NORMAL, "Minimize", SE_ACTION_MINIMIZE, KL_MENU_ROLE_NONE, MENU_CTRL, 'm' },
 	{ MENU_ACTION_ID(SE_ACTION_ZOOM), MENU_WINDOW, KL_MENU_ITEM_NORMAL, "Zoom", SE_ACTION_ZOOM, KL_MENU_ROLE_NONE, 0U, 0U },
 	{ MENU_HELP, KL_MENU_ROOT, KL_MENU_ITEM_SUBMENU, "Help", 0U, KL_MENU_ROLE_NONE, 0U, 0U },
-	{ MENU_ACTION_ID(SE_ACTION_ABOUT), MENU_HELP, KL_MENU_ITEM_NORMAL, "About Kei", SE_ACTION_ABOUT, KL_MENU_ROLE_ABOUT, 0U, 0U }
+	{ MENU_ACTION_ID(SE_ACTION_ABOUT), MENU_HELP, KL_MENU_ITEM_NORMAL, "About " ZEDBSD_OS_NAME, SE_ACTION_ABOUT, KL_MENU_ROLE_ABOUT, 0U, 0U }
 };
 
 /* How many items the menus have: the fixed ones, and a page's after Home. */

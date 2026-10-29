@@ -58,10 +58,14 @@
 #include "rotate.h"
 #include "title-tap.h"
 #include "cursor-box.h"
+#include "lane.h"
 #include "input-thread.h"
 #include <stdint.h>
 #include <stddef.h>
 #include <sys/types.h>
+
+/* The room for a language's name and its NUL (libkeiland's KL_TR_NAME_MAX). */
+#define KWL_LANGUAGE_NAME_SIZE	32U
 
 /* Bound each connection's wire, descriptor, object and queued-event storage. */
 #define KWL_WIRE_MAX		65532U
@@ -1355,7 +1359,8 @@ struct kwl_server {
 	uint64_t logout_ms;
 	/*
 	 * The lock screen (ws035-p102): whether it shows, how long without
-	 * input locks the session (--lock-idle, 0: never), and when the last
+	 * input locks the session (--lock-idle, or else the power.lock
+	 * setting; 0: never), whether --lock-idle gave it, and when the last
 	 * input came.
 	 */
 	unsigned locked;
@@ -1367,6 +1372,27 @@ struct kwl_server {
 	struct kwl_input_device inputs[KWL_INPUT_MAX];
 	uint64_t input_scan_time;
 	uint64_t input_settle_until;
+	/*
+	 * The device I/O thread (io.c): io_device runs the jobs that may wait
+	 * for a device or the kernel (the input devices' opening and closing,
+	 * the power's state, the network's details, the computer's readings,
+	 * the monitor's samples), io_started says it runs, and io_input says
+	 * it opens and closes the input devices too (a backend whose seat
+	 * opens them does not).  input_finding is set from a finding's
+	 * submission to its taking, so that the scans do not pile up behind a
+	 * slow open.
+	 */
+	struct kwl_lane io_device;
+	unsigned io_started;
+	unsigned io_input;
+	unsigned input_finding;
+	/*
+	 * The file I/O thread (io.c): io_file runs the jobs that read or
+	 * write the session's files (a write's fsync waits seconds on UFS),
+	 * io_file_started says it runs.
+	 */
+	struct kwl_lane io_file;
+	unsigned io_file_started;
 	uint64_t input_events;
 	uint64_t seat_events;
 	unsigned capabilities;
@@ -1397,6 +1423,12 @@ struct kwl_server {
 	uint64_t pointer_warp;
 	struct kwl_input_settings input_settings_given;
 	int wake[2];
+	/*
+	 * Whether the register was told again after the desktop's first tick,
+	 * which opens the bar's daemons' connections, each with its thread
+	 * (KWL THREADS is told at READY and once more then).
+	 */
+	unsigned threads_told;
 	uint64_t box_last_event_us;
 	uint64_t box_last_write_us;
 	unsigned view_output;
@@ -1416,6 +1448,13 @@ struct kwl_server {
 	struct kl_backend *backend;
 	/* The power as last read (ws132-p003): at start-up and at each power_changed; the bar shows the battery when percent >= 0. */
 	struct kl_backend_power_state power;
+	/*
+	 * Whether the bar's power is being read on the device I/O thread
+	 * (backend-host.c), and whether it changed again during the read (read
+	 * once more when it is done).
+	 */
+	unsigned power_reading;
+	unsigned power_again;
 	/*
 	 * The lid (backend-host.c, ws132-p008): its state and whether the lock
 	 * standing is its own (lid.c); whether the screen is out (drawn black);
@@ -1568,6 +1607,12 @@ struct kwl_server {
 	int32_t ime_method;
 	/* Whether the language of the compositor's text was read once (language.c, WS158); its catalogs are libkeiland's. */
 	unsigned language_set;
+	/*
+	 * The language last asked for, or the one in use after a failure (empty
+	 * before any): the catalogs the file I/O thread reads are used only
+	 * when they are still the language asked for.
+	 */
+	char language_asked[KWL_LANGUAGE_NAME_SIZE];
 	struct kwl_object *drag;
 	int32_t drag_dx;
 	int32_t drag_dy;
@@ -2105,6 +2150,7 @@ void kwl_backend_power_changed(void *data);
 void kwl_backend_power_button(void *data, unsigned button);
 void kwl_backend_lid_changed(void *data, unsigned open);
 void kwl_power_read(struct kwl_server *server);
+void kwl_power_read_later(struct kwl_server *server);
 int kwl_lock(struct kwl_server *server, const char *reason);
 void kwl_lock_release(struct kwl_server *server, const char *reason);
 void kwl_lid_screen_restore(struct kwl_server *server);
@@ -2215,6 +2261,7 @@ void kwl_shot_close(struct kwl_server *server);
 void kwl_shot_tick(struct kwl_server *server);
 void kwl_shot_complete(struct kwl_server *server);
 void kwl_compose_quiesce(struct kwl_server *server);
+void kwl_compose_client_gone(struct kwl_server *server, struct kwl_client *client);
 void kwl_compose_close(struct kwl_server *server);
 VkResult kwl_import_adopt(struct kwl_object *buffer, VkImage image, VkDeviceMemory memory, uint32_t width, uint32_t height, VkFormat format);
 void kwl_import_destroy(struct kwl_object *buffer);
@@ -2269,7 +2316,9 @@ int kwl_fence_ready(struct kwl_server *server, struct kwl_object *surface);
 int kwl_compose_waiting(struct kwl_server *server);
 void kwl_compose_want_frame(struct kwl_server *server);
 void kwl_compose_poll(struct kwl_server *server);
+void kwl_compose_give_tasks(struct kwl_server *server);
 void kwl_glass_glyphs_poll(struct kwl_server *server);
+void kwl_glass_blur_take(struct kwl_server *server);
 int kwl_glass_button(struct kwl_server *server, uint32_t button, uint32_t state);
 int kwl_glass_motion(struct kwl_server *server);
 void kwl_glass_gesture(struct kwl_server *server, uint32_t gesture, uint32_t phase, int32_t travel_um, int32_t speed);
@@ -2383,6 +2432,7 @@ void kwl_phone_tick(struct kwl_server *server);
 void kwl_phone_gone(struct kwl_object *object);
 void kwl_phone_refresh(void);
 void kwl_phone_close(struct kwl_server *server);
+void kwl_printers_prepare(struct kwl_server *server);
 int kwl_printers_available(void);
 int kwl_printers_create(struct kwl_object *manager, const unsigned char *bytes, size_t size);
 int kwl_printers_request(struct kwl_object *object, uint32_t opcode, const unsigned char *bytes, size_t size);
@@ -2396,6 +2446,7 @@ void kwl_displays_tell(struct kwl_server *server);
 void kwl_displays_move_settled(struct kwl_server *server, int failed);
 void kwl_displays_pending_tick(struct kwl_server *server, uint64_t now);
 void kwl_displays_object_gone(struct kwl_object *object);
+void kwl_displays_written(struct kwl_server *server, uint64_t ticket, int error);
 int kwl_displays_key(struct kwl_server *server, uint32_t key, uint32_t state);
 void kwl_displays_tick(struct kwl_server *server);
 
@@ -2515,6 +2566,8 @@ int kwl_corner_showing(void);
 int kwl_keyboard_button(struct kwl_server *server, uint32_t button, uint32_t state);
 int kwl_keyboard_motion(struct kwl_server *server);
 void kwl_keyboard_tick(struct kwl_server *server);
+void kwl_keyboard_hand_take(struct kwl_server *server);
+void kwl_keyboard_hand_stop(void);
 void kwl_keyboard_surface_commit(struct kwl_object *surface);
 void kwl_keyboard_client_told(struct kwl_client *client);
 int kwl_keyboard_showing(void);
@@ -2607,6 +2660,7 @@ int kwl_network_key(struct kwl_server *server, uint32_t key, uint32_t state);
 int kwl_network_motion(struct kwl_server *server);
 int kwl_network_is_open(void);
 struct kl_backend_network *kwl_network_watch(void);
+void kwl_network_close(void);
 void kwl_network_state(struct kl_backend_network_state *state);
 size_t kwl_network_scan(struct kl_backend_network_ap *aps, size_t capacity);
 void kwl_network_key_failed(struct kwl_server *server, const char *ssid, int error);
@@ -2615,6 +2669,7 @@ void kwl_network_details(struct kwl_server *server, const struct kl_backend_netw
 void kwl_network_scan_hold(unsigned on);
 void kwl_volume_tick(struct kwl_server *server);
 void kwl_volume_keep(struct kwl_server *server, const char *why);
+void kwl_volume_close(struct kwl_server *server);
 void kwl_volume_report(unsigned *restored, unsigned *available, unsigned *value, unsigned *muted);
 int kwl_volume_request(struct kwl_server *server, unsigned value, unsigned muted);
 int kwl_volume_request_channels(struct kwl_server *server, unsigned left, unsigned right, unsigned muted);
@@ -2675,9 +2730,27 @@ size_t kwl_os_poll_count(const struct kwl_server *server);
 void kwl_os_poll_fill(struct kwl_server *server, struct pollfd *descriptors);
 void kwl_os_poll_done(struct kwl_server *server, const struct pollfd *descriptors);
 void kwl_input_scan(struct kwl_server *server);
+/*
+ * The keys of the file I/O thread's jobs of which only the latest given
+ * is worth running (io.c): a newer one replaces one not started yet.
+ */
+#define KWL_IO_KEY_DISPLAYS	1U
+#define KWL_IO_KEY_LANGUAGE	2U
+#define KWL_IO_KEY_MONITOR	3U
+
+void kwl_io_start(struct kwl_server *server);
+void kwl_io_take(struct kwl_server *server);
+void kwl_io_stop(struct kwl_server *server);
+int kwl_io_input_find(struct kwl_server *server);
+int kwl_io_file_submit(struct kwl_server *server, struct kwl_lane_job *job, const struct kwl_lane_ops *ops, uint64_t key);
+int kwl_io_device_submit(struct kwl_server *server, struct kwl_lane_job *job, const struct kwl_lane_ops *ops, uint64_t key);
+void kwl_io_file_finish(struct kwl_server *server);
+void kwl_io_input_close(struct kwl_server *server, int descriptor);
 int kwl_input_probe(struct kwl_server *server, int descriptor, const char *path, const struct kl_backend_input_caps *capabilities);
 int kwl_input_alt_held(const struct kwl_server *server);
 int kwl_input_attach(struct kwl_server *server, int descriptor, const char *path, unsigned pointer, unsigned keyboard, unsigned direct, const struct input_absinfo *x, const struct input_absinfo *y);
+int kwl_wake_open(struct kwl_server *server);
+void kwl_wake_close(struct kwl_server *server);
 int kwl_threads_prepare(struct kwl_server *server);
 int kwl_input_threads_start(struct kwl_server *server);
 void kwl_input_threads_stop(struct kwl_server *server);

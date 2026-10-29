@@ -1,4 +1,10 @@
-ifeq ($(ZEDBSD_BOARD),rpi5)
+ifeq ($(ZEDBSD_BOARD),odroid-c5)
+# The ODROID-C5's bootloader is Hardkernel's, on the card's bootloader area;
+# the boot partition carries the boot script and the device tree
+# (platform/arm64/odroid-c5.mk).
+.PHONY: bootloader
+bootloader: odroid-c5-boot-files
+else ifeq ($(ZEDBSD_BOARD),rpi5)
 # The Pi 5's bootloader is in the board's EEPROM: the boot partition carries
 # only config.txt, the kernel and the device trees (platform/arm64/rpi5-firmware.mk).
 RPI5_BOOTLOADER_FILES := $(RPI5_BOOT_FIRMWARE_CACHE_FILES) $(BUILD)/config.txt

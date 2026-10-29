@@ -1,0 +1,11 @@
+--- a/src/drivers/gpu/nvrtx/node.c	2026-10-29 06:51:02.530340996 +0900
++++ b/src/drivers/gpu/nvrtx/node.c	2026-10-29 06:51:02.558340917 +0900
+@@ -668,6 +668,8 @@
+ 	 */
+ 	error = nvrtx_bo_alloc(node->gpu, request->bytes, NODE_BLOB_ALIGN, &backing->bo);
+ 	if (error == 0)
++		error = nvrtx_bo_map(node->gpu, &backing->bo);
++	if (error == 0)
+ 		error = nvrtx_bo_clear(node->gpu, &backing->bo);
+ 	if (error != 0) {
+ 		nvrtx_bo_free(node->gpu, &backing->bo);

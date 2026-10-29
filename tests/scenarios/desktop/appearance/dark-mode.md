@@ -13,7 +13,7 @@ since: ws089-p017
 dark mode の switch が desktop（bar・App Home）と app（Settings・Files）に届くことを確かめる。
 
 ## 準備
-App Home から Settings を開き、Appearance の頁（`settings appearance` を kei で流すと今の Settings がその頁に移る）。App Home から Files も開いておく。
+App Home から Settings を開き、Appearance の頁（`settings appearance` を user で流すと今の Settings がその頁に移る）。App Home から Files も開いておく。
 
 ## 操作と確認
 1. 操作: 「Dark appearance」の switch を click。

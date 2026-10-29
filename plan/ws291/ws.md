@@ -36,6 +36,8 @@ GPU ごとに同じ手順（desktop の 60 fps、重い 3D の model の 50 fps�
 
 ## Phase
 
+- 2026-10-29 ユーザー（原文）: 「WS291は、Keilandのスレッドの修正を適用後でないと、正確にならないかもしれないです。」→ Q1: desktop の fps の受け入れ（p010 の 60 fps）は WS309（Keiland の thread の整理）の後に測り直して判定する。それまでは driver の側の直し（cursor・lock）だけを進め、compositor の側の調整はしない。
+
 | Phase | 内容 | 依存 | 状態 |
 | --- | --- | --- | --- |
 | [p001](phase001/phase.md) | desktop の計測と 60 fps（既に 60 fps なら記録して閉じる） | WS039 p009 | cleared（2026-10-26、main bad29b52f、全段 60 fps） |
@@ -44,11 +46,12 @@ GPU ごとに同じ手順（desktop の 60 fps、重い 3D の model の 50 fps�
 | [p003](phase003/phase.md) | RDNA: 投入の経路（vkQueueSubmit が GPU の完了を待たない非同期、record の 1 command と submit の費用を削る）。big-N・subs-N で Linux に近づける | p002 | cleared（2026-10-27 04:31 Q1） |
 | [p004](phase004/phase.md) | RDNA: PA の small primitive filter・back-face cull・VGT の vertex reuse を RADV の値に、scene-6500 の GPU の ms | p003 | cleared（2026-10-27 08:34、driver の変更なし、差は NGG の culling） |
 | [p005](phase005/phase.md) | RDNA: NGG A（passthrough、wave32 1 つの subgroup） | p004 | cleared（2026-10-27 13:52 Q1 判定、q1611。受け入れ: export の EXEC の wait の修正、1 体 pixel 差 0、6500 体 8 pixel、hang 回復、GPU 41.4 ms） |
-| [p006](phase006/phase.md) | RDNA: NGG B+C（primitive の culling と頂点の詰め直し・属性の後回しを Mesa の形で一緒に。2026-10-27 14:50 Q1: compaction 無しの culling は GFX10 で止まる（仮説 A）ので p007 と統合） | p005 | in-progress（q1639: VRAM の page entry の fragment（eb0ec22fd）で scene-6500 30.7 → 44.7 fps・GPU 30.6 → 20.5 ms（Linux 49.7 fps・19.7 ms）。残りは頂点の側 4 % と CPU 側 1.2 ms） |
+| [p006](phase006/phase.md) | RDNA: NGG B+C（primitive の culling と頂点の詰め直し・属性の後回しを Mesa の形で一緒に。2026-10-27 14:50 Q1: compaction 無しの culling は GFX10 で止まる（仮説 A）ので p007 と統合） | p005 | in-progress（q1668: big-1000 35.5 → 57〜59 fps（Linux 87）、subs-1000 1 submit 48 → 39 µs（Linux 10）、scene-1500 209・scene-6500 49.6（Linux 200.4・50.1）） |
 | p007 | RDNA: NGG C（vertex の詰め直しと属性の後回し、wave をまたぐ subgroup）、目標 GPU 約 20 ms | p006 | p006 に統合（2026-10-27 14:50 Q1。目標 GPU 約 20 ms は p006 の受け入れへ） |
 | p008〜p009 | RDNA: HTILE、guard band、CPU 側の record（2.3 ms）の短縮 | p007 | — |
-| p010 | NVIDIA: GPU の入れ替え（ユーザー）、desktop の計測と 60 fps | RDNA の Phase の全部、P2 | planned |
-| p011 | NVIDIA: Linux で約 50 fps の scene での差の計測と 50 fps（p012〜p019 は改善の予備） | p010 | planned |
+| [p010](phase010/phase.md) | NVIDIA（RTX 2070）: nvrtx の起動、desktop の計測と 60 fps、Linux の NVK の基準 | 機械の入れ替え（2026-10-29 ユーザー）、P2 | in-progress（q1670-i06: cursor の set と window_lock の直しで drag 31 → 61・launch 51 → 64 fps、scroll・hover・keys は入力の間隔。受け入れは WS309 の後に測り直し） |
+| [p010a](phase010a/phase.md) | NVIDIA: nvrtx の executor に mview が要る物（depth・index の draw・instance・mip・uniform buffer・cull） | p010 | cleared（2026-10-29 10:48 q1670-i04: 実機で depth・texture が参照と一致、scene-5000 42.2 fps。残り: instance の rate の実機の個別の確かめ） |
+| [p011](phase011/phase.md) | NVIDIA: Linux（NVK）で約 50 fps の scene（qs40 ×5000）での差の計測と 50 fps（p012〜p019 は改善の予備）。GPU の待ちを lock の外へ出す件（非同期の submit）は 2026-10-29 Q1 の判断でこの p011 で行う（WS250 は担当が無く止まっている。WS250 の design.md の期限の STOP・session ごとの worker と食い違わない形にし、WS250 はその上に作る） | p010a | cleared（2026-10-29 Q1 の判定: scene-5000 は 49.1〜49.5 fps で、同じ機械の NVK の単独の run 49.1・平均 50.1 と揺れの内で並ぶ。残りは GPU 19.5 ms、50 fps を明らかに超えるのは p012 以降の予備（vertex の program の質）） |
 | p020 | PowerVR（VF2）: model の 50 fps（RDNA で確立した手順、P3） | RDNA の手順の確立（p002 と最初の改善） | planned |
 | 最後 | 規約の全文の見直し | 実装の全部 | — |
 
@@ -65,7 +68,7 @@ GPU ごとに同じ手順（desktop の 60 fps、重い 3D の model の 50 fps�
 
 ## 未決（その Phase の前に確かめる）
 
-- NVIDIA の Linux の基準の driver（NVIDIA の proprietary か nouveau/NVK か）と、入れる GPU の型番。GPU の入れ替えはユーザー。
+- （決まった 2026-10-29）NVIDIA の Linux の基準の driver: ユーザーの回答（クリック）「NVK（nouveau） (推し)」。GPU は RTX 2070（TU106）。
 - PowerVR の 50 fps の基準: Linux との比較か、50 fps の絶対値か（VF2 の Linux の PowerVR の driver の有無で決まる）。
 
 ## 2026-10-28 の再開（q1635、P2）
@@ -158,3 +161,69 @@ GPU ごとに同じ手順（desktop の 60 fps、重い 3D の model の 50 fps�
 ## 2026-10-29 q1663（P2、worktree p2-ws291j）
 
 - ユーザーの回答（クリック、2026-10-29 01:3x）「両方 (推し)」→ 案 5（gpu.c の起床の抑制）を先に、続けて案 4（小さな transaction を呼び手の thread で同期の GPU_COMMAND、window mode の SURFACE_LOST errno 24 の解析を含む）。指示の原文「P2にWS291の続き」。
+- 再開点（2026-10-29 02:15 P2）: 案 5（gpu.c の起床の抑制）を実装・実機・venus-reg PASS（[phase006](phase006/phase.md) の「q1663」節）。shot の SURFACE_LOST は main でも起き、keiland-shot の後に compositor が frame callback を送らない事による 10 s の watchdog（Keiland、P1）。案 4 も実装・実機・venus-reg PASS（同じ節）。次の候補は big-N の record（libvulkan の encode）と executor の draw の費用、subs-N の残り（1 submit 約 47 µs 対 Linux 10）。
+
+## 2026-10-29 ユーザーの決定（WS306 との関係）
+
+- 原文: 「まずはデフォルト有効で実装して、NGGはゲーム用に作り替えます。つまりWSに依存関係があります。」→ 案 4・5 は既定で有効のまま。NGG は WS306 でゲーム用の option に作り替える（WS306 が WS291 に依存）。
+- 次の Queue: q1668（P2）big-N と subs-N の続き、RDNA で P1 の shot の直し（p019）の確かめ。ユーザーの回答（クリック）「WS291 の続き (推し)」。
+
+## 2026-10-29 q1668（P2、worktree p2-ws291k）
+
+- 承認: ユーザーの回答（クリック、2026-10-29）「WS291 の続き (推し)」。ユーザーの決定（2026-10-29）「まずはデフォルト有効で実装して、NGGはゲーム用に作り替えます。
+  つまりWSに依存関係があります。」→ 案 4・5 は既定で有効、NGG の既定は変えず WS306 で option に作り替える（WS306 が WS291 の結果に依存）。
+- 再開点（2026-10-29 04:15 P2）: [phase006](phase006/phase.md) の「q1668」節。P1 の keiland-shot の直しは RDNA で確かめた（shot 4 回とも DONE）。commit 8f8533e87・
+  b3173b786・790aa60d1・bc65b40c0・1824111c8・1132ec5b6。big-1000 35.5 → 57〜59 fps（Linux 87）、subs-1000 1 submit 48 → 39 µs（Linux 10）、scene は不変。
+  次: subs-N は GPU core の job の ioctl を 1 本にする設計（Q1 と）、big-N は kernel の decode と executor の draw、GPU の flush の barrier。
+
+## 2026-10-29 ユーザーの決定（submit の ioctl）
+
+- P2 の設計の案（plan/ws291/job-submit-design.md）へのユーザーの回答（クリック）: 案 A（GPU_JOB_SUBMIT）「採る (推し)」、案 B（GPU_JOB_RETIRE）「案 A と一緒に」。続けて原文「WS291: 足してみて効果のなかったioctlは、採用しなくてもいいです。」
+- Q1: 番号は WS306 の予定（'G' 46〜48、GPU_CAP 131072）を避けて 'G' 49・50、GPU_CAP 262144・524288。outcome を driver が返す形は Q1 が OK。実装して実機で測り、効果が揺れを超えない ioctl は main に入れない。
+## 2026-10-29 q1668-i02（P2、worktree p2-ws291l）
+
+- ユーザーの回答（クリック、2026-10-29、Q1 経由）: 1 本の ioctl の案 A「採る (推し)」、案 B「案 A と一緒に」（[job-submit-design.md](job-submit-design.md)）。
+  outcome を driver が返す形は Q1 の OK（技術の判断）。番号は WS306 の予定と重ならない 'G' 49・50、GPU_CAP 262144・524288（Q1）。
+  進め方（Q1）: 今の commit を venus-reg と arm64・riscv64 の build で確かめて送る → 案 A・B の design を design-reviewer に通す → Q1 に送ってから実装
+  （q1668 の続き、全 driver の build と venus-reg を merge の前に）。
+- ユーザー（2026-10-29、Q1 経由）原文「WS291: 足してみて効果のなかったioctlは、採用しなくてもいいです。」→ 案 A・B は実装して実機で測り、効果が無い
+  （測りの揺れの中）と分かった ioctl は main に入れない（branch に残し、測った値と判断を phase.md に）。効果の基準は測る前に phase.md に書く。
+- 再開点（2026-10-29 05:05 P2、ユーザーの指示で計測を止めて返却）: [phase006](phase006/phase.md) の「q1668-i02」節の最後の再開点。
+  libvulkan の private fence の直しで subs-1000 の 1 submit 約 3.5 µs 減（効果あり）、kernel の flush の barrier 無しと record の直の decode で
+  big-1000 約 +2.5 %（効果あり、小さい）。案 A・B の design は reviewer 済み、実装は Q1 の OK の後。
+
+## 2026-10-29 RX 5600 XT を外した後の P2（ユーザーの決定）
+
+- 機械の変更（原文）「再起動後、RTL8127と、RTX 2070が接続されています。RX 5600 XTはPCIスロットの高さの関係で、RTL8127と排他だからです。」
+- Q1 の問い「RX 5600 XT を外している間、P2 は何をしますか？」への回答（クリック）「WS291 の NVIDIA の段 (推し)」→ RTX 2070 で desktop 60 fps と model 50 fps（計画の順どおり）。RDNA の案 A・B の実装は実機の要らない所（host・QEMU）まで並べて進め、測るのは RX 5600 XT を挿し直した時。RDNA 機は時間の枠（plan/tools.md、ネットワーク優先）で P1（WS235 の RTL8127）と分ける。
+
+## 2026-10-29 q1670（P2、worktree p2-ws291m、NVIDIA の段）
+
+- 承認: 上の節のユーザーの回答「WS291 の NVIDIA の段 (推し)」。Linux の基準: ユーザーの回答（クリック、Q1 経由）「NVK（nouveau） (推し)」→ 設定の file は変えず、
+  計測の時だけ sysfs で vfio-pci から外して nouveau（GSP）を読み込み、終わったら vfio-pci に戻す。
+- Q1 の判断: nvrtx の BAR1 の window の満杯（device-local も常に map）は NVIDIA の段の目標を塞ぐので WS291 の中で直す（形は host-visible で要る物だけ map、
+  前後の使用量を記録、WS250 の design.md の前提と食い違わない形）。
+- 再開点（2026-10-29 07:20 P2）: [phase010](phase010/phase.md) の「再開点」。BAR1 の window の直し（06cdbf381）で window の peak 246 → 107 MiB、
+  terminal が開き frame-ops の全段が動く（scroll・hover・drag は 20〜35 fps）。次の壁: work channel の VA（約 383 MiB）の満杯と、executor に depth の形式が無い
+  （mview が動かない）。NVK の基準: scene-5000 50.1 fps（weston は render-only、direct scanout でない）。
+
+## 2026-10-29 q1670-i02（P2、worktree p2-ws291n）
+
+- 承認は q1670 と同じ（ユーザーの回答「WS291 の NVIDIA の段 (推し)」、Linux の基準「NVK（nouveau） (推し)」）。Q1 の判断: VA の直しと p010a は WS291 の中、その後 p011。
+- 再開点（2026-10-29 08:57 P2）: VA の拡張は実機で OK（[phase010](phase010/phase.md) の最後の節）。p010a の実装（depth・DrawIndexed・cull・UNIFORM_BUFFER・mip（tiled の texture）・
+  CopyBuffer）は host で確かめた（[phase010a](phase010a/phase.md)）、実機は次の枠。移設の後の「zedBSD が出ない」は新しい worktree の鍵の mode（0664）だった。
+
+## 2026-10-29 q1670-i04（P2、worktree p2-ws291p）
+
+- 承認は q1670 と同じ。再開点（10:46 P2）: depth は実機で動く（mview copies 1 が Linux の参照と 2 画素差、[p010a](phase010a/phase.md) の q1670-i04 の節）。
+  前回の「全体が消える」は、mailbox の mview の後の mview の window が出ない別の件だった。scene-5000 は 42.2 fps（GPU は 1 frame に約 19.6 ms）。
+  p010a は cleared（Q1 の許可）。次は p011: vkQueueSubmit を GPU を待たない形にする（amdrdna の手本、WS250 の design.md の期限の STOP・session ごとの worker と食い違わない形）。
+
+## 2026-10-29 q1670-i05（P2、worktree p2-ws291q）
+
+- 承認は q1670 と同じ。Q1 の判断（2026-10-29）: GPU の待ちを lock の外へ出す件は p011 で行い、WS250 はその上に作る。hang の後に他の session が続く件は
+  p011 の範囲の外（WS250 の取り消しと復帰）、p011 の受け入れは scene-5000 の fps（50）。
+- 再開点（11:31 P2）: [phase011](phase011/phase.md) の「q1670-i05」節。非同期の submit（2c3453e93）と system memory の slot（fa978f0a0）で scene-5000 は
+  42.24 → 45.3 fps（submit 21.6 → 0.16 ms）。残りは mview の record 1.36 ms（UC の user の map の見込み、339ddc909 で write-combine、実機は次の枠）と GPU の約 0.85 ms。
+- 再開点（12:15 P2）: 339ddc909（blob の user の map を write-combine、record 1.36 → 0.08 ms）と de077be78（completer の起床の遅れ）で scene-5000 は
+  49.1〜49.5 fps（NVK 50.1、単独の run 49.1）。frame のうち GPU 19.5 ms。50 以上を確かにするのは GPU の側（p012 以降の予備）。判定は Q1。

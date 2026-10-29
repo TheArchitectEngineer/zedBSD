@@ -10,6 +10,7 @@ apps.files.mount-usb needs a person's hands and has no helper.  The samples
 first (run-aat.sh does).
 """
 import re
+import shlex
 import statistics
 import sys
 import time
@@ -219,7 +220,7 @@ def settings_single(item):
 	page = run.wait(r"ZSETTINGS PAGE about", mark, 10)
 	time.sleep(1.0)
 	maps = run.lines(r"KWL MAP client=", mark)
-	item.step("started settings about as kei", f"{handed}; {page}; {len(maps)} new windows")
+	item.step(f"started settings about as {aatlib.USER}", f"{handed}; {page}; {len(maps)} new windows")
 	run.shot(item, "about")
 	item.check(handed and page, "the second start did not hand its page over")
 	item.check(not maps, "a second window was mapped")
@@ -241,7 +242,7 @@ def settings_users(item):
 
 
 def shadow_line() -> str:
-	"""kei's line of /etc/shadow."""
+	"""The session user's line of /etc/shadow."""
 	_, text = run.sh(f"grep '^{aatlib.USER}:' /etc/shadow")
 	return text.strip()
 
@@ -351,9 +352,10 @@ def reveal_control(window, page: str, index: int) -> dict:
 
 
 def remove_aatuser() -> None:
-	"""Removes aatuser when a run left it (as kei, through account-admin), and its home (a removal from Settings keeps
+	"""Removes aatuser when a run left it (as the session's user, through account-admin), and its home (a removal from Settings keeps
 	it unless its switch says otherwise, and a home left makes the next addition fail with home-exists)."""
-	run.sh("grep -q '^aatuser:' /etc/passwd && { printf 'kei\\nremove\\naatuser\\nremove-home\\n' | su kei -c /usr/libexec/account-admin; }; "
+	run.sh(f"grep -q '^aatuser:' /etc/passwd && {{ printf '%s\\nremove\\naatuser\\nremove-home\\n' {shlex.quote(aatlib.PASSWORD)} | "
+		f"su {aatlib.USER} -c /usr/libexec/account-admin; }}; "
 		"grep -q '^aatuser:' /etc/passwd || rm -rf /home/aatuser; true")
 
 

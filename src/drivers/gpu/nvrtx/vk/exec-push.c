@@ -79,6 +79,33 @@
 #define M_SET_SINGLE_CT_WRITE_CONTROL		0x0f90U
 
 /*
+ * The depth target, the depth test, the index buffer and the culling.
+ *
+ * Values referenced: Mesa 25.0.7
+ * src/nouveau/headers/nvidia/classes/cl9097.h (NV9097_SET_ZT_*,
+ * NV9097_SET_DEPTH_FUNC, NV9097_SET_Z_CLEAR_VALUE, NV9097_SET_INDEX_BUFFER_*,
+ * NV9097_DRAW_INDEX_BUFFER, NV9097_SET_DA_PRIMITIVE_RESTART,
+ * NV9097_OGL_SET_CULL_FACE, NV9097_SET_Z_COMPRESSION) and clc597.h
+ * (NVC597_SET_INDEX_BUFFER_SIZE_A, NVC597_SET_ZT_SPARSE).
+ */
+#define M_SET_INDEX_BUFFER_SIZE_A		0x0238U
+#define M_SET_Z_CLEAR_VALUE			0x0d90U
+#define M_SET_ZT_A				0x0fe0U
+#define M_SET_ZT_SPARSE				0x1208U
+#define M_SET_ZT_SIZE_A				0x1228U
+#define M_SET_DEPTH_FUNC			0x130cU
+#define M_SET_DA_PRIMITIVE_RESTART		0x1644U
+#define M_SET_ZT_LAYER				0x179cU
+#define M_SET_INDEX_BUFFER_A			0x17c8U
+#define M_SET_INDEX_BUFFER_E			0x17d8U
+#define M_SET_INDEX_BUFFER_F			0x17dcU
+#define M_OGL_SET_CULL_FACE			0x1920U
+#define M_SET_Z_COMPRESSION			0x19ccU
+#define M_SET_CONSTANT_BUFFER_SELECTOR_A	0x2380U
+#define M_BIND_GROUP_CONSTANT_BUFFER		0x2410U
+#define M_BIND_GROUP_STRIDE			0x20U
+
+/*
  * The colour targets, the ones after target 0 left null.
  *
  * Value referenced: Mesa 25.3.6 src/nouveau/vulkan/nvk_cmd_draw.c
@@ -106,6 +133,7 @@
 #define V_FALSE					0U
 #define V_FLOAT_ONE				0x3f800000U
 #define V_TARGET_LAYOUT_PITCH			(1U << 12)
+#define V_TARGET_LAYOUT_BLOCK_ONE_GOB		0U
 #define V_TARGET_NULL_WIDTH			64U
 #define V_CT_SELECT_ONE_TARGET			1U
 #define V_ANTI_ALIAS_1X1			0U
@@ -121,6 +149,34 @@
 #define V_RENDER_USE_ENABLE			0U
 #define V_STREAM_ENABLE				(1U << 12)
 #define V_INVALIDATE_CONSTANTS			(1U << 12)
+
+/*
+ * The depth target's format and its blocks (one GOB each way), the array
+ * size taken from the third dimension, the depth functions (the OGL values
+ * in the order of VkCompareOp), the faces culled, the front faces, the
+ * index sizes and a clear of depth only.
+ *
+ * Values referenced: Mesa 25.0.7
+ * src/nouveau/headers/nvidia/classes/cl9097.h (NV9097_SET_ZT_FORMAT_V_ZF32,
+ * NV9097_SET_ZT_BLOCK_SIZE, NV9097_SET_ZT_SIZE_C_CONTROL,
+ * NV9097_SET_DEPTH_FUNC_V_OGL_*, NV9097_OGL_SET_CULL_FACE_V_*,
+ * NV9097_OGL_SET_FRONT_FACE_V_*, NV9097_SET_INDEX_BUFFER_E_INDEX_SIZE_*,
+ * NV9097_CLEAR_SURFACE_Z_ENABLE) and src/nouveau/vulkan/nvk_cmd_draw.c
+ * (vk_to_nv9097_front_face: Vulkan's counterclockwise is the class's).
+ */
+#define V_ZT_FORMAT_ZF32			0x0aU
+#define V_ZT_BLOCK_ONE_GOB			0U
+#define V_ZT_SIZE_ARRAY				0U
+#define V_DEPTH_FUNC_NEVER			0x200U
+#define V_CULL_FACE_FRONT			0x404U
+#define V_CULL_FACE_BACK			0x405U
+#define V_CULL_FACE_FRONT_AND_BACK		0x408U
+#define V_FRONT_FACE_CW				0x900U
+#define V_INDEX_SIZE_TWO_BYTES			1U
+#define V_INDEX_SIZE_FOUR_BYTES			2U
+#define V_CLEAR_Z				1U
+#define V_GROUP_VALID				1U
+#define V_GROUP_SLOT_SHIFT			4U
 
 /*
  * The colour target formats (COLOR_TARGET_FORMAT).
@@ -220,6 +276,22 @@
 #define TSC_FORCE_UNNORMALIZED			1U
 
 /*
+ * The block-linear texture header (its version and the 2D type), and the
+ * sampler's linear mipmap filter and the largest level of detail clamp
+ * (4.8 fixed point).
+ *
+ * Values referenced: Mesa 25.0.7
+ * src/nouveau/headers/nvidia/classes/clb097tex.h
+ * (NVB097_TEXHEAD_BL_HEADER_VERSION_SELECT_BLOCKLINEAR,
+ * NVB097_TEXHEAD_BL_TEXTURE_TYPE_TWO_D, NVB097_TEXSAMP1_MIP_FILTER_MIP_LINEAR,
+ * NVB097_TEXSAMP2_MAX_LOD_CLAMP).
+ */
+#define TIC_VERSION_BLOCKLINEAR			3U
+#define TIC_TYPE_TWO_D				1U
+#define TSC_MIP_LINEAR				3U
+#define TSC_LOD_MAX				0xfffU
+
+/*
  * The words of a texture header and of a sampler.
  *
  * Values referenced: Mesa 25.3.6
@@ -249,6 +321,7 @@ static uint32_t exec_attribute_widths(uint32_t format);
 static uint32_t exec_address_mode(uint32_t mode);
 static void exec_field(uint32_t *words, unsigned low, unsigned bits, uint32_t value);
 static uint32_t exec_swizzle_source(uint32_t swizzle, const uint32_t *identity);
+static uint32_t exec_lod(uint32_t bits);
 
 /*
  * Reports the colour target format of a VkFormat the executor renders
@@ -311,16 +384,27 @@ nvrtx_exec_target(
 	nvrtx_put32(push, at + 4U, target->height << 16);
 	at += 8U;
 
-	/* Colour target 0: the address, the pitch in place of the width, the height, the format, pitch layout, one layer. */
+	/*
+	 * Colour target 0: the address, the pitch in place of the width (block
+	 * linear: the row's pixels), the height, the format, pitch layout (or
+	 * block linear in one-GOB blocks, its array pitch the whole level), one
+	 * layer.
+	 */
 	at = exec_method(push, at, M_SET_COLOR_TARGET_A, 9U);
 	nvrtx_put32(push, at, (uint32_t)(target->address >> 32));
 	nvrtx_put32(push, at + 4U, (uint32_t)(target->address & 0xffffffffU));
-	nvrtx_put32(push, at + 8U, target->pitch);
+	if (target->block_linear != 0U) {
+		nvrtx_put32(push, at + 8U, target->pitch / 4U);
+		nvrtx_put32(push, at + 20U, V_TARGET_LAYOUT_BLOCK_ONE_GOB);
+		nvrtx_put32(push, at + 28U, (uint32_t)(((uint64_t)target->pitch * ((target->height + 7U) & ~7U)) >> 2));
+	} else {
+		nvrtx_put32(push, at + 8U, target->pitch);
+		nvrtx_put32(push, at + 20U, V_TARGET_LAYOUT_PITCH);
+		nvrtx_put32(push, at + 28U, 0U);
+	}
 	nvrtx_put32(push, at + 12U, target->height);
 	nvrtx_put32(push, at + 16U, format);
-	nvrtx_put32(push, at + 20U, V_TARGET_LAYOUT_PITCH);
 	nvrtx_put32(push, at + 24U, 1U);
-	nvrtx_put32(push, at + 28U, 0U);
 	nvrtx_put32(push, at + 32U, 0U);
 	at += 36U;
 	at = exec_set(push, at, M_SET_COLOR_COMPRESSION, V_FALSE);
@@ -340,8 +424,32 @@ nvrtx_exec_target(
 		at += 36U;
 	}
 
-	/* No depth target, one sample a pixel. */
-	at = exec_set(push, at, M_SET_ZT_SELECT, 0U);
+	/*
+	 * The depth target when there is one: its address, ZF32 in blocks of
+	 * one GOB, one layer the array's pitch, its width the row's pixels (the
+	 * depth hardware has no tile width), its height, uncompressed and not
+	 * sparse.  One sample a pixel.
+	 */
+	if (target->depth_address != 0U) {
+		at = exec_method(push, at, M_SET_ZT_A, 5U);
+		nvrtx_put32(push, at, (uint32_t)(target->depth_address >> 32));
+		nvrtx_put32(push, at + 4U, (uint32_t)(target->depth_address & 0xffffffffU));
+		nvrtx_put32(push, at + 8U, V_ZT_FORMAT_ZF32);
+		nvrtx_put32(push, at + 12U, V_ZT_BLOCK_ONE_GOB);
+		nvrtx_put32(push, at + 16U, (uint32_t)(((uint64_t)target->depth_pitch * target->depth_height) >> 2));
+		at += 20U;
+		at = exec_set(push, at, M_SET_ZT_SELECT, 1U);
+		at = exec_method(push, at, M_SET_ZT_SIZE_A, 3U);
+		nvrtx_put32(push, at, target->depth_pitch / 4U);
+		nvrtx_put32(push, at + 4U, target->depth_height);
+		nvrtx_put32(push, at + 8U, 1U | (V_ZT_SIZE_ARRAY << 16));
+		at += 12U;
+		at = exec_set(push, at, M_SET_ZT_LAYER, 0U);
+		at = exec_set(push, at, M_SET_Z_COMPRESSION, V_FALSE);
+		at = exec_set(push, at, M_SET_ZT_SPARSE, V_FALSE);
+	} else {
+		at = exec_set(push, at, M_SET_ZT_SELECT, 0U);
+	}
 	at = exec_set(push, at, M_SET_ANTI_ALIAS, V_ANTI_ALIAS_1X1);
 
 	/* The viewport's swizzle and depth clip, rasterization on, filled, not culled, the first vertex provoking. */
@@ -646,6 +754,211 @@ nvrtx_exec_draw(
 }
 
 /*
+ * Writes an indexed draw: the vertex offset as the base of the vertex
+ * numbers and of the vertex index, the instances (iterated from the
+ * first), then BEGIN with the topology, the index range (the count
+ * starts it) and END.  Primitive restart is off.
+ *
+ * Returns where the push buffer goes on.
+ *
+ * Procedure referenced: Mesa 25.0.7 src/nouveau/vulkan/nvk_cmd_draw.c
+ * (nvk_mme_build_set_draw_params, nvk_mme_build_draw_indexed_loop).
+ */
+size_t
+nvrtx_exec_draw_indexed(
+	uint8_t *push,
+	size_t at,
+	uint32_t topology,
+	uint32_t first,
+	uint32_t count,
+	uint32_t instances,
+	uint32_t first_instance,
+	int32_t vertex_offset)
+{
+	uint32_t begin;
+
+	/* The topology: a list or a strip of triangles. */
+	begin = V_BEGIN_TRIANGLES | V_BEGIN_ITERATE;
+	if (topology == VK_PRIMITIVE_TOPOLOGY_TRIANGLE_STRIP)
+		begin = V_BEGIN_TRIANGLE_STRIP | V_BEGIN_ITERATE;
+
+	/* The vertex offset, the instances from the first instance, no restart. */
+	at = exec_set(push, at, M_SET_GLOBAL_BASE_VERTEX_INDEX, (uint32_t)vertex_offset);
+	at = exec_set(push, at, M_SET_VERTEX_ID_BASE, (uint32_t)vertex_offset);
+	at = exec_set(push, at, M_SET_GLOBAL_BASE_INSTANCE_INDEX, first_instance);
+	at = exec_set(push, at, M_SET_INSTANCE_COUNT, instances);
+	at = exec_set(push, at, M_SET_DA_PRIMITIVE_RESTART, V_FALSE);
+
+	/* The primitives: the first index, then the count, which draws. */
+	at = exec_set(push, at, M_BEGIN, begin);
+	at = exec_method(push, at, M_SET_INDEX_BUFFER_F, 2U);
+	nvrtx_put32(push, at, first);
+	nvrtx_put32(push, at + 4U, count);
+	at += 8U;
+	at = exec_set(push, at, M_END, 0U);
+
+	/* Succeeded: the draw is written. */
+	return at;
+}
+
+/*
+ * Writes the index buffer: its address, the bytes readable from there and
+ * the size of an index (a VkIndexType of 16 or 32 bits).
+ *
+ * Returns where the push buffer goes on.
+ *
+ * Procedure referenced: Mesa 25.0.7 src/nouveau/vulkan/nvk_cmd_draw.c
+ * (nvk_mme_bind_ib).
+ */
+size_t
+nvrtx_exec_index_buffer(
+	uint8_t *push,
+	size_t at,
+	uint64_t address,
+	uint64_t bytes,
+	uint32_t type)
+{
+	uint32_t size;
+
+	/* The address, then the size. */
+	at = exec_method(push, at, M_SET_INDEX_BUFFER_A, 2U);
+	nvrtx_put32(push, at, (uint32_t)(address >> 32));
+	nvrtx_put32(push, at + 4U, (uint32_t)(address & 0xffffffffU));
+	at += 8U;
+	at = exec_method(push, at, M_SET_INDEX_BUFFER_SIZE_A, 2U);
+	nvrtx_put32(push, at, (uint32_t)(bytes >> 32));
+	nvrtx_put32(push, at + 4U, (uint32_t)(bytes & 0xffffffffU));
+	at += 8U;
+
+	/* The index size. */
+	size = V_INDEX_SIZE_FOUR_BYTES;
+	if (type == VK_INDEX_TYPE_UINT16)
+		size = V_INDEX_SIZE_TWO_BYTES;
+	at = exec_set(push, at, M_SET_INDEX_BUFFER_E, size);
+
+	/* Succeeded: the index buffer is set. */
+	return at;
+}
+
+/*
+ * Writes the culling (a VkCullModeFlags) and the front face (a
+ * VkFrontFace).
+ *
+ * Returns where the push buffer goes on.
+ *
+ * Procedure referenced: Mesa 25.0.7 src/nouveau/vulkan/nvk_cmd_draw.c
+ * (nvk_flush_rs_state).
+ */
+size_t
+nvrtx_exec_raster(
+	uint8_t *push,
+	size_t at,
+	uint32_t cull_mode,
+	uint32_t front_face)
+{
+	uint32_t culled;
+	uint32_t face;
+
+	/* Culled or not, and which faces. */
+	culled = V_FALSE;
+	if (cull_mode != VK_CULL_MODE_NONE)
+		culled = V_TRUE;
+	at = exec_set(push, at, M_OGL_SET_CULL, culled);
+	if (cull_mode != VK_CULL_MODE_NONE) {
+		face = V_CULL_FACE_FRONT_AND_BACK;
+		if (cull_mode == VK_CULL_MODE_FRONT_BIT)
+			face = V_CULL_FACE_FRONT;
+		else if (cull_mode == VK_CULL_MODE_BACK_BIT)
+			face = V_CULL_FACE_BACK;
+		at = exec_set(push, at, M_OGL_SET_CULL_FACE, face);
+	}
+
+	/* The front face. */
+	face = V_FRONT_FACE_CCW;
+	if (front_face == VK_FRONT_FACE_CLOCKWISE)
+		face = V_FRONT_FACE_CW;
+	at = exec_set(push, at, M_OGL_SET_FRONT_FACE, face);
+
+	/* Succeeded: the culling is set. */
+	return at;
+}
+
+/*
+ * Writes the depth test: on or off, the writes, and the function (a
+ * VkCompareOp: the OGL values follow its order).
+ *
+ * Returns where the push buffer goes on.
+ *
+ * Procedure referenced: Mesa 25.0.7 src/nouveau/vulkan/nvk_cmd_draw.c
+ * (nvk_flush_ds_state).
+ */
+size_t
+nvrtx_exec_depth(
+	uint8_t *push,
+	size_t at,
+	const struct nvrtx_exec_depth *depth)
+{
+	uint32_t compare;
+	uint32_t test;
+	uint32_t write;
+
+	/* The function: NEVER to ALWAYS in order. */
+	compare = depth->compare;
+	if (compare > VK_COMPARE_OP_ALWAYS)
+		compare = VK_COMPARE_OP_ALWAYS;
+
+	/* The test, the writes (only with the test) and the function. */
+	test = V_FALSE;
+	write = V_FALSE;
+	if (depth->test != 0U) {
+		test = V_TRUE;
+		if (depth->write != 0U)
+			write = V_TRUE;
+	}
+	at = exec_set(push, at, M_SET_DEPTH_TEST, test);
+	at = exec_set(push, at, M_SET_DEPTH_WRITE, write);
+	if (depth->test != 0U)
+		at = exec_set(push, at, M_SET_DEPTH_FUNC, V_DEPTH_FUNC_NEVER + compare);
+
+	/* Succeeded: the depth test is set. */
+	return at;
+}
+
+/*
+ * Writes a uniform buffer: the constant buffer of a size at an address,
+ * bound to a slot of a program group (0 the vertex program's, 4 the
+ * fragment program's).
+ *
+ * Returns where the push buffer goes on.
+ *
+ * Procedure referenced: Mesa 25.0.7 src/nouveau/vulkan/nvk_cmd_draw.c
+ * (nvk_cmd_flush_gfx_cbufs, nvk_mme_bind_cbuf_desc) and
+ * nvk_shader.h (nvk_cbuf_binding_for_stage: the group is the stage).
+ */
+size_t
+nvrtx_exec_uniform(
+	uint8_t *push,
+	size_t at,
+	uint32_t group,
+	uint32_t slot,
+	uint64_t address,
+	uint32_t size)
+{
+	/* The buffer: its size, then its address. */
+	at = exec_method(push, at, M_SET_CONSTANT_BUFFER_SELECTOR_A, 3U);
+	nvrtx_put32(push, at, size);
+	nvrtx_put32(push, at + 4U, (uint32_t)(address >> 32));
+	nvrtx_put32(push, at + 8U, (uint32_t)(address & 0xffffffffU));
+	at += 12U;
+
+	/* The group's slot. */
+	at = exec_set(push, at, M_BIND_GROUP_CONSTANT_BUFFER + group * M_BIND_GROUP_STRIDE, V_GROUP_VALID | (slot << V_GROUP_SLOT_SHIFT));
+
+	/* Succeeded: the group reads the buffer at the slot. */
+	return at;
+}
+
+/*
  * Writes a clear of colour target 0 over a rectangle (the far edges
  * excluded) to a colour (four floats as their bits), all four channels,
  * whatever the render enable says.
@@ -683,6 +996,45 @@ nvrtx_exec_clear(
 	nvrtx_put32(push, at + 4U, (y0 & 0xffffU) | ((y1 & 0xffffU) << 16));
 	at += 8U;
 	at = exec_set(push, at, M_CLEAR_SURFACE, V_CLEAR_RGBA);
+
+	/* Back to the render enable. */
+	at = exec_set(push, at, M_SET_RENDER_ENABLE_OVERRIDE, V_RENDER_USE_ENABLE);
+
+	/* Succeeded: the rectangle is cleared. */
+	return at;
+}
+
+/*
+ * Writes a clear of the depth target over a rectangle (the far edges
+ * excluded) to a depth (a float as its bits), whatever the render enable
+ * says.
+ *
+ * Returns where the push buffer goes on.
+ *
+ * Procedure referenced: Mesa 25.0.7 src/nouveau/vulkan/nvk_cmd_clear.c
+ * (nvk_CmdClearAttachments).
+ */
+size_t
+nvrtx_exec_clear_depth(
+	uint8_t *push,
+	size_t at,
+	uint32_t depth,
+	uint32_t x0,
+	uint32_t y0,
+	uint32_t x1,
+	uint32_t y1)
+{
+	/* Rendered always, by the clear rectangle. */
+	at = exec_set(push, at, M_SET_RENDER_ENABLE_OVERRIDE, V_RENDER_ALWAYS);
+	at = exec_set(push, at, M_SET_CLEAR_SURFACE_CONTROL, V_CLEAR_USE_RECT);
+
+	/* The depth, the rectangle, then the clear of depth only. */
+	at = exec_set(push, at, M_SET_Z_CLEAR_VALUE, depth);
+	at = exec_method(push, at, M_SET_CLEAR_RECT_HORIZONTAL, 2U);
+	nvrtx_put32(push, at, (x0 & 0xffffU) | ((x1 & 0xffffU) << 16));
+	nvrtx_put32(push, at + 4U, (y0 & 0xffffU) | ((y1 & 0xffffU) << 16));
+	at += 8U;
+	at = exec_set(push, at, M_CLEAR_SURFACE, V_CLEAR_Z);
 
 	/* Back to the render enable. */
 	at = exec_set(push, at, M_SET_RENDER_ENABLE_OVERRIDE, V_RENDER_USE_ENABLE);
@@ -787,9 +1139,56 @@ nvrtx_exec_texture_header(
 }
 
 /*
+ * Writes the texture header of a tiled 2D image of four 8-bit channels
+ * (block linear in one-GOB blocks, levels levels from address, level 0
+ * width by height): the format as the pitch-linear header's, the block
+ * linear header, the levels the view sees (from base_level, level_count
+ * of them; one level alone is a surface of that level's own, as a quad's
+ * source in pixels needs).
+ *
+ * Values referenced: Mesa 25.0.7
+ * src/nouveau/headers/nvidia/classes/clb097tex.h (NVB097_TEXHEAD_BL_*)
+ * and src/nouveau/nil/tic.rs (nvb097_fill_tic, nil_rs_max_mip_level).
+ */
+void
+nvrtx_exec_texture_header_tiled(
+	uint32_t *header,
+	uint64_t address,
+	uint32_t width,
+	uint32_t height,
+	uint32_t levels,
+	uint32_t base_level,
+	uint32_t level_count,
+	uint32_t format,
+	const uint32_t *swizzle)
+{
+	uint32_t index;
+
+	/* The pitch-linear header's format and fields, its address, pitch and type taken out. */
+	nvrtx_exec_texture_header(header, 0U, width, height, 0U, format, swizzle);
+	for (index = 37U; index < 64U; index++)
+		header[index / 32U] &= ~(1U << (index % 32U));
+	for (index = 85U; index < 112U; index++)
+		header[index / 32U] &= ~(1U << (index % 32U));
+	for (index = 151U; index < 155U; index++)
+		header[index / 32U] &= ~(1U << (index % 32U));
+
+	/* The address (bits 31:9 and 47:32), block linear, blocks of one GOB each way, 2D. */
+	exec_field(header, 41U, 23U, (uint32_t)((address & 0xffffffffU) >> 9));
+	exec_field(header, 64U, 16U, (uint32_t)(address >> 32));
+	exec_field(header, 85U, 3U, TIC_VERSION_BLOCKLINEAR);
+	exec_field(header, 151U, 4U, TIC_TYPE_TWO_D);
+
+	/* The levels: the image's last, and the view's first and last. */
+	exec_field(header, 124U, 4U, levels - 1U);
+	exec_field(header, 224U, 4U, base_level);
+	exec_field(header, 228U, 4U, base_level + level_count - 1U);
+}
+
+/*
  * Writes a sampler: the address modes, the font filter and sRGB border fields,
- * the filters (nearest or linear, one level), the seamless cube setting and the
- * coordinates' normalization.
+ * the filters (nearest or linear, the mipmap mode), the seamless cube setting,
+ * the coordinates' normalization and the levels' range.
  *
  * Values referenced: Mesa 25.3.6 src/nouveau/vulkan/nvk_sampler.c
  * (nvk_sampler_get_header).
@@ -801,6 +1200,7 @@ nvrtx_exec_sampler_words(
 {
 	uint32_t mag;
 	uint32_t min;
+	uint32_t mip;
 
 	/* Starts empty. */
 	kern_memset(words, 0, EXEC_TSC_WORDS * sizeof(uint32_t));
@@ -820,12 +1220,37 @@ nvrtx_exec_sampler_words(
 	min = TSC_MIN_POINT;
 	if (sampler->min_filter == VK_FILTER_LINEAR)
 		min = TSC_MIN_LINEAR;
+	mip = TSC_MIP_POINT;
+	if (sampler->mipmap_mode == VK_SAMPLER_MIPMAP_MODE_LINEAR)
+		mip = TSC_MIP_LINEAR;
 	exec_field(words, 32U + 0U, 3U, mag);
 	exec_field(words, 32U + 4U, 2U, min);
-	exec_field(words, 32U + 6U, 2U, TSC_MIP_POINT);
+	exec_field(words, 32U + 6U, 2U, mip);
 	exec_field(words, 32U + 8U, 2U, TSC_CUBE_AUTO_SPAN_SEAM);
 	if (sampler->unnormalized != 0U)
 		exec_field(words, 32U + 25U, 1U, TSC_FORCE_UNNORMALIZED);
+
+	/* Word 2: the levels' range in 4.8 fixed point, within 0 and the largest. */
+	exec_field(words, 64U + 0U, 12U, exec_lod(sampler->min_lod));
+	exec_field(words, 64U + 12U, 12U, exec_lod(sampler->max_lod));
+}
+
+/* Reports a level of detail (a float's bits) in 4.8 fixed point, within 0 and the largest. */
+static uint32_t
+exec_lod(
+	uint32_t bits)
+{
+	int64_t value;
+
+	/* Negative is 0, beyond 4.8 is its largest. */
+	value = nvrtx_exec_fixed(bits, 8U);
+	if (value < 0)
+		return 0U;
+	if (value > (int64_t)TSC_LOD_MAX)
+		return TSC_LOD_MAX;
+
+	/* Succeeded: the level in fixed point. */
+	return (uint32_t)value;
 }
 
 /* Reports the float bits of a whole number (exact up to 2^24). */

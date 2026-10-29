@@ -23,7 +23,16 @@ timeout 90 ssh -o BatchMode=yes solaris10-man "sudo -n mount /dev/sda2 /mnt/zb &
 date
 sleep 20
 start=$(date +%s)
-until timeout 6 sshpass -p kei ssh $SO kei@10.0.30.3 'uname -s' 2>/dev/null | grep -qi zedbsd; do
+# The account is user (password user), or kei (password kei) in an image made before the OS name became zedBSD.
+ZB_USER=
+until [ -n "$ZB_USER" ]; do
+	for name in user kei; do
+		if timeout 6 sshpass -p "$name" ssh $SO "$name@10.0.30.3" 'uname -s' 2>/dev/null | grep -qi zedbsd; then
+			ZB_USER=$name
+			break
+		fi
+	done
+	[ -n "$ZB_USER" ] && break
 	if [ $(( $(date +%s) - start )) -gt 300 ]; then echo ZEDBSD-TIMEOUT; date; exit 2; fi
 	sleep 5
 done
@@ -32,7 +41,7 @@ echo "zedBSD up after $(( $(date +%s) - start + 20 ))s"; date
 sleep 60
 [ -n "${EXTRA:-}" ] && sh "$EXTRA" > "$EXTRA_OUT" 2>&1
 timeout 150 sh plan/tools/hw5330/5330-survey.sh 10.0.30.3 "$NAME" 2>/dev/null | tail -1
-timeout 15 sshpass -p kei ssh $SO kei@10.0.30.3 'echo kei | sudo -S reboot' > /dev/null 2>&1
+timeout 15 sshpass -p "$ZB_USER" ssh $SO "$ZB_USER@10.0.30.3" "echo $ZB_USER | sudo -S reboot" > /dev/null 2>&1
 start=$(date +%s)
 until timeout 8 ssh -o BatchMode=yes -o ConnectTimeout=5 solaris10-man hostname 2>/dev/null | grep -q chaos; do
 	if [ $(( $(date +%s) - start )) -gt 300 ]; then echo LINUX-TIMEOUT; exit 3; fi

@@ -36,6 +36,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <unistd.h>
+#include "include/kern/os-name.h"
 
 /* The lines of a piece without -l or -b. */
 #define SPLIT_DEFAULT_LINES 1000
@@ -249,7 +250,7 @@ read_options(
 			output->verbose = 1;
 			break;
 		case OPTION_VERSION:
-			printf("split (Kei) 1.0\n");
+			printf("split (" ZEDBSD_OS_NAME ") 1.0\n");
 			exit(0);
 			break;
 		default:

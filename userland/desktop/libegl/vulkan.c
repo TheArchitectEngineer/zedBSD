@@ -31,6 +31,8 @@
 
 #include "zegl.h"
 
+#include "include/kern/os-name.h"
+
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -83,7 +85,7 @@ zegl_vulkan_open(
 	extensions[2] = VK_KHR_DISPLAY_EXTENSION_NAME;
 	memset(&application, 0, sizeof(application));
 	application.sType = VK_STRUCTURE_TYPE_APPLICATION_INFO;
-	application.pApplicationName = "Kei EGL";
+	application.pApplicationName = ZEDBSD_OS_NAME " EGL";
 	application.apiVersion = VK_API_VERSION_1_0;
 	memset(&instance, 0, sizeof(instance));
 	instance.sType = VK_STRUCTURE_TYPE_INSTANCE_CREATE_INFO;

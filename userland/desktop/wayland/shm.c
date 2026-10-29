@@ -39,8 +39,9 @@ static int surface_upload(struct kwl_server *server, struct kwl_object *surface)
 static VkResult image_create(struct kwl_compose *compose, uint32_t width, uint32_t height, VkSampler sampler, struct kwl_import *import);
 static VkResult image_layout(struct kwl_compose *compose, VkImage image, VkImageLayout old_layout);
 static VkResult image_layout_record(VkCommandBuffer command, VkImage image, VkImageLayout old_layout);
-static void image_copy_record(VkCommandBuffer command, struct kwl_import *import);
+static void image_copy_record(VkCommandBuffer command, const struct kwl_list_copy *copy);
 static void image_release(struct kwl_compose *compose, struct kwl_import *import);
+static void image_unlink(struct kwl_compose *compose, struct kwl_import *import);
 static uint32_t word(const unsigned char *bytes, size_t offset);
 static uint32_t kwl_row_sum(const unsigned char *row, uint32_t width);
 
@@ -179,8 +180,9 @@ kwl_shm_upload(
 }
 
 /*
- * Releases a surface's wl_shm image: now when no frame is in flight,
- * otherwise after the frame (it may be sampling it).
+ * Releases a surface's wl_shm image: now when nothing given before may
+ * still use it, otherwise after that, with no wait.  No frame takes its
+ * staging from now on.
  */
 void
 kwl_shm_image_destroy(
@@ -194,11 +196,8 @@ kwl_shm_image_destroy(
 	if (surface->shm_image == NULL || compose == NULL)
 		return;
 
-	/* A frame in flight finishes first. */
-	kwl_compose_quiesce(server);
-
-	/* The Vulkan objects, then the record. */
-	image_release(compose, surface->shm_image);
+	/* Let go, then the record. */
+	kwl_host_image_release(compose, surface->shm_image);
 	free(surface->shm_image);
 	surface->shm_image = NULL;
 }
@@ -244,7 +243,7 @@ kwl_arrow_create(
 		return ENOMEM;
 	result = image_create(server->compose, ARROW_WIDTH, ARROW_HEIGHT, server->compose->sampler, arrow);
 	if (result != VK_SUCCESS) {
-		image_release(server->compose, arrow);
+		kwl_host_image_release(server->compose, arrow);
 		free(arrow);
 		return EIO;
 	}
@@ -283,7 +282,7 @@ kwl_arrow_destroy(
 	kwl_cursor_images_destroy(server);
 
 	/* Its Vulkan objects, then the record. */
-	image_release(server->compose, server->arrow);
+	kwl_host_image_release(server->compose, server->arrow);
 	free(server->arrow);
 	server->arrow = NULL;
 }
@@ -308,15 +307,20 @@ kwl_host_image_create(
 }
 
 /*
- * Releases an image kwl_host_image_create made.
+ * Lets go of a host image (kwl_host_image_create, a wl_shm copy, the
+ * arrow): no frame takes its staging from now on, and its objects go now
+ * when nothing given before may still use them, otherwise once that has
+ * completed, with no wait (kwl_compose_bury).  The record is cleared and
+ * may be used again or freed at once.
  */
 void
 kwl_host_image_release(
 	struct kwl_compose *compose,
 	struct kwl_import *import)
 {
-	/* Whatever part of it was made. */
-	image_release(compose, import);
+	/* Out of the list the next frames copy from, then let go. */
+	image_unlink(compose, import);
+	kwl_compose_bury(compose, import, image_release);
 }
 
 /*
@@ -400,6 +404,7 @@ kwl_host_images_take(
 	struct kwl_compose *compose,
 	struct kwl_list *list)
 {
+	struct kwl_list_copy copy;
 	struct kwl_import *import;
 
 	/* Each written image, once, in the order of the list of host images. */
@@ -408,18 +413,14 @@ kwl_host_images_take(
 		if (!import->written)
 			continue;
 
-		/* The frame copies its written rows (joined with any taken and not yet copied); a later write marks it for the next frame. */
-		kwl_list_add_copy(list, import);
+		/* The frame copies the rows written since the last take; a later write marks it for the next frame. */
+		copy.staging = import->staging;
+		copy.image = import->image;
+		copy.width = import->width;
+		copy.first = import->dirty_first;
+		copy.last = import->dirty_last;
+		kwl_list_add_copy(list, &copy);
 		import->written = 0U;
-		if (import->copy_first >= import->copy_last) {
-			import->copy_first = import->dirty_first;
-			import->copy_last = import->dirty_last;
-		} else {
-			if (import->dirty_first < import->copy_first)
-				import->copy_first = import->dirty_first;
-			if (import->dirty_last > import->copy_last)
-				import->copy_last = import->dirty_last;
-		}
 		import->dirty_first = 0U;
 		import->dirty_last = 0U;
 	}
@@ -439,7 +440,7 @@ kwl_host_images_record(
 
 	/* Each image the list took, in its order. */
 	for (index = 0U; index < list->copy_count; index++)
-		image_copy_record(command, list->copies[index]);
+		image_copy_record(command, &list->copies[index]);
 
 	/* The number of copies recorded. */
 	return list->copy_count;
@@ -460,6 +461,9 @@ kwl_host_image_batch_begin(
 /*
  * Submits the layout moves recorded since kwl_host_image_batch_begin and
  * waits for them once, before the first frame samples those images.
+ * While the render thread runs (an output turning), the moves went into
+ * the task being recorded instead, which is given to it now and not
+ * waited for: the frames given after it come after it in the queue.
  */
 VkResult
 kwl_host_image_batch_end(
@@ -471,17 +475,18 @@ kwl_host_image_batch_end(
 
 	/* Later images are moved one by one again. */
 	compose->setup_batching = 0;
+
+	/* The render thread submits the moves. */
+	if (compose->render_started) {
+		kwl_compose_task_flush(compose);
+		return VK_SUCCESS;
+	}
+
+	/* The start's command buffer, made by its first image. */
 	command = compose->setup_command;
 	compose->setup_command = VK_NULL_HANDLE;
 	if (command == VK_NULL_HANDLE)
 		return VK_SUCCESS;
-
-	/*
-	 * The render thread submits nothing meanwhile (a batch while it runs:
-	 * an output turning, WS217); the first image's move waited for it too.
-	 */
-	if (compose->render_started)
-		kwl_render_wait_idle(&compose->render);
 
 	/* The recorded moves, submitted together. */
 	result = vkEndCommandBuffer(command);
@@ -490,12 +495,14 @@ kwl_host_image_batch_end(
 		submit.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
 		submit.commandBufferCount = 1U;
 		submit.pCommandBuffers = &command;
+		kwl_queue_lock(compose);
 		result = vkQueueSubmit(compose->queue, 1U, &submit, VK_NULL_HANDLE);
-	}
 
-	/* One wait for all of them, before the first frame. */
-	if (result == VK_SUCCESS)
-		result = vkQueueWaitIdle(compose->queue);
+		/* One wait for all of them, before the first frame (under the queue's lock: the start, before the render and cursor threads). */
+		if (result == VK_SUCCESS)
+			result = vkQueueWaitIdle(compose->queue);
+		kwl_queue_unlock(compose);
+	}
 
 	/* The command buffer is not kept. */
 	vkFreeCommandBuffers(compose->device, compose->pool, 1U, &command);
@@ -694,7 +701,7 @@ surface_upload(
 		result = image_create(server->compose, shm->width, shm->height, server->compose->sampler, image);
 		if (result != VK_SUCCESS) {
 			printf("KWL VULKAN_ERROR operation=shm_image result=%d\n", (int)result);
-			image_release(server->compose, image);
+			kwl_host_image_release(server->compose, image);
 			free(image);
 			return EIO;
 		}
@@ -893,6 +900,9 @@ image_create(
 	result = image_layout(compose, import->staging, VK_IMAGE_LAYOUT_PREINITIALIZED);
 	if (result != VK_SUCCESS)
 		return result;
+
+	/* The task that moves them, if any, which the image is let go after. */
+	import->task = kwl_compose_task_current(compose);
 	result = image_layout(compose, import->image, VK_IMAGE_LAYOUT_UNDEFINED);
 	if (result != VK_SUCCESS)
 		return result;
@@ -905,8 +915,6 @@ image_create(
 	import->version = 1U;
 	import->dirty_first = 0U;
 	import->dirty_last = height;
-	import->copy_first = 0U;
-	import->copy_last = 0U;
 	import->host_next = compose->host_images;
 	compose->host_images = import;
 
@@ -934,8 +942,10 @@ image_create(
 
 /*
  * Moves a new host-written image to the general layout, keeping what the
- * host wrote: recorded into the start's batch while there is one, or
- * submitted and waited for alone.
+ * host wrote: recorded into the task being recorded while the render
+ * thread runs (it is given at the next flush, after the host's writes of
+ * this pass), into the start's batch while there is one, or submitted
+ * and waited for alone.
  */
 static VkResult
 image_layout(
@@ -949,21 +959,22 @@ image_layout(
 	VkCommandBuffer command;
 	VkResult result;
 
+	/* The render thread submits it as a task, ahead of the frames that sample the image. */
+	if (compose->render_started) {
+		result = kwl_compose_task_record(compose, &command);
+		if (result != VK_SUCCESS)
+			return result;
+		result = image_layout_record(command, image, old_layout);
+		return result;
+	}
+
 	/* The start's batch: its command buffer made and begun by the first image. */
 	if (compose->setup_batching && compose->setup_command != VK_NULL_HANDLE) {
 		result = image_layout_record(compose->setup_command, image, old_layout);
 		return result;
 	}
 
-	/*
-	 * The render thread records and submits nothing meanwhile: the frames'
-	 * pool and the queue are used here outside a walk (a cursor shape made
-	 * late, ws213-p004).
-	 */
-	if (compose->render_started)
-		kwl_render_wait_idle(&compose->render);
-
-	/* A command buffer, the batch's or a one-time one. */
+	/* A command buffer, the batch's or a one-time one (before the render thread, which records from the same pool). */
 	memset(&allocate, 0, sizeof(allocate));
 	allocate.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO;
 	allocate.commandPool = compose->pool;
@@ -995,12 +1006,14 @@ image_layout(
 		submit.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
 		submit.commandBufferCount = 1U;
 		submit.pCommandBuffers = &command;
+		kwl_queue_lock(compose);
 		result = vkQueueSubmit(compose->queue, 1U, &submit, VK_NULL_HANDLE);
-	}
 
-	/* The barrier is done before the first frame samples the image. */
-	if (result == VK_SUCCESS)
-		result = vkQueueWaitIdle(compose->queue);
+		/* The barrier is done before the first frame samples the image (the cursor's thread waits for the queue's lock meanwhile). */
+		if (result == VK_SUCCESS)
+			result = vkQueueWaitIdle(compose->queue);
+		kwl_queue_unlock(compose);
+	}
 
 	/* The command buffer is not kept. */
 	vkFreeCommandBuffers(compose->device, compose->pool, 1U, &command);
@@ -1039,23 +1052,30 @@ image_layout_record(
 	return VK_SUCCESS;
 }
 
+/* Takes an image out of the list of host images, so that no later frame copies its staging. */
+static void
+image_unlink(
+	struct kwl_compose *compose,
+	struct kwl_import *import)
+{
+	struct kwl_import **position;
+
+	/* The link to this exact record, if it is still listed. */
+	for (position = &compose->host_images; *position != NULL; position = &(*position)->host_next) {
+		if (*position == import) {
+			*position = import->host_next;
+			import->host_next = NULL;
+			break;
+		}
+	}
+}
+
 /* Destroys what image_create made, whatever part of it was made. */
 static void
 image_release(
 	struct kwl_compose *compose,
 	struct kwl_import *import)
 {
-	struct kwl_import **position;
-
-	/* The image leaves the list the frames copy from. */
-	for (position = &compose->host_images; *position != NULL; position = &(*position)->host_next) {
-		/* Unlinks this exact record. */
-		if (*position == import) {
-			*position = import->host_next;
-			break;
-		}
-	}
-
 	/* Each object, in the reverse order of its making. */
 	if (import->set != VK_NULL_HANDLE)
 		kwl_compose_set_put(compose, import->set);
@@ -1108,14 +1128,14 @@ kwl_row_sum(
 	return sum;
 }
 
-/* Records one host image's whole copy from its staging into its sampled image, between the frames' reads. */
+/* Records one host image's copy from its staging into its sampled image (the rows taken), between the frames' reads. */
 static void
 image_copy_record(
 	VkCommandBuffer command,
-	struct kwl_import *import)
+	const struct kwl_list_copy *copy)
 {
 	VkImageMemoryBarrier barriers[2];
-	VkImageCopy copy;
+	VkImageCopy region;
 
 	/* The host's writes reach the copy, and earlier frames' sampling ends before it overwrites. */
 	memset(barriers, 0, sizeof(barriers));
@@ -1126,31 +1146,29 @@ image_copy_record(
 	barriers[0].newLayout = VK_IMAGE_LAYOUT_GENERAL;
 	barriers[0].srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
 	barriers[0].dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
-	barriers[0].image = import->staging;
+	barriers[0].image = copy->staging;
 	barriers[0].subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
 	barriers[0].subresourceRange.levelCount = 1U;
 	barriers[0].subresourceRange.layerCount = 1U;
 	barriers[1] = barriers[0];
 	barriers[1].srcAccessMask = VK_ACCESS_SHADER_READ_BIT;
 	barriers[1].dstAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
-	barriers[1].image = import->image;
+	barriers[1].image = copy->image;
 	vkCmdPipelineBarrier(command, VK_PIPELINE_STAGE_HOST_BIT | VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT, VK_PIPELINE_STAGE_TRANSFER_BIT, 0U, 0U, NULL, 0U, NULL, 2U, barriers);
 
 	/* The rows taken, staging to sampled (the whole image when every row was written, q1534). */
-	if (import->copy_first < import->copy_last) {
-		memset(&copy, 0, sizeof(copy));
-		copy.srcSubresource.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
-		copy.srcSubresource.layerCount = 1U;
-		copy.dstSubresource = copy.srcSubresource;
-		copy.srcOffset.y = (int32_t)import->copy_first;
-		copy.dstOffset.y = (int32_t)import->copy_first;
-		copy.extent.width = import->width;
-		copy.extent.height = import->copy_last - import->copy_first;
-		copy.extent.depth = 1U;
-		vkCmdCopyImage(command, import->staging, VK_IMAGE_LAYOUT_GENERAL, import->image, VK_IMAGE_LAYOUT_GENERAL, 1U, &copy);
+	if (copy->first < copy->last) {
+		memset(&region, 0, sizeof(region));
+		region.srcSubresource.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+		region.srcSubresource.layerCount = 1U;
+		region.dstSubresource = region.srcSubresource;
+		region.srcOffset.y = (int32_t)copy->first;
+		region.dstOffset.y = (int32_t)copy->first;
+		region.extent.width = copy->width;
+		region.extent.height = copy->last - copy->first;
+		region.extent.depth = 1U;
+		vkCmdCopyImage(command, copy->staging, VK_IMAGE_LAYOUT_GENERAL, copy->image, VK_IMAGE_LAYOUT_GENERAL, 1U, &region);
 	}
-	import->copy_first = 0U;
-	import->copy_last = 0U;
 
 	/* The copy reaches the fragment shader of this frame and the next ones. */
 	barriers[1].srcAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;

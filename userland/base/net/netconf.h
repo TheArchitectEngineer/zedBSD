@@ -32,6 +32,9 @@
 #define NETCONF_IPV4_MAX 15
 /* The longest text of an address either family (an IPv6 one, ws130-p005). */
 #define NETCONF_ADDRESS_MAX 45
+/* The bounds of an interface's "mtu" (the device's own limit applies when it is set). */
+#define NETCONF_MTU_MIN 1280U
+#define NETCONF_MTU_MAX 65535U
 
 enum netconf_interface_type {
 	NETCONF_INTERFACE_UNSET,
@@ -99,6 +102,8 @@ struct netconf_interface {
 	char members[NETCONF_MAX_MEMBERS][NETCONF_NAME_MAX + 1];
 	size_t member_count;
 	struct netconf_ipv6 ipv6;
+	unsigned mtu;
+	int mtu_set;
 };
 
 /* A route: its destination ("default" or a prefix of either family), its gateway, and the interface of a link-local IPv6 gateway (ws130-p005). */

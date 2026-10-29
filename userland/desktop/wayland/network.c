@@ -725,6 +725,22 @@ kwl_network_motion(
 }
 
 /*
+ * Stops watching the network at the compositor's end (after the system
+ * extension, which uses the watch, has closed): its connections' thread
+ * ends.
+ */
+void
+kwl_network_close(
+	void)
+{
+	/* Only an open one. */
+	if (network_view.watch == NULL)
+		return;
+	kl_backend_network_close(network_view.watch);
+	network_view.watch = NULL;
+}
+
+/*
  * Gives the network watch for the system extension (system.c), NULL before
  * the desktop's first tick or when it could not be made.
  */

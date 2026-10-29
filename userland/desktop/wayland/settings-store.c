@@ -417,13 +417,56 @@ kwl_settings_store_save_later(
 	struct kwl_settings_writer *writer;
 	int error;
 
+	/* The changes as they are now, for the thread; none leaves the file as it is. */
+	error = kwl_settings_store_save_give(store);
+	if (error != 0)
+		return error;
+
+	/* Nothing to write. */
+	writer = &store->writer;
+	if (!writer->given)
+		return 0;
+
+	/* Starts the thread that merges the changes. */
+	error = pthread_create(&writer->thread, NULL, store_writer_run, writer);
+	if (error != 0) {
+		writer->given = 0;
+		return error;
+	}
+
+	/*
+	 * started tells kwl_settings_store_finish and close that a thread runs
+	 * or waits to be joined, and refuses a second writer.
+	 */
+	writer->given = 0;
+	writer->started = 1;
+
+	/* Succeeded: the file is being written. */
+	return 0;
+}
+
+/*
+ * Gives the session's changes as they are now to the writer, for a thread
+ * of the caller's to merge with kwl_settings_store_save_run (the Log Out,
+ * on the compositor's file I/O thread); writer.given says there was
+ * something to write.  A change made afterwards is written by
+ * kwl_settings_store_finish, which the caller calls once that thread ran
+ * it.  Returns 0 (also with nothing to write or no home), or EBUSY when a
+ * writer was given or started already.
+ */
+int
+kwl_settings_store_save_give(
+	struct kwl_settings_store *store)
+{
+	struct kwl_settings_writer *writer;
+
 	/* Without a home there is no file. */
 	if (!store->present)
 		return 0;
 
 	/* One writer a session. */
 	writer = &store->writer;
-	if (writer->started)
+	if (writer->started || writer->given)
 		return EBUSY;
 
 	/* The changes as they are now; none leaves the file as it is. */
@@ -431,26 +474,38 @@ kwl_settings_store_save_later(
 	if (writer->count == 0U)
 		return 0;
 
-	/* Gives the thread the file's path and folder, the generation it writes, and an empty result. */
+	/* The file's path and folder, the generation it writes, and an empty result. */
 	store_copy(writer->path, sizeof(writer->path), store->path);
 	store_copy(writer->folder, sizeof(writer->folder), store->folder);
 	writer->generation = store->generation;
 	writer->done = 0;
 	writer->error = 0;
 
-	/* Starts the thread that merges the changes. */
-	error = pthread_create(&writer->thread, NULL, store_writer_run, writer);
-	if (error != 0)
-		return error;
-
-	/*
-	 * started tells kwl_settings_store_finish and close that a thread runs
-	 * or waits to be joined, and refuses a second writer.
-	 */
-	writer->started = 1;
-
-	/* Succeeded: the file is being written. */
+	/* Succeeded: the writer holds the changes, for a thread to merge. */
+	writer->given = 1;
 	return 0;
+}
+
+/*
+ * Merges the changes the writer was given into the file, on the thread
+ * that runs it, and records how it went for kwl_settings_store_finish.
+ */
+void
+kwl_settings_store_save_run(
+	struct kwl_settings_writer *writer)
+{
+	int error;
+
+	/* Merges the changes, away from the event loop. */
+	error = store_merge(writer->folder, writer->path, writer->changes, writer->count);
+
+	/* Records how it went; done says the merge is over. */
+	(void)pthread_mutex_lock(&writer->lock);
+
+	writer->error = error;
+	writer->done = 1;
+
+	(void)pthread_mutex_unlock(&writer->lock);
 }
 
 /*
@@ -477,6 +532,13 @@ kwl_settings_store_finish(
 		if (writer->error == 0)
 			store_mark_saved(store, writer->changes, writer->count);
 	}
+
+	/* What a writer given to the caller's thread wrote there is in the file (done 0: it never ran). */
+	if (writer->given && writer->done && writer->error == 0)
+		store_mark_saved(store, writer->changes, writer->count);
+
+	/* No writer is given from now on. */
+	writer->given = 0;
 
 	/* Merges now whatever the writer did not write. */
 	error = kwl_settings_store_save(store);
@@ -1124,27 +1186,18 @@ store_mkdir(
 	(void)mkdir(partial, 0700);
 }
 
-/* The writer: merges the changes it was given and records how it went. */
+/* The writer's own thread: merges the changes it was given and records how it went. */
 static void *
 store_writer_run(
 	void *argument)
 {
 	struct kwl_settings_writer *writer;
-	int error;
 
 	/* The writer that started the thread. */
 	writer = argument;
 
-	/* Merges the changes, away from the event loop. */
-	error = store_merge(writer->folder, writer->path, writer->changes, writer->count);
-
-	/* Records how it went, for kwl_settings_store_finish after the join; done says the thread is finished. */
-	(void)pthread_mutex_lock(&writer->lock);
-
-	writer->error = error;
-	writer->done = 1;
-
-	(void)pthread_mutex_unlock(&writer->lock);
+	/* Merges them, recording how it went for kwl_settings_store_finish after the join. */
+	kwl_settings_store_save_run(writer);
 
 	/* Succeeded: the thread ends. */
 	return NULL;

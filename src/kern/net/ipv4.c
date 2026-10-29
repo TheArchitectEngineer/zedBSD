@@ -41,6 +41,7 @@ static uint16_t next_identification;
 static int ipv4_output_common(struct net_device *device, uint32_t destination, uint8_t protocol, uint32_t source, int source_given, int wait_for_neighbor, struct packet_buf *packet);
 static int ipv4_input(struct packet_buf *packet);
 static int ipv4_accepts_destination(struct net_device *device, uint32_t destination);
+static void ipv4_header_checksum(struct net_device *device, struct packet_buf *packet, struct ipv4_wire *header);
 
 /*
  * Registers the input function for an IP protocol number.
@@ -89,6 +90,135 @@ ipv4_output(
 
 	/* Reports why the send failed. */
 	error = ipv4_output_common(device, destination, protocol, 0, 0, 0, packet);
+	if (error != 0)
+		return error;
+
+	/* Succeeded. */
+	return 0;
+}
+
+/*
+ * Sends a payload to an IPv4 destination from the device's address the
+ * caller has already looked up (TCP sums it into its pseudo-header), so
+ * the output does not look it up again; no waiting for ARP.
+ */
+int
+ipv4_output_sourced(
+	struct net_device *device,
+	uint32_t destination,
+	uint8_t protocol,
+	uint32_t source,
+	struct packet_buf *packet)
+{
+	int error;
+
+	/* Reports why the send failed. */
+	error = ipv4_output_common(device, destination, protocol, source, 1, 0, packet);
+	if (error != 0)
+		return error;
+
+	/* Succeeded. */
+	return 0;
+}
+
+/*
+ * Puts the checksum in a header just built, or leaves it to the device.
+ *
+ * A TCP segment that left its checksum to the device
+ * (PACKET_BUF_TX_CSUM_TCP) leaves the header's too when the device the
+ * frame goes out of computes both; through any other device (the
+ * loopback, one without the capability) both are computed here.
+ */
+static void
+ipv4_header_checksum(
+	struct net_device *device,
+	struct packet_buf *packet,
+	struct ipv4_wire *header)
+{
+	uint16_t checksum;
+
+	/* The device computes both. */
+	if ((packet->flags & PACKET_BUF_TX_CSUM_TCP) != 0 &&
+	    (device->capabilities & NET_DEVICE_CAP_TX_CSUM_IPV4_TCP) != 0) {
+		packet->flags |= PACKET_BUF_TX_CSUM_IPV4;
+		return;
+	}
+
+	/* A segment's left to a device that does not is computed with the header's. */
+	if ((packet->flags & PACKET_BUF_TX_CSUM_TCP) != 0) {
+		packet_buf_checksum_finish(packet);
+		return;
+	}
+
+	/* The header's alone. */
+	checksum = net_checksum(header, sizeof(*header));
+	wire_put16(header->checksum, checksum);
+}
+
+/*
+ * Sends a payload to an IPv4 destination that is not one of this host's
+ * own, through a device, from its address and to a next hop the caller
+ * found with a route lookup it keeps (TCP keeps them while
+ * route_generation() does not move), without looking any of them up
+ * again; no waiting for ARP.  The device's reference stays the caller's.
+ */
+int
+ipv4_output_routed(
+	struct net_device *device,
+	uint32_t destination,
+	uint32_t next_hop,
+	uint8_t protocol,
+	uint32_t source,
+	struct packet_buf *packet)
+{
+	struct ipv4_wire *header;
+	uint8_t hardware[6];
+	int error;
+
+	/* Rejects a missing packet or device. */
+	if (packet == NULL)
+		return EINVAL;
+	if (device == NULL) {
+		packet_buf_free(packet);
+		return ENETUNREACH;
+	}
+
+	/* Rejects a payload that cannot fit the MTU with a header. */
+	if (packet->length > device->mtu - IPV4_HEADER_MIN) {
+		packet_buf_free(packet);
+		return EMSGSIZE;
+	}
+
+	/* The next hop's hardware address; an unresolved one is asked for and the packet refused, as ipv4_output does. */
+	error = arp_resolve(device, next_hop, hardware);
+	if (error != 0) {
+		(void)arp_request(device, next_hop);
+		packet_buf_free(packet);
+		return EAGAIN;
+	}
+
+	/* Prepends the header. */
+	header = packet_buf_push(packet, sizeof(*header));
+	if (header == NULL) {
+		packet_buf_free(packet);
+		return ENOBUFS;
+	}
+
+	/* Fills in the fixed fields of the header. */
+	kern_memset(header, 0, sizeof(*header));
+	header->version_ihl = 0x45U;
+	wire_put16(header->total_length, (uint16_t)packet->length);
+	wire_put16(header->identification, ++next_identification);
+	wire_put16(header->fragment, 0x4000U);
+	header->ttl = 64;
+	header->protocol = protocol;
+	wire_put32(header->source, source);
+	wire_put32(header->destination, destination);
+	packet->l3_offset = (uint16_t)(packet->data - packet->storage);
+	ipv4_header_checksum(device, packet, header);
+
+	/* Sends the packet as an Ethernet frame. */
+	error = ethernet_output(device, hardware, ETHERNET_TYPE_IPV4, packet);
 	if (error != 0)
 		return error;
 
@@ -224,7 +354,6 @@ ipv4_output_common(
 	struct net_device *loopback;
 	struct ipv4_wire *header;
 	uint32_t next_hop;
-	uint16_t checksum;
 	uint16_t total;
 	uint8_t hardware[6];
 	int have_route;
@@ -348,9 +477,8 @@ ipv4_output_common(
 	header->protocol = protocol;
 	wire_put32(header->source, source);
 	wire_put32(header->destination, destination);
-	checksum = net_checksum(header, sizeof(*header));
-	wire_put16(header->checksum, checksum);
 	packet->l3_offset = (uint16_t)(packet->data - packet->storage);
+	ipv4_header_checksum(device, packet, header);
 
 	/* Sends the packet as an Ethernet frame. */
 	error = ethernet_output(device, hardware, ETHERNET_TYPE_IPV4, packet);
@@ -402,7 +530,7 @@ ipv4_input(
 	    header_length > packet->length ||
 	    total < header_length ||
 	    total > packet->length ||
-	    net_checksum(header, header_length) != 0 ||
+	    ((packet->flags & PACKET_BUF_RX_CSUM_IPV4) == 0 && net_checksum(header, header_length) != 0) ||
 	    (fragment & 0x3fffU) != 0) {
 		packet_buf_free(packet);
 		return EINVAL;

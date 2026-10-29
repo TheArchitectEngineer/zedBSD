@@ -52,6 +52,9 @@ uint32_t dp_crc32(const void *, size_t);
 int dp_add(struct dp_table *, unsigned, uint64_t, uint64_t,
 	const char *, const char *, const char *);
 int dp_delete(struct dp_table *, unsigned);
+/* Replaces one GPT entry's type, PARTUUID, name and attributes in place. */
+int dp_modify(struct dp_table *, unsigned, const char *, const char *,
+	const char *, uint64_t);
 /* Persist metadata only; does not issue reload or promise crash atomicity.
  * started distinguishes preflight rejection from potentially partial writes. */
 int dp_write(struct dp_table *, int *started);

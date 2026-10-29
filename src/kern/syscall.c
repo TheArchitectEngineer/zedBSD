@@ -1855,7 +1855,7 @@ sys_sendto_call(
 	}
 
 	if (socket->type != SOCK_STREAM &&
-	    args[2] > PACKET_BUF_STORAGE_SIZE) {
+	    args[2] > socket_datagram_max(socket)) {
 		result = socket_result(&reference, -EMSGSIZE);
 		return result;
 	}
@@ -1930,6 +1930,7 @@ sys_recvfrom_call(
 	socklen_t *length_argument;
 	socklen_t length;
 	size_t capacity;
+	size_t datagram_max;
 	void *buffer;
 	uint8_t empty;
 	ssize_t result;
@@ -1971,8 +1972,9 @@ sys_recvfrom_call(
 		else
 			capacity = (size_t)args[2];
 	} else {
-		if (args[2] > PACKET_BUF_STORAGE_SIZE)
-			capacity = PACKET_BUF_STORAGE_SIZE;
+		datagram_max = socket_datagram_max(socket);
+		if (args[2] > datagram_max)
+			capacity = datagram_max;
 		else
 			capacity = (size_t)args[2];
 	}
@@ -2087,7 +2089,7 @@ sys_sendmsg_call(
 	if (descriptor_socket(process, (int)args[0], &reference) != 0)
 		return -EBADF;
 	if (reference.socket->type != SOCK_STREAM &&
-	    request.data_length > PACKET_BUF_STORAGE_SIZE) {
+	    request.data_length > socket_datagram_max(reference.socket)) {
 		result = socket_result(&reference, -EMSGSIZE);
 		return result;
 	}
@@ -2257,8 +2259,8 @@ sys_recvmsg_call(
 	    buffer_capacity > SYSCALL_SOCKET_BUFFER_MAX)
 		buffer_capacity = SYSCALL_SOCKET_BUFFER_MAX;
 	if (reference.socket->type != SOCK_STREAM &&
-	    buffer_capacity > PACKET_BUF_STORAGE_SIZE)
-		buffer_capacity = PACKET_BUF_STORAGE_SIZE;
+	    buffer_capacity > socket_datagram_max(reference.socket))
+		buffer_capacity = socket_datagram_max(reference.socket);
 	if (reference.socket->type == SOCK_STREAM && buffer_capacity == 0) {
 		request.data_length = 0;
 		request.name_length = 0;
@@ -3073,6 +3075,7 @@ sys_write_call(
 	intptr_t result;
 	int error;
 	int direct;
+	int to_socket;
 	size_t chunk;
 	int limited;
 	ssize_t count;
@@ -3095,9 +3098,14 @@ sys_write_call(
 		return -error;
 	}
 
-	/* Takes a staging buffer, unless the data goes straight from the pages, and opens the transfer. */
+	/*
+	 * Takes a staging buffer, unless the data goes straight from the pages
+	 * (a direct file, or a stream socket that copies from them into its
+	 * own buffers), and opens the transfer.
+	 */
 	direct = file_io_direct(file);
-	if (!direct)
+	to_socket = socket_file_takes_pinned(file);
+	if (!direct && !to_socket)
 		buffer = syscall_io_buffer(file, length, small_buffer, &capacity);
 	error = file_io_begin_cred(file, FILE_IO_WRITE, 0, 0, cred,
 	    &io);
@@ -3115,6 +3123,13 @@ sys_write_call(
 	if (direct) {
 		io_stats_record(IO_SYSCALL_WRITE, length);
 		result = file_io_transfer_pinned(&io, &pin, 0, length);
+		goto out;
+	}
+
+	/* A stream socket takes the bytes from the pages itself. */
+	if (to_socket) {
+		io_stats_record(IO_SYSCALL_WRITE, length);
+		result = socket_file_write_pinned(file, &pin, length);
 		goto out;
 	}
 

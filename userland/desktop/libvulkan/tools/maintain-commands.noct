@@ -41,15 +41,16 @@ func encodeScalar(handles, records, type, expression, indent) {
     if (has(handles, type)) {
         var cast = "(uint64_t)";
         if (type == "VkCommandBuffer") { cast = "(uint64_t)(uintptr_t)"; }
-        return indent + "vulkan_encode_handle(&writer, " + cast + expression + ");\n";
+        return indent + "vulkan_record_handle(&writer, " + cast + expression + ");\n";
     }
     if (type == "VkClearAttachment") { return indent + "command_encode_clear_attachment(&writer, &" + expression + ");\n"; }
     if (has(records, type)) { return indent + "vulkan_encode_" + type + "(&writer, &" + expression + ");\n"; }
-    if (type == "VkImageLayout") { return indent + "vulkan_write_u32(&writer, vulkan_wire_image_layout(" + expression + "));\n"; }
-    var primitive = "u32";
-    if (type == "float") { primitive = "float"; }
-    if (type == "VkDeviceSize" || type == "uint64_t" || type == "size_t") { primitive = "u64"; }
-    return indent + "vulkan_write_" + primitive + "(&writer, " + expression + ");\n";
+    if (type == "VkImageLayout") { return indent + "vulkan_record_u32(&writer, vulkan_wire_image_layout(" + expression + "));\n"; }
+    // The words go through the inline writers (vulkan_record_u32, vulkan_record_u64); a float through vulkan_write_float.
+    var writer = "vulkan_record_u32";
+    if (type == "float") { writer = "vulkan_write_float"; }
+    if (type == "VkDeviceSize" || type == "uint64_t" || type == "size_t") { writer = "vulkan_record_u64"; }
+    return indent + writer + "(&writer, " + expression + ");\n";
 }
 // The image a transfer command writes, for the swapchain-content counts (ws141-p016 (B)); "" when it writes none.
 func writtenImage(command) {
@@ -61,7 +62,7 @@ func writtenImage(command) {
     for (i in 0..Array.size(written)) { if (written[i][0] == command) { return written[i][1]; } }
     return "";
 }
-// The Kei GPU command protocol's name of a Vulkan command (uapi/gpu-op.h): vkCmdBindPipeline -> GPU_OP_CMD_BIND_PIPELINE.
+// The zedBSD GPU command protocol's name of a Vulkan command (uapi/gpu-op.h): vkCmdBindPipeline -> GPU_OP_CMD_BIND_PIPELINE.
 func opName(name) {
     var lower = "abcdefghijklmnopqrstuvwxyz";
     var upper = "ABCDEFGHIJKLMNOPQRSTUVWXYZ";
@@ -127,7 +128,7 @@ func main(args) {
             scalars = false;
             output = output + "\n\t/* Keeps absent " + member + " distinct from its count-selected payload. */\n";
             var length = pointerCount(name, member, extents[j]);
-            output = output + "\tcount = 0;\n\tif (" + member + " != NULL)\n\t\tcount = " + length + ";\n\n\t/* Prefixes referenced contents with their exact 64-bit wire extent. */\n\tvulkan_write_u64(&writer, count);\n";
+            output = output + "\tcount = 0;\n\tif (" + member + " != NULL)\n\t\tcount = " + length + ";\n\n\t/* Prefixes referenced contents with their exact 64-bit wire extent. */\n\tvulkan_record_u64(&writer, count);\n";
             if (type == "void") { output = output + "\tvulkan_write_bytes(&writer, " + member + ", (size_t)count);\n"; continue; }
             if (length == "1") {
                 var encoder = "vulkan_encode_" + type;

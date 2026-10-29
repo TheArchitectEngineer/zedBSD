@@ -22,6 +22,8 @@
 
 #include "imageview.h"
 
+#include "include/kern/os-name.h"
+
 #include <errno.h>
 #include <math.h>
 #include <stdarg.h>
@@ -1016,7 +1018,7 @@ iv_app_action(
 
 		break;
 	case IV_ACTION_ABOUT:
-		iv_app_message(app, "Image Viewer \xe2\x80\x94 Kei", VIEW_MESSAGE_MS);
+		iv_app_message(app, "Image Viewer \xe2\x80\x94 " ZEDBSD_OS_NAME, VIEW_MESSAGE_MS);
 		break;
 	case IV_ACTION_TRASH:
 		/* The window moves the image shown to the trash, then tells the viewer (ws128-p005). */
