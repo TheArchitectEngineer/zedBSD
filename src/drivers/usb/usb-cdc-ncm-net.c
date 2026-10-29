@@ -64,12 +64,14 @@
 /*
  * Where the pool has jumbo packets, blocks large enough for jumbo
  * datagrams: a 32 KB receive block holds three of 9014 bytes (or the
- * standard ones a 16 KB block would), and a 16 KB transmit block one.
+ * standard ones a 16 KB block would).  A transmit block of up to 32 KB
+ * carries a jumbo datagram or many standard ones; the device's
+ * dwNtbOutMaxSize may be smaller (an RTL8156 takes 17404 bytes).
  * NCM_DATAGRAM_MAX is the longest datagram asked of the device.
  */
 #if PACKET_BUF_JUMBO_COUNT != 0U && PACKET_BUF_POOL_COUNT >= 256U
 #define NCM_NTB_IN_JUMBO_SIZE		32768U
-#define NCM_NTB_OUT_SIZE		16384U
+#define NCM_NTB_OUT_SIZE		32768U
 #else
 #define NCM_NTB_IN_JUMBO_SIZE		NCM_NTB_IN_SIZE
 #define NCM_NTB_OUT_SIZE		NCM_NTB_BUFFER_SIZE
