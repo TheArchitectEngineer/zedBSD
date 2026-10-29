@@ -115,7 +115,7 @@ struct keiui_app_global {
  * One application (app.c, WS131 p015), from kl_app_open to kl_app_close:
  * its connection and the one registry, the globals it announced, the
  * app_id its windows get, its windows, the events queued (a ring), the
- * descriptors watched, the system and the menu service (made when first
+ * system and the menu service (made when first
  * asked for), and the next application open (the library's list, read by
  * libkeiland's objects to bind from an application's registry).
  */
@@ -163,11 +163,6 @@ struct kl_app {
 
 	/* The copies of programs bound to the application, a list through their app_next (instance.c). */
 	struct kl_instance *instances;
-
-	/* The descriptors watched and what for (KL_APP_FD_*). */
-	int fds[KL_APP_FDS_MAX];
-	unsigned fd_events[KL_APP_FDS_MAX];
-	unsigned fd_count;
 
 	/* The system and the menu service, and whether the service was tried (a compositor without it says so once). */
 	struct kl_system *system;

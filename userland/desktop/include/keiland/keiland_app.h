@@ -24,8 +24,8 @@ extern "C" {
  * compositor: its globals are learnt with one roundtrip when it opens, and
  * its windows, menus, titlebars and glass bind what they need from that one
  * registry without searching again.  Its windows' input, the actions chosen
- * in their menus and controls, and the descriptors it watches arrive as one
- * queue of kl_app_event values, in the order they happened: the application
+ * in their menus and controls, the program's posts and the news of its
+ * processes arrive as one queue of kl_app_event values, in the order they happened: the application
  * waits with kl_app_dispatch and takes them with kl_app_take (a window of an
  * application has no queue of its own; kl_window_take finds nothing).  A held
  * key repeats by itself within kl_app_dispatch, after the events read with it
@@ -43,17 +43,8 @@ struct kl_glass_panel;
 struct kl_process;
 struct kl_instance;
 
-/* The most descriptors an application watches (16 before KL_VERSION 51). */
-#define KL_APP_FDS_MAX		64U
-
-/* What a watched descriptor is waited for, and what it became (a hang-up or an error is always told). */
-#define KL_APP_FD_READ		1U
-#define KL_APP_FD_WRITE	2U
-#define KL_APP_FD_HANGUP	4U
-
-/* The kinds of an application's event. */
+/* The kinds of an application's event (2, a watched descriptor's, is gone since KL_VERSION 102). */
 #define KL_APP_WINDOW		1U
-#define KL_APP_FD		2U
 #define KL_APP_THEME		3U
 #define KL_APP_POST		4U
 #define KL_APP_PROCESS		5U
@@ -73,8 +64,7 @@ struct kl_app_options {
 /*
  * One event of an application: its kind; for KL_APP_WINDOW the window and
  * its input (as kl_window_take gave it; KL_WINDOW_ACTION for an action
- * chosen), for KL_APP_FD the descriptor and what it became (KL_APP_FD_*);
- * KL_APP_THEME (KL_VERSION 35) says the desktop's appearance changed and
+ * chosen); KL_APP_THEME (KL_VERSION 35) says the desktop's appearance changed and
  * kl_theme_default's colours with it, for the application to draw its
  * windows again (kl_appearance_get(NULL) tells which); KL_APP_POST
  * (KL_VERSION 97) is the program's own, with the code and the data
@@ -94,7 +84,6 @@ struct kl_app_event {
 	unsigned kind;
 	struct kl_window *window;
 	struct kl_window_event input;
-	int fd;
 	unsigned ready;
 	uint32_t code;
 	void *data;
@@ -117,8 +106,8 @@ void kl_app_close(struct kl_app *app);
 
 /*
  * Waits up to a timeout (milliseconds, -1 for ever; no wait while events
- * are queued or a repeat is due) for the compositor or a watched
- * descriptor, and queues what happened.  Returns 0, or -1 when the
+ * are queued or a repeat is due) for the compositor or a post, and queues
+ * what happened.  Returns 0, or -1 when the
  * connection is broken.
  */
 int kl_app_dispatch(struct kl_app *app, int timeout_ms);
@@ -130,13 +119,6 @@ int kl_app_dispatch(struct kl_app *app, int timeout_ms);
  * KL_APP_LANGUAGE event comes after).
  */
 const char *kl_app_language(const struct kl_app *app);
-
-/*
- * Watches a descriptor for KL_APP_FD_READ and KL_APP_FD_WRITE (0 stops
- * watching it): while it is ready, each dispatch queues a KL_APP_FD event.
- * Returns 0, EINVAL, or ENOSPC past KL_APP_FDS_MAX.
- */
-int kl_app_watch_fd(struct kl_app *app, int fd, unsigned events);
 
 /*
  * KL_VERSION 97: posts an event of the program's own (KL_APP_POST with code

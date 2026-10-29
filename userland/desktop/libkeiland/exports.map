@@ -235,7 +235,6 @@
 		kl_system_media_watch;
 		kl_system_media_notify;
 		kl_instance_open;
-		kl_instance_fd;
 		kl_instance_bind;
 		kl_instance_take;
 		kl_instance_close;
@@ -455,7 +454,6 @@
 		kl_app_close;
 		kl_app_dispatch;
 		kl_app_language;
-		kl_app_watch_fd;
 		kl_app_post;
 		kl_app_take;
 		kl_app_system;

@@ -12,6 +12,6 @@ mkdir -p "$out"
 ${CC:-cc} -std=gnu89 -Wall -Wextra -Werror -D_GNU_SOURCE -I. -Iinclude -fsanitize=address,undefined -g \
     userland/desktop/libkeiland-backend/backend.c userland/desktop/libkeiland-backend-zedbsd/session-zedbsd.c userland/desktop/libkeiland-backend-zedbsd/power-outcome.c \
     userland/desktop/libkeiland-backend/unsupported/seat-unsupported.c \
-    userland/desktop/libkeiland-backend-zedbsd/power-zedbsd.c userland/desktop/libkeiland-backend/unsupported/events-unsupported.c \
+    userland/desktop/libkeiland-backend-zedbsd/power-zedbsd.c userland/desktop/libkeiland-backend/unsupported/events-unsupported.c userland/desktop/libkeiland-backend/unsupported/notify-unsupported.c \
     userland/desktop/libkeiland-backend-zedbsd/sharing-zedbsd.c userland/base/common/sha256.c plan/ws131/tests/host-session.c -o "$out/host-session"
 exec "$out/host-session"

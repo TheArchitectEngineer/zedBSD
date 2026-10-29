@@ -71,8 +71,17 @@
 /* What a started program reads when nothing writes its standard input. */
 #define PROCESS_NULL_DEVICE	"/dev/null"
 
-/* The environment the application runs with. */
+/*
+ * The environment the application runs with.  FreeBSD defines it in the
+ * program's start file rather than in its C library, so the library refers
+ * to it weakly there (the program's own is used); elsewhere the C library
+ * defines it.
+ */
+#if defined(__FreeBSD__)
+extern char **environ __attribute__((weak));
+#else
 extern char **environ;
+#endif
 
 /* What a child is started with, made before it is started (freed after). */
 struct process_launch {

@@ -47,7 +47,7 @@
 | [ws314-p005](phase005/phase.md) | `kl_process_*` の核と Installer・Terminal・Phone の移行（design.md §4） | cleared（Installer・Phone の QEMU は未実施） | p003・p004 |
 | [ws314-p006](phase006/phase.md) | `kl_instance` の event と Settings の移行 | cleared（Settings の 2 回目の起動の QEMU は未実施） | p004 |
 | [ws314-p007](phase007/phase.md) | libbrowser の network の thread と Browser の shell の移行（BROWSER_API_VERSION 3） | cleared | p004 |
-| ws314-p008 | `kl_app_watch_fd`・`kl_instance_fd` を公開の API から外す（KL_VERSION を上げる）、Linux・FreeBSD の build | planned | p004〜p007・p013・p014 |
+| [ws314-p008](phase008/phase.md) | `kl_app_watch_fd`・`kl_instance_fd` を公開の API から外す（KL_VERSION 102）、Linux・FreeBSD の build | cleared | p004〜p007・p013・p014 |
 | ws314-p009 | 解説に新しい API（post・process・instance）を足す | planned | p008・p012 |
 | ws314-p010 | 規約の全文の見直し | planned | p009 |
 | ws314-p011 | 解説の構成の設計（Opus）: 章ごとに完全に動く source の全文を示し、そこから帰納的に分からせ演繹的な説明も引ける構成。keiland-programming.md に「ここにこういう説明を入れる」の comment を入れ、例の全文は compile・実行で確かめる | cleared | p002 |
@@ -92,3 +92,5 @@
   と `preview-test.sh`。判断 A〜D はユーザーの返事待ち。
 - 2026-10-30 P2（q1690-i02）: p007 cleared（libbrowser の loader に `browser-net`・`browser-resolve` の thread、`browser_wake`、shell は
   `kl_app_post`。host（TSan も）・QEMU `guest-browser.sh` PASS）。次は p008（KL_VERSION 102 から、Q1 に確かめる）→ p009 → p010。
+- 2026-10-30 P2（q1690-i02）: p008 cleared（KL_VERSION 102、fd の API を公開から外した。zedBSD 3 arch・Linux・FreeBSD（backend-test 全 PASS）・
+  QEMU `guest.sh`・`guest-browser.sh` PASS）。次は p009（解説に post・process・launch・instance・language の節）→ p010。

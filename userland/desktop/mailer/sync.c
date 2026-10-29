@@ -16,10 +16,11 @@
  * with, and a new one right after its sign-in), so that what IDLE tells
  * after is new mail.
  *
- * The window wakes the thread through a pipe (a byte for each job) and is
- * woken by another (a byte for each batch of results), whose reading end
- * it watches with kl_app_watch_fd.  The queues are lists under one lock;
- * a job's and a result's memory goes with it from one thread to the other.
+ * The window wakes the thread through a pipe (a byte for each job); the
+ * thread tells the window of a batch of results through the window's ready
+ * function (the application posts itself an event).  The queues are lists
+ * under one lock; a job's and a result's memory goes with it from one
+ * thread to the other.
  *
  * ws177-p015: a message of the trash is deleted for good, an account's
  * new settings are tried without being taken (the window starts the

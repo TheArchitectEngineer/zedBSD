@@ -62,12 +62,6 @@ struct kl_instance;
 int kl_instance_open(const char *name, const char *request, struct kl_instance **instance);
 
 /*
- * The descriptor that becomes readable when a later start hands a request
- * over (for the program's poll), or -1 for NULL.
- */
-int kl_instance_fd(const struct kl_instance *instance);
-
-/*
  * KL_VERSION 99: has the requests of later starts arrive as the
  * application's KL_APP_INSTANCE events (event.instance), from now until the
  * copy is closed or the application closes (whichever comes first).  A

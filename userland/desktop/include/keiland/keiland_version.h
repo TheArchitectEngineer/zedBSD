@@ -152,6 +152,8 @@ extern "C" {
  * 100: a program started apart from the application, kl_launch
  * 101: the desktop's language's changes as the application's events, KL_APP_LANGUAGE (event.language)
  *      and kl_app_language
+ * 102: no descriptor in the interface: kl_app_watch_fd, KL_APP_FD (and KL_APP_FD_*, KL_APP_FDS_MAX),
+ *      kl_app_event.fd and kl_instance_fd are gone (kl_app_post, kl_process, kl_instance_bind instead)
  *
  * The file chooser of KL_VERSION 12 moved to the widgets with KL_VERSION 16:
  * kl_file_chooser_* of <keiland/keiland_file_chooser.h>, made of the
@@ -161,7 +163,7 @@ extern "C" {
  * are kl_settings_* of <keiland/keiland_settings.h>, and desktop.conf is the
  * compositor's own file.
  */
-#define KL_VERSION 101U
+#define KL_VERSION 102U
 
 /*
  * Reports the interface version of the library that was loaded.
