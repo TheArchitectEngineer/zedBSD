@@ -388,6 +388,165 @@ GLAPI void APIENTRY glGetMultisamplefv(GLenum pname, GLuint index, GLfloat *val)
 GLAPI void APIENTRY glGetTexLevelParameteriv(GLenum target, GLint level, GLenum pname, GLint *params);
 GLAPI void APIENTRY glGetTexLevelParameterfv(GLenum target, GLint level, GLenum pname, GLfloat *params);
 
+/* OpenGL 3.3's timer queries, dual-source blending and packed current attribute values. */
+#define GL_TIME_ELAPSED			0x88BF
+#define GL_TIMESTAMP			0x8E28
+#define GL_QUERY_COUNTER_BITS		0x8864
+#define GL_SRC1_COLOR			0x88F9
+#define GL_SRC1_ALPHA			0x8589
+#define GL_ONE_MINUS_SRC1_COLOR		0x88FA
+#define GL_ONE_MINUS_SRC1_ALPHA		0x88FB
+#define GL_MAX_DUAL_SOURCE_DRAW_BUFFERS	0x88FC
+GLAPI void APIENTRY glQueryCounter(GLuint id, GLenum target);
+GLAPI void APIENTRY glGetQueryObjecti64v(GLuint id, GLenum pname, GLint64 *params);
+GLAPI void APIENTRY glGetQueryObjectui64v(GLuint id, GLenum pname, GLuint64 *params);
+GLAPI void APIENTRY glBindFragDataLocationIndexed(GLuint program, GLuint colorNumber, GLuint index, const GLchar *name);
+GLAPI GLint APIENTRY glGetFragDataIndex(GLuint program, const GLchar *name);
+GLAPI void APIENTRY glVertexAttribP1ui(GLuint index, GLenum type, GLboolean normalized, GLuint value);
+GLAPI void APIENTRY glVertexAttribP2ui(GLuint index, GLenum type, GLboolean normalized, GLuint value);
+GLAPI void APIENTRY glVertexAttribP3ui(GLuint index, GLenum type, GLboolean normalized, GLuint value);
+GLAPI void APIENTRY glVertexAttribP4ui(GLuint index, GLenum type, GLboolean normalized, GLuint value);
+GLAPI void APIENTRY glVertexAttribP1uiv(GLuint index, GLenum type, GLboolean normalized, const GLuint *value);
+GLAPI void APIENTRY glVertexAttribP2uiv(GLuint index, GLenum type, GLboolean normalized, const GLuint *value);
+GLAPI void APIENTRY glVertexAttribP3uiv(GLuint index, GLenum type, GLboolean normalized, const GLuint *value);
+GLAPI void APIENTRY glVertexAttribP4uiv(GLuint index, GLenum type, GLboolean normalized, const GLuint *value);
+
+/* OpenGL 4.0's tessellation (GL_ARB_tessellation_shader on 3.2 and 3.3 contexts of a device that has it). */
+#define GL_PATCHES			0x000E
+#define GL_PATCH_VERTICES		0x8E72
+#define GL_PATCH_DEFAULT_INNER_LEVEL	0x8E73
+#define GL_PATCH_DEFAULT_OUTER_LEVEL	0x8E74
+#define GL_TESS_CONTROL_OUTPUT_VERTICES	0x8E75
+#define GL_TESS_GEN_MODE		0x8E76
+#define GL_TESS_GEN_SPACING		0x8E77
+#define GL_TESS_GEN_VERTEX_ORDER	0x8E78
+#define GL_TESS_GEN_POINT_MODE		0x8E79
+#define GL_ISOLINES			0x8E7A
+#define GL_FRACTIONAL_ODD		0x8E7B
+#define GL_FRACTIONAL_EVEN		0x8E7C
+#define GL_MAX_PATCH_VERTICES		0x8E7D
+#define GL_MAX_TESS_GEN_LEVEL		0x8E7E
+#define GL_TESS_EVALUATION_SHADER	0x8E87
+#define GL_TESS_CONTROL_SHADER		0x8E88
+GLAPI void APIENTRY glPatchParameteri(GLenum pname, GLint value);
+GLAPI void APIENTRY glPatchParameterfv(GLenum pname, const GLfloat *values);
+
+/* OpenGL 4.3's compute shaders and shader storage buffers (contexts of 4.3 on; the constants are OpenGL ES 3.1's). */
+#define GL_COMPUTE_SHADER		0x91B9
+#define GL_SHADER_STORAGE_BUFFER	0x90D2
+#define GL_SHADER_STORAGE_BUFFER_BINDING 0x90D3
+#define GL_DISPATCH_INDIRECT_BUFFER	0x90EE
+#define GL_COMPUTE_WORK_GROUP_SIZE	0x8267
+#define GL_MAX_COMPUTE_WORK_GROUP_COUNT	0x91BE
+#define GL_MAX_COMPUTE_WORK_GROUP_SIZE	0x91BF
+#define GL_MAX_COMPUTE_WORK_GROUP_INVOCATIONS 0x90EB
+#define GL_MAX_SHADER_STORAGE_BUFFER_BINDINGS 0x90DD
+#define GL_SHADER_STORAGE_BARRIER_BIT	0x00002000
+#define GL_ALL_BARRIER_BITS		0xFFFFFFFF
+GLAPI void APIENTRY glDispatchCompute(GLuint num_groups_x, GLuint num_groups_y, GLuint num_groups_z);
+GLAPI void APIENTRY glDispatchComputeIndirect(GLintptr indirect);
+GLAPI void APIENTRY glMemoryBarrier(GLbitfield barriers);
+
+/* OpenGL 4.0's indirect draws (GL_ARB_draw_indirect on 3.1 to 3.3 contexts). */
+#define GL_DRAW_INDIRECT_BUFFER		0x8F3F
+#define GL_DRAW_INDIRECT_BUFFER_BINDING	0x8F43
+GLAPI void APIENTRY glDrawArraysIndirect(GLenum mode, const void *indirect);
+GLAPI void APIENTRY glDrawElementsIndirect(GLenum mode, GLenum type, const void *indirect);
+
+/* OpenGL 4.3's debug output (GL_KHR_debug on every 3.x context). */
+typedef void (APIENTRY *GLDEBUGPROC)(GLenum source, GLenum type, GLuint id, GLenum severity, GLsizei length, const GLchar *message, const void *userParam);
+#define GL_DEBUG_OUTPUT_SYNCHRONOUS	0x8242
+#define GL_DEBUG_NEXT_LOGGED_MESSAGE_LENGTH 0x8243
+#define GL_DEBUG_CALLBACK_FUNCTION	0x8244
+#define GL_DEBUG_CALLBACK_USER_PARAM	0x8245
+#define GL_DEBUG_SOURCE_API		0x8246
+#define GL_DEBUG_SOURCE_WINDOW_SYSTEM	0x8247
+#define GL_DEBUG_SOURCE_SHADER_COMPILER	0x8248
+#define GL_DEBUG_SOURCE_THIRD_PARTY	0x8249
+#define GL_DEBUG_SOURCE_APPLICATION	0x824A
+#define GL_DEBUG_SOURCE_OTHER		0x824B
+#define GL_DEBUG_TYPE_ERROR		0x824C
+#define GL_DEBUG_TYPE_DEPRECATED_BEHAVIOR 0x824D
+#define GL_DEBUG_TYPE_UNDEFINED_BEHAVIOR 0x824E
+#define GL_DEBUG_TYPE_PORTABILITY	0x824F
+#define GL_DEBUG_TYPE_PERFORMANCE	0x8250
+#define GL_DEBUG_TYPE_OTHER		0x8251
+#define GL_DEBUG_TYPE_MARKER		0x8268
+#define GL_DEBUG_TYPE_PUSH_GROUP	0x8269
+#define GL_DEBUG_TYPE_POP_GROUP		0x826A
+#define GL_DEBUG_SEVERITY_NOTIFICATION	0x826B
+#define GL_MAX_DEBUG_GROUP_STACK_DEPTH	0x826C
+#define GL_DEBUG_GROUP_STACK_DEPTH	0x826D
+#define GL_BUFFER			0x82E0
+#define GL_SHADER			0x82E1
+#define GL_PROGRAM			0x82E2
+#define GL_QUERY			0x82E3
+#define GL_PROGRAM_PIPELINE		0x82E4
+#define GL_SAMPLER			0x82E6
+#define GL_MAX_LABEL_LENGTH		0x82E8
+#define GL_MAX_DEBUG_MESSAGE_LENGTH	0x9143
+#define GL_MAX_DEBUG_LOGGED_MESSAGES	0x9144
+#define GL_DEBUG_LOGGED_MESSAGES	0x9145
+#define GL_DEBUG_SEVERITY_HIGH		0x9146
+#define GL_DEBUG_SEVERITY_MEDIUM	0x9147
+#define GL_DEBUG_SEVERITY_LOW		0x9148
+#define GL_DEBUG_OUTPUT			0x92E0
+#define GL_CONTEXT_FLAG_DEBUG_BIT	0x00000002
+GLAPI void APIENTRY glDebugMessageControl(GLenum source, GLenum type, GLenum severity, GLsizei count, const GLuint *ids, GLboolean enabled);
+GLAPI void APIENTRY glDebugMessageInsert(GLenum source, GLenum type, GLuint id, GLenum severity, GLsizei length, const GLchar *buf);
+GLAPI void APIENTRY glDebugMessageCallback(GLDEBUGPROC callback, const void *userParam);
+GLAPI GLuint APIENTRY glGetDebugMessageLog(GLuint count, GLsizei bufSize, GLenum *sources, GLenum *types, GLuint *ids, GLenum *severities, GLsizei *lengths, GLchar *messageLog);
+GLAPI void APIENTRY glPushDebugGroup(GLenum source, GLuint id, GLsizei length, const GLchar *message);
+GLAPI void APIENTRY glPopDebugGroup(void);
+GLAPI void APIENTRY glObjectLabel(GLenum identifier, GLuint name, GLsizei length, const GLchar *label);
+GLAPI void APIENTRY glGetObjectLabel(GLenum identifier, GLuint name, GLsizei bufSize, GLsizei *length, GLchar *label);
+GLAPI void APIENTRY glObjectPtrLabel(const void *ptr, GLsizei length, const GLchar *label);
+GLAPI void APIENTRY glGetObjectPtrLabel(const void *ptr, GLsizei bufSize, GLsizei *length, GLchar *label);
+GLAPI void APIENTRY glGetPointerv(GLenum pname, void **params);
+
+/* OpenGL 4.0's per-sample shading (GL_ARB_sample_shading on a device that shades per sample). */
+#define GL_SAMPLE_SHADING		0x8C36
+#define GL_MIN_SAMPLE_SHADING_VALUE	0x8C37
+GLAPI void APIENTRY glMinSampleShading(GLfloat value);
+
+/* OpenGL 4.0's texture gathers (GL_ARB_texture_gather on every 3.x context). */
+#define GL_MIN_PROGRAM_TEXTURE_GATHER_OFFSET 0x8E5E
+#define GL_MAX_PROGRAM_TEXTURE_GATHER_OFFSET 0x8E5F
+#define GL_MAX_PROGRAM_TEXTURE_GATHER_COMPONENTS_ARB 0x8F9F
+
+/* OpenGL 4.0's cube map arrays (GL_ARB_texture_cube_map_array on a 3.x context of a device that has them). */
+#define GL_TEXTURE_CUBE_MAP_ARRAY	0x9009
+#define GL_TEXTURE_BINDING_CUBE_MAP_ARRAY 0x900A
+#define GL_PROXY_TEXTURE_CUBE_MAP_ARRAY	0x900B
+#define GL_SAMPLER_CUBE_MAP_ARRAY	0x900C
+#define GL_SAMPLER_CUBE_MAP_ARRAY_SHADOW 0x900D
+#define GL_INT_SAMPLER_CUBE_MAP_ARRAY	0x900E
+#define GL_UNSIGNED_INT_SAMPLER_CUBE_MAP_ARRAY 0x900F
+
+/* OpenGL 4.3's vertex attribute binding (GL_ARB_vertex_attrib_binding on every 3.x context). */
+#define GL_VERTEX_ATTRIB_BINDING	0x82D4
+#define GL_VERTEX_ATTRIB_RELATIVE_OFFSET 0x82D5
+#define GL_VERTEX_BINDING_DIVISOR	0x82D6
+#define GL_VERTEX_BINDING_OFFSET	0x82D7
+#define GL_VERTEX_BINDING_STRIDE	0x82D8
+#define GL_MAX_VERTEX_ATTRIB_RELATIVE_OFFSET 0x82D9
+#define GL_MAX_VERTEX_ATTRIB_BINDINGS	0x82DA
+#define GL_VERTEX_BINDING_BUFFER	0x8F4F
+GLAPI void APIENTRY glBindVertexBuffer(GLuint bindingindex, GLuint buffer, GLintptr offset, GLsizei stride);
+GLAPI void APIENTRY glVertexAttribFormat(GLuint attribindex, GLint size, GLenum type, GLboolean normalized, GLuint relativeoffset);
+GLAPI void APIENTRY glVertexAttribIFormat(GLuint attribindex, GLint size, GLenum type, GLuint relativeoffset);
+GLAPI void APIENTRY glVertexAttribBinding(GLuint attribindex, GLuint bindingindex);
+GLAPI void APIENTRY glVertexBindingDivisor(GLuint bindingindex, GLuint divisor);
+
+/* OpenGL 4.5's clip control (GL_ARB_clip_control on every 3.x context). */
+#define GL_LOWER_LEFT			0x8CA1
+#define GL_UPPER_LEFT			0x8CA2
+#define GL_CLIP_ORIGIN			0x935C
+#define GL_CLIP_DEPTH_MODE		0x935D
+#define GL_NEGATIVE_ONE_TO_ONE		0x935E
+#define GL_ZERO_TO_ONE			0x935F
+GLAPI void APIENTRY glClipControl(GLenum origin, GLenum depth);
+
 #ifdef __cplusplus
 }
 #endif

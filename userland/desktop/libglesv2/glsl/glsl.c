@@ -182,3 +182,52 @@ glsl_compute_layout(
 			size[axis] = shader->local_size[axis];
 	}
 }
+
+/*
+ * Reports a compiled tessellation shader's layouts as GL names them; 0s
+ * for what the shader's stage does not have.
+ */
+void
+glsl_tess_layout(
+	const struct glsl_shader *shader,
+	unsigned *vertices,
+	unsigned *domain,
+	unsigned *spacing,
+	unsigned *order,
+	unsigned *point_mode)
+{
+	/* Nothing for another stage. */
+	*vertices = 0U;
+	*domain = 0U;
+	*spacing = 0U;
+	*order = 0U;
+	*point_mode = 0U;
+
+	/* A control shader's output vertices. */
+	if (shader->stage == GLSL_STAGE_TESS_CONTROL) {
+		*vertices = shader->tess_vertices;
+		return;
+	}
+	if (shader->stage != GLSL_STAGE_TESS_EVALUATION)
+		return;
+
+	/* An evaluation shader's domain: GL_TRIANGLES, GL_QUADS or GL_ISOLINES. */
+	*domain = 0x0004U;
+	if (shader->tess_domain == GLSL_PRIMITIVE_QUADS)
+		*domain = 0x0007U;
+	if (shader->tess_domain == GLSL_PRIMITIVE_ISOLINES)
+		*domain = 0x8E7AU;
+
+	/* Its spacing: GL_EQUAL (the default), GL_FRACTIONAL_EVEN, GL_FRACTIONAL_ODD. */
+	*spacing = 0x0202U;
+	if (shader->tess_spacing == GLSL_SPACING_FRACTIONAL_EVEN)
+		*spacing = 0x8E7CU;
+	if (shader->tess_spacing == GLSL_SPACING_FRACTIONAL_ODD)
+		*spacing = 0x8E7BU;
+
+	/* Its vertex order: GL_CCW (the default) or GL_CW, and the point mode. */
+	*order = 0x0901U;
+	if (shader->tess_order == GLSL_ORDER_CW)
+		*order = 0x0900U;
+	*point_mode = shader->tess_point_mode;
+}

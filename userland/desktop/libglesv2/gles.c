@@ -67,6 +67,7 @@ static void gles_blend_buffer(GLenum target, GLuint index, int on);
 static int gles_version_three(struct zegl_context *context);
 static int gles_compute_offered(struct zegl_context *context, const VkPhysicalDeviceLimits *limits);
 static unsigned gles_desktop_integers(struct gles_state *state, GLenum pname, GLint *values);
+static int gles_tess_integers(struct gles_state *state, GLenum pname, GLint *values);
 static unsigned gles_floats(struct zegl_context *context, struct gles_state *state, GLenum pname, GLfloat *values);
 
 /*
@@ -147,6 +148,17 @@ gles_state(
 	state->front_face = GL_CCW;
 	memcpy(state->scissor, context->gles.viewport, sizeof(state->scissor));
 
+	/* Patches of three vertices, default levels of 1 (desktop GL 4.0). */
+	state->patch_vertices = 3;
+	for (index = 0U; index < 4U; index++)
+		state->patch_outer[index] = 1.0f;
+	state->patch_inner[0] = 1.0f;
+	state->patch_inner[1] = 1.0f;
+
+	/* GL's own clip space: y = 1 at the top, depths from -1 (desktop GL's glClipControl). */
+	state->clip_origin = GL_LOWER_LEFT;
+	state->clip_depth = GL_NEGATIVE_ONE_TO_ONE;
+
 	/* Lines one wide, dithering on, rows aligned to 4. */
 	state->line_width = 1.0f;
 	state->dither = 1;
@@ -166,12 +178,13 @@ gles_state(
 	/* Whether the context offers OpenGL ES 3.1's compute (ws101-p009). */
 	state->compute = gles_compute_offered(context, &state->limits);
 
-	/* Every array four floats and disabled, every current value the floats (0, 0, 0, 1). */
+	/* Every array four floats, disabled and on its own binding point, every current value the floats (0, 0, 0, 1). */
 	for (index = 0U; index < GLES_ATTRIBS; index++) {
 		state->attribs[index].size = 4;
 		state->attribs[index].type = GL_FLOAT;
 		state->attribs[index].value[3] = 1.0f;
 		state->attribs[index].value_type = GL_FLOAT;
+		state->attribs[index].binding = (GLuint)index;
 	}
 
 	/* Succeeded: the first frame, and the callbacks libEGL makes. */
@@ -194,6 +207,10 @@ gles_error(
 	/* Only the first counts. */
 	if (context->gles.error == GL_NO_ERROR)
 		context->gles.error = error;
+
+	/* Desktop GL's debug output hears every one (libGL). */
+	if (gles_fixed != NULL && gles_fixed->error != NULL)
+		gles_fixed->error(context, error);
 }
 
 /*
@@ -598,12 +615,35 @@ glBlendFuncSeparate(
 	GLenum sfactorAlpha,
 	GLenum dfactorAlpha)
 {
+	struct zegl_context *context;
 	struct gles_state *state;
+	GLenum factors[4];
+	unsigned index;
 
-	/* The four factors. */
-	state = gles_state(gles_context());
+	/* A context with its state. */
+	context = gles_context();
+	state = gles_state(context);
 	if (state == NULL)
 		return;
+
+	/* The second colour's factors only in desktop GL 3.3 on a device that blends with it. */
+	factors[0] = sfactorRGB;
+	factors[1] = dfactorRGB;
+	factors[2] = sfactorAlpha;
+	factors[3] = dfactorAlpha;
+	for (index = 0U; index < 4U; index++) {
+		if (factors[index] != GL_SRC1_COLOR &&
+		    factors[index] != GL_ONE_MINUS_SRC1_COLOR &&
+		    factors[index] != GL_SRC1_ALPHA &&
+		    factors[index] != GL_ONE_MINUS_SRC1_ALPHA)
+			continue;
+		if (gles_fixed == NULL || !state->display->features.dualSrcBlend) {
+			gles_error(context, GL_INVALID_ENUM);
+			return;
+		}
+	}
+
+	/* The four factors. */
 	state->blend_src_rgb = sfactorRGB;
 	state->blend_dst_rgb = dfactorRGB;
 	state->blend_src_alpha = sfactorAlpha;
@@ -1303,6 +1343,12 @@ glGetInteger64v(
 		return;
 	}
 
+	/* The GPU's time (desktop GL 3.3's timer queries, libGL). */
+	if (pname == GL_TIMESTAMP && gles_fixed != NULL) {
+		(void)gles_query_timestamp(context, state, data);
+		return;
+	}
+
 	/* A server wait (glClientWaitSync) is never refused for its length. */
 	if (pname == GL_MAX_SERVER_WAIT_TIMEOUT) {
 		data[0] = INT64_MAX;
@@ -1675,12 +1721,16 @@ gles_release(
 			gles_texture_free(state, state->textures.objects[name]);
 	}
 
-	/* The black textures of each shape and kind. */
+	/* The black textures of each shape and kind, and the black cube map arrays. */
 	for (shape = 0U; shape < GLES_SHAPES; shape++) {
 		for (kind = 0U; kind < GLES_BLACK_KINDS; kind++) {
 			if (state->blacks[shape][kind] != NULL)
 				gles_texture_free(state, state->blacks[shape][kind]);
 		}
+	}
+	for (kind = 0U; kind < GLES_BLACK_KINDS; kind++) {
+		if (state->black_cube_arrays[kind] != NULL)
+			gles_texture_free(state, state->black_cube_arrays[kind]);
 	}
 
 	/* The black texel buffer's views (buffer textures; nothing runs any more). */
@@ -1973,6 +2023,14 @@ gles_integers(
 	case GL_MAX_DRAW_BUFFERS:
 		values[0] = (GLint)GLES_DRAW_BUFFERS;
 		return 1U;
+	case GL_MAX_DUAL_SOURCE_DRAW_BUFFERS:
+		/* Desktop GL 3.3's dual-source blending: one draw buffer when the device blends so. */
+		if (gles_fixed == NULL)
+			return 0U;
+		values[0] = 0;
+		if (state->display->features.dualSrcBlend)
+			values[0] = 1;
+		return 1U;
 	case GL_DRAW_BUFFER0:
 	case GL_DRAW_BUFFER1:
 	case GL_DRAW_BUFFER2:
@@ -2021,9 +2079,11 @@ gles_integers(
 		values[0] = (GLint)gles_samples_max(state);
 		return 1U;
 	case GL_NUM_COMPRESSED_TEXTURE_FORMATS:
-	case GL_COMPRESSED_TEXTURE_FORMATS:
-		values[0] = 0;
+		/* OpenGL ES 3.0's ETC2 and EAC formats (decoded on the CPU). */
+		values[0] = (GLint)gles_compressed_formats(NULL);
 		return 1U;
+	case GL_COMPRESSED_TEXTURE_FORMATS:
+		return gles_compressed_formats(values);
 	case GL_UNPACK_ALIGNMENT:
 		values[0] = state->unpack_alignment;
 		return 1U;
@@ -2417,7 +2477,8 @@ gles_version_three(
 
 /*
  * Reports whether a context offers OpenGL ES 3.1's compute (ws101-p009):
- * an OpenGL ES 3 context (not libGL's desktop GL) of OpenGL ES 3.0, whose
+ * an OpenGL ES 3 context of OpenGL ES 3.0 (or libGL's desktop GL of 4.3
+ * on, whose GLSL 4.30 has compute shaders), whose
  * queue runs compute, on a device whose limits are at least OpenGL ES
  * 3.1's minimums (workgroups, shared memory, four storage buffers a
  * stage, 2^27 bytes of a storage buffer).
@@ -2429,13 +2490,21 @@ gles_compute_offered(
 {
 	VkQueueFamilyProperties *families;
 	uint32_t count;
+	unsigned glsl_latest;
 	int compute;
 
-	/* An OpenGL ES 3 context of OpenGL ES 3.0 (the device's feature gles_version_three asks for; the state is being made), not desktop GL's. */
-	if (!context->display->features.vertexPipelineStoresAndAtomics ||
-	    gles_fixed != NULL ||
-	    context->version < 3)
+	/*
+	 * An OpenGL ES 3 context of OpenGL ES 3.0 (the device's feature
+	 * gles_version_three asks for; the state is being made), or desktop
+	 * GL's (libGL) of a version whose GLSL has compute shaders (4.30, 4.3).
+	 */
+	if (!context->display->features.vertexPipelineStoresAndAtomics || context->version < 3)
 		return 0;
+	if (gles_fixed != NULL) {
+		glsl_latest = gles_fixed->glsl_version();
+		if (glsl_latest < 430U)
+			return 0;
+	}
 
 	/* OpenGL ES 3.1's minimums of the compute limits. */
 	if (limits->maxComputeWorkGroupInvocations < 128U ||
@@ -2528,6 +2597,15 @@ gles_desktop_integers(
 		if (texture != NULL)
 			values[0] = (GLint)texture->name;
 		return 1U;
+	case GL_TEXTURE_BINDING_CUBE_MAP_ARRAY:
+		/* Desktop GL 4.0's cube map arrays (libGL). */
+		if (gles_fixed == NULL)
+			return 0U;
+		texture = state->cube_array_units[state->active_unit];
+		values[0] = 0;
+		if (texture != NULL)
+			values[0] = (GLint)texture->name;
+		return 1U;
 	case GL_MAX_SAMPLE_MASK_WORDS:
 		values[0] = 1;
 		return 1U;
@@ -2538,6 +2616,52 @@ gles_desktop_integers(
 		return 1U;
 	case GL_MAX_GEOMETRY_OUTPUT_VERTICES:
 		values[0] = (GLint)state->limits.maxGeometryOutputVertices;
+		return 1U;
+	case GL_DRAW_INDIRECT_BUFFER_BINDING:
+		/* The buffer indirect draws read (GL_ARB_draw_indirect). */
+		values[0] = gles_buffer_name(state->draw_indirect_buffer);
+		return 1U;
+	case GL_MIN_PROGRAM_TEXTURE_GATHER_OFFSET:
+		/* Desktop GL's texture gathers' offsets (libGL), the device's. */
+		if (gles_fixed == NULL)
+			return 0U;
+		values[0] = (GLint)state->limits.minTexelGatherOffset;
+		return 1U;
+	case GL_MAX_PROGRAM_TEXTURE_GATHER_OFFSET:
+		/* Desktop GL's texture gathers' offsets (libGL), the device's. */
+		if (gles_fixed == NULL)
+			return 0U;
+		values[0] = (GLint)state->limits.maxTexelGatherOffset;
+		return 1U;
+	case GL_MAX_PROGRAM_TEXTURE_GATHER_COMPONENTS_ARB:
+		/* Desktop GL's texture gathers read every format's first component (libGL). */
+		if (gles_fixed == NULL)
+			return 0U;
+		values[0] = 4;
+		return 1U;
+	case GL_MAX_VERTEX_ATTRIB_BINDINGS:
+		/* Desktop GL 4.3's vertex buffer binding points (libGL): one per attribute. */
+		if (gles_fixed == NULL)
+			return 0U;
+		values[0] = (GLint)GLES_ATTRIBS;
+		return 1U;
+	case GL_MAX_VERTEX_ATTRIB_RELATIVE_OFFSET:
+		/* Desktop GL 4.3's largest offset of an attribute in its binding point's elements (libGL). */
+		if (gles_fixed == NULL)
+			return 0U;
+		values[0] = 2047;
+		return 1U;
+	case GL_CLIP_ORIGIN:
+		/* Desktop GL's clip control (libGL). */
+		if (gles_fixed == NULL)
+			return 0U;
+		values[0] = (GLint)state->clip_origin;
+		return 1U;
+	case GL_CLIP_DEPTH_MODE:
+		/* Desktop GL's clip control (libGL). */
+		if (gles_fixed == NULL)
+			return 0U;
+		values[0] = (GLint)state->clip_depth;
 		return 1U;
 	case GL_MAX_GEOMETRY_UNIFORM_COMPONENTS:
 		values[0] = 1024;
@@ -2555,8 +2679,72 @@ gles_desktop_integers(
 		break;
 	}
 
+	/* Desktop GL 4.0's tessellation, on a device that has it. */
+	if (state->display->features.tessellationShader) {
+		count = gles_tess_integers(state, pname, values);
+		return (unsigned)count;
+	}
+
 	/* Not one of desktop GL's. */
 	return 0U;
+}
+
+/* Writes one of desktop GL 4.0's tessellation states and limits (libGL); returns how many values, 0 when the name is not one. */
+static int
+gles_tess_integers(
+	struct gles_state *state,
+	GLenum pname,
+	GLint *values)
+{
+	/* The state asked for, or the device's limit (gl_MaxPatchVertices at most). */
+	switch (pname) {
+	case GL_PATCH_VERTICES:
+		values[0] = state->patch_vertices;
+		return 1;
+	case GL_MAX_PATCH_VERTICES:
+		values[0] = (GLint)state->limits.maxTessellationPatchSize;
+		if (values[0] > GLES_MAX_PATCH_VERTICES)
+			values[0] = GLES_MAX_PATCH_VERTICES;
+		return 1;
+	case GL_MAX_TESS_GEN_LEVEL:
+		values[0] = (GLint)state->limits.maxTessellationGenerationLevel;
+		return 1;
+	case GL_MAX_TESS_CONTROL_UNIFORM_COMPONENTS:
+	case GL_MAX_TESS_EVALUATION_UNIFORM_COMPONENTS:
+		values[0] = 1024;
+		return 1;
+	case GL_MAX_TESS_CONTROL_TEXTURE_IMAGE_UNITS:
+	case GL_MAX_TESS_EVALUATION_TEXTURE_IMAGE_UNITS:
+		values[0] = (GLint)GLES_UNITS;
+		return 1;
+	case GL_MAX_TESS_CONTROL_UNIFORM_BLOCKS:
+	case GL_MAX_TESS_EVALUATION_UNIFORM_BLOCKS:
+		values[0] = (GLint)GLES_STAGE_BLOCKS;
+		return 1;
+	case GL_MAX_TESS_CONTROL_OUTPUT_COMPONENTS:
+		values[0] = (GLint)state->limits.maxTessellationControlPerVertexOutputComponents;
+		return 1;
+	case GL_MAX_TESS_PATCH_COMPONENTS:
+		values[0] = (GLint)state->limits.maxTessellationControlPerPatchOutputComponents;
+		return 1;
+	case GL_MAX_TESS_CONTROL_TOTAL_OUTPUT_COMPONENTS:
+		values[0] = (GLint)state->limits.maxTessellationControlTotalOutputComponents;
+		return 1;
+	case GL_MAX_TESS_EVALUATION_OUTPUT_COMPONENTS:
+		values[0] = (GLint)state->limits.maxTessellationEvaluationOutputComponents;
+		return 1;
+	case GL_MAX_TESS_CONTROL_INPUT_COMPONENTS:
+		values[0] = (GLint)state->limits.maxTessellationControlPerVertexInputComponents;
+		return 1;
+	case GL_MAX_TESS_EVALUATION_INPUT_COMPONENTS:
+		values[0] = (GLint)state->limits.maxTessellationEvaluationInputComponents;
+		return 1;
+	default:
+		break;
+	}
+
+	/* Not one of tessellation's. */
+	return 0;
 }
 
 /*
@@ -2578,6 +2766,107 @@ glPrimitiveRestartIndex(
 
 	/* Succeeded: the index draws compare with. */
 	state->restart_index = index;
+}
+
+/*
+ * Sets a patch's vertices (GL_PATCH_VERTICES) for the draws of patches
+ * (desktop GL 4.0, libGL), at most GL_MAX_PATCH_VERTICES.
+ */
+GL_APICALL void GL_APIENTRY
+glPatchParameteri(
+	GLenum pname,
+	GLint value)
+{
+	struct zegl_context *context;
+	struct gles_state *state;
+	GLint largest;
+
+	/* A context with its state, on a device with tessellation, and the one parameter. */
+	context = gles_context();
+	state = gles_state(context);
+	if (state == NULL)
+		return;
+	if (gles_fixed == NULL || !state->display->features.tessellationShader || pname != GL_PATCH_VERTICES) {
+		gles_error(context, GL_INVALID_ENUM);
+		return;
+	}
+
+	/* Between 1 and the most a patch has. */
+	largest = (GLint)state->limits.maxTessellationPatchSize;
+	if (largest > GLES_MAX_PATCH_VERTICES)
+		largest = GLES_MAX_PATCH_VERTICES;
+	if (value <= 0 || value > largest) {
+		gles_error(context, GL_INVALID_VALUE);
+		return;
+	}
+
+	/* Succeeded: the vertices of each patch drawn. */
+	state->patch_vertices = value;
+}
+
+/*
+ * Sets the default outer or inner levels (desktop GL 4.0, libGL): kept
+ * for glGet; a program without a control shader, which would take them,
+ * does not link here.
+ */
+GL_APICALL void GL_APIENTRY
+glPatchParameterfv(
+	GLenum pname,
+	const GLfloat *values)
+{
+	struct zegl_context *context;
+	struct gles_state *state;
+
+	/* A context with its state, on a device with tessellation. */
+	context = gles_context();
+	state = gles_state(context);
+	if (state == NULL)
+		return;
+	if (gles_fixed == NULL || !state->display->features.tessellationShader) {
+		gles_error(context, GL_INVALID_ENUM);
+		return;
+	}
+
+	/* The four outer levels, or the two inner ones. */
+	if (pname == GL_PATCH_DEFAULT_OUTER_LEVEL) {
+		memcpy(state->patch_outer, values, sizeof(state->patch_outer));
+	} else if (pname == GL_PATCH_DEFAULT_INNER_LEVEL) {
+		memcpy(state->patch_inner, values, sizeof(state->patch_inner));
+	} else {
+		gles_error(context, GL_INVALID_ENUM);
+	}
+}
+
+/*
+ * Sets the least fraction of a pixel's samples shaded on their own while
+ * GL_SAMPLE_SHADING is on (desktop GL 4.0's GL_ARB_sample_shading, libGL),
+ * clamped to [0, 1].
+ */
+GL_APICALL void GL_APIENTRY
+glMinSampleShading(
+	GLfloat value)
+{
+	struct zegl_context *context;
+	struct gles_state *state;
+
+	/* A context with its state, on a device that shades per sample. */
+	context = gles_context();
+	state = gles_state(context);
+	if (state == NULL)
+		return;
+	if (gles_fixed == NULL || !state->display->features.sampleRateShading) {
+		gles_error(context, GL_INVALID_OPERATION);
+		return;
+	}
+
+	/* Clamped. */
+	if (value < 0.0f)
+		value = 0.0f;
+	if (value > 1.0f)
+		value = 1.0f;
+
+	/* Succeeded: the fraction draws take. */
+	state->min_sample_shading = value;
 }
 
 /*
@@ -2785,6 +3074,23 @@ gles_floats(
 	case GL_SAMPLE_COVERAGE_INVERT:
 		values[0] = (GLfloat)state->sample_coverage_invert;
 		return 1U;
+	case GL_MIN_SAMPLE_SHADING_VALUE:
+		/* Desktop GL's per-sample shading's fraction (libGL). */
+		if (gles_fixed == NULL || !state->display->features.sampleRateShading)
+			return 0U;
+		values[0] = state->min_sample_shading;
+		return 1U;
+	case GL_PATCH_DEFAULT_OUTER_LEVEL:
+		/* Desktop GL 4.0's default levels (libGL). */
+		if (gles_fixed == NULL || !state->display->features.tessellationShader)
+			return 0U;
+		memcpy(values, state->patch_outer, sizeof(state->patch_outer));
+		return 4U;
+	case GL_PATCH_DEFAULT_INNER_LEVEL:
+		if (gles_fixed == NULL || !state->display->features.tessellationShader)
+			return 0U;
+		memcpy(values, state->patch_inner, sizeof(state->patch_inner));
+		return 2U;
 	case GL_ALIASED_LINE_WIDTH_RANGE:
 		values[0] = 1.0f;
 		values[1] = 1.0f;

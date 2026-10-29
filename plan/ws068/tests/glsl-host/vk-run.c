@@ -15,7 +15,10 @@
  * DIRECTORY/NAME.vert when there is one, or else with a vertex shader
  * that covers the target, and with DIRECTORY/NAME.geom between them when
  * there is one (WS068 p032: its gl_Position is rewritten at each vertex
- * emitted instead of the vertex shader's), then linked the way libGLESv2 links (the
+ * emitted instead of the vertex shader's), and DIRECTORY/NAME.tesc and
+ * .tese after the vertex shader when there are some (p034: the four
+ * corners are one patch, and the evaluation shader's gl_Position is
+ * rewritten), then linked the way libGLESv2 links (the
  * reflection in spirv.c finds the uniforms, the vertex shader's
  * gl_Position is rewritten), and drawn into a 4x4 RGBA8 target.  The
  * source says what to expect in comment lines:
@@ -113,6 +116,7 @@ static char *run_read(const char *path);
 static void run_parse(const char *source, struct run_test *test);
 static void run_parse_uniform(const char *text, struct run_test *test);
 static int run_one(struct run_context *context, const char *directory, const char *name);
+static struct glsl_shader *run_compile_optional(const char *directory, const char *name, const char *extension, unsigned stage, unsigned version, int *status);
 static int run_program(struct run_context *context, const struct run_test *test, struct glsl_program *program, const char *name);
 static void run_fill_uniforms(struct run_context *context, const struct run_test *test, struct gles_spirv *spirv);
 static int run_compare(const char *name, const unsigned char *pixels, const struct run_test *test);
@@ -276,6 +280,7 @@ run_setup(
 	memset(&device, 0, sizeof(device));
 	memset(&features, 0, sizeof(features));
 	features.geometryShader = VK_TRUE;
+	features.tessellationShader = VK_TRUE;
 	device.sType = VK_STRUCTURE_TYPE_DEVICE_CREATE_INFO;
 	device.queueCreateInfoCount = 1U;
 	device.pQueueCreateInfos = &queue;
@@ -751,6 +756,8 @@ run_one(
 	struct glsl_program program;
 	struct glsl_shader *vertex;
 	struct glsl_shader *geometry;
+	struct glsl_shader *tess_control;
+	struct glsl_shader *tess_evaluation;
 	struct glsl_shader *fragment;
 	struct run_test test;
 	char path[1024];
@@ -813,12 +820,28 @@ run_one(
 		}
 	}
 
+	/* The tessellation shaders, when the test has them. */
+	status = 0;
+	tess_control = run_compile_optional(directory, name, ".tesc", GLSL_STAGE_TESS_CONTROL, test.version, &status);
+	tess_evaluation = run_compile_optional(directory, name, ".tese", GLSL_STAGE_TESS_EVALUATION, test.version, &status);
+	if (status != 0) {
+		printf("%s: FAIL (compile)\n", name);
+		glsl_shader_free(vertex);
+		glsl_shader_free(geometry);
+		glsl_shader_free(tess_control);
+		glsl_shader_free(tess_evaluation);
+		glsl_shader_free(fragment);
+		return -1;
+	}
+
 	/* The link, with the position at location 0. */
 	binding.name = "a_position";
 	binding.location = 0U;
-	status = glsl_link_stages(vertex, geometry, fragment, &binding, 1U, NULL, 0U, &program, &log);
+	status = glsl_link_pipeline(vertex, tess_control, tess_evaluation, geometry, fragment, &binding, 1U, NULL, 0U, &program, &log);
 	glsl_shader_free(vertex);
 	glsl_shader_free(geometry);
+	glsl_shader_free(tess_control);
+	glsl_shader_free(tess_evaluation);
 	glsl_shader_free(fragment);
 	if (status != 0) {
 		printf("%s: FAIL (link) %s", name, log);
@@ -843,8 +866,10 @@ run_program(
 	static const float quad[8] = { -1.0f, -1.0f, 1.0f, -1.0f, -1.0f, 1.0f, 1.0f, 1.0f };
 	struct gles_spirv spirv[2];
 	VkShaderModuleCreateInfo module_create;
-	VkShaderModule modules[3];
+	VkShaderModule modules[GLSL_STAGES];
 	VkShaderStageFlags stage_flags;
+	VkPipelineTessellationStateCreateInfo tessellation;
+	unsigned order[GLSL_STAGES];
 	unsigned stage_count;
 	unsigned rewritten;
 	VkDescriptorSetLayoutBinding bindings[17];
@@ -861,7 +886,7 @@ run_program(
 	VkDescriptorBufferInfo buffer_info;
 	VkDescriptorBufferInfo pattern_info;
 	VkDescriptorImageInfo image_info[16];
-	VkPipelineShaderStageCreateInfo stages[3];
+	VkPipelineShaderStageCreateInfo stages[GLSL_STAGES];
 	VkVertexInputBindingDescription vertex_binding;
 	VkVertexInputAttributeDescription vertex_attribute;
 	VkPipelineVertexInputStateCreateInfo vertex_input;
@@ -901,18 +926,26 @@ run_program(
 		}
 	}
 
-	/* The last stage before the rasterizer (the geometry stage when there is one) has its gl_Position rewritten. */
-	stage_count = 2U;
+	/* The stages there are, and the last before the rasterizer (the geometry, else the evaluation stage) has its gl_Position rewritten. */
+	stage_count = 0U;
+	order[stage_count++] = GLSL_STAGE_VERTEX;
+	order[stage_count++] = GLSL_STAGE_FRAGMENT;
 	stage_flags = VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT;
 	rewritten = GLSL_STAGE_VERTEX;
+	if (program->code[GLSL_STAGE_TESS_CONTROL] != NULL) {
+		order[stage_count++] = GLSL_STAGE_TESS_CONTROL;
+		order[stage_count++] = GLSL_STAGE_TESS_EVALUATION;
+		stage_flags |= VK_SHADER_STAGE_TESSELLATION_CONTROL_BIT | VK_SHADER_STAGE_TESSELLATION_EVALUATION_BIT;
+		rewritten = GLSL_STAGE_TESS_EVALUATION;
+	}
 	if (program->code[GLSL_STAGE_GEOMETRY] != NULL) {
-		stage_count = 3U;
+		order[stage_count++] = GLSL_STAGE_GEOMETRY;
 		stage_flags |= VK_SHADER_STAGE_GEOMETRY_BIT;
 		rewritten = GLSL_STAGE_GEOMETRY;
 	}
 
 	/* Its copy with gl_Position rewritten. */
-	patched = gles_spirv_position(program->code[rewritten], program->words[rewritten], 1, &patched_words);
+	patched = gles_spirv_position(program->code[rewritten], program->words[rewritten], 1, 1, &patched_words);
 	if (patched == NULL) {
 		printf("%s: FAIL (position)\n", name);
 		return -1;
@@ -921,7 +954,8 @@ run_program(
 	/* The shader modules, the rewritten one from its copy. */
 	memset(&module_create, 0, sizeof(module_create));
 	module_create.sType = VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO;
-	for (stage = 0U; stage < stage_count; stage++) {
+	for (index = 0U; index < stage_count; index++) {
+		stage = order[index];
 		module_create.codeSize = program->words[stage] * 4U;
 		module_create.pCode = program->code[stage];
 		if (stage == rewritten) {
@@ -930,7 +964,7 @@ run_program(
 		}
 
 		/* The module. */
-		result = vkCreateShaderModule(context->device, &module_create, NULL, &modules[stage]);
+		result = vkCreateShaderModule(context->device, &module_create, NULL, &modules[index]);
 		if (result != VK_SUCCESS) {
 			free(patched);
 			return -1;
@@ -1073,15 +1107,19 @@ run_program(
 
 	/* The stages. */
 	memset(stages, 0, sizeof(stages));
-	for (stage = 0U; stage < stage_count; stage++) {
-		stages[stage].sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
-		stages[stage].stage = VK_SHADER_STAGE_VERTEX_BIT;
-		if (stage == GLSL_STAGE_FRAGMENT)
-			stages[stage].stage = VK_SHADER_STAGE_FRAGMENT_BIT;
-		if (stage == GLSL_STAGE_GEOMETRY)
-			stages[stage].stage = VK_SHADER_STAGE_GEOMETRY_BIT;
-		stages[stage].module = modules[stage];
-		stages[stage].pName = "main";
+	for (index = 0U; index < stage_count; index++) {
+		stages[index].sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
+		stages[index].stage = VK_SHADER_STAGE_VERTEX_BIT;
+		if (order[index] == GLSL_STAGE_FRAGMENT)
+			stages[index].stage = VK_SHADER_STAGE_FRAGMENT_BIT;
+		if (order[index] == GLSL_STAGE_GEOMETRY)
+			stages[index].stage = VK_SHADER_STAGE_GEOMETRY_BIT;
+		if (order[index] == GLSL_STAGE_TESS_CONTROL)
+			stages[index].stage = VK_SHADER_STAGE_TESSELLATION_CONTROL_BIT;
+		if (order[index] == GLSL_STAGE_TESS_EVALUATION)
+			stages[index].stage = VK_SHADER_STAGE_TESSELLATION_EVALUATION_BIT;
+		stages[index].module = modules[index];
+		stages[index].pName = "main";
 	}
 
 	/* The vertices: two floats each at the position's location. */
@@ -1103,6 +1141,11 @@ run_program(
 	memset(&assembly, 0, sizeof(assembly));
 	assembly.sType = VK_STRUCTURE_TYPE_PIPELINE_INPUT_ASSEMBLY_STATE_CREATE_INFO;
 	assembly.topology = VK_PRIMITIVE_TOPOLOGY_TRIANGLE_STRIP;
+	memset(&tessellation, 0, sizeof(tessellation));
+	tessellation.sType = VK_STRUCTURE_TYPE_PIPELINE_TESSELLATION_STATE_CREATE_INFO;
+	tessellation.patchControlPoints = 4U;
+	if (program->code[GLSL_STAGE_TESS_CONTROL] != NULL)
+		assembly.topology = VK_PRIMITIVE_TOPOLOGY_PATCH_LIST;
 	viewport.x = 0.0f;
 	viewport.y = 0.0f;
 	viewport.width = (float)RUN_SIZE;
@@ -1140,6 +1183,8 @@ run_program(
 	pipeline_create.pStages = stages;
 	pipeline_create.pVertexInputState = &vertex_input;
 	pipeline_create.pInputAssemblyState = &assembly;
+	if (program->code[GLSL_STAGE_TESS_CONTROL] != NULL)
+		pipeline_create.pTessellationState = &tessellation;
 	pipeline_create.pViewportState = &viewport_state;
 	pipeline_create.pRasterizationState = &raster;
 	pipeline_create.pMultisampleState = &multisample;
@@ -1188,8 +1233,8 @@ run_program(
 	vkDestroyDescriptorPool(context->device, pool, NULL);
 	vkDestroyPipelineLayout(context->device, layout, NULL);
 	vkDestroyDescriptorSetLayout(context->device, set_layout, NULL);
-	for (stage = 0U; stage < stage_count; stage++)
-		vkDestroyShaderModule(context->device, modules[stage], NULL);
+	for (index = 0U; index < stage_count; index++)
+		vkDestroyShaderModule(context->device, modules[index], NULL);
 	gles_spirv_free(&spirv[0]);
 	gles_spirv_free(&spirv[1]);
 	if (status != 0)
@@ -1285,4 +1330,42 @@ run_compare(
 	/* Succeeded. */
 	printf("%s: ok\n", name);
 	return 0;
+}
+
+/*
+ * Compiles a test's shader of another stage from DIRECTORY/NAME.EXTENSION
+ * when there is one; NULL without it.  A shader that does not compile
+ * sets *status to -1 (it is left alone otherwise, so several calls share it).
+ */
+static struct glsl_shader *
+run_compile_optional(
+	const char *directory,
+	const char *name,
+	const char *extension,
+	unsigned stage,
+	unsigned version,
+	int *status)
+{
+	struct glsl_shader *shader;
+	char path[1024];
+	char *source;
+	char *log;
+
+	/* The source, when there is one. */
+	(void)snprintf(path, sizeof(path), "%s/%s%s", directory, name, extension);
+	source = run_read(path);
+	if (source == NULL)
+		return NULL;
+
+	/* Compiled, with its log. */
+	shader = glsl_compile(stage, source, version, &log);
+	free(source);
+	if (log != NULL)
+		printf("%s%s: %s", name, extension, log);
+	free(log);
+	if (shader == NULL)
+		*status = -1;
+
+	/* The shader, or NULL. */
+	return shader;
 }

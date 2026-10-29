@@ -96,8 +96,9 @@ static const struct glsl_type types_matrices[3][3] = {
 
 /*
  * The samplers: float, int and uint texels of each dimension, then the
- * shadow samplers, the 2D arrays, and desktop GLSL 1.40's rectangle and
- * buffer samplers.
+ * shadow samplers, the 2D arrays, desktop GLSL 1.40's rectangle and
+ * buffer samplers, 1.50's multisample samplers and 4.00's cube map
+ * arrays.
  */
 static const struct glsl_type types_samplers[] = {
 	{ GLSL_KIND_SAMPLER, GLSL_BASE_FLOAT, 4U, 1U, GLSL_SAMPLER_1D, 0U, "sampler1D", NULL, 0U, NULL, 0U, 0U, 0U },
@@ -128,7 +129,11 @@ static const struct glsl_type types_samplers[] = {
 	{ GLSL_KIND_SAMPLER, GLSL_BASE_UINT, 4U, 1U, GLSL_SAMPLER_BUFFER, 0U, "usamplerBuffer", NULL, 0U, NULL, 0U, 0U, 0U },
 	{ GLSL_KIND_SAMPLER, GLSL_BASE_FLOAT, 4U, 1U, GLSL_SAMPLER_MS, 0U, "sampler2DMS", NULL, 0U, NULL, 0U, 0U, 0U },
 	{ GLSL_KIND_SAMPLER, GLSL_BASE_INT, 4U, 1U, GLSL_SAMPLER_MS, 0U, "isampler2DMS", NULL, 0U, NULL, 0U, 0U, 0U },
-	{ GLSL_KIND_SAMPLER, GLSL_BASE_UINT, 4U, 1U, GLSL_SAMPLER_MS, 0U, "usampler2DMS", NULL, 0U, NULL, 0U, 0U, 0U }
+	{ GLSL_KIND_SAMPLER, GLSL_BASE_UINT, 4U, 1U, GLSL_SAMPLER_MS, 0U, "usampler2DMS", NULL, 0U, NULL, 0U, 0U, 0U },
+	{ GLSL_KIND_SAMPLER, GLSL_BASE_FLOAT, 4U, 1U, GLSL_SAMPLER_CUBE, 0U, "samplerCubeArray", NULL, 0U, NULL, 0U, 1U, 0U },
+	{ GLSL_KIND_SAMPLER, GLSL_BASE_INT, 4U, 1U, GLSL_SAMPLER_CUBE, 0U, "isamplerCubeArray", NULL, 0U, NULL, 0U, 1U, 0U },
+	{ GLSL_KIND_SAMPLER, GLSL_BASE_UINT, 4U, 1U, GLSL_SAMPLER_CUBE, 0U, "usamplerCubeArray", NULL, 0U, NULL, 0U, 1U, 0U },
+	{ GLSL_KIND_SAMPLER, GLSL_BASE_FLOAT, 4U, 1U, GLSL_SAMPLER_CUBE, 1U, "samplerCubeArrayShadow", NULL, 0U, NULL, 0U, 1U, 0U }
 };
 
 /*
@@ -193,7 +198,11 @@ static const struct types_name types_names[] = {
 	{ "usamplerBuffer", &types_samplers[25], GLSL_IN_DESKTOP_140_UP },
 	{ "sampler2DMS", &types_samplers[26], GLSL_IN_150_UP },
 	{ "isampler2DMS", &types_samplers[27], GLSL_IN_150_UP },
-	{ "usampler2DMS", &types_samplers[28], GLSL_IN_150_UP }
+	{ "usampler2DMS", &types_samplers[28], GLSL_IN_150_UP },
+	{ "samplerCubeArray", &types_samplers[29], GLSL_IN_CUBE_ARRAY },
+	{ "isamplerCubeArray", &types_samplers[30], GLSL_IN_CUBE_ARRAY },
+	{ "usamplerCubeArray", &types_samplers[31], GLSL_IN_CUBE_ARRAY },
+	{ "samplerCubeArrayShadow", &types_samplers[32], GLSL_IN_CUBE_ARRAY }
 };
 
 static unsigned types_round(unsigned value, unsigned alignment);
@@ -282,6 +291,8 @@ unsigned
 glsl_version_mask(
 	const struct glsl_shader *shader)
 {
+	unsigned extensions;
+
 	/* OpenGL ES 1.00, 3.00, and 3.10 (everything of 3.00 and its own, ws101-p008). */
 	if (shader->es && shader->version >= GLSL_VERSION_ES310)
 		return GLSL_IN_ES300 | GLSL_IN_ES310;
@@ -290,24 +301,47 @@ glsl_version_mask(
 	if (shader->es)
 		return GLSL_IN_ES100;
 
-	/* Desktop 1.10 to 3.30. */
+	/* Desktop 4.30 on: everything of 4.00, with OpenGL ES 3.10's compute shaders and shader storage blocks. */
+	if (shader->version >= GLSL_VERSION_430)
+		return GLSL_IN_330 | GLSL_IN_400 | GLSL_IN_TESS | GLSL_IN_SAMPLE | GLSL_IN_GATHER | GLSL_IN_CUBE_ARRAY | GLSL_IN_ES310;
+
+	/* Desktop 4.00 on: everything of 3.30, with tessellation, per-sample shading, texture gathers and cube map arrays. */
+	if (shader->version >= GLSL_VERSION_400)
+		return GLSL_IN_330 | GLSL_IN_400 | GLSL_IN_TESS | GLSL_IN_SAMPLE | GLSL_IN_GATHER | GLSL_IN_CUBE_ARRAY;
+
+	/*
+	 * The extensions of earlier versions (GL_ARB_tessellation_shader,
+	 * GL_ARB_sample_shading, GL_ARB_texture_gather,
+	 * GL_ARB_texture_cube_map_array).
+	 */
+	extensions = 0U;
+	if (shader->tessellation)
+		extensions |= GLSL_IN_TESS;
+	if (shader->sample_shading)
+		extensions |= GLSL_IN_SAMPLE;
+	if (shader->texture_gather)
+		extensions |= GLSL_IN_GATHER;
+	if (shader->cube_map_array)
+		extensions |= GLSL_IN_CUBE_ARRAY;
+
+	/* Desktop 1.10 to 3.30, with the extensions enabled. */
 	switch (shader->version) {
 	case GLSL_VERSION_110:
-		return GLSL_IN_110;
+		return GLSL_IN_110 | extensions;
 	case GLSL_VERSION_120:
-		return GLSL_IN_120;
+		return GLSL_IN_120 | extensions;
 	case GLSL_VERSION_130:
-		return GLSL_IN_130;
+		return GLSL_IN_130 | extensions;
 	case GLSL_VERSION_140:
-		return GLSL_IN_140;
+		return GLSL_IN_140 | extensions;
 	case GLSL_VERSION_150:
-		return GLSL_IN_150;
+		return GLSL_IN_150 | extensions;
 	default:
 		break;
 	}
 
 	/* 3.30. */
-	return GLSL_IN_330;
+	return GLSL_IN_330 | extensions;
 }
 
 /*

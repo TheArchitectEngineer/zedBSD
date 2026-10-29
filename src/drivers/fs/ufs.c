@@ -731,6 +731,11 @@ static int observed_disk_read(struct disk *disk, uint64_t block, uint32_t count,
 static uint64_t ufs_disk_sectors(const struct disk *disk);
 static void ufs_sector_blocks(const struct disk *disk, uint64_t sector, uint32_t count, uint64_t *block, uint32_t *blocks);
 static int ufs_disk_read_view(struct disk *disk, uint64_t sector, uint32_t count, void *buffer, struct buf_view *view);
+static int ufs_buf_write_pinned(struct disk *disk, uint64_t sector, uint32_t count, const void *data, uint64_t pin);
+static int ufs_buf_unpin(struct disk *disk, uint64_t sector, uint32_t count, uint64_t pin, unsigned *kept);
+static int ufs_buf_writeback_range(struct disk *disk, uint64_t sector, uint32_t count);
+static int ufs_buf_writeback_cached(struct disk *disk, uint64_t sector, uint32_t count);
+static uint32_t ufs_buf_prefetch(struct disk *disk, uint64_t sector, uint32_t count);
 static int ufs_sync(struct mount *mountp);
 static int ufs_sync_journal(struct ufs_mount_state *ms, struct mount *mountp);
 static int ufs_sync_commit(struct ufs_mount_state *ms, struct mount *mountp);
@@ -3026,6 +3031,165 @@ ufs_disk_read_view(
 	error = disk_read_view(disk, sector / per_block, count / per_block,
 			       buffer, view);
 	return error;
+}
+
+/*
+ * Writes a run of sectors into the cache and pins its lines under a
+ * journal's tag.  The cache counts in the disk's blocks; on a disk of
+ * larger blocks a run that starts or ends inside a block is merged into
+ * the block's current content first.  Such a block has no other owner:
+ * a fragment is never smaller than the disk's block (ufs_read_super), and
+ * the journal's lock, which the caller holds, orders the metadata writes
+ * that share it.
+ */
+static int
+ufs_buf_write_pinned(
+	struct disk *disk,
+	uint64_t sector,
+	uint32_t count,
+	const void *data,
+	uint64_t pin)
+{
+	uint8_t *staging;
+	uint64_t block;
+	uint64_t first;
+	uint32_t blocks;
+	uint32_t per_block;
+	size_t bytes;
+	int error;
+
+	/* The disk's blocks the run lies in. */
+	per_block = disk->d_block_size / UFS_SECTOR_SIZE;
+	ufs_sector_blocks(disk, sector, count, &block, &blocks);
+	first = block * per_block;
+
+	/* A run of whole blocks goes into the cache as it is. */
+	if (sector == first && count == blocks * per_block) {
+		/* Pins the blocks the run fills. */
+		error = buf_write_pinned(disk, block, blocks, data, pin);
+		if (error != 0)
+			return error;
+
+		/* Succeeded: the run waits pinned in the cache. */
+		return 0;
+	}
+
+	/* Takes the staging the covering blocks are merged in. */
+	bytes = (size_t)blocks * disk->d_block_size;
+	staging = kern_malloc(bytes);
+	if (staging == NULL)
+		return ENOMEM;
+
+	/* Reads the covering blocks as the cache holds them now. */
+	error = observed_disk_read(disk, first, blocks * per_block, staging);
+	if (error != 0) {
+		kern_free(staging);
+		return error;
+	}
+
+	/* Lays the run into its place and pins the whole blocks. */
+	kern_memcpy(staging + (size_t)(sector - first) * UFS_SECTOR_SIZE,
+		    data,
+		    (size_t)count * UFS_SECTOR_SIZE);
+	error = buf_write_pinned(disk, block, blocks, staging, pin);
+	kern_free(staging);
+
+	/* Reports why the merged blocks could not be pinned. */
+	if (error != 0)
+		return error;
+
+	/* Succeeded: the run waits pinned in the cache. */
+	return 0;
+}
+
+/* Releases a journal's pins on the cache lines a run of sectors lies in. */
+static int
+ufs_buf_unpin(
+	struct disk *disk,
+	uint64_t sector,
+	uint32_t count,
+	uint64_t pin,
+	unsigned *kept)
+{
+	uint64_t block;
+	uint32_t blocks;
+	int error;
+
+	/* Unpins the disk's blocks the run lies in. */
+	ufs_sector_blocks(disk, sector, count, &block, &blocks);
+	error = buf_unpin(disk, block, blocks, pin, kept);
+	if (error != 0)
+		return error;
+
+	/* Succeeded: the lines are ordinary dirty lines again. */
+	return 0;
+}
+
+/* Writes back the dirty cache lines a run of sectors lies in. */
+static int
+ufs_buf_writeback_range(
+	struct disk *disk,
+	uint64_t sector,
+	uint32_t count)
+{
+	uint64_t block;
+	uint32_t blocks;
+	int error;
+
+	/* Writes back the disk's blocks the run lies in. */
+	ufs_sector_blocks(disk, sector, count, &block, &blocks);
+	error = buf_writeback_range(disk, block, blocks);
+	if (error != 0)
+		return error;
+
+	/* Succeeded: the lines are on their way to the device. */
+	return 0;
+}
+
+/* Writes back the dirty lines the cache holds of a run of sectors. */
+static int
+ufs_buf_writeback_cached(
+	struct disk *disk,
+	uint64_t sector,
+	uint32_t count)
+{
+	uint64_t block;
+	uint32_t blocks;
+	int error;
+
+	/* Writes back the cached blocks the run lies in. */
+	ufs_sector_blocks(disk, sector, count, &block, &blocks);
+	error = buf_writeback_cached(disk, block, blocks);
+	if (error != 0)
+		return error;
+
+	/* Succeeded: the lines are on their way to the device. */
+	return 0;
+}
+
+/* Reads ahead a run of sectors; reports how many sectors were queued. */
+static uint32_t
+ufs_buf_prefetch(
+	struct disk *disk,
+	uint64_t sector,
+	uint32_t count)
+{
+	uint64_t block;
+	uint32_t blocks;
+	uint32_t queued;
+	uint32_t per_block;
+
+	/* Asks for the disk's blocks the run lies in. */
+	per_block = disk->d_block_size / UFS_SECTOR_SIZE;
+	ufs_sector_blocks(disk, sector, count, &block, &blocks);
+	queued = buf_prefetch(disk, block, blocks);
+
+	/* All of the run was queued. */
+	if (queued == blocks)
+		return count;
+
+	/* Reports the sectors of the blocks that were queued. */
+	return queued * per_block;
 }
 
 /* Counts filesystem disk requests, including metadata and journal traffic. */
@@ -6387,7 +6551,7 @@ read_ahead(
 		}
 		if (run_blocks != 0) {
 			sectors = (uint32_t)(run_blocks * super->bsize / UFS_SECTOR_SIZE);
-			queued = buf_prefetch(inode->i_mount->m_disk, run_first << super->fsbtodb, sectors);
+			queued = ufs_buf_prefetch(inode->i_mount->m_disk, run_first << super->fsbtodb, sectors);
 			if (queued != sectors)
 				full = 1;
 			else
@@ -6398,7 +6562,7 @@ read_ahead(
 	}
 	if (!full && run_blocks != 0) {
 		sectors = (uint32_t)(run_blocks * super->bsize / UFS_SECTOR_SIZE);
-		queued = buf_prefetch(inode->i_mount->m_disk, run_first << super->fsbtodb, sectors);
+		queued = ufs_buf_prefetch(inode->i_mount->m_disk, run_first << super->fsbtodb, sectors);
 		if (queued == sectors)
 			reached = logical;
 		else
@@ -17014,7 +17178,7 @@ sync_run_write(
 		return 0;
 
 	/* Writes the cached dirty lines the run covers, leaving the device unflushed. */
-	error = buf_writeback_cached(run->mountp->m_disk, run->lba, run->count);
+	error = ufs_buf_writeback_cached(run->mountp->m_disk, run->lba, run->count);
 	run->count = 0;
 	if (error != 0)
 		return error;
@@ -19977,7 +20141,7 @@ j3_writeback(
 			amount = count;
 
 		/* Writes the run's cached dirty sectors. */
-		error = buf_writeback_cached(mountp->m_disk, lba, amount);
+		error = ufs_buf_writeback_cached(mountp->m_disk, lba, amount);
 		if (error != 0)
 			return error;
 
@@ -20295,7 +20459,7 @@ j3_write(
 	 * sequence, where they wait for its commit; a line a commit being
 	 * written still holds now waits for this one instead.
 	 */
-	error = buf_write_pinned(mountp->m_disk, lba, count, buffer, j3->sequence);
+	error = ufs_buf_write_pinned(mountp->m_disk, lba, count, buffer, j3->sequence);
 	if (error != 0) {
 		mutex_unlock(&j3->lock);
 		return error;
@@ -20650,7 +20814,7 @@ j3_unpin_ranges(
 	 * transaction pinned again stays with that transaction.
 	 */
 	for (n = 0; n < count; n++)
-		(void)buf_unpin(mountp->m_disk, ranges[n].lba, ranges[n].count, pin, NULL);
+		(void)ufs_buf_unpin(mountp->m_disk, ranges[n].lba, ranges[n].count, pin, NULL);
 }
 
 /*
@@ -20857,7 +21021,7 @@ j3_finish_commit(
 			/* Unpins the range's lines, counting the ones a later tag holds. */
 			range = &j3->closed_ranges[n];
 			kept = 0;
-			(void)buf_unpin(mountp->m_disk, range->lba, range->count, j3->closed_sequence, &kept);
+			(void)ufs_buf_unpin(mountp->m_disk, range->lba, range->count, j3->closed_sequence, &kept);
 
 			/* Notes a line a later transaction holds, which this finish cannot write whole. */
 			if (kept != 0U)
@@ -20870,7 +21034,7 @@ j3_finish_commit(
 			 */
 			if (range->hold) {
 				if (kept == 0 && home_error == 0)
-					home_error = buf_writeback_range(mountp->m_disk, range->lba, range->count);
+					home_error = ufs_buf_writeback_range(mountp->m_disk, range->lba, range->count);
 				else if (kept != 0U)
 					held_kept = 1;
 				continue;
@@ -20878,7 +21042,7 @@ j3_finish_commit(
 
 			/* Writes a logged range home through the cache, or from the slot when the cache holds its line. */
 			if (home_error == 0 && kept == 0)
-				home_error = buf_writeback_range(mountp->m_disk, range->lba, range->count);
+				home_error = ufs_buf_writeback_range(mountp->m_disk, range->lba, range->count);
 			else if (home_error == 0)
 				home_error = j3_home_direct(mountp, j3, range, cursor);
 

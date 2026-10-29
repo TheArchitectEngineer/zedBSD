@@ -31,9 +31,10 @@
  * squares of blits, multisampling and a 3D slice drawn into, and
  * --scene=queries queries.c's squares of occlusion queries and a fence
  * sync, --scene=feedback feedback.c's squares of transform
- * feedback, and --scene=es2 es2.c's readings of OpenGL ES 2.0's
+ * feedback, --scene=es2 es2.c's readings of OpenGL ES 2.0's
  * built-ins (gl_FragCoord, gl_PointCoord, gl_DepthRange) and a sampler
- * array.
+ * array, and --scene=etc2 etc2.c's squares of ETC2 and EAC compressed
+ * textures.
  *
  * Every outcome is one line: EGLTEST DONE on a clean end, EGLTEST FAILED
  * naming what failed otherwise.
@@ -47,6 +48,7 @@
 
 #include "cube.h"
 #include "es3.h"
+#include "etc2.h"
 #include "feedback.h"
 #include "formats.h"
 #include "queries.h"
@@ -164,7 +166,7 @@ main(
 	/* The command line. */
 	status = egltest_parse(argc, argv, &options);
 	if (status != 0) {
-		fprintf(stderr, "usage: egltest [--display=NAME] [--platform=wayland|display|pbuffer] [--size=WxH] [--frames=N] [--delay-ms=N] [--color=RRGGBB] [--scene=draw|glsl|glsl3|fbo|cube|es3|formats|volumes|targets|blits|queries|feedback|es2] [--token=NAME]\n");
+		fprintf(stderr, "usage: egltest [--display=NAME] [--platform=wayland|display|pbuffer] [--size=WxH] [--frames=N] [--delay-ms=N] [--color=RRGGBB] [--scene=draw|glsl|glsl3|fbo|cube|es3|formats|volumes|targets|blits|queries|feedback|es2|etc2] [--token=NAME]\n");
 		return 2;
 	}
 
@@ -301,7 +303,9 @@ egltest_start(
 	/* The scene's program, buffers and texture. */
 	egl->operation = "scene";
 	if (options->scene) {
-		if (options->scene == 13) {
+		if (options->scene == 14) {
+			status = egltest_etc2_start();
+		} else if (options->scene == 13) {
 			status = egltest_es2_start();
 		} else if (options->scene == 12) {
 			status = egltest_feedback_start();
@@ -384,7 +388,11 @@ egltest_frames(
 			}
 
 			/* The scene, through the framebuffer object for --scene=fbo, the cube map's squares, or the OpenGL ES 3.0 API scene. */
-			if (options->scene == 13) {
+			if (options->scene == 14) {
+				egltest_etc2_draw(width, height);
+				if (frame == 1U)
+					egl->failures = egltest_etc2_check(width, height, options->token);
+			} else if (options->scene == 13) {
 				egltest_es2_draw(width, height);
 				if (frame == 1U)
 					egl->failures = egltest_es2_check(width, height, options->token);
@@ -592,6 +600,9 @@ egltest_parse(
 			differs = strcmp(value, "es2");
 			if (differs == 0)
 				options->scene = 13;
+			differs = strcmp(value, "etc2");
+			if (differs == 0)
+				options->scene = 14;
 			differs = strcmp(value, "draw");
 			if (differs != 0 && options->scene == 1)
 				return -1;

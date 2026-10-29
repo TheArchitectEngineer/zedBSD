@@ -17,8 +17,8 @@
 | Phase | 内容 | 依存 | 状態 |
 | --- | --- | --- | --- |
 | [p001](phase001/phase.md) | 設計（model の構造、重みの取得と変換、層の shader、精度、参照の結果の作り方）→ [design.md](design.md)（第 2 版） | — | in-progress |
-| p002 | 重み: build の中の変換の script・ZNET・package `yolox-nano-weights`（取得・確かめ・変換・固定の SHA-256）・T0・参照の生成（PyTorch の venv、416・320）・試験の画像（5〜7 LW） | p001 | planning |
-| p003 | libyolox の骨格と CPU の参照、ZNET の確かめ、host の照合 T2・T2b（7〜9 LW） | p002 | planning |
+| [p002](phase002/phase.md) | 重み: build の中の変換の script・ZNET・package `yolox-nano-weights`（取得・確かめ・変換・固定の SHA-256）・T0・参照の生成（PyTorch の venv、416・320）・試験の画像（5〜7 LW） | p001 | in-progress（script だけ、未実行、agent/p6-ws282c） |
+| [p003](phase003/phase.md) | libyolox の骨格と CPU の参照、ZNET の確かめ、host の照合 T2・T2b（7〜9 LW） | p002 | in-progress（CPU の参照は実装、試験未実施、agent/p6-ws282c） |
 | p004 | Vulkan の backend と 15 の SPIR-V、入力の段と固定の graph、分割、debug、lavapipe＋validation の T3〜T6・T9（10〜13 LW） | p003 | planning |
 | p005 | zedBSD の package と試験の program `yolox-test`（3〜4 LW） | p004 | planning |
 | p006 | Pi 5 の実機の照合と速さの調整（6〜10 LW） | p005、p008、WS283 p004・p006・p007 | planning |
@@ -27,6 +27,7 @@
 
 ## 現在の状態・再開点
 
+- **再開点（2026-10-29 23:23、P6 の引き継ぎ）: [handover.md](handover.md)**。全 Phase は実装済み・試験未実施で main（7be3822e6）にある。別の tree の session は handover.md の §0（host の試験・build・image・前提）と §2（再開の順）から試験を続ける。
 - 2026-10-23: 作成。p001 の設計から始める。
 - 2026-10-23 P1: p001 の設計の第 1 版（[design.md](design.md)）。Phase の案 p002〜p007（計 29〜41 LW）。再開: design-reviewer とユーザーの判断 D1〜D9（design §7）の後に p002。
 - 2026-10-23 P1: p001 の第 2 版（review F1〜F22 とユーザーの判断。重みは build の中で変換）。Phase に p008（V3D 7.1 の host の compile）を足し、計 35〜49 LW。再開: Q1 の判定とユーザーの D10（license の yes/no を出すか、推し: 出さない）・D11（COCO の試験の画像を tree に、推し: 入れる）の後に p002。
@@ -38,3 +39,4 @@
 - 2026-10-29 01:3x ユーザー「P6は設計が決まっているWSについて、テストなしでひたすら実装だけ進めてテスト未完了でincompleteだけど実装はできていてマージされていない状態のWSを増やす。」
 - ユーザー「調査しなくてよい、設計ができているか自明なWSについて、ひたすら書いてください。選択したもののうち、調査が必要なものはスキップします。WSごとにサブのサブエージェントを作ってよいです。」（選択: WS223・WS282〜WS284・WS243・WS296）
 - 解釈（Q1）: 試験をせず実装だけを P6 の branch に積み、main に merge しない。Status は incomplete のまま（試験は未実施）。調べが要ると分かれば P6 は飛ばして Q1 に返す。
+- 2026-10-29 P6（q1667-i04、agent/p6-ws282c）: p002 の変換・参照の script、p003 の libyolox（CPU の参照）を実装。試験は未実施。再開点は [phase003](phase003/phase.md)。p004（Vulkan）は未着手。

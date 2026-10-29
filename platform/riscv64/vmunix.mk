@@ -220,11 +220,15 @@ RISCV64_KERNEL_SOURCES += $(KERN_QUOTA_SOURCES)
 ifeq ($(CONFIG_INPUT_TEST_INJECT),y)
 RISCV64_KERNEL_SOURCES += src/drivers/generic/input-inject.c
 endif
+# The camera framework, /dev/camN; the camera source drivers build on it.
+ifneq ($(filter y,$(CONFIG_DRIVER_CAMERA) $(CONFIG_DRIVER_USB_UVC)),)
+RISCV64_KERNEL_SOURCES += src/drivers/camera/cam.c
+endif
 
 # The drivers behind a board's PCI hosts that the configuration selects:
 # xHCI with USB keyboards, and NVMe.
 RISCV64_PCI_DEVICE_SOURCES :=
-ifneq ($(filter y,$(CONFIG_DRIVER_PCI_XHCI) $(CONFIG_DRIVER_USB_HID) $(CONFIG_DRIVER_USB_HUB)),)
+ifneq ($(filter y,$(CONFIG_DRIVER_PCI_XHCI) $(CONFIG_DRIVER_USB_HID) $(CONFIG_DRIVER_USB_HUB) $(CONFIG_DRIVER_USB_UVC)),)
 RISCV64_PCI_DEVICE_SOURCES += src/drivers/usb/usb.c
 endif
 ifeq ($(CONFIG_DRIVER_PCI_XHCI),y)
@@ -238,6 +242,10 @@ RISCV64_PCI_DEVICE_SOURCES += src/drivers/usb/usb-hid.c src/drivers/generic/hidr
 endif
 ifeq ($(CONFIG_DRIVER_USB_HUB),y)
 RISCV64_PCI_DEVICE_SOURCES += src/drivers/usb/usb-hub.c
+endif
+# The USB Video Class cameras, on the camera framework.
+ifeq ($(CONFIG_DRIVER_USB_UVC),y)
+RISCV64_PCI_DEVICE_SOURCES += src/drivers/usb/usb-uvc.c src/drivers/usb/usb-uvc-desc.c src/drivers/usb/usb-uvc-stream.c src/drivers/usb/usb-uvc-payload.c
 endif
 ifeq ($(CONFIG_DRIVER_PCI_NVME),y)
 RISCV64_PCI_DEVICE_SOURCES += src/drivers/pci/pci-nvme.c

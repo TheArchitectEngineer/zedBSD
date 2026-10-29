@@ -12,13 +12,18 @@ log read over SSH), and photographs each screen and dialog:
   firmware's licences, the cancel dialog, S10 (with S4's writes), then S2 again, the NVMe disk whole, S7a, S8, the
   install dialog, S9, S11.
 
+With --language ja the desktop's language is set to Japanese first (the setting ui.language that Settings' Languages
+page writes, set to 1 with keiland-settings as the live session's user), the installer's words follow without a restart
+(INSTALLER LANGUAGE language=ja), and the same screens are photographed in Japanese.
+
 The pictures go to OUT/shots/NN-name.png (QMP screendump of the Venus head, or its VNC when screendump has no surface).
 The summary is a line a step and "p010-screens: PASS|FAIL OUT".
 
-    python3 plan/ws307/tests/p010-screens.py IMAGE
+    python3 plan/ws307/tests/p010-screens.py [--language ja] IMAGE
 
 Copyright (C) 2026 Awe Morris; SPDX-License-Identifier: Zlib
 """
+import shlex
 import subprocess
 import sys
 import time
@@ -39,11 +44,30 @@ def disks(run: Run):
 		f"-device ahci,id=p10ahci -drive file={other},if=none,id=p10s,format=raw -device ide-hd,drive=p10s,bus=p10ahci.0")
 
 
-def walk(run: Run):
+LIVE_USER = "user"
+LANGUAGES = {"ja": 1}
+
+
+def language(run: Run, code: str):
+	"""Sets the desktop's language as the live session's user (ui.language) and waits for the installer to follow."""
+	mark = len(run.read_log())
+	command = f"cd; export XDG_RUNTIME_DIR=/run/user/1000 WAYLAND_DISPLAY=wayland-0; /bin/keiland-settings set ui.language {LANGUAGES[code]}"
+	status, text = run.root(f"su {LIVE_USER} -c {shlex.quote(command)}", 60)
+	if status != 0:
+		raise Failed(f"keiland-settings: {status} {text.strip()}")
+	run.wait_line(rf"INSTALLER LANGUAGE language={code}\b", 30, mark)
+	time.sleep(1.5)
+	run.wait_screen("s1-welcome")
+	run.say(f"STEP language {code}")
+
+
+def walk(run: Run, code: str):
 	# S1: the installer opens by itself; the disks are read.
 	run.wait_line(r"INSTALLER READY", 300)
 	run.wait_line(r"INSTALLER PROBE read", 120)
 	run.wait_screen("s1-welcome")
+	if code:
+		language(run, code)
 	run.say("STEP s1 ok")
 	run.shot("s1-welcome")
 
@@ -185,14 +209,19 @@ def walk(run: Run):
 
 
 def main():
-	if len(sys.argv) != 2:
+	args = sys.argv[1:]
+	code = ""
+	if len(args) == 3 and args[0] == "--language" and args[1] in LANGUAGES:
+		code = args[1]
+		args = args[2:]
+	if len(args) != 1:
 		print(__doc__, file=sys.stderr)
 		return 2
-	run = Run(sys.argv[1], "p010s.")
+	run = Run(args[0], f"p010s-{code}." if code else "p010s.")
 	status = 0
 	try:
 		run.start(disks(run))
-		walk(run)
+		walk(run, code)
 	except (Failed, subprocess.TimeoutExpired, OSError) as error:
 		run.say(f"FAIL {error}")
 		status = 1

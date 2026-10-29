@@ -43,6 +43,31 @@ zgl_glx_attach(
 }
 
 /*
+ * Returns the latest desktop GL version a context on an initialized EGL
+ * display may have: 3.3 when the display's device blends with a fragment
+ * shader's second colour (OpenGL 3.3's MAX_DUAL_SOURCE_DRAW_BUFFERS is at
+ * least 1), else 3.2.
+ */
+unsigned
+zgl_glx_version_limit(
+	EGLDisplay display)
+{
+	const struct zegl_display *device;
+
+	/* libEGL's display is its zegl_display; one not initialized has no device yet. */
+	device = (const struct zegl_display *)display;
+	if (device == NULL || !device->initialized)
+		return 32U;
+
+	/* OpenGL 3.3 with dual-source blending. */
+	if (device->features.dualSrcBlend)
+		return 33U;
+
+	/* Succeeded: OpenGL 3.2 without it. */
+	return 32U;
+}
+
+/*
  * Returns the desktop GL version of the calling thread's current context
  * (major * 10 + minor) and its GL_CONTEXT_FLAGS.
  */

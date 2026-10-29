@@ -1458,13 +1458,17 @@ struct kwl_server {
 	/*
 	 * The lid (backend-host.c, ws132-p008): its state and whether the lock
 	 * standing is its own (lid.c); whether the screen is out (drawn black);
-	 * the built-in panel's backlight while the compositor has it open (NULL
-	 * on a machine without one, or before the first closing), the
-	 * brightness to give back at the opening, and whether it was put out.
+	 * the brightness to give back at the opening, and whether it was put
+	 * out.  The built-in panel's backlight is the display thread's
+	 * (display-thread.c): its state (KWL_BACKLIGHT_*), the error of its
+	 * open, and the brightness as the thread last read it (or as last asked
+	 * of it).
 	 */
 	struct kwl_lid lid;
 	unsigned screen_off;
-	struct kl_backend_backlight *backlight;
+	unsigned backlight_state;
+	int backlight_error;
+	unsigned backlight_percent;
 	unsigned backlight_saved;
 	unsigned backlight_out;
 	/*
@@ -1511,7 +1515,9 @@ struct kwl_server {
 	int frame_fd;
 	uint64_t map_order;
 	uint32_t windows;
+	/* How long window mode's last entry took, and when it began (display.c). */
 	uint64_t mode_switch_ms;
+	uint64_t mode_start_ms;
 	/*
 	 * An opening or closing of App Home or Wiseview waiting for its first
 	 * frame (ws099-p002, C5): what it is (NULL for none) and when it was
@@ -1680,13 +1686,18 @@ struct kwl_server {
 	/*
 	 * The game mode (scanout.c, ws122-p005b): the backend's direct scanout
 	 * while a fullscreen video or game shows alone (NULL in window mode),
-	 * the window it shows, the image the display holds and the one its
-	 * present in flight shows next (NULL when none is), the frames
+	 * the number of its claim (counted at each claim taken in, so a present
+	 * thread's result for a scanout left meanwhile is known), the window it
+	 * shows, the image the display holds and the one its present in flight
+	 * on the present thread shows next (NULL when none is), the frames
 	 * presented, the last reason it was left or not entered (logged once),
-	 * a window the display refused, the window last logged, and the
-	 * pointer's place and when it last moved.
+	 * a window the display refused, the window last logged, the
+	 * pointer's place and when it last moved, and the window being entered
+	 * (the display thread asked whether the display can show it, or the
+	 * output closing for it) and when its entry began.
 	 */
 	struct kl_backend_scanout *scanout;
+	uint64_t scanout_claim;
 	struct kwl_object *scanout_surface;
 	struct kwl_object *scanout_front;
 	struct kwl_object *scanout_flight;
@@ -1696,6 +1707,8 @@ struct kwl_server {
 	struct kwl_object *scanout_noted;
 	int32_t scanout_pointer[2];
 	uint64_t scanout_motion_ms;
+	struct kwl_object *scanout_entering;
+	uint64_t scanout_entering_ms;
 	/*
 	 * Wiseview (shell.c): how far it is open (0 closed, 1 open) when settled,
 	 * a gesture from the bottom edge and where it started, the animation to
@@ -2120,6 +2133,14 @@ struct kwl_server {
 	uint64_t retire_next_ms;
 };
 
+/*
+ * What a step of a change of the display goes on with (display-thread.c):
+ * called on the main thread with the step's result (0 or an errno) and the
+ * context it was given.
+ */
+typedef void kwl_display_fn(struct kwl_server *server, int error, void *context);
+void kwl_display_settle(struct kwl_server *server);
+
 uint64_t kwl_milliseconds(void);
 uint64_t kwl_microseconds(void);
 uint64_t kwl_log_us(void);
@@ -2175,8 +2196,8 @@ void kwl_output_pointer_turn(struct kwl_server *server, unsigned before, unsigne
 void kwl_output_state(struct kwl_server *server, struct kwl_rotate_state *state);
 unsigned kwl_output_rotated(struct kwl_server *server);
 int kwl_output_external_available(struct kwl_server *server);
-int kwl_output_use_external(struct kwl_server *server);
-int kwl_output_use_internal(struct kwl_server *server);
+int kwl_output_use_external(struct kwl_server *server, kwl_display_fn *then, void *context);
+int kwl_output_use_internal(struct kwl_server *server, kwl_display_fn *then, void *context);
 int kwl_output_display_internal(struct kwl_server *server, VkDisplayKHR display);
 
 /* A wl_output binding of a head that closed (ws113-p004b). */
@@ -2253,9 +2274,12 @@ int kwl_shot_option(struct kwl_server *server, const char *argument);
 struct kl_backend_scanout;
 int kwl_scanout_pass(struct kwl_server *server, struct kwl_object *top);
 void kwl_scanout_leave(struct kwl_server *server, unsigned reason);
-int kwl_scanout_fd(struct kwl_server *server);
-void kwl_scanout_ended(struct kwl_server *server);
+void kwl_scanout_start(struct kwl_server *server);
+void kwl_scanout_stop(struct kwl_server *server);
+void kwl_scanout_take(struct kwl_server *server);
+void kwl_scanout_present_wait(void);
 void kwl_scanout_surface_gone(struct kwl_server *server, struct kwl_object *surface);
+void kwl_scanout_client_gone(struct kwl_server *server, struct kwl_client *client);
 void kwl_shot_open(struct kwl_server *server);
 void kwl_shot_close(struct kwl_server *server);
 void kwl_shot_tick(struct kwl_server *server);
@@ -2546,7 +2570,10 @@ int kwl_home_launched(struct kwl_server *server, int32_t *rect);
 int kwl_home_open_app(struct kwl_server *server, const char *name, const char *via, int *running);
 void kwl_home_dismiss(struct kwl_server *server, const char *via);
 void kwl_home_toggle(struct kwl_server *server, const char *via);
-pid_t kwl_spawn(struct kwl_server *server, const char *command);
+/* The programs the compositor starts, on the file I/O thread (spawn.c): then hears the process ID, or 0 and the errno. */
+typedef void kwl_spawn_fn(struct kwl_server *server, pid_t pid, int error, void *context);
+int kwl_spawn(struct kwl_server *server, const char *command, kwl_spawn_fn *then, void *context);
+int kwl_spawn_lent(struct kwl_server *server, const char *path, const char *argument, const char *variable, int descriptor, kwl_spawn_fn *then, void *context);
 
 /* The top-right corner's swipe that brings Notes (corner.c; the drawing is in glass.h). */
 int kwl_corner_contact_begin(struct kwl_server *server, enum kwl_contact_source source, int32_t x, int32_t y, uint32_t time);
@@ -2744,6 +2771,20 @@ void kwl_io_stop(struct kwl_server *server);
 int kwl_io_input_find(struct kwl_server *server);
 int kwl_io_file_submit(struct kwl_server *server, struct kwl_lane_job *job, const struct kwl_lane_ops *ops, uint64_t key);
 int kwl_io_device_submit(struct kwl_server *server, struct kwl_lane_job *job, const struct kwl_lane_ops *ops, uint64_t key);
+
+/*
+ * The built-in panel's backlight, opened, read and set on the display
+ * thread (display-thread.c); server->backlight_state says whether it is
+ * not asked for yet, being opened, open, or not there.
+ */
+#define KWL_BACKLIGHT_UNKNOWN	0U
+#define KWL_BACKLIGHT_OPENING	1U
+#define KWL_BACKLIGHT_OPEN	2U
+#define KWL_BACKLIGHT_NONE	3U
+void kwl_backlight_start(struct kwl_server *server);
+int kwl_backlight_get(struct kwl_server *server, unsigned *percent);
+int kwl_backlight_set(struct kwl_server *server, unsigned percent);
+void kwl_backlight_close(struct kwl_server *server);
 void kwl_io_file_finish(struct kwl_server *server);
 void kwl_io_input_close(struct kwl_server *server, int descriptor);
 int kwl_input_probe(struct kwl_server *server, int descriptor, const char *path, const struct kl_backend_input_caps *capabilities);

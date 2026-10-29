@@ -420,6 +420,23 @@ gles_collect(
 }
 
 /*
+ * Returns the buffer object of a name (not 0), making it when the name is
+ * new; NULL with the error recorded.
+ */
+struct gles_buffer *
+gles_buffer_named(
+	struct zegl_context *context,
+	struct gles_state *state,
+	GLuint name)
+{
+	struct gles_buffer *buffer;
+
+	/* Succeeded: the object of the name. */
+	buffer = buffer_named(context, state, name);
+	return buffer;
+}
+
+/*
  * Brings a buffer object's device copy up to date with its bytes: in
  * place when no draw of this frame reads it, else in a new device buffer.
  * Returns 0, or -1 when the device has no memory for it.
@@ -736,6 +753,8 @@ timed_delete_buffers(
 			state->storage_buffer = NULL;
 		if (state->dispatch_buffer == buffer)
 			state->dispatch_buffer = NULL;
+		if (state->draw_indirect_buffer == buffer)
+			state->draw_indirect_buffer = NULL;
 
 		/*
 		 * Taken out of every vertex array: the bound one's (the
@@ -1420,10 +1439,11 @@ glGenVertexArrays(
 			return;
 		}
 
-		/* The arrays' initial state. */
+		/* The arrays' initial state, each attribute on its own binding point. */
 		for (attrib = 0U; attrib < GLES_ATTRIBS; attrib++) {
 			array->attribs[attrib].size = 4;
 			array->attribs[attrib].type = GL_FLOAT;
+			array->attribs[attrib].binding = attrib;
 		}
 
 		/* The first free name. */
@@ -1608,9 +1628,11 @@ buffer_slot(
 		break;
 	}
 
-	/* Desktop GL's buffer texture target (libGL). */
+	/* Desktop GL's buffer texture and indirect draw targets (libGL). */
 	if (target == GL_TEXTURE_BUFFER && gles_fixed != NULL)
 		return &state->texture_buffer;
+	if (target == GL_DRAW_INDIRECT_BUFFER && gles_fixed != NULL)
+		return &state->draw_indirect_buffer;
 
 	/* OpenGL ES 3.1's shader storage and dispatch targets, in a context that offers compute (ws101-p009). */
 	if (target == GL_SHADER_STORAGE_BUFFER && state->compute)
@@ -1865,6 +1887,35 @@ buffer_indexed(
 	if (state == NULL)
 		return -1;
 
+	/* Desktop GL 4.3's vertex buffer binding points (libGL). */
+	switch (target) {
+	case GL_VERTEX_BINDING_BUFFER:
+	case GL_VERTEX_BINDING_OFFSET:
+	case GL_VERTEX_BINDING_STRIDE:
+	case GL_VERTEX_BINDING_DIVISOR:
+		if (gles_fixed == NULL)
+			break;
+		if (index >= GLES_ATTRIBS) {
+			gles_error(context, GL_INVALID_VALUE);
+			return -1;
+		}
+
+		/* The binding point's buffer name, offset, stride or divisor. */
+		*value = (GLint64)state->attribs[index].binding_divisor;
+		if (target == GL_VERTEX_BINDING_STRIDE)
+			*value = (GLint64)state->attribs[index].binding_stride;
+		if (target == GL_VERTEX_BINDING_OFFSET)
+			*value = (GLint64)state->attribs[index].binding_offset;
+		if (target == GL_VERTEX_BINDING_BUFFER) {
+			*value = 0;
+			if (state->attribs[index].binding_buffer != NULL)
+				*value = (GLint64)state->attribs[index].binding_buffer->name;
+		}
+		return 0;
+	default:
+		break;
+	}
+
 	/* The compute limits of each dimension, the device's (ws101-p009). */
 	if (state->compute && (target == GL_MAX_COMPUTE_WORK_GROUP_COUNT || target == GL_MAX_COMPUTE_WORK_GROUP_SIZE)) {
 		if (index >= 3U) {
@@ -1952,10 +2003,12 @@ buffer_forget(
 	if (*element_buffer == buffer)
 		*element_buffer = NULL;
 
-	/* Each attribute's array. */
+	/* Each attribute's array and each binding point's. */
 	for (attrib = 0U; attrib < GLES_ATTRIBS; attrib++) {
 		if (attribs[attrib].buffer == buffer)
 			attribs[attrib].buffer = NULL;
+		if (attribs[attrib].binding_buffer == buffer)
+			attribs[attrib].binding_buffer = NULL;
 	}
 }
 

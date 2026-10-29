@@ -4,7 +4,7 @@
 
 Status: incomplete
 Primary Milestone: MG008
-Resume point: 今夜のユーザーの実機の試験（[tests/README.md](tests/README.md)）の結果で各 Phase を直す。担当は P7（q1675-i03、2026-10-29: render pass の LOAD の pre-frame・display の import・gpu1 を待つ hw.gpu.attaching・compiler の cube・gather/compare・storage image・spill・bootloader の notice を実装、全て実機未試験）。変更ごとの確かめは `sh plan/ws313/tests/c5-build-check.sh <tag>`（5 つの vmunix の warning 0 と host の試験）。
+Resume point: 今夜のユーザーの実機の試験（[tests/README.md](tests/README.md)）の結果で各 Phase を直す。担当は P7（q1675-i03、2026-10-29: render pass の LOAD の pre-frame・display の import・gpu1 を待つ hw.gpu.attaching・compiler の cube・gather/compare・storage image・spill・bootloader の notice を実装。q1675-i04、2026-10-29: WLS を使う compute の dispatch・拡大の blit・pass の中の clear attachments・FragDepth と SampleMask・UBO の vector load（既定は無効）・TSD の「WLS 無し」の語を Mesa の形に、他の GPU との対応範囲の表は [gpu.md](gpu.md) §15。全て実機未試験）。**q1675-i05（2026-10-29、P7）の修正**: render pass の framebuffer descriptor の大きさを 64 → 128 byte（`vk/vk-desc.h` の `MALI_DESC_FBD_BYTES`、v10.xml の aggregate "Framebuffer" は Parameters 64 + Padding 64、panvk も render target を pan_size(FRAMEBUFFER) の後に置く）にし、padding を 0 で書く（`vk/vk-draw.c` の pass_begin）。それまでは render target を fbd+64 に書いており、GPU は fbd+128 から読む見込みだった。**実機では未確認**（build の warning 0 と host の vk-frame・vk-desc の試験だけ）。夜の描画が出ない・fault の時、試験した main がこの修正の前か後かを先に確かめる。q1675-i05（2026-10-29、P7）: 上の FBD の修正に加え、depth attachment（D16・X8_D24・D32・D24S8、stencil、bias）・mip level（14）・textureGrad・SampleId・stencil の書き込み・共通の front end の OpFunctionCall の inline（Mali の feature の時だけ）を実装（[phase010](phase010/phase.md)・[phase011](phase011/phase.md) の i05 の節、全て実機未試験）。**q1687-i01（2026-10-29、P7 と配下 P7-C）**: **desktop の経路の修正** c08176e6c — fixed function の blend の memory format を Mesa の pan_blendable_formats と同じ RGBA8 TB（237<<12）に（今までは 187、RGBA8 UNORM）。夜に色がおかしい・blend の fault の時は、試した main がこの commit の前か後かを先に確かめる。同じく desktop の経路の db080e110 — Mesa との照合（配下 P7-R）から DCD0 の scissor to bounding box・DCD2 の write mask・pass の後の texture cache の invalidate・shader program の bit 8・FBD の tie-break と Z internal・blend の round と sRGB・sampler の compare の向き（phase011 の q1687-i01 の表）。ほかに pass の中の depth・stencil の clear、vkCmdClearDepthStencilImage、D24S8 の aspect の copy（compute の meta program）、memory に書く fragment program の late kill、texel offset の host 試験（[phase010](phase010/phase.md)・[phase011](phase011/phase.md) の q1687-i01 の節、全て実機未試験）。変更ごとの確かめは `sh plan/ws313/tests/c5-build-check.sh <tag>`（5 つの vmunix の warning 0 と host の試験）。
 
 ## ユーザーの指示（原文、2026-10-29）
 
@@ -64,8 +64,8 @@ Resume point: 今夜のユーザーの実機の試験（[tests/README.md](tests/
 | [p006](phase006/phase.md) | Ethernet（EQoS・RGMII の PHY） | in-progress（実装済み・実機未試験） | p002 |
 | [p007](phase007/phase.md) | display（U-Boot の mode の OSD1） | in-progress（実装済み・実機未試験） | p002 |
 | [p008](phase008/phase.md) | GPU（Mali-G310）と Vulkan の device | in-progress（kernel の driver は実装済み・実機未試験。Vulkan の段は設計だけ） | p002 |
-| [p010](phase010/phase.md) | Valhall の shader compiler（`src/drivers/gpu/mali/compiler/`、cube・gather/compare・storage image・spill を含む） | in-progress（実装済み・host の試験 PASS・実機未試験） | p008 |
-| [p011](phase011/phase.md) | render の node・scheduler・Vulkan の executor・CS の builder（LOAD の pre-frame・display の import を含む） | in-progress（実装済み・実機未試験） | p008・p010 |
+| [p010](phase010/phase.md) | Valhall の shader compiler（`src/drivers/gpu/mali/compiler/`、cube・gather/compare・storage image・spill・FragDepth・SampleMask・UBO の vector load・textureGrad・SampleId・stencil の書き込み、共通の front end の call の inline を含む） | in-progress（実装済み・host の試験 PASS・実機未試験） | p008 |
+| [p011](phase011/phase.md) | render の node・scheduler・Vulkan の executor・CS の builder（LOAD の pre-frame・display の import・WLS・拡大の blit・clear attachments・depth attachment・mip level を含む） | in-progress（実装済み・実機未試験） | p008・p010 |
 | p009 | desktop（Keiland の config） | planned | p007・p010・p011 |
 | 最後 | 規約の全文の見直し | planned | 全て |
 

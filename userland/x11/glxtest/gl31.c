@@ -549,12 +549,13 @@ gl31_version(void)
 	const char *version;
 	const char *language;
 	const char *extensions;
-	const char *first;
+	const char *name;
 	const char *found;
 	GLuint shader;
 	GLint major;
 	GLint minor;
 	GLint count;
+	GLint index;
 	int passed;
 	int differs;
 	int named;
@@ -577,15 +578,17 @@ gl31_version(void)
 	passed &= gl31_expect("major-version", (long)major, 3L);
 	passed &= gl31_expect("minor-version", (long)minor, 1L);
 
-	/* The extensions: GL_ARB_compatibility first, the buffer textures in the string. */
+	/* The extensions: GL_ARB_compatibility one of those glGetStringi names, the buffer textures in the string. */
 	count = 0;
 	glGetIntegerv(GL_NUM_EXTENSIONS, &count);
-	first = (const char *)glGetStringi(GL_EXTENSIONS, 0U);
 	extensions = (const char *)glGetString(GL_EXTENSIONS);
 	printf("GLXTEST GL31 extensions=%d \"%s\"\n", (int)count, extensions);
 	differs = 1;
-	if (first != NULL)
-		differs = strcmp(first, "GL_ARB_compatibility");
+	for (index = 0; index < count && differs != 0; index++) {
+		name = (const char *)glGetStringi(GL_EXTENSIONS, (GLuint)index);
+		if (name != NULL)
+			differs = strcmp(name, "GL_ARB_compatibility");
+	}
 	passed &= gl31_expect("extension-compatibility", (long)differs, 0L);
 	found = strstr(extensions, "GL_ARB_texture_buffer_object");
 	named = 0;

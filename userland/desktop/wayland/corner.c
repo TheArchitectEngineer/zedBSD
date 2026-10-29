@@ -160,6 +160,7 @@ static float corner_speed(void);
 static int corner_on_diagonal(int32_t dx, int32_t dy);
 static void corner_finish(struct kwl_server *server, unsigned committed, const char *reason);
 static void corner_act(struct kwl_server *server);
+static void corner_started(struct kwl_server *server, pid_t pid, int error, void *context);
 static struct kwl_object *corner_find_notes(struct kwl_server *server);
 static float corner_radius(void);
 static float corner_ease(float t);
@@ -765,7 +766,6 @@ corner_act(
 {
 	struct kwl_object *surface;
 	struct kwl_object *top;
-	pid_t child;
 	int error;
 	int missing;
 
@@ -817,17 +817,36 @@ corner_act(
 		return;
 	}
 
-	/* Notes is started, and asks for fullscreen itself before its window first shows. */
-	child = kwl_spawn(server, CORNER_COMMAND);
-	if (child < 0) {
-		printf("KWL CORNER notes launch error=%d\n", errno);
+	/* Notes is started (its window waited for from now), and asks for fullscreen itself before its window first shows. */
+	corner.launching = 1;
+	corner.launch_ms = kwl_milliseconds();
+	error = kwl_spawn(server, CORNER_COMMAND, corner_started, NULL);
+	if (error != 0) {
+		corner.launching = 0;
+		printf("KWL CORNER notes launch error=%d\n", error);
+		return;
+	}
+}
+
+/* Hears Notes' start: its process ID logged, or the failure (no window is waited for then). */
+static void
+corner_started(
+	struct kwl_server *server,
+	pid_t pid,
+	int error,
+	void *context)
+{
+	/* A failure ends the wait. */
+	(void)server;
+	(void)context;
+	if (error != 0) {
+		corner.launching = 0;
+		printf("KWL CORNER notes launch error=%d\n", error);
 		return;
 	}
 
-	/* Succeeded: its window is waited for. */
-	corner.launching = 1;
-	corner.launch_ms = kwl_milliseconds();
-	printf("KWL CORNER notes launch pid=%d\n", (int)child);
+	/* Succeeded: the line the tests read. */
+	printf("KWL CORNER notes launch pid=%d\n", (int)pid);
 }
 
 /* Finds Notes' window: the most recently raised mapped toplevel whose app_id is "notes"; NULL for none. */

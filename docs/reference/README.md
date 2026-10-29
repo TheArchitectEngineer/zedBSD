@@ -21,6 +21,9 @@ structures, constants, errors and permissions that programs and people use
   been removed while ordinary TTY and display operations remain.
 - [Agent Acceptance Test interfaces](agent-acceptance-test.md): the test
   images' mouse and keyboard injection and screen capture.
+- [Camera devices](camera.md): the /dev/camN nodes, their ownership,
+  formats, buffers (including GPU memory imported from Vulkan), frame
+  metadata, USB limits and suspend.
 - [Security keys and smart card readers](security-keys.md): the raw HID nodes
   of FIDO keys and the slots of USB CCID readers, their requests and
   permissions.

@@ -125,6 +125,7 @@ enum {
 	SPAWN_ACTION_OPEN,
 	SPAWN_ACTION_CHDIR,
 	SPAWN_ACTION_FCHDIR,
+	SPAWN_ACTION_CLOSEFROM,
 };
 
 struct __dir_stream {
@@ -202,6 +203,7 @@ extern sigset_t __libc_caught_signals;
 static void spawn_child(void *argument);
 #endif
 static int spawn_child_setup(const posix_spawn_file_actions_t *actions, const posix_spawnattr_t *attr);
+static void spawn_close_from(int first);
 static int spawn_exec_search(const char *file, char *const argv[], char *const environment[]);
 static const char *spawn_environment_path(char *const environment[]);
 static int exec_search(const char *file, char *const argv[], char *const envp[]);
@@ -3780,6 +3782,37 @@ posix_spawn_file_actions_addfchdir(
 	action->descriptor = descriptor;
 
 	/* Reports successful completion. */
+	return 0;
+}
+
+/*
+ * Adds an action that closes every descriptor from one on in the child,
+ * as glibc's and FreeBSD's function of the same name: a descriptor that is
+ * not open is no failure.  Returns 0, EBADF for a negative descriptor, or
+ * EINVAL when the actions are full.
+ */
+int
+posix_spawn_file_actions_addclosefrom_np(
+	posix_spawn_file_actions_t *actions,
+	int from)
+{
+	struct __spawn_action *action;
+
+	/* The actions, and a descriptor number. */
+	if (actions == NULL)
+		return EINVAL;
+	if (from < 0)
+		return EBADF;
+
+	/* A place among the actions. */
+	action = spawn_action_add(actions);
+	if (action == NULL)
+		return EINVAL;
+
+	/* Succeeded: the action is recorded. */
+	memset(action, 0, sizeof(*action));
+	action->operation = SPAWN_ACTION_CLOSEFROM;
+	action->descriptor = from;
 	return 0;
 }
 
@@ -9055,6 +9088,9 @@ spawn_child_setup(
 			/* Handles a failed fchdir operation. */
 			if (fchdir(a->descriptor) != 0)
 				return errno;
+		} else if (a->operation == SPAWN_ACTION_CLOSEFROM) {
+			/* Every descriptor from the action's on is closed. */
+			spawn_close_from(a->descriptor);
 		} else {
 			/* Returns the computed result. */
 			return EINVAL;
@@ -9063,6 +9099,31 @@ spawn_child_setup(
 
 	/* Reports successful completion. */
 	return 0;
+}
+
+/*
+ * Closes every descriptor from first up to the process's descriptor limit
+ * in the spawned child (between its vfork and its exec); one that is not
+ * open is passed over.
+ */
+static void
+spawn_close_from(
+	int first)
+{
+	struct rlimit limit;
+	long last;
+	long descriptor;
+	int error;
+
+	/* The limit (the kernel's own at most when it cannot be read). */
+	last = 1024L;
+	error = getrlimit(RLIMIT_NOFILE, &limit);
+	if (error == 0 && limit.rlim_cur != RLIM_INFINITY && (long)limit.rlim_cur < last)
+		last = (long)limit.rlim_cur;
+
+	/* Each descriptor from the first (closing one that is not open fails harmlessly). */
+	for (descriptor = first; descriptor < last; descriptor++)
+		(void)close((int)descriptor);
 }
 
 /* Supports the spawn exec search operation. */

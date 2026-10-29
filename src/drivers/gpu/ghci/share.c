@@ -59,6 +59,7 @@ const struct drv_gpu_share_ops ghci_share_ops = {
 	share_export,
 	share_release,
 	share_import,
+	NULL,
 	NULL
 };
 

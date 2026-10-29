@@ -35,8 +35,12 @@
 /* A compute shader (GLSL ES 3.10, ws101-p008): linked alone by glsl_link_compute. */
 #define GLSL_STAGE_COMPUTE	3U
 
+/* The tessellation shaders (desktop GLSL 4.00, or GL_ARB_tessellation_shader): linked between the vertex and the geometry or fragment stage. */
+#define GLSL_STAGE_TESS_CONTROL	4U
+#define GLSL_STAGE_TESS_EVALUATION 5U
+
 /* The stages of a program's SPIR-V (glsl_program.code). */
-#define GLSL_STAGES		4U
+#define GLSL_STAGES		6U
 
 /*
  * The descriptor binding of a shader storage block's GL binding n (layout(
@@ -249,6 +253,25 @@ int glsl_link_captured(const struct glsl_shader *vertex, const struct glsl_shade
  * *log a malloc'ed info log saying why.
  */
 int glsl_link_stages(const struct glsl_shader *vertex, const struct glsl_shader *geometry, const struct glsl_shader *fragment, const struct glsl_binding *bindings, unsigned binding_count, const char *const *captures, unsigned capture_count, struct glsl_program *program, char **log);
+
+/*
+ * Links the stages of a draw as glsl_link_stages does, with the two
+ * tessellation shaders (GLSL_STAGE_TESS_CONTROL and _EVALUATION, both NULL
+ * for none) after the vertex shader; the vertex shader captures only when
+ * the fragment shader comes next.  Returns 0 and fills *program (the
+ * tessellation stages' SPIR-V at code[GLSL_STAGE_TESS_*]), or -1 with
+ * *log a malloc'ed info log saying why.
+ */
+int glsl_link_pipeline(const struct glsl_shader *vertex, const struct glsl_shader *tess_control, const struct glsl_shader *tess_evaluation, const struct glsl_shader *geometry, const struct glsl_shader *fragment, const struct glsl_binding *bindings, unsigned binding_count, const char *const *captures, unsigned capture_count, struct glsl_program *program, char **log);
+
+/*
+ * Reports a compiled tessellation shader's layouts as GL names them: a
+ * control shader's output vertices; an evaluation shader's domain
+ * (GL_TRIANGLES, GL_QUADS, GL_ISOLINES), spacing (GL_EQUAL,
+ * GL_FRACTIONAL_EVEN, GL_FRACTIONAL_ODD), vertex order (GL_CW, GL_CCW)
+ * and point mode; 0s for what a stage does not have.
+ */
+void glsl_tess_layout(const struct glsl_shader *shader, unsigned *vertices, unsigned *domain, unsigned *spacing, unsigned *order, unsigned *point_mode);
 
 /*
  * Links a compute shader (GLSL_STAGE_COMPUTE) alone into SPIR-V

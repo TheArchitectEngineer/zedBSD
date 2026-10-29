@@ -186,6 +186,7 @@ static char ime_field_text[KWL_TITLEBAR_TEXT_MAX + 1U];
 static unsigned ime_field_kind;
 
 static void ime_spawn(struct kwl_server *server, uint64_t now);
+static void ime_started(struct kwl_server *server, pid_t pid, int error, void *context);
 static struct kwl_client *ime_connect(struct kwl_server *server, int descriptor);
 static void ime_lost(struct kwl_server *server);
 static int ime_manager_request(struct kwl_object *manager, uint32_t opcode, const unsigned char *bytes, size_t size);
@@ -552,6 +553,12 @@ kwl_ime_method_changed(
 	/* The running program ends; its connection's end starts the new one (ime_lost). */
 	if (ime->pid > 0 && ime->client != NULL) {
 		(void)kill(ime->pid, SIGTERM);
+		return;
+	}
+
+	/* One starting ends once its ID comes (ime_started). */
+	if (ime->client != NULL) {
+		ime->kill_pending = 1U;
 		return;
 	}
 
@@ -1180,8 +1187,9 @@ kwl_ime_on(
 }
 
 /*
- * Starts the input method's program on a socket pair and makes its
- * connection.
+ * Makes the input method's connection on a socket pair and has the file
+ * I/O thread start its program on the other end (ime_started hears its
+ * process ID).
  */
 static void
 ime_spawn(
@@ -1191,11 +1199,8 @@ ime_spawn(
 	struct kwl_ime *ime;
 	struct kwl_client *client;
 	const char *method;
-	char variable[32];
 	int pair[2];
-	int descriptor;
 	int error;
-	pid_t child;
 
 	ime = server->ime;
 	ime->restart_ms = 0;
@@ -1215,41 +1220,18 @@ ime_spawn(
 		return;
 	}
 
-	/* The program runs in a process of its own. */
-	child = fork();
-	if (child < 0) {
-		printf("KWL IME spawn-failed step=fork errno=%d\n", errno);
-		close(pair[0]);
+	/* The compositor's end is a connection first. */
+	client = ime_connect(server, pair[0]);
+	if (client == NULL) {
 		close(pair[1]);
 		ime->restart_ms = now + IME_RESTART_MS;
 		return;
 	}
 
-	/* The child: its own session, only its end of the pair, named by WAYLAND_SOCKET. */
-	if (child == 0) {
-		(void)setsid();
-		for (descriptor = 3; descriptor < 1024; descriptor++) {
-			if (descriptor != pair[1])
-				(void)close(descriptor);
-		}
-
-		(void)fcntl(pair[1], F_SETFD, 0);
-		snprintf(variable, sizeof(variable), "%d", pair[1]);
-		(void)setenv("WAYLAND_SOCKET", variable, 1);
-		(void)unsetenv("WAYLAND_DISPLAY");
-		(void)execl(IME_PROGRAM, IME_PROGRAM, method, (char *)NULL);
-		_exit(127);
-	}
-
-	/* The parent keeps its end as a new connection. */
-	close(pair[1]);
-	client = ime_connect(server, pair[0]);
-	if (client == NULL) {
-		(void)kill(child, SIGTERM);
-		ime->pid = child;
-		ime->restart_ms = now + IME_RESTART_MS;
-		return;
-	}
+	/* The program on the other end, named by WAYLAND_SOCKET (a failed start closes it: the connection ends, ime_lost). */
+	error = kwl_spawn_lent(server, IME_PROGRAM, method, "WAYLAND_SOCKET", pair[1], ime_started, NULL);
+	if (error != 0)
+		printf("KWL IME spawn-failed step=spawn errno=%d\n", error);
 
 	/* The start is counted in the window of the last three, unless it follows a change of method. */
 	if (ime->replacing) {
@@ -1259,11 +1241,48 @@ ime_spawn(
 		ime->start_index = (ime->start_index + 1U) % 3U;
 	}
 
-	/* Succeeded: the input method runs on its connection. */
-	ime->pid = child;
+	/* Succeeded: the input method's connection waits for the program, whose ID comes later. */
+	ime->pid = 0;
+	ime->kill_pending = 0U;
 	ime->client = client;
 	ime->method_started = server->ime_method;
-	printf("KWL IME started pid=%ld client=%llu %s\n", (long)child, (unsigned long long)client->number, method);
+	ime->starting_client = (unsigned long long)client->number;
+	ime->starting_method = method;
+}
+
+/*
+ * Hears the input method's start: its ID kept for the end and the
+ * collection, and an end asked meanwhile sent now.
+ */
+static void
+ime_started(
+	struct kwl_server *server,
+	pid_t pid,
+	int error,
+	void *context)
+{
+	struct kwl_ime *ime;
+	unsigned end;
+
+	/* Without the input method, nothing. */
+	(void)context;
+	ime = server->ime;
+	if (ime == NULL)
+		return;
+
+	/* A failure: its connection has ended or ends (ime_lost starts it again). */
+	end = ime->kill_pending;
+	ime->kill_pending = 0U;
+	if (error != 0) {
+		printf("KWL IME spawn-failed step=spawn errno=%d\n", error);
+		return;
+	}
+
+	/* Succeeded: its ID, and an end asked meanwhile. */
+	ime->pid = pid;
+	printf("KWL IME started pid=%ld client=%llu %s\n", (long)pid, ime->starting_client, ime->starting_method);
+	if (end)
+		(void)kill(pid, SIGTERM);
 }
 
 /*

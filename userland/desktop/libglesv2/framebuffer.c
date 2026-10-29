@@ -655,7 +655,7 @@ gles_texture_fetch(
 		base_layer = 0U;
 		if (texture->target == GL_TEXTURE_CUBE_MAP)
 			base_layer = face;
-		if (texture->target == GL_TEXTURE_2D_ARRAY)
+		if (texture->target == GL_TEXTURE_2D_ARRAY || texture->target == GL_TEXTURE_CUBE_MAP_ARRAY)
 			layers = (uint32_t)level->depth;
 		if (texture->target == GL_TEXTURE_3D)
 			slices = (uint32_t)level->depth;
@@ -1100,8 +1100,10 @@ glFramebufferTexture(
 		return;
 	}
 
-	/* Layered: a 2D array texture's or a cube map's level (a 3D texture's slices are not). */
-	if (object->target != GL_TEXTURE_2D_ARRAY && object->target != GL_TEXTURE_CUBE_MAP) {
+	/* Layered: a 2D array texture's, a cube map's or a cube map array's level (a 3D texture's slices are not). */
+	if (object->target != GL_TEXTURE_2D_ARRAY &&
+	    object->target != GL_TEXTURE_CUBE_MAP &&
+	    object->target != GL_TEXTURE_CUBE_MAP_ARRAY) {
 		gles_error(context, GL_INVALID_OPERATION);
 		return;
 	}
@@ -1145,9 +1147,10 @@ glFramebufferTextureLayer(
 		return;
 	}
 
-	/* A name that is a 2D array or 3D texture. */
+	/* A name that is a 2D array, cube map array (its layer-faces) or 3D texture. */
 	object = gles_names_get(&state->textures, texture);
-	if (object == NULL || (object->target != GL_TEXTURE_2D_ARRAY && object->target != GL_TEXTURE_3D)) {
+	if (object == NULL ||
+	    (object->target != GL_TEXTURE_2D_ARRAY && object->target != GL_TEXTURE_3D && object->target != GL_TEXTURE_CUBE_MAP_ARRAY)) {
 		gles_error(context, GL_INVALID_OPERATION);
 		return;
 	}
@@ -2263,7 +2266,8 @@ framebuffer_image_of(
 		status = framebuffer_layered_of(image->texture, point, image);
 		if (status != GL_FRAMEBUFFER_COMPLETE)
 			return status;
-	} else if (image->texture->target == GL_TEXTURE_2D_ARRAY && point->layer >= level->depth) {
+	} else if ((image->texture->target == GL_TEXTURE_2D_ARRAY || image->texture->target == GL_TEXTURE_CUBE_MAP_ARRAY) &&
+		   point->layer >= level->depth) {
 		return GL_FRAMEBUFFER_INCOMPLETE_ATTACHMENT;
 	} else if (image->texture->target == GL_TEXTURE_3D && point->layer >= level->depth) {
 		return GL_FRAMEBUFFER_INCOMPLETE_ATTACHMENT;
@@ -2298,7 +2302,7 @@ framebuffer_image_of(
 	image->gl_level = point->level;
 	image->level = (uint32_t)(point->level - image->texture->base_level);
 	image->layer = point->face;
-	if (image->texture->target == GL_TEXTURE_2D_ARRAY)
+	if (image->texture->target == GL_TEXTURE_2D_ARRAY || image->texture->target == GL_TEXTURE_CUBE_MAP_ARRAY)
 		image->layer = (uint32_t)point->layer;
 	if (image->layered)
 		image->layer = 0U;
@@ -2610,10 +2614,10 @@ framebuffer_layered_of(
 	const struct gles_level *face_level;
 	unsigned face;
 
-	/* A 2D array texture: its level's layers. */
+	/* A 2D array texture: its level's layers (a cube map array's layer-faces). */
 	level = &texture->levels[(unsigned)point->level];
 	image->layered = 1;
-	if (texture->target == GL_TEXTURE_2D_ARRAY) {
+	if (texture->target == GL_TEXTURE_2D_ARRAY || texture->target == GL_TEXTURE_CUBE_MAP_ARRAY) {
 		image->layers = (uint32_t)level->depth;
 		return GL_FRAMEBUFFER_COMPLETE;
 	}

@@ -38,6 +38,7 @@ static int draw_indices(struct zegl_context *context, GLsizei count, GLenum type
 static uint32_t *draw_restart(GLenum mode, const uint32_t *indices, GLsizei count, uint32_t restart, int rotate, uint32_t *expanded);
 static uint32_t draw_restart_index(const struct gles_state *state, GLenum type);
 static int draw_geometry_mode(const struct gles_program *program, GLenum mode);
+static int draw_patch_mode(const struct gles_program *program, GLenum mode);
 static void draw_base_vertex(GLenum mode, GLsizei count, GLenum type, const void *indices, GLsizei instances, GLint basevertex);
 static void draw_program(GLenum mode, GLint first, GLsizei count, GLenum type, const void *indices, GLsizei instances, int flat);
 static int draw_topology(GLenum mode, uint32_t *topology, int *strip);
@@ -62,6 +63,7 @@ static void draw_dynamic(struct gles_state *state, struct zegl_context *context,
 static VkRect2D draw_scissor_rect(struct gles_state *state, const struct gles_target *target);
 static void draw_clear_buffer(GLenum buffer, GLint drawbuffer, const VkClearValue *value, VkImageAspectFlags aspects);
 static VkBlendFactor draw_blend_factor(GLenum factor);
+static int draw_dual_source(const struct gles_raster *raster);
 static VkBlendOp draw_blend_op(GLenum equation);
 static VkStencilOp draw_stencil_op(GLenum op);
 
@@ -93,6 +95,39 @@ gles_pipelines_forget(
 		objects.pipeline = pipeline->pipeline;
 		gles_garbage_keep(state, &objects);
 		free(pipeline);
+	}
+}
+
+/*
+ * Gives each attribute that reads a binding point the binding point's
+ * array: its buffer, the binding point's offset with the attribute's,
+ * its stride (exactly 0 when glBindVertexBuffer gave 0; 0 from
+ * glVertexAttribPointer is tightly packed) and its divisor.
+ */
+void
+gles_vertex_binding_apply(
+	struct gles_state *state,
+	GLuint binding)
+{
+	const struct gles_attrib *point;
+	struct gles_attrib *attrib;
+	unsigned index;
+
+	/* Each attribute reading the binding point. */
+	point = &state->attribs[binding];
+	for (index = 0U; index < GLES_ATTRIBS; index++) {
+		attrib = &state->attribs[index];
+		if (attrib->binding != binding)
+			continue;
+
+		/* The binding point's array, at the attribute's offset in its elements. */
+		attrib->buffer = point->binding_buffer;
+		attrib->pointer = (const void *)(uintptr_t)(point->binding_offset + (GLintptr)attrib->relative_offset);
+		attrib->stride = point->binding_stride;
+		attrib->divisor = point->binding_divisor;
+		attrib->zero_stride = 0;
+		if (point->binding_exact && point->binding_stride == 0)
+			attrib->zero_stride = 1;
 	}
 }
 
@@ -804,15 +839,23 @@ glVertexAttribPointer(
 		return;
 	}
 
-	/* The array, in the bound array buffer or the application's memory, read as floats. */
+	/* The format, read as floats, at the start of the attribute's own binding point's elements. */
 	attrib = &state->attribs[index];
 	attrib->size = size;
 	attrib->type = type;
 	attrib->normalized = normalized;
-	attrib->stride = stride;
-	attrib->pointer = pointer;
-	attrib->buffer = state->array_buffer;
 	attrib->integer = 0;
+	attrib->binding = index;
+	attrib->relative_offset = 0U;
+
+	/* The binding point's array, in the bound array buffer or the application's memory (a stride of 0: packed). */
+	attrib->binding_buffer = state->array_buffer;
+	attrib->binding_offset = (GLintptr)(uintptr_t)pointer;
+	attrib->binding_stride = stride;
+	attrib->binding_exact = 0;
+
+	/* Succeeded: the attributes reading the binding point take the array. */
+	gles_vertex_binding_apply(state, index);
 }
 
 /*
@@ -867,15 +910,23 @@ glVertexAttribIPointer(
 		return;
 	}
 
-	/* The array, in the bound array buffer or the application's memory, read as integers. */
+	/* The format, read as integers, at the start of the attribute's own binding point's elements. */
 	attrib = &state->attribs[index];
 	attrib->size = size;
 	attrib->type = type;
 	attrib->normalized = GL_FALSE;
-	attrib->stride = stride;
-	attrib->pointer = pointer;
-	attrib->buffer = state->array_buffer;
 	attrib->integer = 1;
+	attrib->binding = index;
+	attrib->relative_offset = 0U;
+
+	/* The binding point's array, in the bound array buffer or the application's memory (a stride of 0: packed). */
+	attrib->binding_buffer = state->array_buffer;
+	attrib->binding_offset = (GLintptr)(uintptr_t)pointer;
+	attrib->binding_stride = stride;
+	attrib->binding_exact = 0;
+
+	/* Succeeded: the attributes reading the binding point take the array. */
+	gles_vertex_binding_apply(state, index);
 }
 
 /*
@@ -900,8 +951,10 @@ glVertexAttribDivisor(
 		return;
 	}
 
-	/* The divisor. */
-	state->attribs[index].divisor = divisor;
+	/* The divisor, of the attribute's own binding point, which it reads again. */
+	state->attribs[index].binding = index;
+	state->attribs[index].binding_divisor = divisor;
+	gles_vertex_binding_apply(state, index);
 }
 
 /*
@@ -1264,6 +1317,18 @@ glGetVertexAttribiv(
 	case GL_VERTEX_ATTRIB_ARRAY_DIVISOR:
 		*params = (GLint)attrib->divisor;
 		return;
+	case GL_VERTEX_ATTRIB_BINDING:
+		/* Desktop GL 4.3's binding point it reads (libGL). */
+		if (gles_fixed == NULL)
+			break;
+		*params = (GLint)attrib->binding;
+		return;
+	case GL_VERTEX_ATTRIB_RELATIVE_OFFSET:
+		/* Desktop GL 4.3's offset in the binding point's elements (libGL). */
+		if (gles_fixed == NULL)
+			break;
+		*params = (GLint)attrib->relative_offset;
+		return;
 	case GL_CURRENT_VERTEX_ATTRIB:
 		for (component = 0U; component < 4U; component++)
 			params[component] = (GLint)attrib->value[component];
@@ -1346,6 +1411,7 @@ draw_primitives(
 		    state->program->flat_inputs &&
 		    state->program->capture_count == 0U &&
 		    state->program->geometry_module == VK_NULL_HANDLE &&
+		    state->program->tess_control_module == VK_NULL_HANDLE &&
 		    state->provoking_vertex != GL_FIRST_VERTEX_CONVENTION)
 			flat = 1;
 		draw_program(mode, first, count, type, indices, instances, flat);
@@ -1416,6 +1482,7 @@ draw_program(
 	const VkDescriptorBufferInfo *capture_buffer;
 	int restarted;
 	int capturing;
+	int dual;
 	int strip;
 	int status;
 
@@ -1453,11 +1520,18 @@ draw_program(
 		}
 	}
 
-	/* A mode the geometry shader takes as its input primitive. */
-	status = draw_geometry_mode(state->program, mode);
+	/* Patches for tessellation shaders, else a mode the geometry shader takes as its input primitive. */
+	status = draw_patch_mode(state->program, mode);
 	if (status != 0) {
 		gles_error(context, GL_INVALID_OPERATION);
 		return;
+	}
+	if (state->program->tess_control_module == VK_NULL_HANDLE) {
+		status = draw_geometry_mode(state->program, mode);
+		if (status != 0) {
+			gles_error(context, GL_INVALID_OPERATION);
+			return;
+		}
 	}
 
 	/* A draw transform feedback allows while it is active (glDrawArrays of its kind), and whether it captures. */
@@ -1556,8 +1630,16 @@ draw_program(
 	if (status != 0)
 		return;
 
-	/* The pipeline for the state, and the descriptors. */
+	/* The pipeline's state: a dual-source blend (desktop GL 3.3) writes one draw buffer at most. */
 	draw_raster(state, &target, topology, &raster);
+	dual = draw_dual_source(&raster);
+	if (dual && (target.draw_mask & ~1U) != 0U) {
+		free(list);
+		gles_error(context, GL_INVALID_OPERATION);
+		return;
+	}
+
+	/* The pipeline for the state, and the descriptors. */
 	pipeline = draw_pipeline(state, &target, &raster, &layout);
 	if (pipeline == VK_NULL_HANDLE) {
 		gles_error(context, GL_OUT_OF_MEMORY);
@@ -1959,6 +2041,12 @@ draw_topology(
 		return 0;
 	}
 
+	/* Desktop GL 4.0's patches (for tessellation shaders), drawn as they are. */
+	if (gles_fixed != NULL && mode == GL_PATCHES) {
+		*topology = VK_PRIMITIVE_TOPOLOGY_PATCH_LIST;
+		return 0;
+	}
+
 	/* Desktop GL's primitives with adjacency (for geometry shaders), drawn as they are. */
 	if (gles_fixed != NULL) {
 		switch (mode) {
@@ -2039,7 +2127,7 @@ draw_vertices(
 		format = draw_format(attrib->size, attrib->type, attrib->normalized, attrib->integer, &bytes);
 		fetchable = draw_format_ok(state, format);
 		stride = (size_t)attrib->stride;
-		if (stride == 0U)
+		if (stride == 0U && !attrib->zero_stride)
 			stride = bytes;
 
 		/*
@@ -2586,6 +2674,11 @@ draw_sampler_shape(
 	case GL_INT_SAMPLER_2D_MULTISAMPLE:
 	case GL_UNSIGNED_INT_SAMPLER_2D_MULTISAMPLE:
 		return GLES_SHAPE_MS;
+	case GL_SAMPLER_CUBE_MAP_ARRAY:
+	case GL_SAMPLER_CUBE_MAP_ARRAY_SHADOW:
+	case GL_INT_SAMPLER_CUBE_MAP_ARRAY:
+	case GL_UNSIGNED_INT_SAMPLER_CUBE_MAP_ARRAY:
+		return GLES_SHAPE_CUBE_ARRAY;
 	default:
 		break;
 	}
@@ -2608,6 +2701,7 @@ draw_sampler_kind(
 	case GL_INT_SAMPLER_2D_RECT:
 	case GL_INT_SAMPLER_BUFFER:
 	case GL_INT_SAMPLER_2D_MULTISAMPLE:
+	case GL_INT_SAMPLER_CUBE_MAP_ARRAY:
 		return 1U;
 	case GL_UNSIGNED_INT_SAMPLER_2D:
 	case GL_UNSIGNED_INT_SAMPLER_CUBE:
@@ -2616,11 +2710,13 @@ draw_sampler_kind(
 	case GL_UNSIGNED_INT_SAMPLER_2D_RECT:
 	case GL_UNSIGNED_INT_SAMPLER_BUFFER:
 	case GL_UNSIGNED_INT_SAMPLER_2D_MULTISAMPLE:
+	case GL_UNSIGNED_INT_SAMPLER_CUBE_MAP_ARRAY:
 		return 2U;
 	case GL_SAMPLER_2D_SHADOW:
 	case GL_SAMPLER_CUBE_SHADOW:
 	case GL_SAMPLER_2D_ARRAY_SHADOW:
 	case GL_SAMPLER_2D_RECT_SHADOW:
+	case GL_SAMPLER_CUBE_MAP_ARRAY_SHADOW:
 		return 3U;
 	default:
 		break;
@@ -2683,6 +2779,10 @@ draw_raster(
 	memset(raster, 0, sizeof(*raster));
 	raster->topology = topology;
 
+	/* A patch list's vertices a patch (desktop GL 4.0's glPatchParameteri). */
+	if (topology == VK_PRIMITIVE_TOPOLOGY_PATCH_LIST)
+		raster->patch_vertices = (uint32_t)state->patch_vertices;
+
 	/* Blending, on each attachment whose draw buffer blends (not integers, not formats the device does not blend). */
 	raster->color_count = target->color_count;
 	buffers = 0U;
@@ -2724,9 +2824,13 @@ draw_raster(
 		raster->stencil_zpass[face] = state->stencil_zpass[face];
 	}
 
-	/* Culling (triangles only). */
+	/*
+	 * Culling (triangles, and patches: the tessellator's triangles are
+	 * culled, its lines and points are not, as Vulkan does).
+	 */
 	raster->front_face = state->front_face;
-	if (state->cull && topology == VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST) {
+	if (state->cull &&
+	    (topology == VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST || topology == VK_PRIMITIVE_TOPOLOGY_PATCH_LIST)) {
 		raster->cull = 1U;
 		raster->cull_mode = state->cull_mode;
 	}
@@ -2743,6 +2847,16 @@ draw_raster(
 	raster->sample_mask = 0xffffffffU;
 	if (state->sample_mask)
 		raster->sample_mask = (uint32_t)state->sample_mask_value;
+
+	/* Per-sample shading, of a multisample target (a fraction of 0 shades as without it). */
+	if (state->sample_shading && target->samples > 1U && state->min_sample_shading > 0.0f)
+		memcpy(&raster->min_sample_shading, &state->min_sample_shading, sizeof(raster->min_sample_shading));
+
+	/* Desktop GL's clip control. */
+	if (state->clip_origin == GL_UPPER_LEFT)
+		raster->clip_control |= GLES_CLIP_UPPER_LEFT;
+	if (state->clip_depth == GL_ZERO_TO_ONE)
+		raster->clip_control |= GLES_CLIP_ZERO_TO_ONE;
 
 	/* A device that blends every colour attachment alike blends none when they differ. */
 	if (!state->display->features.independentBlend &&
@@ -2797,8 +2911,12 @@ draw_pipeline(
 	};
 	struct gles_pipeline_key key;
 	struct gles_pipeline *entry;
-	VkPipelineShaderStageCreateInfo stages[3];
+	VkPipelineShaderStageCreateInfo stages[5];
 	uint32_t stage_count;
+	uint32_t last_stage;
+	VkShaderModule zero_module;
+	int flip;
+	VkPipelineTessellationStateCreateInfo tessellation;
 	VkVertexInputBindingDescription bindings[GLES_ATTRIBS];
 	VkVertexInputAttributeDescription attributes[GLES_ATTRIBS];
 	VkPipelineVertexInputStateCreateInfo vertex;
@@ -2832,12 +2950,22 @@ draw_pipeline(
 			return entry->pipeline;
 	}
 
+	/*
+	 * Whether the last stage turns y over: for a window (whose rows go
+	 * down), unless desktop GL's clip control puts the clip space's
+	 * y = 1 at the bottom (GL_UPPER_LEFT), which a framebuffer object
+	 * turns over instead.
+	 */
+	flip = target->flip;
+	if ((raster->clip_control & GLES_CLIP_UPPER_LEFT) != 0U)
+		flip = !flip;
+
 	/* The two stages. */
 	memset(stages, 0, sizeof(stages));
 	stages[0].sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
 	stages[0].stage = VK_SHADER_STAGE_VERTEX_BIT;
 	stages[0].module = state->program->vertex_module;
-	if (!target->flip)
+	if (!flip)
 		stages[0].module = state->program->vertex_module_fbo;
 	stages[0].pName = "main";
 	stages[1] = stages[0];
@@ -2850,9 +2978,38 @@ draw_pipeline(
 		stages[2] = stages[0];
 		stages[2].stage = VK_SHADER_STAGE_GEOMETRY_BIT;
 		stages[2].module = state->program->geometry_module;
-		if (!target->flip)
+		if (!flip)
 			stages[2].module = state->program->geometry_module_fbo;
 		stage_count = 3U;
+	}
+
+	/* The tessellation stages (desktop GL 4.0), the evaluation one writing the gl_Position the rasterizer takes without a geometry stage. */
+	if (state->program->tess_control_module != VK_NULL_HANDLE) {
+		stages[stage_count] = stages[0];
+		stages[stage_count].stage = VK_SHADER_STAGE_TESSELLATION_CONTROL_BIT;
+		stages[stage_count].module = state->program->tess_control_module;
+		stage_count++;
+		stages[stage_count] = stages[0];
+		stages[stage_count].stage = VK_SHADER_STAGE_TESSELLATION_EVALUATION_BIT;
+		stages[stage_count].module = state->program->tess_evaluation_module;
+		if (!flip)
+			stages[stage_count].module = state->program->tess_evaluation_module_fbo;
+		stage_count++;
+	}
+
+	/* The last stage before the rasterizer: the geometry stage, else the tessellation evaluation stage, else the vertex stage. */
+	last_stage = 0U;
+	if (state->program->geometry_module != VK_NULL_HANDLE)
+		last_stage = 2U;
+	else if (state->program->tess_control_module != VK_NULL_HANDLE)
+		last_stage = stage_count - 1U;
+
+	/* Desktop GL's clip control with the depth range from 0: the last stage keeps gl_Position's z. */
+	if ((raster->clip_control & GLES_CLIP_ZERO_TO_ONE) != 0U) {
+		zero_module = gles_program_zero_module(state, state->program, flip);
+		if (zero_module == VK_NULL_HANDLE)
+			return VK_NULL_HANDLE;
+		stages[last_stage].module = zero_module;
 	}
 
 	/* One binding per attribute at its rate (per vertex or per instance), the attribute at offset 0 of it. */
@@ -2879,6 +3036,9 @@ draw_pipeline(
 	memset(&assembly, 0, sizeof(assembly));
 	assembly.sType = VK_STRUCTURE_TYPE_PIPELINE_INPUT_ASSEMBLY_STATE_CREATE_INFO;
 	assembly.topology = (VkPrimitiveTopology)raster->topology;
+	memset(&tessellation, 0, sizeof(tessellation));
+	tessellation.sType = VK_STRUCTURE_TYPE_PIPELINE_TESSELLATION_STATE_CREATE_INFO;
+	tessellation.patchControlPoints = raster->patch_vertices;
 	memset(&viewport, 0, sizeof(viewport));
 	viewport.sType = VK_STRUCTURE_TYPE_PIPELINE_VIEWPORT_STATE_CREATE_INFO;
 	viewport.viewportCount = 1U;
@@ -2897,11 +3057,15 @@ draw_pipeline(
 			rasterization.cullMode = VK_CULL_MODE_FRONT_AND_BACK;
 	}
 
-	/* The front face: GL's winding, turned over for a framebuffer object (its y is not turned over as a window's is). */
+	/*
+	 * The front face: GL's winding, turned over when the last stage does
+	 * not turn y over (a framebuffer object, or a window under
+	 * GL_UPPER_LEFT, whose front faces GL keeps those of the clip space).
+	 */
 	clockwise = 0;
 	if (raster->front_face == GL_CW)
 		clockwise = 1;
-	if (!target->flip)
+	if (!flip)
 		clockwise = !clockwise;
 	rasterization.frontFace = VK_FRONT_FACE_COUNTER_CLOCKWISE;
 	if (clockwise)
@@ -2919,6 +3083,10 @@ draw_pipeline(
 		multisample.rasterizationSamples = (VkSampleCountFlagBits)target->samples;
 	multisample.alphaToCoverageEnable = (VkBool32)state->sample_alpha_to_coverage;
 	multisample.pSampleMask = &raster->sample_mask;
+	if (raster->min_sample_shading != 0U) {
+		multisample.sampleShadingEnable = VK_TRUE;
+		memcpy(&multisample.minSampleShading, &raster->min_sample_shading, sizeof(multisample.minSampleShading));
+	}
 
 	/* Depth and stencil (GL's compare functions are Vulkan's in the same order). */
 	memset(&depth, 0, sizeof(depth));
@@ -2976,6 +3144,8 @@ draw_pipeline(
 	create.pStages = stages;
 	create.pVertexInputState = &vertex;
 	create.pInputAssemblyState = &assembly;
+	if (raster->topology == VK_PRIMITIVE_TOPOLOGY_PATCH_LIST)
+		create.pTessellationState = &tessellation;
 	create.pViewportState = &viewport;
 	create.pRasterizationState = &rasterization;
 	create.pMultisampleState = &multisample;
@@ -3232,6 +3402,8 @@ gles_draw_descriptors(
 					texture = state->rect_units[unit];
 				if (shape == GLES_SHAPE_MS)
 					texture = state->ms_units[unit];
+				if (shape == GLES_SHAPE_CUBE_ARRAY)
+					texture = state->cube_array_units[unit];
 				if (state->unit_samplers[unit] != NULL)
 					sampling = &state->unit_samplers[unit]->sampling;
 			}
@@ -3673,12 +3845,54 @@ draw_blend_factor(
 		return VK_BLEND_FACTOR_ONE_MINUS_CONSTANT_ALPHA;
 	case GL_SRC_ALPHA_SATURATE:
 		return VK_BLEND_FACTOR_SRC_ALPHA_SATURATE;
+	case GL_SRC1_COLOR:
+		/* Desktop GL 3.3's second colour of the fragment shader (glBlendFunc* takes them only when the device blends so). */
+		return VK_BLEND_FACTOR_SRC1_COLOR;
+	case GL_ONE_MINUS_SRC1_COLOR:
+		return VK_BLEND_FACTOR_ONE_MINUS_SRC1_COLOR;
+	case GL_SRC1_ALPHA:
+		return VK_BLEND_FACTOR_SRC1_ALPHA;
+	case GL_ONE_MINUS_SRC1_ALPHA:
+		return VK_BLEND_FACTOR_ONE_MINUS_SRC1_ALPHA;
 	default:
 		break;
 	}
 
 	/* GL_ONE (and a pipeline without blending). */
 	return VK_BLEND_FACTOR_ONE;
+}
+
+/* Reports whether a pipeline's blending reads the fragment shader's second colour (a dual-source blend). */
+static int
+draw_dual_source(
+	const struct gles_raster *raster)
+{
+	uint32_t factors[4];
+	unsigned index;
+
+	/* Without blending, no factor is read. */
+	if (raster->blend == 0U)
+		return 0;
+
+	/* Any of the four factors that is one of the second colour's. */
+	factors[0] = raster->blend_src_rgb;
+	factors[1] = raster->blend_dst_rgb;
+	factors[2] = raster->blend_src_alpha;
+	factors[3] = raster->blend_dst_alpha;
+	for (index = 0U; index < 4U; index++) {
+		switch (factors[index]) {
+		case GL_SRC1_COLOR:
+		case GL_ONE_MINUS_SRC1_COLOR:
+		case GL_SRC1_ALPHA:
+		case GL_ONE_MINUS_SRC1_ALPHA:
+			return 1;
+		default:
+			break;
+		}
+	}
+
+	/* Every factor is one of the first colour's or a constant. */
+	return 0;
 }
 
 /* Returns Vulkan's blend operation for a GL equation. */
@@ -3822,4 +4036,30 @@ draw_geometry_mode(
 
 	/* Another primitive than the shader takes. */
 	return -1;
+}
+
+/*
+ * Reports whether a draw's mode suits the program's tessellation: patches
+ * with tessellation shaders (a geometry shader then reads what they
+ * make), and anything else without them.  Returns 0, or -1 (GL's
+ * GL_INVALID_OPERATION).
+ */
+static int
+draw_patch_mode(
+	const struct gles_program *program,
+	GLenum mode)
+{
+	/* With tessellation shaders, patches only. */
+	if (program->tess_control_module != VK_NULL_HANDLE) {
+		if (mode == GL_PATCHES)
+			return 0;
+		return -1;
+	}
+
+	/* Without them, no patches. */
+	if (mode == GL_PATCHES)
+		return -1;
+
+	/* Succeeded: the mode suits. */
+	return 0;
 }

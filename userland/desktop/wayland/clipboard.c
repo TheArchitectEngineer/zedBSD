@@ -22,7 +22,9 @@
  *
  * kwl_clipboard_history_paste makes an item the selection -- the compositor's
  * own, offered as text (data.c) -- and sends the focused window the paste
- * operation (edit.c).  The on-screen keyboard's history tab (ws102-p016)
+ * operation (edit.c).  A client that receives that text gets it written
+ * into its descriptor without waiting, as much as fits in each pass of the
+ * event loop, until it is all written or the reader has taken too long.  The on-screen keyboard's history tab (ws102-p016)
  * lists the items with kwl_clipboard_history_count and _get; until it
  * exists, Super+Alt+H logs the list and Super+Alt+1 ... 0 pastes an item
  * (edit.c).  The log names an item by its length and a checksum, never
@@ -40,6 +42,12 @@
 
 /* How long a source may take to write its text before the read is given up, in milliseconds. */
 #define CLIPBOARD_READ_MS	2000U
+
+/* How long a reader may take to read the offered text before the write is given up, in milliseconds. */
+#define CLIPBOARD_WRITE_MS	2000U
+
+/* How many writes of the offered text may be under way at once. */
+#define CLIPBOARD_WRITES	8U
 
 /* The text types read, in the order they are preferred. */
 static const char *const clipboard_types[] = {
@@ -84,7 +92,26 @@ static struct {
 static char *clipboard_offered;
 static size_t clipboard_offered_length;
 
+/*
+ * The writes of the offered text under way, the event loop's alone: each
+ * one's descriptor (-1 for a free slot), its copy of the text (the offer
+ * may change meanwhile), the text's length, how much is written, and when
+ * the write began.
+ */
+static struct clipboard_write {
+	int fd;
+	char *text;
+	size_t length;
+	size_t written;
+	uint64_t started;
+} clipboard_writes[CLIPBOARD_WRITES] = {
+	{ -1, NULL, 0U, 0U, 0U }, { -1, NULL, 0U, 0U, 0U }, { -1, NULL, 0U, 0U, 0U }, { -1, NULL, 0U, 0U, 0U },
+	{ -1, NULL, 0U, 0U, 0U }, { -1, NULL, 0U, 0U, 0U }, { -1, NULL, 0U, 0U, 0U }, { -1, NULL, 0U, 0U, 0U }
+};
+
 static void clipboard_read_end(int keep);
+static void clipboard_write_step(struct clipboard_write *write_job);
+static void clipboard_write_end(struct clipboard_write *write_job);
 static void clipboard_add(char *text, size_t length);
 static void clipboard_wipe(char *text, size_t length);
 static uint32_t clipboard_sum(const char *text, size_t length);
@@ -174,10 +201,17 @@ kwl_clipboard_poll(
 {
 	char chunk[1024];
 	char *grown;
+	unsigned index;
 	ssize_t got;
 
-	/* No read under way. */
+	/* The writes under way go on with what fits now. */
 	(void)server;
+	for (index = 0U; index < CLIPBOARD_WRITES; index++) {
+		if (clipboard_writes[index].fd >= 0)
+			clipboard_write_step(&clipboard_writes[index]);
+	}
+
+	/* No read under way. */
 	if (clipboard_read.fd < 0)
 		return;
 
@@ -307,39 +341,51 @@ kwl_clipboard_history_paste(
 }
 
 /*
- * Writes the text the compositor offers into a descriptor a client reads (data.c,
- * a receive of the compositor's selection), and closes it.  A reader that does
- * not take it all within a moment gets what fitted.
+ * Writes the text the compositor offers into a descriptor a client reads
+ * (data.c, a receive of the compositor's selection), and closes it at the
+ * end: what fits now is written at once, the rest in the next passes of
+ * the event loop (kwl_clipboard_poll).  A reader that does not take it all
+ * within CLIPBOARD_WRITE_MS gets what fitted.
  */
 void
 kwl_clipboard_offer_write(
 	int descriptor)
 {
-	uint64_t started;
-	size_t written;
-	ssize_t count;
+	struct clipboard_write *write_job;
+	struct clipboard_write spare;
+	int flags;
+	unsigned index;
 
-	/* The descriptor must not hold the event loop long. */
-	(void)fcntl(descriptor, F_SETFL, fcntl(descriptor, F_GETFL) | O_NONBLOCK);
-	written = 0U;
-	started = kwl_milliseconds();
+	/* The descriptor must not hold the event loop. */
+	flags = fcntl(descriptor, F_GETFL);
+	if (flags >= 0)
+		(void)fcntl(descriptor, F_SETFL, flags | O_NONBLOCK);
 
-	/* All of the text, in as many writes as it takes (a full pipe is tried again for a moment). */
-	while (clipboard_offered != NULL && written < clipboard_offered_length) {
-		count = write(descriptor, clipboard_offered + written, clipboard_offered_length - written);
-		if (count > 0) {
-			written += (size_t)count;
-			continue;
+	/* A free slot (all of them busy: the spare, and what fits now is all the reader gets). */
+	write_job = &spare;
+	for (index = 0U; index < CLIPBOARD_WRITES; index++) {
+		if (clipboard_writes[index].fd < 0) {
+			write_job = &clipboard_writes[index];
+			break;
 		}
-		if (count < 0 && errno != EAGAIN && errno != EINTR)
-			break;
-		if (kwl_milliseconds() - started > 100U)
-			break;
 	}
 
-	/* Succeeded: the reader sees the end. */
-	close(descriptor);
-	printf("KWL CLIP offer bytes=%zu\n", written);
+	/* The write and its own copy of the text (nothing offered, or no memory: the reader gets nothing). */
+	memset(write_job, 0, sizeof(*write_job));
+	write_job->fd = descriptor;
+	write_job->started = kwl_milliseconds();
+	if (clipboard_offered != NULL && clipboard_offered_length > 0U) {
+		write_job->text = malloc(clipboard_offered_length);
+		if (write_job->text != NULL) {
+			memcpy(write_job->text, clipboard_offered, clipboard_offered_length);
+			write_job->length = clipboard_offered_length;
+		}
+	}
+
+	/* What fits now; the rest in the next passes (the spare: none). */
+	clipboard_write_step(write_job);
+	if (write_job == &spare && write_job->fd >= 0)
+		clipboard_write_end(write_job);
 }
 
 /*
@@ -366,6 +412,12 @@ kwl_clipboard_history_clear(
 		clipboard_history[index].length = 0U;
 	}
 	clipboard_count = 0U;
+
+	/* The writes under way end with what they wrote. */
+	for (index = 0U; index < CLIPBOARD_WRITES; index++) {
+		if (clipboard_writes[index].fd >= 0)
+			clipboard_write_end(&clipboard_writes[index]);
+	}
 
 	/* The text the compositor offers, too. */
 	if (clipboard_offered != NULL) {
@@ -413,6 +465,57 @@ clipboard_read_end(
 	}
 	clipboard_read.text = NULL;
 	clipboard_read.length = 0U;
+}
+
+/*
+ * Writes what fits now of a write of the offered text; it ends when all is
+ * written, the reader is gone, or it took too long.
+ */
+static void
+clipboard_write_step(
+	struct clipboard_write *write_job)
+{
+	ssize_t count;
+
+	/* As much as the descriptor takes now. */
+	while (write_job->written < write_job->length) {
+		count = write(write_job->fd, write_job->text + write_job->written, write_job->length - write_job->written);
+		if (count > 0) {
+			write_job->written += (size_t)count;
+			continue;
+		}
+
+		/* Full for now: another pass, unless it has taken too long. */
+		if (count < 0 && (errno == EAGAIN || errno == EINTR)) {
+			if (kwl_milliseconds() - write_job->started > CLIPBOARD_WRITE_MS)
+				break;
+			return;
+		}
+
+		/* The reader is gone. */
+		break;
+	}
+
+	/* Done, or given up. */
+	clipboard_write_end(write_job);
+}
+
+/* Ends a write of the offered text: the reader sees the end, and the copy is wiped. */
+static void
+clipboard_write_end(
+	struct clipboard_write *write_job)
+{
+	/* The descriptor goes, then the copy. */
+	close(write_job->fd);
+	printf("KWL CLIP offer bytes=%zu\n", write_job->written);
+	if (write_job->text != NULL)
+		clipboard_wipe(write_job->text, write_job->length);
+
+	/* Succeeded: the slot is free. */
+	write_job->fd = -1;
+	write_job->text = NULL;
+	write_job->length = 0U;
+	write_job->written = 0U;
 }
 
 /* Puts a text first in the history (taking it); the same text already there moves up, the oldest item goes when it is full. */

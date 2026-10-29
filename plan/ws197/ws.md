@@ -13,6 +13,10 @@ Target: **ベータ2**（2026-10-10 ユーザー「WS197はbeta2.mdで必須に�
 Resume point: main の d5296c23e（2026-10-11）。p001〜p005・p011〜p013 cleared。p004a〜c は host・build の条件を満たし main に統合、実機の SMS・MMS の受信と日本語の表示、写真の MMS の受信と表示はユーザーが 2026-10-10 に確認。p010 は受信の部分だけ cleared（source 89d487814）、写真・動画の送信が未完。次は (1) p010 の送信、(2) HFP の制御 p006 → 音 p007、(3) 実機の UAT p008（Android）。P1 の保留の branch agent/p1-ws197 の作業は全部 main に入った（下の 2026-10-11 の節）。
 <!-- awesome-plan-current:end -->
 
+## 2026-10-29 WS282 p005 の契約の変更（P6、Q1 の許可）
+
+- xHCI の isochronous の encoder が HS の high-bandwidth（wMaxPacketSize の bit 12:11）を受けるようになったので、`plan/ws197/tests/xhci-isoch-test.c` の「high bandwidth refused」を Max Burst 1・ESIT 1024 の期待に直した（branch agent/p6-ws282d、未 merge）。`run-xhci-isoch-test.sh` は通常と ASan/UBSan で all PASS。
+
 ## 2026-10-11 Q1: 状況の照合と P1 の差分の統合
 
 - 2026-10-10 に Codex（別のセッション）が p005 の i06・i07 を実装して main に merge（bee41dded）。同じ時に P1 が worktree の agent/p1-ws197 で i06 を別に書きかけていた（未 commit、phone.h・store.c の約 290 行）。

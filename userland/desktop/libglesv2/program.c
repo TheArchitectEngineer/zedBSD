@@ -56,6 +56,10 @@
 /* SPIR-V's execution model of a compute shader (GLCompute). */
 #define PROGRAM_MODEL_COMPUTE	5U
 
+/* SPIR-V's OpDecorate and its Index decoration (a fragment output's dual-source blend input, desktop GL 3.3). */
+#define PROGRAM_OP_DECORATE	71U
+#define PROGRAM_DECORATION_INDEX 32U
+
 /* Desktop GL's names of its 1D sampler types, which OpenGL ES has none of. */
 #define PROGRAM_SAMPLER_1D		0x8B5DU
 #define PROGRAM_SAMPLER_1D_SHADOW	0x8B61U
@@ -68,8 +72,10 @@ static void timed_compile_shader(GLuint name);
 static void timed_link_program(GLuint name);
 static struct gles_program *program_get(struct zegl_context *context, GLuint name);
 static int program_link(struct gles_state *state, struct gles_program *program, char *log);
-static int program_link_code(struct gles_state *state, struct gles_program *program, const uint32_t *vertex_input, size_t vertex_words, const uint32_t *fragment_input, size_t fragment_words, const uint32_t *geometry_input, size_t geometry_words, char *log);
+static int program_link_code(struct gles_state *state, struct gles_program *program, const uint32_t *vertex_input, size_t vertex_words, const uint32_t *fragment_input, size_t fragment_words, const uint32_t *geometry_input, size_t geometry_words, const struct glsl_program *tessellation, char *log);
 static int program_link_geometry(struct gles_state *state, struct gles_program *program, const uint32_t *code, size_t words, char *log);
+static int program_link_tessellation(struct gles_state *state, struct gles_program *program, const struct glsl_program *linked, int last, char *log);
+static int program_stage_modules(struct gles_state *state, const uint32_t *code, size_t words, int rewrite, VkShaderModule *window, VkShaderModule *fbo, char *log);
 static int program_link_glsl(struct gles_program *program, struct glsl_program *linked, char *log);
 static int program_link_compute(struct gles_state *state, struct gles_program *program, char *log);
 static int program_compute_storages(struct gles_state *state, struct gles_program *program, const struct glsl_program *linked, char *log);
@@ -80,12 +86,15 @@ static void program_glsl_types(struct gles_program *program, const struct glsl_p
 static GLenum program_sampler_type(const struct glsl_uniform_info *info);
 static int program_buffer_sampler(GLenum type);
 static int program_flat_inputs(const uint32_t *code, size_t words);
+static void program_bind_output(GLuint name, GLuint color, GLuint index, const GLchar *output);
+static int program_output_indexes(struct gles_spirv *fragment, uint32_t **code, size_t *words, char *log);
 static int program_glsl_blocks(struct gles_program *program, const struct glsl_program *linked, char *log);
 static int program_spirv_blocks(struct gles_program *program, const struct gles_spirv *spirv, unsigned stage, char *log);
 static int program_merge(struct gles_program *program, struct gles_spirv *spirv, char *log);
 static int program_builtin_uniform(struct gles_program *program, const struct gles_uniform *uniform);
 static int program_layout(struct gles_state *state, struct gles_program *program);
 static int program_module(struct gles_state *state, const uint32_t *code, size_t words, VkShaderModule *module);
+static int program_keep_last(struct gles_program *program, const uint32_t *code, size_t words, char *log);
 static void program_unlink(struct gles_state *state, struct gles_program *program);
 static void program_uniform(GLint location, GLsizei count, unsigned components, const void *values, int integers);
 static void program_matrix(GLint location, GLsizei count, GLboolean transpose, const GLfloat *values, unsigned columns, unsigned rows);
@@ -113,10 +122,58 @@ gles_program_release(
 	program_let_go(state, program->fragment);
 	program_let_go(state, program->geometry);
 	program_let_go(state, program->compute);
+	program_let_go(state, program->tess_control);
+	program_let_go(state, program->tess_evaluation);
 
 	/* The program. */
 	free(program->log);
 	free(program);
+}
+
+/*
+ * Returns a linked program's module of the last stage before the
+ * rasterizer with gl_Position's z kept as the shader wrote it (desktop
+ * GL's glClipControl(GL_ZERO_TO_ONE)) and y turned over when flip is
+ * nonzero, made at its first use and kept until the program's link goes;
+ * VK_NULL_HANDLE when it cannot be made.
+ */
+VkShaderModule
+gles_program_zero_module(
+	struct gles_state *state,
+	struct gles_program *program,
+	int flip)
+{
+	uint32_t *patched;
+	size_t patched_words;
+	unsigned index;
+	int status;
+
+	/* One made before. */
+	index = 0U;
+	if (flip)
+		index = 1U;
+	if (program->zero_modules[index] != VK_NULL_HANDLE)
+		return program->zero_modules[index];
+
+	/* Without the last stage's code there is none. */
+	if (program->last_code == NULL)
+		return VK_NULL_HANDLE;
+
+	/* The code with gl_Position's y turned over or not, its z as it is. */
+	patched = gles_spirv_position(program->last_code, program->last_words, flip, 0, &patched_words);
+	if (patched == NULL)
+		return VK_NULL_HANDLE;
+
+	/* Its module. */
+	status = program_module(state, patched, patched_words, &program->zero_modules[index]);
+	free(patched);
+	if (status != 0) {
+		program->zero_modules[index] = VK_NULL_HANDLE;
+		return VK_NULL_HANDLE;
+	}
+
+	/* Succeeded: the module. */
+	return program->zero_modules[index];
 }
 
 /*
@@ -154,6 +211,9 @@ glCreateShader(
 	if (type != GL_VERTEX_SHADER &&
 	    type != GL_FRAGMENT_SHADER &&
 	    (type != GL_GEOMETRY_SHADER || gles_fixed == NULL) &&
+	    ((type != GL_TESS_CONTROL_SHADER && type != GL_TESS_EVALUATION_SHADER) ||
+	     gles_fixed == NULL ||
+	     !state->display->features.tessellationShader) &&
 	    (type != GL_COMPUTE_SHADER || !state->compute)) {
 		gles_error(context, GL_INVALID_ENUM);
 		return 0U;
@@ -336,6 +396,10 @@ timed_compile_shader(
 		stage = GLSL_STAGE_GEOMETRY;
 	if (shader->type == GL_COMPUTE_SHADER)
 		stage = GLSL_STAGE_COMPUTE;
+	if (shader->type == GL_TESS_CONTROL_SHADER)
+		stage = GLSL_STAGE_TESS_CONTROL;
+	if (shader->type == GL_TESS_EVALUATION_SHADER)
+		stage = GLSL_STAGE_TESS_EVALUATION;
 	version = PROGRAM_ES_VERSION;
 	if (gles_fixed != NULL)
 		version = PROGRAM_DESKTOP_VERSION;
@@ -699,6 +763,10 @@ glAttachShader(
 		slot = &program->geometry;
 	if (shader->type == GL_COMPUTE_SHADER)
 		slot = &program->compute;
+	if (shader->type == GL_TESS_CONTROL_SHADER)
+		slot = &program->tess_control;
+	if (shader->type == GL_TESS_EVALUATION_SHADER)
+		slot = &program->tess_evaluation;
 	if (*slot != NULL) {
 		gles_error(context, GL_INVALID_OPERATION);
 		return;
@@ -741,6 +809,10 @@ glDetachShader(
 		program->geometry = NULL;
 	} else if (program->compute == shader) {
 		program->compute = NULL;
+	} else if (program->tess_control == shader) {
+		program->tess_control = NULL;
+	} else if (program->tess_evaluation == shader) {
+		program->tess_evaluation = NULL;
 	} else {
 		gles_error(context, GL_INVALID_OPERATION);
 		return;
@@ -903,6 +975,38 @@ glGetProgramiv(
 			*params += 1;
 		if (program->compute != NULL)
 			*params += 1;
+		if (program->tess_control != NULL)
+			*params += 1;
+		if (program->tess_evaluation != NULL)
+			*params += 1;
+		return;
+	case GL_TESS_CONTROL_OUTPUT_VERTICES:
+	case GL_TESS_GEN_MODE:
+	case GL_TESS_GEN_SPACING:
+	case GL_TESS_GEN_VERTEX_ORDER:
+	case GL_TESS_GEN_POINT_MODE:
+		/* A linked program's tessellation shaders' layouts (desktop GL 4.0, libGL). */
+		if (gles_fixed == NULL) {
+			gles_error(context, GL_INVALID_ENUM);
+			return;
+		}
+
+		/* Linked with tessellation shaders. */
+		if (!program->linked || program->tess_control_module == VK_NULL_HANDLE) {
+			gles_error(context, GL_INVALID_OPERATION);
+			return;
+		}
+
+		/* The layout asked for. */
+		*params = program->tess_vertices;
+		if (pname == GL_TESS_GEN_MODE)
+			*params = (GLint)program->tess_mode;
+		if (pname == GL_TESS_GEN_SPACING)
+			*params = (GLint)program->tess_spacing;
+		if (pname == GL_TESS_GEN_VERTEX_ORDER)
+			*params = (GLint)program->tess_order;
+		if (pname == GL_TESS_GEN_POINT_MODE)
+			*params = (GLint)program->tess_point_mode;
 		return;
 	case GL_GEOMETRY_VERTICES_OUT:
 	case GL_GEOMETRY_INPUT_TYPE:
@@ -1077,6 +1181,10 @@ glGetAttachedShaders(
 		shaders[found++] = program->geometry->name;
 	if (program->compute != NULL && found < maxCount)
 		shaders[found++] = program->compute->name;
+	if (program->tess_control != NULL && found < maxCount)
+		shaders[found++] = program->tess_control->name;
+	if (program->tess_evaluation != NULL && found < maxCount)
+		shaders[found++] = program->tess_evaluation->name;
 	if (count != NULL)
 		*count = found;
 }
@@ -1172,17 +1280,80 @@ glBindFragDataLocation(
 	GLuint color,
 	const GLchar *output)
 {
+	/* The first colour of the draw buffer. */
+	program_bind_output(name, color, 0U, output);
+}
+
+/*
+ * Gives a fragment shader output a draw buffer and which colour of a
+ * dual-source blend it is (index 0 or 1) for the program's next link
+ * (desktop GL 3.3, libGL).
+ */
+GL_APICALL void GL_APIENTRY
+glBindFragDataLocationIndexed(
+	GLuint name,
+	GLuint color,
+	GLuint index,
+	const GLchar *output)
+{
+	/* The colour given. */
+	program_bind_output(name, color, index, output);
+}
+
+/*
+ * Returns which colour of a dual-source blend a fragment shader output of
+ * a linked program is (0 or 1), or -1 (desktop GL 3.3, libGL).
+ */
+GL_APICALL GLint GL_APIENTRY
+glGetFragDataIndex(
+	GLuint name,
+	const GLchar *output)
+{
+	struct zegl_context *context;
+	struct gles_program *program;
+	unsigned index;
+	int differs;
+
+	/* A linked program. */
+	context = gles_context();
+	program = program_get(context, name);
+	if (program == NULL)
+		return -1;
+	if (!program->linked) {
+		gles_error(context, GL_INVALID_OPERATION);
+		return -1;
+	}
+
+	/* The output of that name. */
+	for (index = 0U; index < program->output_count; index++) {
+		differs = strcmp(program->output_names[index], output);
+		if (differs == 0)
+			return program->output_indexes[index];
+	}
+
+	/* None. */
+	return -1;
+}
+
+/* Records a draw buffer and an index glBindFragDataLocation(Indexed) gave an output name, for the program's next link. */
+static void
+program_bind_output(
+	GLuint name,
+	GLuint color,
+	GLuint index,
+	const GLchar *output)
+{
 	struct zegl_context *context;
 	struct gles_program *program;
 	unsigned slot;
 	int differs;
 
-	/* The program, and a draw buffer. */
+	/* The program, a draw buffer, and the first or second colour (the second only of the draw buffers a dual-source blend has). */
 	context = gles_context();
 	program = program_get(context, name);
 	if (program == NULL)
 		return;
-	if (color >= GLES_DRAW_BUFFERS) {
+	if (color >= GLES_DRAW_BUFFERS || index > 1U || (index == 1U && color != 0U)) {
 		gles_error(context, GL_INVALID_VALUE);
 		return;
 	}
@@ -1215,6 +1386,7 @@ glBindFragDataLocation(
 	/* Recorded for the next link. */
 	(void)snprintf(program->frag_bound_names[slot], GLES_NAME, "%s", output);
 	program->frag_bound_locations[slot] = color;
+	program->frag_bound_indexes[slot] = index;
 }
 
 /*
@@ -2327,11 +2499,19 @@ program_link(
 	unsigned input;
 	unsigned output;
 	unsigned vertices;
+	unsigned mode;
+	unsigned spacing;
+	unsigned order;
+	unsigned point_mode;
 	int status;
 
 	/* A compute shader is linked alone (ws101-p009). */
 	if (program->compute != NULL) {
-		if (program->vertex != NULL || program->fragment != NULL || program->geometry != NULL) {
+		if (program->vertex != NULL ||
+		    program->fragment != NULL ||
+		    program->geometry != NULL ||
+		    program->tess_control != NULL ||
+		    program->tess_evaluation != NULL) {
 			(void)snprintf(log, PROGRAM_LOG, "a compute shader cannot be linked with shaders of other stages\n");
 			return -1;
 		}
@@ -2359,10 +2539,21 @@ program_link(
 		return -1;
 	}
 
+	/* Tessellation shaders compiled from GLSL (the compiler's link checks that both are there). */
+	if ((program->tess_control != NULL && (!program->tess_control->compiled || program->tess_control->glsl == NULL)) ||
+	    (program->tess_evaluation != NULL && (!program->tess_evaluation->compiled || program->tess_evaluation->glsl == NULL))) {
+		(void)snprintf(log, PROGRAM_LOG, "a tessellation shader is not compiled GLSL\n");
+		return -1;
+	}
+
 	/* Two binaries are linked as they are. */
-	if (program->vertex->glsl == NULL && program->fragment->glsl == NULL && program->geometry == NULL) {
+	if (program->vertex->glsl == NULL &&
+	    program->fragment->glsl == NULL &&
+	    program->geometry == NULL &&
+	    program->tess_control == NULL &&
+	    program->tess_evaluation == NULL) {
 		status = program_link_code(state, program, program->vertex->code, program->vertex->words, program->fragment->code,
-					   program->fragment->words, NULL, 0U, log);
+					   program->fragment->words, NULL, 0U, NULL, log);
 		return status;
 	}
 
@@ -2383,9 +2574,25 @@ program_link(
 		program->geometry_vertices = (GLint)vertices;
 	}
 
+	/* The tessellation shaders' layouts, as GL names them. */
+	program->tess_vertices = 0;
+	program->tess_mode = GL_NONE;
+	program->tess_spacing = GL_NONE;
+	program->tess_order = GL_NONE;
+	program->tess_point_mode = GL_FALSE;
+	if (program->tess_control != NULL && program->tess_evaluation != NULL) {
+		glsl_tess_layout(program->tess_control->glsl, &vertices, &mode, &spacing, &order, &point_mode);
+		program->tess_vertices = (GLint)vertices;
+		glsl_tess_layout(program->tess_evaluation->glsl, &vertices, &mode, &spacing, &order, &point_mode);
+		program->tess_mode = mode;
+		program->tess_spacing = spacing;
+		program->tess_order = order;
+		program->tess_point_mode = (GLboolean)point_mode;
+	}
+
 	/* The SPIR-V linked, then the uniforms' GL types the SPIR-V does not tell, then the named blocks' members. */
 	status = program_link_code(state, program, linked.code[0], linked.words[0], linked.code[1], linked.words[1],
-				   linked.code[GLSL_STAGE_GEOMETRY], linked.words[GLSL_STAGE_GEOMETRY], log);
+				   linked.code[GLSL_STAGE_GEOMETRY], linked.words[GLSL_STAGE_GEOMETRY], &linked, log);
 	if (status == 0)
 		program_glsl_types(program, &linked);
 	if (status == 0)
@@ -2413,6 +2620,8 @@ program_link_glsl(
 	struct glsl_binding bindings[GLES_ATTRIBS];
 	const char *captures[GLES_CAPTURES];
 	const struct glsl_shader *geometry;
+	const struct glsl_shader *tess_control;
+	const struct glsl_shader *tess_evaluation;
 	unsigned index;
 	char *glsl_log;
 	int status;
@@ -2433,12 +2642,18 @@ program_link_glsl(
 	for (index = 0U; index < program->feedback_count; index++)
 		captures[index] = program->feedback_names[index];
 
-	/* The compiler's link (with the geometry shader between the two when there is one). */
+	/* The compiler's link (with the tessellation and geometry shaders between the two when there are some). */
 	geometry = NULL;
 	if (program->geometry != NULL)
 		geometry = program->geometry->glsl;
-	status = glsl_link_stages(program->vertex->glsl, geometry, program->fragment->glsl, bindings, program->bound_count,
-				  captures, program->feedback_count, linked, &glsl_log);
+	tess_control = NULL;
+	if (program->tess_control != NULL)
+		tess_control = program->tess_control->glsl;
+	tess_evaluation = NULL;
+	if (program->tess_evaluation != NULL)
+		tess_evaluation = program->tess_evaluation->glsl;
+	status = glsl_link_pipeline(program->vertex->glsl, tess_control, tess_evaluation, geometry, program->fragment->glsl,
+				    bindings, program->bound_count, captures, program->feedback_count, linked, &glsl_log);
 	if (status != 0) {
 		if (glsl_log != NULL) {
 			(void)snprintf(log, PROGRAM_LOG, "%s", glsl_log);
@@ -2741,6 +2956,8 @@ program_sampler_type(
 {
 	/* A shadow sampler compares depth. */
 	if (info->shadow && info->sampler != GLSL_SAMPLER_RECT) {
+		if (info->sampler == GLSL_SAMPLER_CUBE && info->arrayed)
+			return GL_SAMPLER_CUBE_MAP_ARRAY_SHADOW;
 		if (info->sampler == GLSL_SAMPLER_CUBE)
 			return GL_SAMPLER_CUBE_SHADOW;
 		if (info->sampler == GLSL_SAMPLER_1D)
@@ -2773,6 +2990,12 @@ program_sampler_type(
 			return GL_UNSIGNED_INT_SAMPLER_2D_MULTISAMPLE;
 		return GL_SAMPLER_2D_MULTISAMPLE;
 	case GLSL_SAMPLER_CUBE:
+		if (info->arrayed && info->base == GLSL_INFO_INT)
+			return GL_INT_SAMPLER_CUBE_MAP_ARRAY;
+		if (info->arrayed && info->base == GLSL_INFO_UINT)
+			return GL_UNSIGNED_INT_SAMPLER_CUBE_MAP_ARRAY;
+		if (info->arrayed)
+			return GL_SAMPLER_CUBE_MAP_ARRAY;
 		if (info->base == GLSL_INFO_INT)
 			return GL_INT_SAMPLER_CUBE;
 		if (info->base == GLSL_INFO_UINT)
@@ -2932,6 +3155,97 @@ program_spirv_blocks(
 }
 
 /*
+ * Checks the fragment outputs' dual-source blend indexes after the
+ * bindings, and gives an Index decoration to each output that is the
+ * second colour without one (an OpDecorate after its Location's, so the
+ * words after it move: nothing may use the reflected words afterwards).
+ * Replaces *code with the longer copy when one is made.  Returns 0, or -1
+ * with the log.
+ */
+static int
+program_output_indexes(
+	struct gles_spirv *fragment,
+	uint32_t **code,
+	size_t *words,
+	char *log)
+{
+	const struct gles_spirv_variable *output;
+	uint32_t *longer;
+	size_t ends[GLES_ATTRIBS * 2U];
+	uint32_t ids[GLES_ATTRIBS * 2U];
+	size_t end;
+	uint32_t id;
+	size_t from;
+	size_t to;
+	unsigned count;
+	unsigned index;
+	unsigned place;
+
+	/* The second colours: only at location 0 (the one draw buffer a dual-source blend has), and those to decorate in the order of their words. */
+	count = 0U;
+	for (index = 0U; index < fragment->output_count; index++) {
+		output = &fragment->outputs[index];
+		if (output->index == 0U)
+			continue;
+		if (output->location != 0U || output->size > 1) {
+			(void)snprintf(log, PROGRAM_LOG, "output '%s' is a second colour at a location other than 0\n", output->name);
+			return -1;
+		}
+
+		/* One with the decoration already, or without a Location to follow. */
+		if (output->index_word != 0U || output->location_word == 0U)
+			continue;
+
+		/* After its Location's OpDecorate (4 words, the location the last), kept sorted. */
+		end = output->location_word + 1U;
+		id = output->id;
+		for (place = count; place > 0U && ends[place - 1U] > end; place--) {
+			ends[place] = ends[place - 1U];
+			ids[place] = ids[place - 1U];
+		}
+
+		/* Its place in the sorted list. */
+		ends[place] = end;
+		ids[place] = id;
+		count++;
+	}
+
+	/* Nothing to add. */
+	if (count == 0U)
+		return 0;
+
+	/* A copy with room for the new decorations. */
+	longer = malloc((*words + count * 4U) * sizeof(uint32_t));
+	if (longer == NULL) {
+		(void)snprintf(log, PROGRAM_LOG, "out of memory\n");
+		return -1;
+	}
+
+	/* The words copied in order, each new OpDecorate %id Index 1 after the instruction it follows. */
+	from = 0U;
+	to = 0U;
+	for (index = 0U; index < count; index++) {
+		memcpy(longer + to, *code + from, (ends[index] - from) * sizeof(uint32_t));
+		to += ends[index] - from;
+		from = ends[index];
+		longer[to++] = (4U << 16) | PROGRAM_OP_DECORATE;
+		longer[to++] = ids[index];
+		longer[to++] = PROGRAM_DECORATION_INDEX;
+		longer[to++] = 1U;
+	}
+
+	/* The rest. */
+	memcpy(longer + to, *code + from, (*words - from) * sizeof(uint32_t));
+	to += *words - from;
+
+	/* Succeeded: the code is the longer copy. */
+	free(*code);
+	*code = longer;
+	*words = to;
+	return 0;
+}
+
+/*
  * Links SPIR-V of the two stages (and of a geometry stage between them,
  * NULL for none): the interfaces, the attribute and varying locations,
  * gl_Position made Vulkan's (in the last stage before the rasterizer),
@@ -2948,11 +3262,13 @@ program_link_code(
 	size_t fragment_words,
 	const uint32_t *geometry_input,
 	size_t geometry_words,
+	const struct glsl_program *tessellation,
 	char *log)
 {
 	struct gles_spirv vertex;
 	struct gles_spirv fragment;
 	struct gles_spirv_variable *input;
+	int later;
 	uint32_t *vertex_code;
 	uint32_t *fragment_code;
 	uint32_t *patched;
@@ -3016,6 +3332,9 @@ program_link_code(
 				continue;
 			fragment.outputs[index].location = program->frag_bound_locations[other];
 			fragment_code[fragment.outputs[index].location_word] = program->frag_bound_locations[other];
+			fragment.outputs[index].index = program->frag_bound_indexes[other];
+			if (fragment.outputs[index].index_word != 0U)
+				fragment_code[fragment.outputs[index].index_word] = program->frag_bound_indexes[other];
 		}
 	}
 
@@ -3027,6 +3346,7 @@ program_link_code(
 	for (index = 0U; index < fragment.output_count && program->output_count < GLES_DRAW_BUFFERS; index++) {
 		(void)snprintf(program->output_names[program->output_count], GLES_NAME, "%s", fragment.outputs[index].name);
 		program->output_locations[program->output_count] = (GLint)fragment.outputs[index].location;
+		program->output_indexes[program->output_count] = (GLint)fragment.outputs[index].index;
 		program->output_count++;
 	}
 
@@ -3041,8 +3361,15 @@ program_link_code(
 		}
 	}
 
-	/* Each fragment input takes the location of the vertex output of its name (the GLSL link located them past a geometry stage). */
-	for (index = 0U; index < fragment.input_count && geometry_input == NULL; index++) {
+	/* Stages after the vertex stage (the GLSL link located their varyings, and the last of them rewrites gl_Position). */
+	later = 0;
+	if (geometry_input != NULL)
+		later = 1;
+	if (tessellation != NULL && tessellation->code[GLSL_STAGE_TESS_CONTROL] != NULL)
+		later = 1;
+
+	/* Each fragment input takes the location of the vertex output of its name, when the vertex stage is the last. */
+	for (index = 0U; index < fragment.input_count && !later; index++) {
 		input = &fragment.inputs[index];
 		for (other = 0U; other < vertex.output_count; other++) {
 			differs = strcmp(input->name, vertex.outputs[other].name);
@@ -3051,6 +3378,16 @@ program_link_code(
 			input->location = vertex.outputs[other].location;
 			fragment_code[input->location_word] = vertex.outputs[other].location;
 		}
+	}
+
+	/* The second colours glBindFragDataLocationIndexed gave outputs without an Index decoration get one (last: the words move). */
+	status = program_output_indexes(&fragment, &fragment_code, &fragment_words, log);
+	if (status != 0) {
+		free(vertex_code);
+		free(fragment_code);
+		gles_spirv_free(&vertex);
+		gles_spirv_free(&fragment);
+		return -1;
 	}
 
 	/* The attributes. */
@@ -3066,9 +3403,9 @@ program_link_code(
 		program->attribute_count++;
 	}
 
-	/* The vertex shader's gl_Position made Vulkan's: for a window, y turned over (unchanged before a geometry stage, which does it). */
-	patched = gles_spirv_position(vertex_code, vertex_words, 1, &patched_words);
-	if (geometry_input != NULL && patched != NULL) {
+	/* The vertex shader's gl_Position made Vulkan's: for a window, y turned over (unchanged before a later stage, which does it). */
+	patched = gles_spirv_position(vertex_code, vertex_words, 1, 1, &patched_words);
+	if (later && patched != NULL) {
 		memcpy(patched, vertex_code, vertex_words * sizeof(uint32_t));
 		patched_words = vertex_words;
 	}
@@ -3084,10 +3421,24 @@ program_link_code(
 	}
 
 	/* And for a framebuffer object, whose image keeps GL's rows. */
-	patched_fbo = gles_spirv_position(vertex_code, vertex_words, 0, &patched_fbo_words);
-	if (geometry_input != NULL && patched_fbo != NULL) {
+	patched_fbo = gles_spirv_position(vertex_code, vertex_words, 0, 1, &patched_fbo_words);
+	if (later && patched_fbo != NULL) {
 		memcpy(patched_fbo, vertex_code, vertex_words * sizeof(uint32_t));
 		patched_fbo_words = vertex_words;
+	}
+
+	/* The vertex shader's code kept when it is the last stage (glClipControl's depth range makes other modules of it). */
+	status = 0;
+	if (!later)
+		status = program_keep_last(program, vertex_code, vertex_words, log);
+	if (status != 0) {
+		free(vertex_code);
+		free(patched);
+		free(patched_fbo);
+		free(fragment_code);
+		gles_spirv_free(&vertex);
+		gles_spirv_free(&fragment);
+		return -1;
 	}
 
 	/* The code is in the copies now. */
@@ -3133,6 +3484,14 @@ program_link_code(
 		program->stages |= VK_SHADER_STAGE_GEOMETRY_BIT;
 	}
 
+	/* The tessellation stages, the evaluation one the last before the rasterizer without a geometry stage. */
+	if (tessellation != NULL && tessellation->code[GLSL_STAGE_TESS_CONTROL] != NULL) {
+		status = program_link_tessellation(state, program, tessellation, geometry_input == NULL, log);
+		if (status != 0)
+			return -1;
+		program->stages |= VK_SHADER_STAGE_TESSELLATION_CONTROL_BIT | VK_SHADER_STAGE_TESSELLATION_EVALUATION_BIT;
+	}
+
 	/* The layouts. */
 	status = program_layout(state, program);
 	if (status != 0) {
@@ -3175,8 +3534,13 @@ program_link_geometry(
 	if (status != 0)
 		return -1;
 
+	/* Its code kept (glClipControl's depth range makes other modules of it). */
+	status = program_keep_last(program, code, words, log);
+	if (status != 0)
+		return -1;
+
 	/* The module for a window: y turned over. */
-	patched = gles_spirv_position(code, words, 1, &patched_words);
+	patched = gles_spirv_position(code, words, 1, 1, &patched_words);
 	if (patched == NULL) {
 		(void)snprintf(log, PROGRAM_LOG, "the geometry shader's gl_Position could not be rewritten\n");
 		return -1;
@@ -3191,7 +3555,7 @@ program_link_geometry(
 	}
 
 	/* And for a framebuffer object. */
-	patched = gles_spirv_position(code, words, 0, &patched_words);
+	patched = gles_spirv_position(code, words, 0, 1, &patched_words);
 	if (patched == NULL) {
 		(void)snprintf(log, PROGRAM_LOG, "the geometry shader's gl_Position could not be rewritten\n");
 		return -1;
@@ -3206,6 +3570,129 @@ program_link_geometry(
 	}
 
 	/* Succeeded: the geometry stage is linked. */
+	return 0;
+}
+
+/*
+ * Links a program's tessellation stages (after the vertex, the fragment
+ * and any geometry stage): their named blocks and uniforms added to the
+ * program's, the control stage's module, and the evaluation stage's
+ * modules (for a window and for a framebuffer object) with gl_Position
+ * made Vulkan's when it is the last stage before the rasterizer.
+ * Returns 0, or -1 with the log.
+ */
+static int
+program_link_tessellation(
+	struct gles_state *state,
+	struct gles_program *program,
+	const struct glsl_program *linked,
+	int last,
+	char *log)
+{
+	static const unsigned stages[2] = { GLSL_STAGE_TESS_CONTROL, GLSL_STAGE_TESS_EVALUATION };
+	struct gles_spirv spirv;
+	unsigned index;
+	int status;
+
+	/* Each stage's interface, blocks and uniforms. */
+	for (index = 0U; index < 2U; index++) {
+		status = gles_spirv_reflect(linked->code[stages[index]], linked->words[stages[index]], &spirv, log, PROGRAM_LOG);
+		if (status != 0)
+			return -1;
+		status = program_spirv_blocks(program, &spirv, stages[index], log);
+		if (status == 0)
+			status = program_merge(program, &spirv, log);
+		gles_spirv_free(&spirv);
+		if (status != 0)
+			return -1;
+	}
+
+	/* The control stage's module, as it is. */
+	status = program_module(state, linked->code[GLSL_STAGE_TESS_CONTROL], linked->words[GLSL_STAGE_TESS_CONTROL],
+				&program->tess_control_module);
+	if (status != 0) {
+		(void)snprintf(log, PROGRAM_LOG, "the device refused the tessellation control shader\n");
+		return -1;
+	}
+
+	/* The evaluation stage's code kept when it is the last stage (glClipControl's depth range makes other modules of it). */
+	if (last) {
+		status = program_keep_last(program, linked->code[GLSL_STAGE_TESS_EVALUATION], linked->words[GLSL_STAGE_TESS_EVALUATION], log);
+		if (status != 0)
+			return -1;
+	}
+
+	/* The evaluation stage's two. */
+	status = program_stage_modules(state, linked->code[GLSL_STAGE_TESS_EVALUATION], linked->words[GLSL_STAGE_TESS_EVALUATION],
+				       last, &program->tess_evaluation_module, &program->tess_evaluation_module_fbo, log);
+	if (status != 0)
+		return -1;
+
+	/* Succeeded: the tessellation stages are linked. */
+	return 0;
+}
+
+/*
+ * Makes a stage's two modules, for a window and for a framebuffer object:
+ * with gl_Position made Vulkan's (y turned over for the window) when
+ * rewrite is nonzero, else both as the code is.  Returns 0, or -1 with
+ * the log.
+ */
+static int
+program_stage_modules(
+	struct gles_state *state,
+	const uint32_t *code,
+	size_t words,
+	int rewrite,
+	VkShaderModule *window,
+	VkShaderModule *fbo,
+	char *log)
+{
+	uint32_t *patched;
+	size_t patched_words;
+	int status;
+
+	/* Without the rewrite, one code for both. */
+	if (!rewrite) {
+		status = program_module(state, code, words, window);
+		if (status == 0)
+			status = program_module(state, code, words, fbo);
+		if (status != 0) {
+			(void)snprintf(log, PROGRAM_LOG, "the device refused a shader\n");
+			return -1;
+		}
+
+		/* Succeeded: both modules of the code as it is. */
+		return 0;
+	}
+
+	/* The module for a window: y turned over. */
+	patched = gles_spirv_position(code, words, 1, 1, &patched_words);
+	if (patched == NULL) {
+		(void)snprintf(log, PROGRAM_LOG, "a shader's gl_Position could not be rewritten\n");
+		return -1;
+	}
+	status = program_module(state, patched, patched_words, window);
+	free(patched);
+	if (status != 0) {
+		(void)snprintf(log, PROGRAM_LOG, "the device refused a shader\n");
+		return -1;
+	}
+
+	/* And for a framebuffer object. */
+	patched = gles_spirv_position(code, words, 0, 1, &patched_words);
+	if (patched == NULL) {
+		(void)snprintf(log, PROGRAM_LOG, "a shader's gl_Position could not be rewritten\n");
+		return -1;
+	}
+	status = program_module(state, patched, patched_words, fbo);
+	free(patched);
+	if (status != 0) {
+		(void)snprintf(log, PROGRAM_LOG, "the device refused a shader\n");
+		return -1;
+	}
+
+	/* Succeeded: both modules. */
 	return 0;
 }
 
@@ -3464,6 +3951,34 @@ program_module(
 	return 0;
 }
 
+/*
+ * Keeps a copy of the code of a program's last stage before the
+ * rasterizer, in place of one kept before.  Returns 0, or -1 with the log.
+ */
+static int
+program_keep_last(
+	struct gles_program *program,
+	const uint32_t *code,
+	size_t words,
+	char *log)
+{
+	uint32_t *copy;
+
+	/* The copy. */
+	copy = malloc(words * sizeof(uint32_t));
+	if (copy == NULL) {
+		(void)snprintf(log, PROGRAM_LOG, "out of memory\n");
+		return -1;
+	}
+	memcpy(copy, code, words * sizeof(uint32_t));
+
+	/* Succeeded: it replaces the one before. */
+	free(program->last_code);
+	program->last_code = copy;
+	program->last_words = words;
+	return 0;
+}
+
 /* Undoes a program's link: its Vulkan objects wait for the frame, its pipelines go, its tables are freed. */
 static void
 program_unlink(
@@ -3483,13 +3998,19 @@ program_unlink(
 	objects.modules[2] = program->vertex_module_fbo;
 	objects.modules[3] = program->geometry_module;
 	objects.modules[4] = program->geometry_module_fbo;
+	objects.modules[5] = program->tess_control_module;
+	objects.modules[6] = program->tess_evaluation_module;
+	objects.modules[7] = program->tess_evaluation_module_fbo;
+	objects.modules[8] = program->zero_modules[0];
+	objects.modules[9] = program->zero_modules[1];
 	objects.pipeline = program->compute_pipeline;
 	gles_garbage_keep(state, &objects);
 
-	/* The tables. */
+	/* The tables, and the last stage's code. */
 	free(program->uniforms);
 	free(program->locations);
 	free(program->uniform_data);
+	free(program->last_code);
 
 	/* Nothing linked. */
 	program->layout = VK_NULL_HANDLE;
@@ -3499,6 +4020,13 @@ program_unlink(
 	program->fragment_module = VK_NULL_HANDLE;
 	program->geometry_module = VK_NULL_HANDLE;
 	program->geometry_module_fbo = VK_NULL_HANDLE;
+	program->tess_control_module = VK_NULL_HANDLE;
+	program->tess_evaluation_module = VK_NULL_HANDLE;
+	program->tess_evaluation_module_fbo = VK_NULL_HANDLE;
+	program->zero_modules[0] = VK_NULL_HANDLE;
+	program->zero_modules[1] = VK_NULL_HANDLE;
+	program->last_code = NULL;
+	program->last_words = 0U;
 	program->uniforms = NULL;
 	program->uniform_count = 0U;
 	program->locations = NULL;

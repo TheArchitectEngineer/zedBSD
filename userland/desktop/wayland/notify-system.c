@@ -23,6 +23,7 @@
 #include <keiland/keiland.h>
 
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
 
 /* The battery's marks, in percent: low, then critically low. */
@@ -46,6 +47,8 @@ struct notify_system_action {
  */
 static struct notify_system_action notify_system_actions[NOTIFY_SYSTEM_ACTIONS];
 static unsigned notify_system_next;
+
+static void notify_system_started(struct kwl_server *server, pid_t pid, int error, void *context);
 
 /*
  * Whether the battery's low and critical warnings were given since it was
@@ -134,7 +137,8 @@ kwl_notify_system_activated(
 	uint32_t id)
 {
 	unsigned index;
-	pid_t child;
+	char *line;
+	int error;
 
 	/* The notification's action, if it has one. */
 	for (index = 0U; index < NOTIFY_SYSTEM_ACTIONS; index++) {
@@ -142,8 +146,14 @@ kwl_notify_system_activated(
 			continue;
 
 		/* Its command, started once. */
-		child = kwl_spawn(server, notify_system_actions[index].command);
-		printf("KWL NOTIFY system-action id=%u command=\"%s\" pid=%ld\n", id, notify_system_actions[index].command, (long)child);
+		line = malloc(strlen(notify_system_actions[index].command) + 64U);
+		if (line != NULL)
+			(void)sprintf(line, "KWL NOTIFY system-action id=%u command=\"%s\"", id, notify_system_actions[index].command);
+		error = kwl_spawn(server, notify_system_actions[index].command, notify_system_started, line);
+		if (error != 0) {
+			printf("KWL NOTIFY system-action id=%u command=\"%s\" pid=-1 errno=%d\n", id, notify_system_actions[index].command, error);
+			free(line);
+		}
 		notify_system_actions[index].id = 0U;
 		return;
 	}
@@ -196,4 +206,26 @@ kwl_notify_battery(
 		(void)kwl_notify_system_post(server, kl_tr("Battery low"), body, KWL_NOTIFY_URGENT, NULL);
 		printf("KWL NOTIFY battery percent=%d level=low\n", charge);
 	}
+}
+
+/* Logs a notification's action started (the line made when it was asked, with the process ID or -1 and the errno). */
+static void
+notify_system_started(
+	struct kwl_server *server,
+	pid_t pid,
+	int error,
+	void *context)
+{
+	char *line;
+
+	/* The line, then it goes. */
+	(void)server;
+	line = context;
+	if (line == NULL)
+		return;
+	if (error != 0)
+		printf("%s pid=-1 errno=%d\n", line, error);
+	else
+		printf("%s pid=%ld\n", line, (long)pid);
+	free(line);
 }

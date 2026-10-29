@@ -308,24 +308,28 @@ source（この worktree、基点 main 3eb150f35）を読んで並べた。各 d
 | --- | --- | --- | --- | --- | --- | --- |
 | API の版 | 1.1 | 1.1 | 1.1 | 1.0 | 1.1 | 1.1 |
 | graphics の pipeline | ○ | ○ | ○ | ○ | ○ | ○ |
-| compute の pipeline・dispatch | —（vkCreateComputePipelines は未実装） | ○（compute の queue） | ○ | —（graphics だけの device） | ○（WLS 無し） | 下の WLS の行 |
-| workgroup の shared memory（WLS） | — | ○（compiler） | — | — | —（dispatch を拒否） | （D3 の結果で埋める） |
+| compute の pipeline・dispatch | —（vkCreateComputePipelines は未実装） | ○（compute の queue） | ○ | —（graphics だけの device） | ○（WLS 無し） | ○ |
+| workgroup の shared memory（WLS） | — | ○（compiler） | — | — | —（dispatch を拒否） | ○（TSD に WLS、instance は Mesa の手順） |
 | render pass | 1 subpass、colour 1・depth D32 | 1 subpass、colour 1・depth | 1 subpass、colour・depth | 1 subpass、colour・depth | 1 subpass、colour 4 まで、depth 無し | 同じ |
-| depth attachment | ○（D32_SFLOAT） | ○ | ○ | ○ | — | — |
+| depth attachment | ○（D32_SFLOAT） | ○ | ○ | ○ | — | — → i05 で ○（D16・X8_D24・D32・D24S8、stencil の test・write、bias、dynamic の stencil・bias。LOAD は FBD の preload の bit、実機未試験） |
 | MSAA | —（1 sample） | — | — | — | — | — |
-| mip level | 15 | 15 | 13 | 1 | 1 | 1 |
+| mip level | 15 | 15 | 13 | 1 | 1 | 1 → i05 で 14（level の copy・view・sampler の LOD、実機未試験） |
 | array layer・cube | —（1 layer） | cube（compiler） | — | — | ○（layer 256、cube・cube array） | ○ |
 | storage image | —（format に STORAGE が無い） | — | — | — | ○（8） | ○ |
 | texture の gather・compare | — | ○ | — | — | ○ | ○ |
-| textureGrad（微分の指定） | — | ○ | — | — | — | — |
-| clear attachments（pass の中） | — | — | ○ | — | —（skip） | （D3） |
-| 拡大・縮小の blit | ○（quad の draw、nearest・linear） | ○（同） | ○（transfer） | ○（nearest・linear） | —（同じ大きさ・形式だけ） | （D3） |
+| textureGrad（微分の指定） | — | ○ | — | — | — | — → i05 で ○（TEX_GRADIENT、cube は ALU で level） |
+| clear attachments（pass の中） | — | — | ○ | — | —（skip） | ○（colour だけ、矩形ごとの draw、layer 0） |
+| 拡大・縮小の blit | ○（quad の draw、nearest・linear） | ○（同） | ○（transfer） | ○（nearest・linear） | —（同じ大きさ・形式だけ） | ○（compute の meta program、nearest・linear・flip・layer、RGBA8・BGRA8 の UNORM・sRGB の間） |
 | render pass の LOAD | ○（immediate の描画、clear でなければ残る） | ○（同） | ○（tile への load） | ○（tile への load） | ○（colour target 0、pre-frame の draw） | ○ |
-| FragDepth・SampleMask | — | — | — | — | — | （A3） |
-| UBO の vector load | — | — | — | — | —（1 語ずつ） | （A3） |
+| FragDepth・SampleMask | — | — | — | — | — | ○（compiler: ZS_EMIT・coverage の AND・SampleMaskIn。depth attachment が無いので FragDepth は今は効果無し） |
+| UBO の vector load | — | — | — | — | —（1 語ずつ） | △（compiler に実装、option の 1 bit、既定は無効。下） |
 | register の spill | — | — | — | — | ○（TLS、compute・graphics） | ○ |
 | query（occlusion・timestamp） | — | — | — | △（vkCreateQueryPool の一部） | — | — |
 | indirect の draw・dispatch | — | — | — | — | — | — |
 | fill・update buffer | — | — | — | — | ○（fill） | ○ |
 
 読み方: どの executor も desktop（Keiland の compositor）の範囲を中心に作られ、Vulkan 1.1 の必須の全部は持たない。Mali は i03 までで depth attachment と mip level を除く多くの行で他の GPU と並ぶか上回る。他の GPU が持ち Mali に無い大きな物は **depth attachment** と **mip level**（nvrtx・amdrdna・powervr）、**textureGrad**（amdrdna）。これらは q1675-i04 の範囲の外（次の Queue の候補として Q1 へ）。
+
+- **UBO の vector load を既定で無効にした判断**（P7、2026-10-29）: 有効にすると desktop の 60 module のうち libGL の vertex 5 本（fixed_vert_1・2・4・8、fixed_flat_vert）の listing が変わる（LOAD 91〜210 本 → 30〜65 本、LOAD.i96・i128。host の模型で PASS、詳細は phase010）。今夜の実機の desktop の試験を基準の code で行うため、既定は無効のまま（listing は byte で不変）。有効にするのは `vk/vk-pipeline.c` の `mali_shader_compile` の options に `MALI_SHADER_OPTION_VECTOR_UBO` を渡す 1 か所。夜の desktop が通った後に、有効にして同じ試験を回してから決める（Q1 へ）。
+- **q1675-i05 の後**（P7、2026-10-29）: 下の行の depth attachment・mip level・textureGrad・関数呼び出しの inline（Mali の feature の時だけ）を実装した（host の試験と build だけ、実機未試験）。SampleId・stencil の書き込み（gl_FragStencilRefARB）も compiler に。
+- **i04 の後も他の GPU に有って Mali に無い物**: depth attachment（nvrtx・amdrdna・powervr・bcm2711）、mip level（nvrtx・amdrdna・powervr）、textureGrad（amdrdna）、共通の front end の関数呼び出しの inline（glslc -O 無しの shader。全ての GPU に効く、phase010 の案）。

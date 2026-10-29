@@ -25,12 +25,12 @@
  * (GPU_DISPLAY_RELEASE) and the fd, which retires every imported handle.
  *
  * The present returns once the display reads the new buffer, at the next
- * refresh, so the scanout's own thread makes it: the compositor hands the
- * buffer over (kl_backend_scanout_begin) and goes on taking its clients'
- * commits meanwhile, which a mailbox client's next images wait for; the
- * thread writes a byte to the scanout's pipe when the present has ended,
- * and the compositor takes its outcome (kl_backend_scanout_end).  One
- * present is in flight at a time.
+ * refresh, so the compositor's present thread makes it
+ * (kl_backend_scanout_present) after its main thread readied the buffer
+ * (kl_backend_scanout_begin, which imports it and does not wait); the
+ * main thread goes on taking its clients' commits meanwhile, which a
+ * mailbox client's next images wait for.  One present runs at a time.
+ * The compositor's display thread opens and closes the scanout.
  *
  * One scanout is open at a time (the compositor has one output).
  */
@@ -58,12 +58,11 @@
  * the claim gave, the output's size and refresh, the frames presented, and
  * the number of the claim (which tells a buffer's handle is of this one).
  *
- * Its present thread: lock guards request, waiting, ended, result and
- * stop, and changed wakes the thread.  waiting is a present handed over
- * and not yet taken by the thread, ended one the thread has made (result:
- * 0 or its errno).  flight, the main thread's own, is a present begun and
- * not yet taken by kl_backend_scanout_end.  The thread writes a byte to
- * done[1] each time a present has ended; done[0] does not block.
+ * request is the present readied by kl_backend_scanout_begin on the
+ * compositor's main thread, and readied says one is; the present thread
+ * makes it and counts the frame.  The compositor hands each present from
+ * one thread to the other through its own locked queue, so neither touches
+ * them while the other does.
  */
 struct kl_backend_scanout {
 	int gpu;
@@ -75,27 +74,22 @@ struct kl_backend_scanout {
 	uint32_t refresh;
 	uint64_t frame;
 	uint64_t claim;
-	pthread_t thread;
-	pthread_mutex_t lock;
-	pthread_cond_t changed;
 	struct gpu_display_present request;
-	int waiting;
-	int ended;
-	int result;
-	int stop;
-	int flight;
-	int done[2];
+	int readied;
 };
 
-/* The scanout open now, for the buffers that go meanwhile, and the number of the last claim. */
+/*
+ * The scanout open now, for the buffers that go meanwhile, and the number
+ * of the last claim.  scanout_lock guards both, and a forgotten handle's
+ * destruction on the open scanout's fd, as the display thread opens and
+ * closes scanouts while the main thread lets buffers go.
+ */
+static pthread_mutex_t scanout_lock = PTHREAD_MUTEX_INITIALIZER;
 static struct kl_backend_scanout *scanout_open;
 static uint64_t scanout_claims;
 
 static int scanout_display(struct kl_backend_scanout *scanout);
 static int scanout_import(struct kl_backend_scanout *scanout, struct kwl_gpu_buffer_record *record);
-static int scanout_thread_start(struct kl_backend_scanout *scanout);
-static void scanout_thread_stop(struct kl_backend_scanout *scanout);
-static void *scanout_thread(void *argument);
 static void scanout_release(struct kl_backend_scanout *scanout);
 
 /*
@@ -152,13 +146,25 @@ kl_backend_scanout_open(
 {
 	struct kl_backend_scanout *opened;
 	struct gpu_display_claim claim;
+	int busy;
 	int error;
 
-	/* One at a time. */
+	/* A size and a place for the scanout. */
 	(void)backend;
 	if (scanout == NULL || width == 0U || height == 0U)
 		return EINVAL;
+
+	/* One at a time: busy says another scanout holds the display. */
+	busy = 0;
+	pthread_mutex_lock(&scanout_lock);
+
 	if (scanout_open != NULL)
+		busy = 1;
+
+	pthread_mutex_unlock(&scanout_lock);
+
+	/* Refused while the other one is open. */
+	if (busy)
 		return EBUSY;
 
 	/* The record and its own GPU fd. */
@@ -196,30 +202,26 @@ kl_backend_scanout_open(
 		return error;
 	}
 
-	/* The present thread and its pipe; without them the display goes back. */
+	/* The lease, and the claim's number that the buffers imported from now carry. */
 	opened->lease = claim.lease;
-	error = scanout_thread_start(opened);
-	if (error != 0) {
-		scanout_release(opened);
-		close(opened->gpu);
-		free(opened);
-		return error;
-	}
+	pthread_mutex_lock(&scanout_lock);
 
-	/* Succeeded: the display is the scanout's. */
 	scanout_claims++;
 	opened->claim = scanout_claims;
 	scanout_open = opened;
+
+	pthread_mutex_unlock(&scanout_lock);
+
+	/* Succeeded: the display is the scanout's. */
 	*scanout = opened;
 	return 0;
 }
 
 /*
- * Begins showing a client's GPU buffer as the whole output: imports it
- * when it is new to the scanout and hands it to the present thread.
- * Returns 0, EBUSY while a present is in flight, EINVAL for a buffer
- * without the backend's record or of another size, or the failure of its
- * import.
+ * Readies a client's GPU buffer to be shown as the whole output by the
+ * next kl_backend_scanout_present: imports it when it is new to the
+ * scanout.  Returns 0, EINVAL for a buffer without the backend's record or
+ * of another size, or the failure of its import.
  */
 int
 kl_backend_scanout_begin(
@@ -234,11 +236,9 @@ kl_backend_scanout_begin(
 	void **owned;
 	int error;
 
-	/* A GPU buffer with the backend's record, while no present is in flight. */
+	/* A GPU buffer with the backend's record. */
 	if (scanout == NULL || host == NULL || buffer == NULL)
 		return EINVAL;
-	if (scanout->flight)
-		return EBUSY;
 	role = host->resource_role(buffer);
 	if (role != KL_BACKEND_ROLE_BUFFER)
 		return EINVAL;
@@ -283,86 +283,49 @@ kl_backend_scanout_begin(
 	present.flags = GPU_DISPLAY_PRESENT_FIFO | GPU_DISPLAY_PRESENT_BLOB;
 	present.generation = scanout->generation;
 
-	/* To the thread, which makes it. */
-	pthread_mutex_lock(&scanout->lock);
-
+	/* Succeeded: the present thread makes it next. */
 	scanout->request = present;
-	scanout->waiting = 1;
-	scanout->ended = 0;
-	pthread_cond_signal(&scanout->changed);
-
-	pthread_mutex_unlock(&scanout->lock);
-
-	/* Succeeded: the present is in flight until kl_backend_scanout_end takes it. */
-	scanout->flight = 1;
+	scanout->readied = 1;
 	return 0;
 }
 
 /*
- * Reports the fd that becomes readable when the present in flight has
- * ended, -1 when none is.
+ * Shows the buffer readied last, on the compositor's present thread: the
+ * present returns once the display reads it, at the next refresh.  Returns
+ * 0 (the buffer shown before is no longer read), EINVAL with none readied,
+ * or the present's errno.
  */
 int
-kl_backend_scanout_fd(
+kl_backend_scanout_present(
 	struct kl_backend_scanout *scanout)
 {
-	/* Only a present in flight ends. */
-	if (scanout == NULL || !scanout->flight)
-		return -1;
+	struct gpu_display_present present;
+	int error;
 
-	/* Succeeded: the pipe's reading end. */
-	return scanout->done[0];
-}
+	/* The present readied, taken once. */
+	if (scanout == NULL || !scanout->readied)
+		return EINVAL;
+	present = scanout->request;
+	scanout->readied = 0;
 
-/*
- * Takes the present in flight once it has ended: 1 with its outcome in
- * *result (0 when the display reads the buffer, the buffer shown before
- * then no longer read; or the present's errno), 0 while it has not ended
- * or none is in flight.
- */
-int
-kl_backend_scanout_end(
-	struct kl_backend_scanout *scanout,
-	int *result)
-{
-	unsigned char bytes[8];
-	ssize_t got;
-	int ended;
-
-	/* Nothing in flight. */
-	if (scanout == NULL || !scanout->flight)
-		return 0;
-
-	/* The pipe's bytes; it does not block. */
-	do {
-		got = read(scanout->done[0], bytes, sizeof(bytes));
-	} while (got > 0 || (got < 0 && errno == EINTR));
-
-	/* The thread's outcome, when it has one. */
-	pthread_mutex_lock(&scanout->lock);
-
-	ended = scanout->ended;
-	if (ended) {
-		*result = scanout->result;
-		scanout->ended = 0;
+	/* The present, which returns once the display reads the buffer. */
+	error = ioctl(scanout->gpu, GPU_DISPLAY_PRESENT, &present);
+	if (error != 0) {
+		error = errno;
+		printf("KL SCANOUT refused step=present errno=%d format=%u stride=%u offset=%llu %ux%u refresh=%u\n", error, (unsigned)present.format,
+		       (unsigned)present.stride, (unsigned long long)present.offset, (unsigned)present.width, (unsigned)present.height,
+		       (unsigned)present.refresh_millihz);
+		return error;
 	}
 
-	pthread_mutex_unlock(&scanout->lock);
-
-	/* Not yet. */
-	if (!ended)
-		return 0;
-
-	/* Succeeded: the present has ended; a frame shown counts. */
-	scanout->flight = 0;
-	if (*result == 0)
-		scanout->frame++;
-	return 1;
+	/* Succeeded: a frame shown counts. */
+	scanout->frame++;
+	return 0;
 }
 
 /*
  * Releases the display and the scanout's fd (with every handle imported
- * into it), after the present in flight has ended.
+ * into it), once no present runs.
  */
 void
 kl_backend_scanout_close(
@@ -372,16 +335,17 @@ kl_backend_scanout_close(
 	if (scanout == NULL)
 		return;
 
-	/* The thread makes the present handed to it, then ends. */
-	scanout_thread_stop(scanout);
+	/* No buffer that goes from now uses the fd. */
+	pthread_mutex_lock(&scanout_lock);
 
-	/* The display goes back. */
-	scanout_release(scanout);
-
-	/* The fd (and its handles) and the record. */
-	close(scanout->gpu);
 	if (scanout_open == scanout)
 		scanout_open = NULL;
+
+	pthread_mutex_unlock(&scanout_lock);
+
+	/* The display goes back, then the fd (and its handles) and the record. */
+	scanout_release(scanout);
+	close(scanout->gpu);
 	free(scanout);
 }
 
@@ -396,20 +360,23 @@ kwl_scanout_forget(
 {
 	struct gpu_resource_destroy destroy;
 
-	/* A handle of the scanout open now. */
+	/* A handle at all. */
 	if (record == NULL || record->handle == 0U)
 		return;
-	if (scanout_open == NULL || record->claim != scanout_open->claim) {
-		record->handle = 0U;
-		return;
-	}
 
-	/* The capability's import goes from the scanout's fd. */
+	/* The destruction, the fd kept open meanwhile. */
 	memset(&destroy, 0, sizeof(destroy));
 	destroy.version = GPU_ABI_VERSION;
 	destroy.size = sizeof(destroy);
 	destroy.handle = record->handle;
-	(void)ioctl(scanout_open->gpu, GPU_RESOURCE_DESTROY, &destroy);
+	pthread_mutex_lock(&scanout_lock);
+
+	if (scanout_open != NULL && record->claim == scanout_open->claim)
+		(void)ioctl(scanout_open->gpu, GPU_RESOURCE_DESTROY, &destroy);
+
+	pthread_mutex_unlock(&scanout_lock);
+
+	/* Succeeded: forgotten (one of an older claim went with its fd). */
 	record->handle = 0U;
 }
 
@@ -511,118 +478,4 @@ scanout_release(
 	error = ioctl(scanout->gpu, GPU_DISPLAY_RELEASE, &release);
 	if (error != 0)
 		printf("KWL SCANOUT release errno=%d\n", errno);
-}
-
-/*
- * Makes the present thread, its lock and its pipe (whose reading end
- * does not block).  Returns 0 or the failure of one of them (none is left
- * then).
- */
-static int
-scanout_thread_start(
-	struct kl_backend_scanout *scanout)
-{
-	int error;
-
-	/* The pipe the thread tells an end through. */
-	error = pipe(scanout->done);
-	if (error != 0)
-		return errno;
-	(void)fcntl(scanout->done[0], F_SETFL, O_NONBLOCK);
-	(void)fcntl(scanout->done[0], F_SETFD, FD_CLOEXEC);
-	(void)fcntl(scanout->done[1], F_SETFD, FD_CLOEXEC);
-
-	/* The lock, the condition and the thread. */
-	pthread_mutex_init(&scanout->lock, NULL);
-	pthread_cond_init(&scanout->changed, NULL);
-	error = pthread_create(&scanout->thread, NULL, scanout_thread, scanout);
-	if (error != 0) {
-		pthread_cond_destroy(&scanout->changed);
-		pthread_mutex_destroy(&scanout->lock);
-		close(scanout->done[0]);
-		close(scanout->done[1]);
-		return error;
-	}
-
-	/* Succeeded: the thread waits for a present. */
-	return 0;
-}
-
-/* Ends the present thread once it has made the present handed to it, and frees its lock and pipe. */
-static void
-scanout_thread_stop(
-	struct kl_backend_scanout *scanout)
-{
-	/* The request to end, which wakes it. */
-	pthread_mutex_lock(&scanout->lock);
-
-	scanout->stop = 1;
-	pthread_cond_signal(&scanout->changed);
-
-	pthread_mutex_unlock(&scanout->lock);
-
-	/* Waited for, then its objects go. */
-	(void)pthread_join(scanout->thread, NULL);
-	pthread_cond_destroy(&scanout->changed);
-	pthread_mutex_destroy(&scanout->lock);
-	close(scanout->done[0]);
-	close(scanout->done[1]);
-	scanout->flight = 0;
-}
-
-/*
- * The present thread: makes each present handed to it, notes its outcome
- * and writes a byte to the pipe, until told to end with none waiting.
- */
-static void *
-scanout_thread(
-	void *argument)
-{
-	struct kl_backend_scanout *scanout;
-	struct gpu_display_present present;
-	unsigned char byte;
-	int error;
-
-	/* The scanout it serves. */
-	scanout = argument;
-	byte = 1U;
-
-	for (;;) {
-		/* Waits for a present, or the end with none waiting. */
-		pthread_mutex_lock(&scanout->lock);
-
-		while (!scanout->waiting && !scanout->stop)
-			pthread_cond_wait(&scanout->changed, &scanout->lock);
-		if (!scanout->waiting) {
-			pthread_mutex_unlock(&scanout->lock);
-			break;
-		}
-		present = scanout->request;
-		scanout->waiting = 0;
-
-		pthread_mutex_unlock(&scanout->lock);
-
-		/* The present, which returns once the display reads the buffer. */
-		error = ioctl(scanout->gpu, GPU_DISPLAY_PRESENT, &present);
-		if (error != 0) {
-			error = errno;
-			printf("KL SCANOUT refused step=present errno=%d format=%u stride=%u offset=%llu %ux%u refresh=%u\n", error, (unsigned)present.format,
-			       (unsigned)present.stride, (unsigned long long)present.offset, (unsigned)present.width, (unsigned)present.height,
-			       (unsigned)present.refresh_millihz);
-		}
-
-		/* Its outcome, then the byte that wakes the compositor. */
-		pthread_mutex_lock(&scanout->lock);
-
-		scanout->result = error;
-		scanout->ended = 1;
-
-		pthread_mutex_unlock(&scanout->lock);
-
-		while (write(scanout->done[1], &byte, 1U) < 0 && errno == EINTR)
-			continue;
-	}
-
-	/* Ended. */
-	return NULL;
 }

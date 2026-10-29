@@ -69,6 +69,8 @@
 
 static struct gles_texture *texture_bound(struct zegl_context *context, GLenum target, unsigned takes, unsigned *face);
 static struct gles_texture *texture_changing(struct zegl_context *context, GLenum target, unsigned takes, unsigned *face);
+static unsigned char *texture_compressed(struct zegl_context *context, const struct gles_format *format, GLsizei width, GLsizei height, GLsizei depth, GLsizei imageSize, const void *data);
+static int texture_compressed_rectangle(const struct gles_level *level, GLint xoffset, GLint yoffset, GLint zoffset, GLsizei width, GLsizei height, GLsizei depth);
 static struct gles_texture *texture_new(GLuint name, GLenum target);
 static void texture_level_set(struct gles_texture *texture, unsigned face, GLint level, int width, int height, int depth, unsigned char *pixels, const struct gles_format *format);
 static void texture_sampling_initial(struct gles_sampling *sampling);
@@ -162,9 +164,9 @@ gles_texture_sync(
 		}
 	}
 
-	/* The image's layers: a cube map's faces, a 2D array's layers, one otherwise. */
+	/* The image's layers: a cube map's faces, a 2D array's layers (a cube map array's layer-faces), one otherwise. */
 	layers = faces;
-	if (shape == GLES_SHAPE_ARRAY)
+	if (shape == GLES_SHAPE_ARRAY || shape == GLES_SHAPE_CUBE_ARRAY)
 		layers = (uint32_t)texture->levels[base].depth;
 
 	/* A depth format is copied into its depth aspect; a barrier names every aspect it has. */
@@ -181,7 +183,7 @@ gles_texture_sync(
 	features = gles_image_features(state, format->vk);
 	memset(&create, 0, sizeof(create));
 	create.sType = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO;
-	if (shape == GLES_SHAPE_CUBE)
+	if (shape == GLES_SHAPE_CUBE || shape == GLES_SHAPE_CUBE_ARRAY)
 		create.flags = VK_IMAGE_CREATE_CUBE_COMPATIBLE_BIT;
 	create.imageType = VK_IMAGE_TYPE_2D;
 	create.format = format->vk;
@@ -242,6 +244,8 @@ gles_texture_sync(
 		view.viewType = VK_IMAGE_VIEW_TYPE_3D;
 	if (shape == GLES_SHAPE_ARRAY)
 		view.viewType = VK_IMAGE_VIEW_TYPE_2D_ARRAY;
+	if (shape == GLES_SHAPE_CUBE_ARRAY)
+		view.viewType = VK_IMAGE_VIEW_TYPE_CUBE_ARRAY;
 	view.format = format->vk;
 	view.components.r = texture_swizzle(texture->swizzle[0], VK_COMPONENT_SWIZZLE_R);
 	view.components.g = texture_swizzle(texture->swizzle[1], VK_COMPONENT_SWIZZLE_G);
@@ -315,7 +319,7 @@ gles_texture_sync(
 			copies[count].imageExtent.depth = 1U;
 			if (shape == GLES_SHAPE_3D)
 				copies[count].imageExtent.depth = (uint32_t)source->depth;
-			if (shape == GLES_SHAPE_ARRAY)
+			if (shape == GLES_SHAPE_ARRAY || shape == GLES_SHAPE_CUBE_ARRAY)
 				copies[count].imageSubresource.layerCount = (uint32_t)source->depth;
 			total += bytes;
 			count++;
@@ -534,9 +538,13 @@ gles_texture_black(
 	unsigned faces;
 	unsigned face;
 
-	/* Made once per shape and kind (a 3D texture has no depth one: no sampler compares it). */
+	/* Made once per shape and kind (a 3D texture has no depth one: no sampler compares it); a cube map array's six layer-faces. */
 	if (kind >= GLES_BLACK_KINDS)
 		kind = 0U;
+	if (shape == GLES_SHAPE_CUBE_ARRAY) {
+		texture = gles_texture_black_cube_array(state, kind, internals[kind], types[kind]);
+		return texture;
+	}
 	if (shape >= GLES_SHAPES)
 		shape = GLES_SHAPE_2D;
 	if (shape == GLES_SHAPE_3D && kind == 3U)
@@ -657,6 +665,65 @@ gles_texture_buffer_view(
 	texture->texel_view_buffer = buffer->buffer;
 	texture->texel_view_range = range;
 	return texture->texel_view;
+}
+
+/*
+ * Returns the cube map array texture of a kind (0 float, 1 int, 2
+ * unsigned, 3 depth) sampled where a unit has no complete one: one cube
+ * of black 1x1 faces (opaque) in an internal format and type, made at its
+ * first use; NULL when there is no memory or no format.
+ */
+struct gles_texture *
+gles_texture_black_cube_array(
+	struct gles_state *state,
+	unsigned kind,
+	GLenum internal,
+	GLenum type)
+{
+	const struct gles_format *format;
+	struct gles_texture *texture;
+	unsigned char *pixels;
+	unsigned char alpha;
+	unsigned face;
+
+	/* Made once per kind. */
+	if (state->black_cube_arrays[kind] != NULL)
+		return state->black_cube_arrays[kind];
+
+	/* The kind's format. */
+	format = gles_format_find(state, internal, type);
+	if (format == NULL)
+		return NULL;
+
+	/* The texture, read with nearest filters (integers and depth cannot be filtered). */
+	texture = texture_new(0U, GL_TEXTURE_CUBE_MAP_ARRAY);
+	if (texture == NULL)
+		return NULL;
+	texture->sampling.min_filter = GL_NEAREST;
+	texture->sampling.mag_filter = GL_NEAREST;
+
+	/* Six black layer-faces (opaque: alpha 255, or 1 for the integers). */
+	pixels = calloc(GLES_FACES, format->bytes);
+	if (pixels == NULL) {
+		gles_texture_free(state, texture);
+		return NULL;
+	}
+	alpha = 0U;
+	if (kind == 0U)
+		alpha = 255U;
+	if (kind == 1U || kind == 2U)
+		alpha = 1U;
+
+	/* Each face's alpha (a depth format has none). */
+	for (face = 0U; face < GLES_FACES; face++) {
+		if (alpha != 0U)
+			pixels[face * format->bytes + 3U] = alpha;
+	}
+	texture_level_set(texture, 0U, 0, 1, 1, (int)GLES_FACES, pixels, format);
+
+	/* Succeeded: the texture, kept. */
+	state->black_cube_arrays[kind] = texture;
+	return texture;
 }
 
 /*
@@ -950,6 +1017,8 @@ glDeleteTextures(
 				state->buffer_units[unit] = NULL;
 			if (state->ms_units[unit] == texture)
 				state->ms_units[unit] = NULL;
+			if (state->cube_array_units[unit] == texture)
+				state->cube_array_units[unit] = NULL;
 		}
 
 		/* Detached from the bound framebuffer object; the name and the texture go (its image waits for the frame). */
@@ -991,6 +1060,12 @@ glBindTexture(
 	case GL_TEXTURE_BUFFER:
 	case GL_TEXTURE_2D_MULTISAMPLE:
 		if (gles_fixed != NULL)
+			break;
+		gles_error(context, GL_INVALID_ENUM);
+		return;
+	case GL_TEXTURE_CUBE_MAP_ARRAY:
+		/* Desktop GL 4.0's cube map arrays (libGL), on a device that has them. */
+		if (gles_fixed != NULL && state->display->features.imageCubeArray)
 			break;
 		gles_error(context, GL_INVALID_ENUM);
 		return;
@@ -1047,6 +1122,9 @@ glBindTexture(
 		break;
 	case GL_TEXTURE_2D_MULTISAMPLE:
 		state->ms_units[state->active_unit] = texture;
+		break;
+	case GL_TEXTURE_CUBE_MAP_ARRAY:
+		state->cube_array_units[state->active_unit] = texture;
 		break;
 	default:
 		state->units[state->active_unit] = texture;
@@ -1427,7 +1505,8 @@ glTexStorage2D(
 }
 
 /*
- * Refuses compressed textures: no compressed format is offered.
+ * Specifies a level of the bound texture from compressed blocks (ETC2 and
+ * EAC, decoded into the format's kept form).
  */
 GL_APICALL void GL_APIENTRY
 glCompressedTexImage2D(
@@ -1441,23 +1520,61 @@ glCompressedTexImage2D(
 	const void *data)
 {
 	struct zegl_context *context;
+	struct gles_texture *texture;
+	const struct gles_format *storage;
+	unsigned char *texels;
+	unsigned face;
 
-	/* GL_NUM_COMPRESSED_TEXTURE_FORMATS is 0. */
-	(void)target;
-	(void)level;
-	(void)internalformat;
-	(void)width;
-	(void)height;
-	(void)border;
-	(void)imageSize;
-	(void)data;
+	/* The bound texture (a cube map's face; not a rectangle one), a level and a size it can have. */
 	context = gles_context();
-	if (context != NULL)
+	texture = texture_changing(context, target, TEXTURE_IMAGE_2D, &face);
+	if (texture == NULL)
+		return;
+	if (texture->target == GL_TEXTURE_RECTANGLE) {
 		gles_error(context, GL_INVALID_ENUM);
+		return;
+	}
+	if (level < 0 ||
+	    level >= (GLint)GLES_LEVELS ||
+	    width < 0 ||
+	    height < 0 ||
+	    width > 16384 ||
+	    height > 16384 ||
+	    border != 0) {
+		gles_error(context, GL_INVALID_VALUE);
+		return;
+	}
+
+	/* A cube map's faces are square, and glTexStorage2D's levels are fixed. */
+	if (texture->target == GL_TEXTURE_CUBE_MAP && width != height) {
+		gles_error(context, GL_INVALID_VALUE);
+		return;
+	}
+	if (texture->immutable) {
+		gles_error(context, GL_INVALID_OPERATION);
+		return;
+	}
+
+	/* A compressed format. */
+	storage = gles_compressed_format(internalformat);
+	if (storage == NULL) {
+		gles_error(context, GL_INVALID_ENUM);
+		return;
+	}
+
+	/* Its blocks decoded. */
+	texels = texture_compressed(context, storage, width, height, 1, imageSize, data);
+	if (texels == NULL)
+		return;
+
+	/* Succeeded: the level. */
+	gles_texture_define(texture, face, level, width, height, texels, storage);
 }
 
 /*
- * Refuses compressed textures: no compressed format is offered.
+ * Replaces a rectangle of a compressed level of the bound texture: whole
+ * blocks (offsets of 4, sizes of 4 unless they reach the level's edge)
+ * of the level's format.
  */
 GL_APICALL void GL_APIENTRY
 glCompressedTexSubImage2D(
@@ -1472,20 +1589,47 @@ glCompressedTexSubImage2D(
 	const void *data)
 {
 	struct zegl_context *context;
+	struct gles_texture *texture;
+	struct gles_level *destination;
+	unsigned char *texels;
+	unsigned face;
+	int blocks;
 
-	/* GL_NUM_COMPRESSED_TEXTURE_FORMATS is 0. */
-	(void)target;
-	(void)level;
-	(void)xoffset;
-	(void)yoffset;
-	(void)width;
-	(void)height;
-	(void)format;
-	(void)imageSize;
-	(void)data;
+	/* The bound texture (a cube map's face) and a level. */
 	context = gles_context();
-	if (context != NULL)
-		gles_error(context, GL_INVALID_ENUM);
+	texture = texture_changing(context, target, TEXTURE_IMAGE_2D, &face);
+	if (texture == NULL)
+		return;
+	if (level < 0 || level >= (GLint)GLES_LEVELS) {
+		gles_error(context, GL_INVALID_VALUE);
+		return;
+	}
+
+	/* A level of the compressed format given. */
+	destination = &texture->levels[face * GLES_LEVELS + (unsigned)level];
+	if (destination->format == NULL || destination->format->internal != format) {
+		gles_error(context, GL_INVALID_OPERATION);
+		return;
+	}
+
+	/* A rectangle of whole blocks inside the level. */
+	blocks = texture_compressed_rectangle(destination, xoffset, yoffset, 0, width, height, 1);
+	if (!blocks) {
+		gles_error(context, GL_INVALID_OPERATION);
+		return;
+	}
+
+	/* Its blocks decoded. */
+	texels = texture_compressed(context, destination->format, width, height, 1, imageSize, data);
+	if (texels == NULL)
+		return;
+
+	/* Each row into place. */
+	texture_rows_place(destination, xoffset, yoffset, 0, width, height, 1, texels);
+
+	/* Succeeded: the image is stale. */
+	free(texels);
+	texture->dirty = 1;
 }
 
 /*
@@ -1799,7 +1943,8 @@ glTexStorage3D(
 }
 
 /*
- * Refuses compressed 3D textures: no compressed format is offered.
+ * Specifies a level of the bound 2D array texture from compressed blocks
+ * (ETC2 and EAC; a 3D texture takes none), its layers one after another.
  */
 GL_APICALL void GL_APIENTRY
 glCompressedTexImage3D(
@@ -1814,24 +1959,58 @@ glCompressedTexImage3D(
 	const void *data)
 {
 	struct zegl_context *context;
+	struct gles_state *state;
+	struct gles_texture *texture;
+	const struct gles_format *storage;
+	unsigned char *texels;
+	unsigned face;
+	int fits;
 
-	/* GL_NUM_COMPRESSED_TEXTURE_FORMATS is 0. */
-	(void)target;
-	(void)level;
-	(void)internalformat;
-	(void)width;
-	(void)height;
-	(void)depth;
-	(void)border;
-	(void)imageSize;
-	(void)data;
+	/* The bound 2D array texture (or 3D, which ETC2 does not take), a level and a border of 0. */
 	context = gles_context();
-	if (context != NULL)
+	state = gles_state(context);
+	texture = texture_changing(context, target, TEXTURE_IMAGE_3D, &face);
+	if (texture == NULL)
+		return;
+	if (level < 0 || level >= (GLint)GLES_LEVELS || border != 0) {
+		gles_error(context, GL_INVALID_VALUE);
+		return;
+	}
+
+	/* A size the shape allows, and levels not fixed. */
+	fits = texture_volume_size(state, texture, width, height, depth);
+	if (!fits) {
+		gles_error(context, GL_INVALID_VALUE);
+		return;
+	}
+	if (texture->immutable) {
+		gles_error(context, GL_INVALID_OPERATION);
+		return;
+	}
+
+	/* A compressed format, of a 2D array texture. */
+	storage = gles_compressed_format(internalformat);
+	if (storage == NULL) {
 		gles_error(context, GL_INVALID_ENUM);
+		return;
+	}
+	if (texture->target == GL_TEXTURE_3D) {
+		gles_error(context, GL_INVALID_OPERATION);
+		return;
+	}
+
+	/* The blocks of every layer decoded. */
+	texels = texture_compressed(context, storage, width, height, depth, imageSize, data);
+	if (texels == NULL)
+		return;
+
+	/* Succeeded: the level. */
+	gles_texture_define_volume(texture, level, width, height, depth, texels, storage);
 }
 
 /*
- * Refuses compressed 3D textures: no compressed format is offered.
+ * Replaces a box of a compressed level of the bound 2D array texture:
+ * whole blocks of the level's format in each layer.
  */
 GL_APICALL void GL_APIENTRY
 glCompressedTexSubImage3D(
@@ -1848,22 +2027,47 @@ glCompressedTexSubImage3D(
 	const void *data)
 {
 	struct zegl_context *context;
+	struct gles_texture *texture;
+	struct gles_level *destination;
+	unsigned char *texels;
+	unsigned face;
+	int blocks;
 
-	/* GL_NUM_COMPRESSED_TEXTURE_FORMATS is 0. */
-	(void)target;
-	(void)level;
-	(void)xoffset;
-	(void)yoffset;
-	(void)zoffset;
-	(void)width;
-	(void)height;
-	(void)depth;
-	(void)format;
-	(void)imageSize;
-	(void)data;
+	/* The bound 2D array texture and a level. */
 	context = gles_context();
-	if (context != NULL)
-		gles_error(context, GL_INVALID_ENUM);
+	texture = texture_changing(context, target, TEXTURE_IMAGE_3D, &face);
+	if (texture == NULL)
+		return;
+	if (level < 0 || level >= (GLint)GLES_LEVELS) {
+		gles_error(context, GL_INVALID_VALUE);
+		return;
+	}
+
+	/* A level of the compressed format given. */
+	destination = &texture->levels[level];
+	if (destination->format == NULL || destination->format->internal != format) {
+		gles_error(context, GL_INVALID_OPERATION);
+		return;
+	}
+
+	/* A box of whole blocks inside the level. */
+	blocks = texture_compressed_rectangle(destination, xoffset, yoffset, zoffset, width, height, depth);
+	if (!blocks) {
+		gles_error(context, GL_INVALID_OPERATION);
+		return;
+	}
+
+	/* Its blocks decoded. */
+	texels = texture_compressed(context, destination->format, width, height, depth, imageSize, data);
+	if (texels == NULL)
+		return;
+
+	/* Each row of each layer into place. */
+	texture_rows_place(destination, xoffset, yoffset, zoffset, width, height, depth, texels);
+
+	/* Succeeded: the image is stale. */
+	free(texels);
+	texture->dirty = 1;
 }
 
 /*
@@ -2189,7 +2393,8 @@ glGenerateMipmap(
 	faces = texture_faces(texture);
 	shape = texture_shape(texture);
 	for (face = 0U; face < faces; face++) {
-		if (format->vk == VK_FORMAT_R8G8B8A8_UNORM && shape != GLES_SHAPE_3D && shape != GLES_SHAPE_ARRAY) {
+		if (format->vk == VK_FORMAT_R8G8B8A8_UNORM && shape != GLES_SHAPE_3D && shape != GLES_SHAPE_ARRAY &&
+		    shape != GLES_SHAPE_CUBE_ARRAY) {
 			status = texture_mipmaps(texture, face, last);
 		} else {
 			status = texture_mipmaps_kept(texture, face, last);
@@ -2519,6 +2724,9 @@ texture_bound(
 	} else if (target == GL_TEXTURE_2D_ARRAY) {
 		texture = state->array_units[state->active_unit];
 		taken = TEXTURE_TAKES_ARRAY;
+	} else if (target == GL_TEXTURE_CUBE_MAP_ARRAY && gles_fixed != NULL) {
+		texture = state->cube_array_units[state->active_unit];
+		taken = TEXTURE_TAKES_ARRAY;
 	} else if (target == GL_TEXTURE_RECTANGLE && gles_fixed != NULL) {
 		texture = state->rect_units[state->active_unit];
 		taken = TEXTURE_TAKES_RECT;
@@ -2539,6 +2747,114 @@ texture_bound(
 
 	/* Succeeded: the texture. */
 	return texture;
+}
+
+/*
+ * Decodes the compressed blocks of a box (depth images of a size, one
+ * after another) of a format: from the pixel unpack buffer at an offset
+ * when one is bound, else from the application's memory (NULL: the
+ * texels are zeros).  imageSize must be the box's blocks' bytes.  Returns
+ * the texels in the format's kept form (malloc'ed), or NULL with the
+ * error recorded.
+ */
+static unsigned char *
+texture_compressed(
+	struct zegl_context *context,
+	const struct gles_format *format,
+	GLsizei width,
+	GLsizei height,
+	GLsizei depth,
+	GLsizei imageSize,
+	const void *data)
+{
+	struct gles_state *state;
+	const unsigned char *bytes;
+	unsigned char *texels;
+	size_t expected;
+	size_t image_bytes;
+	size_t texel_bytes;
+	size_t offset;
+	GLsizei image;
+
+	/* The blocks' bytes are the size given. */
+	state = gles_state(context);
+	expected = gles_compressed_size(format->internal, width, height, depth);
+	if (imageSize < 0 || (size_t)imageSize != expected) {
+		gles_error(context, GL_INVALID_VALUE);
+		return NULL;
+	}
+
+	/* The blocks: at an offset of the pixel unpack buffer, inside it, or the application's. */
+	bytes = data;
+	if (state->pixel_unpack_buffer != NULL) {
+		offset = (size_t)(uintptr_t)data;
+		if (offset > state->pixel_unpack_buffer->size || expected > state->pixel_unpack_buffer->size - offset) {
+			gles_error(context, GL_INVALID_OPERATION);
+			return NULL;
+		}
+		bytes = state->pixel_unpack_buffer->data + offset;
+	}
+
+	/* The texels, zeros when there are no blocks. */
+	texel_bytes = (size_t)width * (size_t)height * (size_t)depth * format->bytes;
+	texels = calloc(1U, texel_bytes + 1U);
+	if (texels == NULL) {
+		gles_error(context, GL_OUT_OF_MEMORY);
+		return NULL;
+	}
+	if (bytes == NULL)
+		return texels;
+
+	/* Each image decoded after the one before. */
+	image_bytes = gles_compressed_size(format->internal, width, height, 1);
+	for (image = 0; image < depth; image++) {
+		gles_compressed_decode(format, bytes + (size_t)image * image_bytes, width, height,
+				       texels + (size_t)image * (size_t)width * (size_t)height * format->bytes);
+	}
+
+	/* Succeeded: the texels. */
+	return texels;
+}
+
+/*
+ * Reports whether a box is whole compressed blocks inside a level: its
+ * offsets multiples of 4 and its sizes too, unless they reach the level's
+ * edge.
+ */
+static int
+texture_compressed_rectangle(
+	const struct gles_level *level,
+	GLint xoffset,
+	GLint yoffset,
+	GLint zoffset,
+	GLsizei width,
+	GLsizei height,
+	GLsizei depth)
+{
+	/* Inside the level. */
+	if (xoffset < 0 ||
+	    yoffset < 0 ||
+	    zoffset < 0 ||
+	    width < 0 ||
+	    height < 0 ||
+	    depth < 0 ||
+	    xoffset + width > level->width ||
+	    yoffset + height > level->height ||
+	    zoffset + depth > level->depth)
+		return 0;
+
+	/* On block corners. */
+	if ((xoffset % 4) != 0 || (yoffset % 4) != 0)
+		return 0;
+
+	/* Of whole blocks, but at the edges. */
+	if ((width % 4) != 0 && xoffset + width != level->width)
+		return 0;
+	if ((height % 4) != 0 && yoffset + height != level->height)
+		return 0;
+
+	/* Succeeded: whole blocks. */
+	return 1;
 }
 
 /*
@@ -2958,6 +3274,10 @@ texture_volume_size(
 		return 1;
 	}
 
+	/* A cube map array's faces are square, its layer-faces whole cubes. */
+	if (texture->target == GL_TEXTURE_CUBE_MAP_ARRAY && (width != height || depth % 6 != 0))
+		return 0;
+
 	/* A 2D array's sides are a 2D texture's, its layers up to the most. */
 	side = 16384;
 	if ((GLsizei)state->limits.maxImageDimension2D < side)
@@ -3369,6 +3689,8 @@ texture_shape(
 		return GLES_SHAPE_3D;
 	case GL_TEXTURE_2D_ARRAY:
 		return GLES_SHAPE_ARRAY;
+	case GL_TEXTURE_CUBE_MAP_ARRAY:
+		return GLES_SHAPE_CUBE_ARRAY;
 	default:
 		break;
 	}

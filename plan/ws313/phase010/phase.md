@@ -3,7 +3,7 @@
 # ws313-p010: Mali-G310（Valhall v10）の shader compiler
 
 Status: in-progress（実装済み・実機未試験）
-Queue: q1675-i02（P7 の配下 C）
+Queue: q1675-i02（P7 の配下 C）、q1675-i05 の一部（P7 と配下 P7-A: textureGrad・SampleId・stencil の書き込み・共通の front end の OpFunctionCall の inline）、q1687-i01 の一部（P7: program の writes_memory、texel offset の試験）
 WS: [WS313](../ws.md)、設計 [gpu.md](../gpu.md) §11・§12
 
 ## 目的
@@ -48,7 +48,7 @@ ATEST と各 render target への BLEND。
 | gather・compare | 済み: TEX_GATHER（channel bits 15:14）、shadow bit 12 と reference の staging（S T R ARRAY SHADOW OFFSET LOD の順）、compare の TEX_SINGLE は R だけ書く、compare gather | 済み: sampler の compareEnable → compare function（word 1 bits 13..15）、D16_UNORM・D32_SFLOAT を sample だけの format に（depth attachment は無い） |
 | storage image | 済み: LD_TEX_IMM（format の型で f32・s32・u32）、LEA_TEX_IMM と ST_CVT（format の成分数、AUTO）、image の atomic（LEA_TEX_IMM の address に ATOM_RETURN）、imageSize、table 4 | 済み: set layout の STORAGE_IMAGE、table 4 に storage 用の texture descriptor（identity swizzle、LOD 0、plane を layer ごと）、format の STORAGE_IMAGE（・R32_UINT/R32_SINT の ATOMIC）、usage STORAGE、limit |
 | spill | 済み: register が尽きた時、最も遠くまで生きる値を TLS へ STORE.i32（force）、読む所で LOAD.i32。loop の頭で足りなければ loop を通り抜ける値を先に spill（再試行の reserve 0・16・32・64）。program の tls_bytes | compute: 済み（TSD に TLS、`mali_vk_build_thread_storage`）。graphics: 済み（P7 が vk-draw.c に当て、vk-pipeline.c の拒否を外した。fragment の TLS の読み先は未確認） |
-| FragDepth・SampleMask・UBO の vector load | FragDepth・SampleMask は q1675-i04 で済み（下）。UBO の vector load は未着手（最適化だけ） | — |
+| FragDepth・SampleMask・UBO の vector load | FragDepth・SampleMask は q1675-i04 で済み（下）。UBO の vector load も q1675-i04 で済み（既定は無効、option の 1 bit で有効） | — |
 
 shader.h の ABI（先頭の comment が本体）に足した物: `MALI_SHADER_TABLE_IMAGES`（4）と `images[]`・`image_count`
 （set・binding・index・format・size_fau_word）、`tls_bytes`、`MALI_SHADER_SPIRV_FEATURES`（COMPUTE_IMAGES |
@@ -71,8 +71,8 @@ storage image 8。
 | FragDepth（gl_FragDepth） | parse の feature に `DRV_GPU_SPIRV_FEATURE_FRAG_DEPTH`。STORE_OUTPUT の `DRV_GPU_IR_LOCATION_FRAG_DEPTH` を持ち、ATEST の後・BLEND の前に `ZS_EMIT`（z の bit 25、depth を source 0、stencil の source は定数 0、coverage r60 を読み staging r60 に書く）。slot 0・前に wait0126（ATEST と同じ扱い、`VA_INST_ATEST` を流用）。program の `writes_depth` | 済み（host のみ） |
 | SampleMask の書き込み（gl_SampleMask[0]） | feature `DRV_GPU_SPIRV_FEATURE_SAMPLE_MASK`。ATEST の前に `r60 = mask & r60`（LSHIFT_AND）。program の `writes_sample_mask` | 済み（host のみ） |
 | SampleMaskIn の読み（gl_SampleMaskIn[0]） | `U16_TO_U32` で r61 の bits 15:0（rasterizer の coverage）。preload の bit r61。program の `reads_sample_mask` | 済み（host のみ） |
-| SampleId | 共通の front end に BuiltIn SampleId（18）が無く拒否される。backend だけでは作れない（下の「他への案」） | 未対応 |
-| UBO の vector load | 未着手（P7 の指示で FragDepth・SampleMask の区切りで一度報告。残り） | 残り |
+| SampleId | q1675-i05 で対応（下の i05 の節） | 済み（host のみ） |
+| UBO の vector load | `MALI_SHADER_OPTION_VECTOR_UBO`（shader.h、`struct mali_shader_options` の flags）の時だけ、IR で隣り合う同じ buffer の次の語の LOAD_UBO を最大 4 語まで 1 つの LOAD.i64・i96・i128 に（`ubo_run()`）。3・4 語は offset が 16 の倍数、2 語は 8 の倍数の時だけ（足りなければ縮める）。結果は揃えた block（2 は偶数、3・4 は 4 の倍数の register）に置き、値に割り当てる。遠い offset（0x8000 以上）も SHADDX の address から同じに。**既定（option 無し・NULL）は従来どおり 1 語ずつ**で、driver（vk-pipeline.c・vk-preload.c）は NULL を渡すので今夜の desktop の出力は不変 | 済み（host のみ、既定は無効） |
 
 shader.h に足した物（既存の field の位置・意味は不変、struct の末尾に追加）: `writes_depth`・`writes_sample_mask`・
 `reads_sample_mask`、`MALI_SHADER_SPIRV_FEATURES` に FRAG_DEPTH と SAMPLE_MASK、ABI の comment（fragment の depth・sample mask）。
@@ -106,6 +106,43 @@ va-isa.h: `VA_OP_ZS_EMIT`・`VA_OP_U16_TO_U32`・`VA_SHIFT_ZS_EMIT_DEPTH`・`VA_
 - `tests/mali-preload-host-test.c`（c5-build-check.sh の cc の行と同じ flag）: all checks passed (15)。
 - 実機・QEMU: 未実施。
 
+### UBO の vector load（q1675-i04 の続き、P7 の判断「既定は無効、option の 1 bit で有効、有効の経路を host 試験で照合」）
+
+- 判断（推し）: alignment は Mesa 26.2.6 の bifrost_nir.c（mem_access_size_align_cb: 16 byte まで、大きさの 2 の冪に揃える）。
+  buffer の base は 16 byte 揃いを前提にした（driver の minUniformBufferOffsetAlignment は 64、buffer の memory は 256 揃い。
+  shader.h の「Uniform buffers」に ABI として書いた）。束ねるのは IR で隣り合う load だけ（並べ替えはしない）。
+  load lane は Mesa の va_pack_load の identity（64・128 bit は 7、96 bit は 6、assembler-cases の語と一致）。
+- 模型: LOAD.iN の N/32 と staging の数の一致、load lane の identity（i32 は w0）、2 語は 8・3 と 4 語は 16 の address の揃いを検査する
+  （`check_load()`）。host 試験（`tests/mali-compiler-host-test.c`）は uniform buffer を持つ module を、既定の後に option を有効にして
+  もう一度 compile・decode・模型で照合し、listing を `NAME.vector-ubo.txt` に書き、`PASS NAME vector-ubo` を出す（既定の listing の
+  file と `PASS NAME.spv` の数は変わらない）。encoder の既知の語に LOAD.i64・i96・i128 の 3 語を足した（27 語）。
+- 新しい試験の shader: `mali-compiler-shaders/ubo.vert`（offset 4・8・16・32 の run、vec3、mat4、0x8000 を越える遠い offset）。
+
+確かめ（2026-10-29、host だけ）:
+- `timeout 1800 sh plan/ws313/tests/mali-compiler-host-test.sh 200`: PASS、25 module、`vector-ubo` の照合 2 本（special.vert・ubo.vert）も
+  PASS、encoder 27 語。既存の 24 本の既定の listing は変更前と byte で一致。
+- `timeout 1800 sh plan/ws313/tests/mali-compiler-desktop-test.sh 200`: PASS、60 module。**既定の 60 の listing は変更前
+  （`build/pc/mali-compiler-desktop.pJVHqW`）と byte で一致**（`build/pc/mali-compiler-desktop.S27kGY`）。`vector-ubo` の照合 7 本も PASS。
+- 突然変異（手で、`build/a3-mut/run2.sh`）: 16 揃いの規則の削除・8 揃いの規則の削除・i96 の lane を 64 bit の物に・block の値の
+  割り当ての入れ替え・staging の数の 1 減・遠い load を i32 に・offset を見ずに束ねる、の 7 つが全部 FAIL。
+- kernel（odroid-c5-keiland、`BUILD=build/a3-k`）exit 0・warning 0、`tests/mali-preload-host-test.c` all checks passed (15)。
+
+**有効にした時に desktop で変わる物（夜の後に決める材料）**: 60 module のうち 5 本（libGL の vertex。fragment の 2 本は uniform
+buffer を読むが隣り合う語が無く不変、他の 53 本は uniform buffer を読まない）。命令の語の数（position と varying の program の合計、
+NOP を含む）と LOAD の数:
+
+| module | 語（既定 → 有効） | LOAD（既定 → 有効） | 有効の時の内訳 |
+| --- | --- | --- | --- |
+| libGL-fixed_vert_1 | 384 → 323 | 91 → 30 | i128 11・i96 14・i32 5 |
+| libGL-fixed_vert_2 | 498 → 425 | 108 → 35 | i128 13・i96 17・i32 5 |
+| libGL-fixed_vert_4 | 726 → 629 | 142 → 45 | i128 17・i96 23・i32 5 |
+| libGL-fixed_vert_8 | 1182 → 1037 | 210 → 65 | i128 25・i96 35・i32 5 |
+| libGL-fixed_flat_vert | 1182 → 1037 | 210 → 65 | i128 25・i96 35・i32 5 |
+
+listing の registers（position の program の work_registers。preload の r60・r61 があるので 62）は 5 本とも不変、varying の program の register 数は listing に出ないので未確認。spill（TLS）は既定・有効のどちらにも無い（listing に thread local storage の行が無い）。有効にするには
+`vk-pipeline.c` の `mali_shader_compile` に flags = `MALI_SHADER_OPTION_VECTOR_UBO` の options を渡す（1 か所。preload の program は
+uniform buffer を持たないので関係無い）。実機での LOAD.i96・i128 の動作と、buffer の base が 16 揃いである事は未確認。
+
 ### driver（D3）への案（q1675-i04、直していない）
 
 この driver には depth attachment が無いので、FragDepth は今は効果が無い（ZS_EMIT は走るが書く先が無い）。depth を付ける時:
@@ -118,6 +155,38 @@ va-isa.h: `VA_OP_ZS_EMIT`・`VA_OP_U16_TO_U32`・`VA_SHIFT_ZS_EMIT_DEPTH`・`VA_
   するだけで bit 20 を立てていない（2026-10-29 の vk-draw.c の FLAG_* に無い事を読んで確かめた。立てるべきかは Mesa に倣った推定で、実機未確認）。
 - `reads_sample_mask`: driver の追加は無い（r61 は preload の bit で program の `preload` に入っている）。
 - multisample が無い今は coverage は 1 sample で、SampleMask の効果は bit 0 だけ。
+
+## 実装の追加（q1675-i05、P7 と配下 P7-A、2026-10-29、実機未試験）
+
+| 機能 | 中身 | 状態 |
+| --- | --- | --- |
+| 共通の front end の OpFunctionCall の inline | `src/drivers/gpu/compiler/spirv-inline.inc`（spirv.c が include）。feature `DRV_GPU_SPIRV_FEATURE_INLINE_CALLS`（0x200）の時だけ、関数が 2 つ以上の module を parse の前に書き直す: entry の call を callee の body に置き換え（新しい id、parameter は引数、Function の variable は entry の最初の block へ、戻り値は OpCopyObject）、他の関数と、その id の OpName・OpDecorate を落とす。拒否（ENOTSUP）: 再帰、途中の return、body の無い宣言、loop の header・continue からの複数 block の call。Mali だけが feature を立てる（`MALI_SHADER_SPIRV_FEATURES`）。他の GPU は parse が前と同じ（関数の分け方の変更だけ） | 済み（host のみ） |
+| SampleId | front end: fragment の BuiltIn SampleId（18）を feature `DRV_GPU_SPIRV_FEATURE_SAMPLE_ID` の時に `DRV_GPU_SHADER_LOCATION_SAMPLE_ID`（71、flat）。backend: r61 の bits 20:16 を `RSHIFT_AND.i32`（Mesa の bi_load_sample_id_to の 5 bit）。program の `reads_sample_id` | 済み（host のみ） |
+| stencil の書き込み（gl_FragStencilRefARB） | front end: BuiltIn FragStencilRefEXT（5014）を feature `DRV_GPU_SPIRV_FEATURE_STENCIL_EXPORT` の時に `DRV_GPU_IR_LOCATION_FRAG_STENCIL`。backend: ATEST の後の ZS_EMIT に stencil の bit 24、source 1 に値（depth と一緒でも一つだけでも）。program の `writes_stencil`（driver は ZSD の Stencil from shader と kill/update の Force Late） | 済み（host のみ） |
+| textureGrad | 2D・3D・array・shadow: `TEX_GRADIENT`（derivative enable・LOD bias と clamp 無し、RG の 2 語を書く）で gradient descriptor を作り、sample の staging の最後の 2 語に置いて LOD mode grdesc（6）。cube: Mesa の lower_gradient_cube_map の式で level を ALU で出し（major 軸の選択・商の微分・log2・[-16, 16]）explicit で sample。cube の幅の FAU 語を `lay_out()` が割り当てる（P7-A が見つけた誤り: 割り当てが無く `MOV flow 15` で program が終わっていた。直した） | 済み（host のみ） |
+
+確かめ（host だけ。GPU の証拠ではない）:
+- `sh plan/ws313/tests/spirv-inline-host-test.sh 100` → PASS（3 pair が -O の版と模型で一致、早い return の拒否、inline 後の 3 本が spirv-val を通る、1 関数の 72 本は feature の有無で同じ IR）。直した所: 落とした関数の OpName・OpDecorate が残り spirv-val が落ちていた。試験の期待（-O 無しの module の拒否の理由は「not lowered」の時がある）。
+- `sh plan/ws313/tests/mali-compiler-host-test.sh 50` → 31 module PASS（新しい grad・grad-cube・sample-id・stencil・stencil-depth・stencil-only の 6 本を含む）、`mali-compiler-desktop-test.sh 50` → 60/60 PASS。既存の listing は `mali-listing-compare.sh` で host 27・desktop 67 とも SAME。
+- P7-A が compiler をわざと壊した 5 つの写し（微分の順、cube の -1、sample id の mask、ZS_EMIT の source、cube の MUX）で、どれも試験が FAIL になる事を確かめた。
+- 模型の仮定（実機の証拠ではない）: TEX_GRADIENT の descriptor の 2 語は模型の独自の token（hardware の形ではない）、texture の値は入力の決まった関数、r61 の bits 23:21 は不定、ZS_EMIT の source 1 が stencil の値。
+
+未確認・気になる点:
+- explicit の LOD の詰め方が Mesa と違う（Mesa は [-16, 16] に clamp して 16 bit を 0 拡張、ここは lod×256 の F32_TO_S32 で負なら上位 16 bit が 0xFFFF）。hardware が上位 16 bit を読むかは不明。既存の listing が変わるので触っていない。負の LOD の textureLod・cube の textureGrad が夜に変なら最初に疑う。
+- textureGradOffset は試験していない。→ q1687-i01 で試験した（下）。
+
+## 実装の追加（q1687-i01、P7、2026-10-29、実機未試験）
+
+| 機能 | 中身 | 状態 |
+| --- | --- | --- |
+| program の `writes_memory` | `shader.h` に印、`va-compile.c` が storage buffer の store・storage image の store・buffer と image の atomic で立てる（shared memory の atomic・store は立てない）。driver（[phase011](../phase011/phase.md) の q1687-i01）が draw の pixel kill を late にするのに使う | 済み（host のみ） |
+| texel offset の試験 | 模型（`tests/mali-compiler-model.c`）が texel offset を照合するようにした。それまでは offset を全く見ていなかった（handle の上の語も offsets の staging も読み捨て）。模型: handle の上の語の符号付き nibble s 3:0・t 7:4・r 11:8（Mesa の pan_nir_lower_tex.c の narrow の形）か、texel_offset の bit の時は offsets の語の符号付き byte、を texel の第 4 成分に重み付きで足す。参照: IR の offset（u 11:8・v 7:4・r 3:0）を同じ式で。handle の上の語に bit 12 以上（narrow の level・layer）があれば FAIL。新しい shader `grad-offset.frag`（textureGradOffset の 2D・2D array・3D・shadow）と `fetch-offset.frag`（texelFetchOffset、level は shader が計算） | 済み（host のみ） |
+
+確かめ（host だけ。GPU の証拠ではない）:
+- `sh plan/ws313/tests/mali-compiler-host-test.sh 20` → 33 module PASS（grad-offset・fetch-offset を含む）、`mali-compiler-desktop-test.sh 30` → 60/60 PASS。
+- 突然変異（手で、build/p7e-grad/mut の写し）: narrow の offset を 0 に → grad-offset が FAIL、s と t の nibble を入れ替え → FAIL。模型の変更の前は offset を 0 にしても PASS だった。
+- desktop の 60 program を host の compiler に通した probe（build/p7e-probe/、試験の file にはしていない）: `writes_memory` は 60 本とも 0（fragment で discard するのは 2 本）。storage の store・atomic・image の store の fragment は 1、shared の atomic の compute は 0。
+- 調べて分かった事: texelFetchOffset の offset は共通の front end が整数の座標に足す（listing の IADD_IMM、handle の上の語は 0）。textureGatherOffset も narrow を 0 にした写しで PASS のままなので、offset は TEX の外で座標に入っている見込み（未確認）。
 
 ## 判断（推しで進めた所、夜の試験で確かめる）
 
@@ -212,7 +281,7 @@ va-isa.h: `VA_OP_ZS_EMIT`・`VA_OP_U16_TO_U32`・`VA_SHIFT_ZS_EMIT_DEPTH`・`VA_
   program descriptor の preload の mask）と合わせる必要がある（D）。
 - 無い物（q1675-i03 の後）: buffer・multisample の texture、texture の gradient（textureGrad、TEX_GRADIENT）、
   texel buffer・input attachment、mip level が 2 以上の image、3D の image（driver）、geometry shader、dual source の
-  第 2 color、SampleId・stencil の書き込み（front end に無い）、UBO の vector の load（今は 1 語ずつ）、image の座標の範囲外の検査、
+  第 2 color、SampleId・stencil の書き込み（front end に無い）、UBO の vector の load の既定での有効化（option の時だけ）、image の座標の範囲外の検査、
   graphics の spill（vk-draw.c の TSD 待ち）、compute の workgroup memory（vk-queue.c が dispatch を拒否する。
   WLS の descriptor が無い。範囲外なので触っていない）、helper の lane の discard の flow（最適化）、register の
   last-use の bit（hint）。
@@ -224,7 +293,8 @@ va-isa.h: `VA_OP_ZS_EMIT`・`VA_OP_U16_TO_U32`・`VA_SHIFT_ZS_EMIT_DEPTH`・`VA_
 
 - **当てた（2026-10-29、P7）**: 下の vk-draw.c の差分（局所の `vertex`・`fragment` を使う形）と vk-pipeline.c の拒否の削除。graphics の spill も TSD に TLS を持つ。
   未確認: fragment の program の TLS を GPU が draw の TSD（IDVS の FRAGMENT_TSD）から読むか、FBD の Local Storage から読むか（今の FBD の Local Storage に TLS は無い）。
-  spill する fragment の program が fault したら最初に疑う。desktop の 60 module は spill しない（listing が変わらない）ので今夜の desktop には響かない。
+  spill する fragment の program が fault したら最初に疑う。
+  **資料で確かめた（2026-10-29、q1675-i04、P7）**: v10 の FBD には Local Storage の section が無く、RUN_IDVS の fragment は `fragment_tsd_select` = 0 で TSD_0 から読む（panvk の v10 も TSD_0 だけを書く）。今の driver の形と一致。実機で見る手順は [gpu.md](../gpu.md) §14。desktop の 60 module は spill しない（listing が変わらない）ので今夜の desktop には響かない。
 - vk-draw.c（D2）へ（graphics の spill の TLS、q1675-i03）: draw() の TSD の 2 行を次に替え、`uint64_t storage;` と
   `uint32_t tls_bytes;` を宣言に足す。当てたら vk-pipeline.c の「A draw's thread storage has no local storage」の
   拒否を外す（P7）。
@@ -243,6 +313,11 @@ va-isa.h: `VA_OP_ZS_EMIT`・`VA_OP_U16_TO_U32`・`VA_SHIFT_ZS_EMIT_DEPTH`・`VA_
   	mali_cs_move64(&build->cs, MALI_CS_IDVS_TSD, storage);
   	mali_cs_move64(&build->cs, MALI_CS_IDVS_TSD + 4U, storage);
   ```
+- 共通の front end（`spirv.c`）へ（q1675-i04、D3 の報告、案だけ）: OpFunctionCall を lower しない。front end は function を 1 つだけ
+  受け（2 つ目で「more than one function (calls are not lowered)」の ENOTSUP）、`glslc` を `-O` 無しで通すと helper の関数が残るので
+  拒否される。backend（Mali）からは直せない（IR に関数の概念が無い）。案: parse の前に、呼ばれる関数の body を呼ぶ側へ inline する
+  段（OpFunctionParameter を引数の id に、OpReturnValue を結果の id に置き換え、再帰は拒否）を `spirv.c` に足す。他の GPU（GHCI・
+  amdrdna・nvrtx）にも同じく効く。それまでは desktop の shader を `glslc -O` で作る（今の `shaders.h` は -O の物と見込むが未確認）。
 - 共通の front end（`spirv.c`）へ（q1675-i04、案だけ）: fragment の入力の BuiltIn SampleId（18）を、SAMPLE_MASK の feature の時に
   新しい location（例 `DRV_GPU_SHADER_LOCATION_SAMPLE_ID` 71、flat）にすれば、backend は r61 の bits 23:16 を RSHIFT_AND で
   取れる（Mesa の bi_load_sample_id_to は 5 bit の mask）。他の GPU（GHCI）は feature の bit を見て決めるので影響は無い見込み（未確認）。
@@ -261,9 +336,8 @@ va-isa.h: `VA_OP_ZS_EMIT`・`VA_OP_U16_TO_U32`・`VA_SHIFT_ZS_EMIT_DEPTH`・`VA_
   待ち）、preload の register、varying の offset、viewport の FAU の位置、TEX の handle の table と index。
 - 余裕があれば（q1675-i03 の後）: graphics の spill（上の vk-draw.c の案）、textureGrad（TEX_GRADIENT）、mip level、
   UBO の vector load、FragDepth（depth attachment と一緒に）、compute の workgroup memory（WLS、範囲外）。
-- 残り（q1675-i04）: UBO の vector load（LOAD.i64・i96・i128、Mesa の bifrost_nir.c の mem_access_size_align_cb の
-  「大きさの 2 の冪に揃う」規則。desktop では libGL の 7 module の listing が変わる見込みなので、MALI_SHADER_OPTION の 1 bit で
-  切り替え、P7 が有効にするか決める形の予定）。
+- q1675-i04 の UBO の vector load: 既定は無効。夜の後に有効にするか P7 が決める（上の表）。有効にして壊れたら LOAD.i96 の lane・
+  buffer の base の揃いを疑う。
 - q1675-i04 の物が夜に壊れたら（depth・sample mask を使う shader は desktop に無い）: ZS_EMIT の source の並び・z の bit、
   coverage の r60 の扱い。
 - q1675-i03 の新しい機能が夜に壊れたら疑う順: cube の face の bit（CUBEFACE2 の出力と MUX.bit）、storage の

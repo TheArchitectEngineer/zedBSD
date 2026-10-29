@@ -9,7 +9,7 @@ Related Milestones: MG002
 Objectives: O1, O2
 Parent: [Master](../master.md)
 Queue: none
-Resume point: p033（desktop GL 3.2）cleared（2026-09-27、Venus で glx-p033 と回帰 PASS。i915 未実施）。GL 3.3 以降（p037・p034〜p036）は保留（2026-09-27 ユーザー「OpenGL 3.2が問題なければ、それ以降のOpenGLはいったん保留して、i915の高度化に進んでください。」）。再開はユーザーの指示で p037 から（[phase037](phase037/phase.md) に設計の下書き）。p009・p004・p007 は残り、i915 の高度化（WS031 等）の後
+Resume point: 2026-10-29 q1686-i01（P2、branch agent/p2-ws068）: 受け入れを Venus だけにした（下の「ユーザーの決定」）。p034 cleared、p035・p036 を p040〜p068 に分け、p040〜p044・p046 は Venus で cleared。**次に着手するのは [ws068-p045](phase045/phase.md)（sample shading の Venus の試験、2 LW）**、その後は表の順に p047（fp64 の GLSL）から。各 Phase の試験は `sh plan/ws068/tests/venus-all.sh build/tmp/<新しい dir>`（image の build → Venus guest → glx-p037 と回帰 → summary.txt）。最後は p007（規約の全文）。注意: glxtest `--gl33` の格子（4 列 4 行）は 15 の outcome と固定機能の四角で満杯。outcome を足す Phase は userland/x11/glxtest/gl33.c の格子の行と plan/ws068/tests/glx-p037.sh の `gl33_expect` を一緒に広げる。以下は前の記録。2026-10-29 q1682-i02（P2、branch agent/p2-ws068）: Venus の試験を `plan/ws068/tests/venus-all.sh` で流し、p037（GL 3.3）cleared、回帰（glx-p013・p031・p033、egl-p019〜p030）PASS、egl-p039 PASS（p039 の cleared は Q1）。branch は merge の候補。次は p034〜p036 の残りの実装と試験（tessellation・draw-indirect は glx-p037 の画面で緑を観察済み、Phase の受け入れは未試験）。以下は前の記録。2026-10-29 q1682-i01（P2、branch agent/p2-ws068）: ユーザー「作業の手が空いてしまったら、テストなしで実装だけ進める戦略で、残っているWSのphaseをまんべんなく進めましょう。」により p037（GL 3.3）を実装（試験未実施、cleared にしない）、続けて p034〜p036・p039 を実装だけ進める。p033（desktop GL 3.2）cleared（2026-09-27、Venus で glx-p033 と回帰 PASS。i915 未実施）。GL 3.3 以降（p037・p034〜p036）は保留（2026-09-27 ユーザー「OpenGL 3.2が問題なければ、それ以降のOpenGLはいったん保留して、i915の高度化に進んでください。」）。再開はユーザーの指示で p037 から（[phase037](phase037/phase.md) に設計の下書き）。p009・p004・p007 は残り、i915 の高度化（WS031 等）の後
 <!-- awesome-plan-current:end -->
 作業の手引き（2026-10-01）: [guide.md](guide.md)
 
@@ -41,8 +41,15 @@ EGL と OpenGL ES（2.0、次に 3.0）を、zedBSD の libvulkan（Vulkan）と
 
 1. Wayland（zwl の Wiseman Mode とゲームモード）と display 直接の両方で、EGL＋GLES 2.0 の試験アプリ（三角形、texture、blend、depth、窓の resize）が描け、画面の読み取りで一致する（Venus）。
 2. GLES 3.0 の代表機能の試験。
-3. i915 実機（F-022・F-023 の後）で同じ試験。実機の証拠と QEMU の証拠を分ける。
+3. （2026-10-29 に外した）旧: i915 実機（F-022・F-023 の後）で同じ試験。
 4. 規約・回帰。
+5. desktop GL 4.x（p040〜p068）: 各 Phase の受け入れ（Venus の glxtest の outcome または版ごとの glx-pNNN）と、最後の版の名乗り（p068）。
+
+### ユーザーの決定（原文）
+
+- 2026-10-29 ユーザー「WS068ですが、i915の試験を受け入れ条件から外して、VenusのみでOKとします。また、残りが大きい件は了解しましたので、phaseに分解して、目標を管理しながら、空いた時間に細々と取り組んで、WS完了に近づいていけるように、準備してください。」
+  解釈: 受け入れは Venus（QEMU）だけ。表と phase.md の「i915 実機は未実施」は受け入れの欠けではない（記録として残す）。p035・p036 の残りを
+  1 回の作業で終わる大きさの Phase（p040〜p068）に分け、取り組む順に表に並べた。WS の完了は p068（GL 4.6 の名乗り）と p007（規約）の後。
 
 ## Phase 一覧
 
@@ -64,10 +71,40 @@ EGL と OpenGL ES（2.0、次に 3.0）を、zedBSD の libvulkan（Vulkan）と
 | [ws068-p031](phase031/phase.md) | desktop GL 3.1: texture buffer（glTexBuffer、samplerBuffer）、rectangle texture（sampler2DRect）、glPrimitiveRestartIndex、glGetActiveUniformName、GLSL 1.40 と context の版による GLSL の版の上限、3.1 の context（GL_ARB_compatibility）。3.2 の shader の stage の要らない API（glDraw*BaseVertex、glProvokingVertex、GL_DEPTH_CLAMP、GL_TEXTURE_CUBE_MAP_SEAMLESS） | cleared（2026-09-27。Venus で glx-p031 PASS、回帰 PASS。i915 実機は未実施） | p013 |
 | [ws068-p032](phase032/phase.md) | GLSL compiler の geometry shader（`#version 150`、layout の in/out の primitive、EmitVertex・EndPrimitive、`gl_in[]`、`gl_Layer`・`gl_PrimitiveID`）、3 stage の link と SPIR-V、host の試験（spirv-val・lavapipe） | cleared（2026-09-27。host の試験 PASS、Venus の回帰 PASS） | p031 |
 | [ws068-p033](phase033/phase.md) | desktop GL 3.2: libGLESv2・libGL の geometry shader（GL_GEOMETRY_SHADER、3 stage の pipeline、adjacency の mode、draw の mode と入力の primitive の検査）、layered の framebuffer（glFramebufferTexture と gl_Layer）、multisample texture（glTexImage2DMultisample、sampler2DMS、texelFetch、glSampleMaski・GL_SAMPLE_MASK、glGetMultisamplefv）、core と compatibility の profile（core は固定機能を断る）、3.2 の context（GL_VERSION 3.2・GLSL 1.50）（2026-09-27 に 3.3 の API を p037 に分けた） | cleared（2026-09-27。Venus で glx-p033 PASS、i915 未実施） | p032 |
-| [ws068-p037](phase037/phase.md) | desktop GL 3.3: timer query（GL_TIME_ELAPSED・GL_TIMESTAMP・glQueryCounter・glGetQueryObjecti64v）、dual-source blend（glBindFragDataLocationIndexed、SRC1 の factor、layout(index)）、RGB10_A2UI、3.3 の context（GL_VERSION 3.3・GLSL 3.30） | planned・保留（2026-09-27 ユーザー「OpenGL 3.2が問題なければ、それ以降のOpenGLはいったん保留して、i915の高度化に進んでください。」）。コードは未着手 | p033 |
-| ws068-p034 | tessellation（GLSL の control・evaluation の stage、patch、glPatchParameteri）: GL_ARB_tessellation_shader | planning・保留（2026-09-27、p037 と同じ） | p037 |
-| ws068-p035 | compute shader、SSBO、image load/store、atomic counter（GLSL の compute の stage、glDispatchCompute、glMemoryBarrier）: GL_ARB_compute_shader 等 | planning・保留（2026-09-27、p037 と同じ）。2026-09-30 main: GLES 3.1 の compute の部分集合（GLSL ES 3.10 の compute、glDispatchCompute・SSBO・glMemoryBarrier）は [WS101](../ws101/ws.md)（p008〜p010）へ移した。desktop GL の compute と image load/store・atomic counter はこの行に残る | p037 |
-| ws068-p036 | GL 4.x の残り（fp64、sample shading、draw indirect、cube map 配列、texture gather、separate shader objects、vertex attrib binding、KHR_debug、DSA の部分、clip control、SPIR-V の shader）と版の名乗り。着手前に更に分ける | planning・保留（2026-09-27、p037 と同じ） | p034、p035 |
+| [ws068-p037](phase037/phase.md) | desktop GL 3.3: timer query（GL_TIME_ELAPSED・GL_TIMESTAMP・glQueryCounter・glGetQueryObjecti64v）、dual-source blend（glBindFragDataLocationIndexed、SRC1 の factor、layout(index)）、RGB10_A2UI、3.3 の context（GL_VERSION 3.3・GLSL 3.30） | cleared（2026-10-29 q1682-i02 P2。Venus で glx-p037 と回帰 glx-p013・p031・p033・egl-p019〜p030 PASS（`tests/venus-all.sh`）。i915 実機は未実施）。旧: in-progress（実装済み・試験未実施、q1682-i01）、保留（2026-09-27 ユーザー「OpenGL 3.2が問題なければ、それ以降のOpenGLはいったん保留して、i915の高度化に進んでください。」） | p033 |
+| [ws068-p034](phase034/phase.md) | tessellation（GLSL の control・evaluation の stage、patch、glPatchParameteri）: GL_ARB_tessellation_shader | cleared（2026-10-29 q1686-i01 P2。Venus で glx-p037 の tessellation（向きと culling を足した）と回帰 PASS。PATCH_LIST の culling を直した）。旧: in-progress（実装済み・試験未実施、q1682-i01） | p037 |
+| [ws068-p035](phase035/phase.md) | compute shader、SSBO、image load/store、atomic counter（GLSL の compute の stage、glDispatchCompute、glMemoryBarrier）: GL_ARB_compute_shader 等 | 分割（2026-10-29、p056〜p058・p060 に分けた。desktop GLSL 4.30 の compute・SSBO と libGL の compute の口は実装済み（q1682-i01）で、試験は p060）。旧: in-progress（一部実装・試験未実施） | p037 |
+| [ws068-p036](phase036/phase.md) | GL 4.x の残り（fp64、sample shading、draw indirect、cube map 配列、texture gather、separate shader objects、vertex attrib binding、KHR_debug、DSA の部分、clip control、SPIR-V の shader）と版の名乗り。着手前に更に分ける | 分割（2026-10-29、p040〜p055・p059・p061〜p068 に分けた。a・c・d・g・i・j は実装済みで p040〜p046 に）。旧: in-progress | p034、p035 |
+| [ws068-p040](phase040/phase.md) | GL 4.0 の indirect draw（GL_ARB_draw_indirect） | cleared（2026-10-29 q1686-i01、Venus の venus-all） | p037 |
+| [ws068-p041](phase041/phase.md) | GL 4.3 の debug output（GL_KHR_debug） | cleared（2026-10-29 q1686-i01、Venus の venus-all） | p037 |
+| [ws068-p042](phase042/phase.md) | GL 4.5 の clip control（GL_ARB_clip_control） | cleared（2026-10-29 q1686-i01、Venus の venus-all） | p037 |
+| [ws068-p043](phase043/phase.md) | GL 4.0 の texture gather（GL_ARB_texture_gather） | cleared（2026-10-29 q1686-i01、Venus の venus-all） | p037 |
+| [ws068-p044](phase044/phase.md) | GL 4.3 の vertex attrib binding（GL_ARB_vertex_attrib_binding） | cleared（2026-10-29 q1686-i01、Venus の venus-all） | p037 |
+| [ws068-p046](phase046/phase.md) | GL 4.0 の cube map 配列（GL_ARB_texture_cube_map_array） | cleared（2026-10-29 q1686-i01、Venus の venus-all） | p037 |
+| [ws068-p045](phase045/phase.md) | GL 4.0 の sample shading（GL_ARB_sample_shading）の Venus の試験 | in-progress（実装済み、Venus の試験が残り） | p037 |
+| [ws068-p047](phase047/phase.md) | GL 4.0 の fp64（1）: GLSL compiler の double | planned（8 LW） | p037 |
+| [ws068-p048](phase048/phase.md) | GL 4.0 の fp64（2）: GL の API と GL_ARB_gpu_shader_fp64 | planned（4 LW） | p047 |
+| [ws068-p049](phase049/phase.md) | GL 4.0 の gpu_shader5（1）: 整数と浮動小数の built-in | planned（6 LW） | p037 |
+| [ws068-p050](phase050/phase.md) | GL 4.0 の gpu_shader5（2）: gather の残り・動的な index・invocations・interpolateAt | planned（8 LW） | p049、p043 |
+| [ws068-p051](phase051/phase.md) | GL 4.0 の transform feedback 2・3 | planned（6 LW） | p037 |
+| [ws068-p052](phase052/phase.md) | GL 4.0 の残りと 4.0 の名乗り | planned（10 LW） | p034、p040、p043、p045、p046、p048、p050、p051 |
+| [ws068-p053](phase053/phase.md) | GL 4.1 の separate shader objects（1）: program pipeline の object と API | planned（6 LW） | p037 |
+| [ws068-p054](phase054/phase.md) | GL 4.1 の separate shader objects（2）: pipeline の描画 | planned（8 LW） | p053 |
+| [ws068-p055](phase055/phase.md) | GL 4.1 の残りと 4.1 の名乗り | planned（8 LW） | p052、p054 |
+| [ws068-p056](phase056/phase.md) | GL 4.2 の image load/store（1）: GLSL の image | planned（8 LW） | p037 |
+| [ws068-p057](phase057/phase.md) | GL 4.2 の image load/store（2）: GL の API | planned（8 LW） | p056 |
+| [ws068-p058](phase058/phase.md) | GL 4.2 の atomic counter（GL_ARB_shader_atomic_counters） | planned（6 LW） | p057 |
+| [ws068-p059](phase059/phase.md) | GL 4.2 の残りと 4.2 の名乗り | planned（10 LW） | p055、p057、p058 |
+| [ws068-p060](phase060/phase.md) | GL 4.3 の desktop の compute と SSBO（全ての stage） | planned（6 LW） | p037 |
+| [ws068-p061](phase061/phase.md) | GL 4.3 の残り（1）: shader の言語と問い合わせ | planned（8 LW） | p060 |
+| [ws068-p062](phase062/phase.md) | GL 4.3 の残り（2）と 4.3 の名乗り | planned（10 LW） | p044、p041、p059、p061 |
+| [ws068-p063](phase063/phase.md) | GL 4.4 の残りと 4.4 の名乗り | planned（10 LW） | p062 |
+| [ws068-p064](phase064/phase.md) | GL 4.5 の direct state access（1）: buffer・texture・framebuffer | planned（8 LW） | p037 |
+| [ws068-p065](phase065/phase.md) | GL 4.5 の残りと 4.5 の名乗り | planned（10 LW） | p042、p063、p064 |
+| [ws068-p066](phase066/phase.md) | GL 4.6 の SPIR-V の shader（1）: glSpecializeShader と Vulkan 形の module | planned（6 LW） | p037 |
+| [ws068-p067](phase067/phase.md) | GL 4.6 の SPIR-V の shader（2）: GL 形の module | planned（8 LW） | p066、p058 |
+| [ws068-p068](phase068/phase.md) | GL 4.6 の残りと 4.6 の名乗り | planned（10 LW） | p065、p067 |
+| [ws068-p007](phase007/phase.md) | 規約の全文との照合と回帰（最後） | planning（最後。p068 の後） | p040〜p068 と全 Phase |
 | [ws068-p004](phase004/phase.md) | GLES 2.0 の残り: `gl_FragCoord`・`gl_PointCoord` の GL の向き、`gl_DepthRange`、sampler の配列、egltest の scene `es2` | cleared（2026-10-18 Q1: phase.md に合わせた。旧: in-progress（2026-10-05 P1 q747。範囲を Q1 が承認、実装中）） | p003 |
 | ws068-p005 | GLES 3.0 | 2026-09-27 に p024〜p027 に分けた | p004 |
 | [ws068-p024](phase024/phase.md) | GLES 3.0 の API（1）: VAO、buffer の map・copy、instancing、整数の属性と uniform、uniform buffer、glGetStringi | cleared（q495-i01、2026-09-27。Venus で egl-p024、回帰 PASS） | p020、p021、p022 |
@@ -78,10 +115,9 @@ EGL と OpenGL ES（2.0、次に 3.0）を、zedBSD の libvulkan（Vulkan）と
 | [ws068-p027](phase027/phase.md) | GLES 3.0 の API（4）: query（occlusion）、sync object（glFenceSync）、残りの entry point（glGetFragDataLocation、program binary の拒否）（2026-09-27 に transform feedback と GL_VERSION を p030 に分けた） | cleared（2026-09-27。Venus で egl-p027 PASS、回帰 PASS。i915 実機は未実施） | p026、p029 |
 | [ws068-p030](phase030/phase.md) | GLES 3.0 の API（5）: transform feedback（libvulkan に VK_EXT_transform_feedback が無いので vertex shader の storage buffer への書き込みで写す。GL_TRANSFORM_FEEDBACK_PRIMITIVES_WRITTEN、GL_RASTERIZER_DISCARD）、GL_VERSION を「OpenGL ES 3.0」・GLSL ES 3.00 に | cleared（2026-09-27。Venus で egl-p030 PASS、回帰 PASS。i915 実機は未実施） | p027 |
 | [ws068-p006](phase006/phase.md) | i915 実機での確認（GLX の zgears、App Home の X11、仮想デスクトップ） | cleared（q484-i01。実機で 6 検査 PASS の run あり、回転の間欠の止まりは BUG-057） | p008、p010、ws069-p005、F-023 |
-| ws068-p007 | 規約の全文との照合と回帰（最後） | planning | 全 Phase |
 | [ws068-p008](phase008/phase.md) | GLES 2.0 の描画の核（SPIR-V の shader binary、変換層。compiler の方式に依らない部分） | cleared（q475-i01。Venus で strip・texture・blend・depth・cull、display 直接と窓と resize） | p002 |
 | [ws068-p009](phase009/phase.md) | frame を 2 枚重ねる（EGL の frame in flight。Venus で clear だけ 125 ms/frame、WSI 直接は 50 ms） | cleared（2026-10-18 Q1: phase.md に合わせた。旧: in-progress（2026-10-05 P1 q747。実装は merge 済み、T1-180 の Venus の回帰と計測待ち）） | p008 |
-| ws068-p039 | ETC2・EAC の圧縮 texture（ES 3.0 の必須の 10 format、`glCompressedTexImage2D`・`glCompressedTexSubImage2D`。device に無ければ CPU で展開。i915 の Gen12 は hardware に無い） | planned（2026-10-05 Q1 が p004 の範囲外から新設、今は実行しない） | p004 |
+| [ws068-p039](phase039/phase.md) | ETC2・EAC の圧縮 texture（ES 3.0 の必須の 10 format、`glCompressedTexImage2D`・`glCompressedTexSubImage2D`。device に無ければ CPU で展開。i915 の Gen12 は hardware に無い） | cleared（2026-10-29 Q1、Venus で egl-p039 PASS（q1682-i02 P2）、etc2-host PASS。i915 実機は未実施）。旧: planned（2026-10-05 Q1 が p004 の範囲外から新設） | p004 |
 | [ws068-p010](phase010/phase.md) | EGL の pbuffer（offscreen。GLX の描画先） | cleared（q476-i01。Venus で 600 frame と 2048x1536） | p008 |
 | ws068-p011 | framebuffer object・renderbuffer・cube map（texture への描画） | 2026-09-27 に p022（FBO・renderbuffer）と p023（cube map・mipmap の GPU 化・FBO からの copy）に分けた | p008 |
 | [ws068-p022](phase022/phase.md) | framebuffer object と renderbuffer（texture への描画、FBO の readback） | cleared（q493-i01、2026-09-27。Venus で egl-p022） | p008 |

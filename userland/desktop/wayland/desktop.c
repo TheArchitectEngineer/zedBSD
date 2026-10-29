@@ -107,7 +107,9 @@
  * says the desktop has the keyboard, since focus_top was the top window
  * (another top window takes it back).  command is the program to start
  * (NULL: none), token the token it is given (fixed says --desktop-token
- * chose it), pid the program running (0: none), gone_ms when it ended,
+ * chose it), pid the program running (0: none), starting that its start
+ * is asked of the file I/O thread and its process ID has not come back
+ * (spawn.c), gone_ms when it ended,
  * starts and starts_ms how many starts the minute since starts_ms has had.
  * drawn says the program's first image was drawn since its start (logged
  * once with its time, ws094-p009).
@@ -127,6 +129,7 @@ struct desktop_state {
 	int fixed;
 	int decided;
 	pid_t pid;
+	int starting;
 	uint64_t gone_ms;
 	unsigned starts;
 	uint64_t starts_ms;
@@ -163,6 +166,9 @@ static int desktop_configure(struct kwl_server *server);
 static void desktop_start(struct kwl_server *server);
 static void desktop_watch(struct kwl_server *server);
 static void desktop_welcome(struct kwl_server *server);
+static void desktop_started(struct kwl_server *server, pid_t pid, int error, void *context);
+static void desktop_installer_started(struct kwl_server *server, pid_t pid, int error, void *context);
+static void desktop_welcome_started(struct kwl_server *server, pid_t pid, int error, void *context);
 static int desktop_switched_off(void);
 static void desktop_new_token(void);
 static uint32_t desktop_word(const unsigned char *bytes, size_t offset);
@@ -792,6 +798,7 @@ desktop_start(
 {
 	char line[DESKTOP_LINE_MAX];
 	uint64_t now;
+	int error;
 	int off;
 
 	/* Whether a program is wanted is decided once: the option, else a login session's switch. */
@@ -809,7 +816,7 @@ desktop_start(
 	/* No program wanted, or one running, or too many starts already. */
 	if (desk.command == NULL || desk.command[0] == '\0')
 		return;
-	if (desk.pid > 0 || desk.limited)
+	if (desk.pid > 0 || desk.starting || desk.limited)
 		return;
 
 	/* Not before two seconds after the last one ended. */
@@ -836,24 +843,40 @@ desktop_start(
 
 	/* The program, its token in its environment only. */
 	snprintf(line, sizeof(line), "KEILAND_DESKTOP_TOKEN=%s exec %s", desk.token, desk.command);
-	desk.pid = kwl_spawn(server, line);
-	if (desk.pid < 0) {
-		printf("KWL DESKTOP start-failed errno=%d\n", errno);
-		desk.starts++;
+	desk.starts++;
+	desk.starting = 1;
+	error = kwl_spawn(server, line, desktop_started, NULL);
+	if (error != 0)
+		desktop_started(server, 0, error, NULL);
+}
+
+/*
+ * Hears the desktop program's start (every start counts toward the
+ * minute's limit, a failed one too): it runs, or is tried again after a
+ * while.
+ */
+static void
+desktop_started(
+	struct kwl_server *server,
+	pid_t pid,
+	int error,
+	void *context)
+{
+	/* Failed: started again after a while. */
+	(void)server;
+	(void)context;
+	desk.starting = 0;
+	if (error != 0) {
+		printf("KWL DESKTOP start-failed errno=%d\n", error);
 		desk.pid = 0;
-		desk.gone_ms = now;
+		desk.gone_ms = kwl_milliseconds();
 		return;
 	}
 
-	/* Every start counts toward the minute's limit, a failed one too (above). */
-	desk.starts++;
-
-	/* The log the tests read; its first image is logged when drawn. */
+	/* Succeeded: the log the tests read; its first image is logged when drawn. */
+	desk.pid = pid;
 	desk.drawn = 0;
 	printf("KWL DESKTOP start pid=%d command=%s at_ms=%llu\n", (int)desk.pid, desk.command, (unsigned long long)kwl_milliseconds());
-
-	/* Succeeded: the program is running. */
-	return;
 }
 
 /*
@@ -865,7 +888,6 @@ static void
 desktop_welcome(
 	struct kwl_server *server)
 {
-	pid_t pid;
 	int installer;
 	int done;
 	int error;
@@ -881,14 +903,9 @@ desktop_welcome(
 	installer = access(DESKTOP_INSTALLER_INDEX, R_OK);
 	if (installer == 0) {
 		/* Starts the installer, which is not started again when it ends. */
-		pid = kwl_spawn(server, "exec " DESKTOP_INSTALLER);
-		if (pid < 0) {
-			printf("KWL INSTALLER start-failed errno=%d\n", errno);
-			return;
-		}
-
-		/* Logs the installer's start. */
-		printf("KWL INSTALLER start pid=%d\n", (int)pid);
+		error = kwl_spawn(server, "exec " DESKTOP_INSTALLER, desktop_installer_started, NULL);
+		if (error != 0)
+			printf("KWL INSTALLER start-failed errno=%d\n", error);
 		return;
 	}
 
@@ -901,13 +918,48 @@ desktop_welcome(
 	}
 
 	/* Settings in the Welcome's mode (its end sets welcome.done). */
-	pid = kwl_spawn(server, "exec " DESKTOP_WELCOME);
-	if (pid < 0) {
-		printf("KWL WELCOME start-failed errno=%d\n", errno);
+	error = kwl_spawn(server, "exec " DESKTOP_WELCOME, desktop_welcome_started, NULL);
+	if (error != 0)
+		printf("KWL WELCOME start-failed errno=%d\n", error);
+}
+
+/* Logs the installer's start (its process ID, or the failure). */
+static void
+desktop_installer_started(
+	struct kwl_server *server,
+	pid_t pid,
+	int error,
+	void *context)
+{
+	/* The failure. */
+	(void)server;
+	(void)context;
+	if (error != 0) {
+		printf("KWL INSTALLER start-failed errno=%d\n", error);
 		return;
 	}
 
-	/* The log the tests read. */
+	/* Succeeded: the log the tests read. */
+	printf("KWL INSTALLER start pid=%d\n", (int)pid);
+}
+
+/* Logs the Welcome's start (its process ID, or the failure). */
+static void
+desktop_welcome_started(
+	struct kwl_server *server,
+	pid_t pid,
+	int error,
+	void *context)
+{
+	/* The failure. */
+	(void)server;
+	(void)context;
+	if (error != 0) {
+		printf("KWL WELCOME start-failed errno=%d\n", error);
+		return;
+	}
+
+	/* Succeeded: the log the tests read. */
 	printf("KWL WELCOME start pid=%d\n", (int)pid);
 }
 

@@ -23,6 +23,7 @@ static struct emit_value builtin_ext(struct emit_state *state, struct glsl_node 
 static struct emit_value builtin_special(struct emit_state *state, struct glsl_node *node, struct emit_value *arguments, unsigned count);
 static struct emit_value builtin_texture(struct emit_state *state, struct glsl_node *node, struct emit_value *arguments, unsigned count);
 static struct emit_value builtin_texture_query(struct emit_state *state, struct glsl_node *node, struct emit_value *arguments);
+static struct emit_value builtin_gather(struct emit_state *state, struct glsl_node *node, struct emit_value *arguments);
 static uint32_t builtin_coordinate(struct emit_state *state, struct emit_value coordinate, unsigned size, int project, uint32_t *reference, int shadow);
 static unsigned builtin_dimension(const struct glsl_type *sampler);
 static uint32_t builtin_image(struct emit_state *state, struct emit_value sampler);
@@ -139,6 +140,10 @@ builtin_special(
 	case GLSL_SPECIAL_TEXTURE_OFFSET_BIAS:
 	case GLSL_SPECIAL_TEXTURE_LOD_OFFSET:
 		result = builtin_texture(state, node, arguments, count);
+		return result;
+	case GLSL_SPECIAL_TEXTURE_GATHER:
+	case GLSL_SPECIAL_TEXTURE_GATHER_OFFSET:
+		result = builtin_gather(state, node, arguments);
 		return result;
 	case GLSL_SPECIAL_TEXTURE_SIZE:
 	case GLSL_SPECIAL_TEXEL_FETCH:
@@ -263,6 +268,7 @@ builtin_texture(
 	unsigned special;
 	unsigned operand_count;
 	unsigned mask;
+	unsigned dimension;
 	uint32_t bias;
 	uint32_t lod;
 	uint32_t gradient_x;
@@ -316,9 +322,19 @@ builtin_texture(
 		break;
 	}
 
-	/* The coordinate (and the depth reference); a rectangle's, in texels, made 2D's. */
+	/*
+	 * The coordinate (and the depth reference); a rectangle's, in texels,
+	 * made 2D's.  A cube map array's four components leave the reference
+	 * an argument of its own.
+	 */
 	reference = 0U;
-	coordinate = builtin_coordinate(state, arguments[1], builtin_dimension(sampler), project, &reference, shadow);
+	dimension = builtin_dimension(sampler);
+	if (shadow && dimension == 4U) {
+		coordinate = builtin_coordinate(state, arguments[1], dimension, 0, &reference, 0);
+		reference = arguments[2].id;
+	} else {
+		coordinate = builtin_coordinate(state, arguments[1], dimension, project, &reference, shadow);
+	}
 	if (sampler->sampler == GLSL_SAMPLER_RECT)
 		coordinate = builtin_rect_coordinate(state, arguments[0], coordinate);
 
@@ -406,6 +422,47 @@ builtin_texture(
 	result = builtin_value(glsl_emit_op(state, SPV_OP_COMPOSITE_CONSTRUCT, glsl_emit_type(state, node->type), parts, 4U), node->type);
 
 	/* Succeeded: the vector. */
+	return result;
+}
+
+/*
+ * Emits textureGather and textureGatherOffset: the first component of
+ * each of the four texels a bilinear lookup at the coordinate reads (at
+ * a constant offset), as OpImageGather of component 0.
+ */
+static struct emit_value
+builtin_gather(
+	struct emit_state *state,
+	struct glsl_node *node,
+	struct emit_value *arguments)
+{
+	const struct glsl_type *sampler;
+	const struct glsl_type *texel;
+	struct emit_value result;
+	uint32_t operands[6];
+	uint32_t coordinate;
+	uint32_t reference;
+	unsigned operand_count;
+
+	/* The sampled image, the coordinate, component 0. */
+	sampler = arguments[0].type;
+	reference = 0U;
+	coordinate = builtin_coordinate(state, arguments[1], builtin_dimension(sampler), 0, &reference, 0);
+	operands[0] = arguments[0].id;
+	operands[1] = coordinate;
+	operands[2] = glsl_emit_int(state, 0);
+	operand_count = 3U;
+
+	/* The constant offset of textureGatherOffset. */
+	if (node->builtin->number == GLSL_SPECIAL_TEXTURE_GATHER_OFFSET) {
+		operands[3] = SPV_IMAGE_OPERAND_CONST_OFFSET;
+		operands[4] = arguments[2].id;
+		operand_count = 5U;
+	}
+
+	/* Succeeded: the four texels' components, as the sampler's texel vector. */
+	texel = glsl_type_vector(sampler->base, 4U);
+	result = builtin_value(glsl_emit_op(state, SPV_OP_IMAGE_GATHER, glsl_emit_type(state, texel), operands, operand_count), texel);
 	return result;
 }
 
@@ -563,7 +620,7 @@ static unsigned
 builtin_dimension(
 	const struct glsl_type *sampler)
 {
-	/* 1D and buffer one, 2D and rectangle two (and a layer for an array), 3D and cube three. */
+	/* 1D and buffer one, 2D and rectangle two (and a layer for an array), 3D and cube three (a cube map array four). */
 	if (sampler->sampler == GLSL_SAMPLER_1D || sampler->sampler == GLSL_SAMPLER_BUFFER)
 		return 1U;
 	if (sampler->sampler == GLSL_SAMPLER_RECT)
@@ -572,6 +629,8 @@ builtin_dimension(
 		return 3U;
 	if (sampler->sampler == GLSL_SAMPLER_2D)
 		return 2U;
+	if (sampler->sampler == GLSL_SAMPLER_CUBE && sampler->arrayed)
+		return 4U;
 
 	/* 3D and cube maps. */
 	return 3U;

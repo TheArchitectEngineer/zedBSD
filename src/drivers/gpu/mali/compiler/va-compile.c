@@ -90,6 +90,15 @@
 #define VA_FLOAT_2PI		0x40C90FDBU
 
 /*
+ * Floats a cube sample with derivatives scales its level by: 1/16 and
+ * 16.
+ *
+ * Values referenced: IEEE 754-2019 (binary32 encodings).
+ */
+#define VA_FLOAT_SIXTEENTH	0x3D800000U
+#define VA_FLOAT_SIXTEEN	0x41800000U
+
+/*
  * The Taylor coefficients of sin(y) = y (1 + c3 y^2 + c5 y^4 + ... + c11
  * y^10): -1/3!, 1/5!, -1/7!, 1/9!, -1/11!, whose error on [0, pi / 2] is
  * below 6e-7.
@@ -143,9 +152,9 @@
  * again in a temporary register at each reader, or read from the constant
  * table), each value's last use, the free registers and the first one the
  * stage's preloads leave alone, the temporaries of the instruction,
- * the outputs the program writes at its end (a fragment program's depth
- * and sample mask among them), and the loops it is in (their heads'
- * places in the list and in the IR).
+ * the outputs the program writes at its end (a fragment program's depth,
+ * sample mask and stencil reference among them), the loops it is in (their heads' places
+ * in the list and in the IR), and the compile's MALI_SHADER_OPTION_*.
  *
  * A value the registers cannot keep is spilled to a word of thread local
  * storage (tls_word, VA_NO_TLS_WORD for none) and loaded again where it
@@ -184,6 +193,8 @@ struct va_compiler {
 	uint32_t point_size_value;
 	uint32_t depth_value;
 	uint32_t sample_mask_value;
+	uint32_t stencil_value;
+	uint32_t options;
 
 	uint32_t loop_start[VA_LOOP_DEPTH];
 	uint32_t loop_head[VA_LOOP_DEPTH];
@@ -209,11 +220,13 @@ struct va_compiler {
  * One sampler message as the lowering reads it: its kind (VA_TEXTURE_*),
  * whether it compares with a depth reference, whether its image is a
  * cube and an array, its dimension and the coordinate parameters it has
- * (a cube's three of the direction), its level of detail mode, the
- * places among its parameters of the first coordinate, the reference,
- * the level (or bias) and the layer (VA_NOT_DEFINED for none), a
- * gather's channel, the constant texel offset, and the parameters'
- * registers.
+ * (a cube's three of the direction), its level of detail mode, whether
+ * it gives the coordinates' derivatives (each coordinate is then
+ * followed by its x and y derivatives, so stride is the parameters a
+ * coordinate takes), the places among its parameters of the first
+ * coordinate, the reference, the level (or bias) and the layer
+ * (VA_NOT_DEFINED for none), a gather's channel, the constant texel
+ * offset, and the parameters' registers.
  */
 struct va_texture {
 	uint32_t kind;
@@ -223,6 +236,8 @@ struct va_texture {
 	uint32_t dimension;
 	uint32_t coordinates;
 	uint32_t lod_mode;
+	uint32_t gradient;
+	uint32_t stride;
 	uint32_t first;
 	uint32_t ref_slot;
 	uint32_t lod_slot;
@@ -236,7 +251,7 @@ struct va_texture {
 /* The texture and sampler handle's table and index bits for texture slot k. */
 static uint32_t texture_handle(uint32_t slot);
 
-static int compile_variant(const struct drv_gpu_shader_ir *ir, struct mali_shader_program *program, uint32_t variant, uint8_t *out, size_t room, size_t *length, uint32_t *work_registers, uint32_t *preload, struct mali_shader_diagnostic *diagnostic);
+static int compile_variant(const struct drv_gpu_shader_ir *ir, struct mali_shader_program *program, uint32_t variant, uint32_t options, uint8_t *out, size_t room, size_t *length, uint32_t *work_registers, uint32_t *preload, struct mali_shader_diagnostic *diagnostic);
 static int lay_out(const struct drv_gpu_shader_ir *ir, struct mali_shader_program *program);
 static uint32_t buffer_of(const struct drv_gpu_shader_ir *ir, const struct mali_shader_program *program, uint32_t uniform);
 static void lower_size_query(struct va_compiler *c, const struct drv_gpu_shader_ir_inst *inst);
@@ -290,7 +305,8 @@ static void lower_load_input(struct va_compiler *c, uint32_t index);
 static void lower_vertex_attribute(struct va_compiler *c, uint32_t index);
 static void lower_varying(struct va_compiler *c, uint32_t index);
 static void lower_special_input(struct va_compiler *c, const struct drv_gpu_shader_ir_inst *inst);
-static void lower_load_ubo(struct va_compiler *c, const struct drv_gpu_shader_ir_inst *inst);
+static void lower_load_ubo(struct va_compiler *c, uint32_t index);
+static uint32_t ubo_run(const struct va_compiler *c, uint32_t index);
 static uint32_t buffer_address(struct va_compiler *c, uint32_t uniform, uint32_t offset_reg);
 static void lower_storage(struct va_compiler *c, const struct drv_gpu_shader_ir_inst *inst);
 static void lower_atomic(struct va_compiler *c, const struct drv_gpu_shader_ir_inst *inst);
@@ -298,6 +314,9 @@ static void lower_system(struct va_compiler *c, const struct drv_gpu_shader_ir_i
 static void lower_texture(struct va_compiler *c, const struct drv_gpu_shader_ir_inst *inst);
 static void read_texture(struct va_compiler *c, const struct drv_gpu_shader_ir_inst *inst, struct va_texture *texture);
 static void emit_cube_coordinates(struct va_compiler *c, uint32_t block, uint32_t x, uint32_t y, uint32_t z);
+static uint32_t emit_gradient_descriptor(struct va_compiler *c, const struct va_texture *texture, uint32_t slot);
+static uint32_t emit_cube_gradient_level(struct va_compiler *c, const struct va_texture *texture, uint32_t slot);
+static void emit_cube_major(struct va_compiler *c, uint32_t dst, const uint32_t *axes, uint32_t z_major, uint32_t not_x_major);
 static void lower_image(struct va_compiler *c, const struct drv_gpu_shader_ir_inst *inst);
 static uint32_t image_coordinates(struct va_compiler *c, const struct drv_gpu_shader_ir_inst *inst);
 static uint32_t image_address(struct va_compiler *c, uint32_t slot, uint32_t coordinates);
@@ -400,10 +419,8 @@ mali_shader_compile_ir(
 	size_t second;
 	uint32_t work;
 	uint32_t preload;
+	uint32_t flags;
 	int error;
-
-	/* No option changes the program yet. */
-	(void)options;
 
 	/* Starts with no program and no refusal. */
 	if (program != NULL)
@@ -414,6 +431,11 @@ mali_shader_compile_ir(
 	/* A missing IR or result is refused. */
 	if (ir == NULL || program == NULL)
 		return EINVAL;
+
+	/* Takes the options asked for (none without a record). */
+	flags = 0U;
+	if (options != NULL)
+		flags = options->flags;
 
 	/* Allocates the program's description. */
 	made = kern_calloc(1U, sizeof(*made));
@@ -456,9 +478,9 @@ mali_shader_compile_ir(
 	/* Compiles the main program, or a vertex shader's position program. */
 	first = 0U;
 	if (ir->stage == DRV_GPU_STAGE_VERTEX) {
-		error = compile_variant(ir, made, VA_VARIANT_POSITION, code, room, &first, &work, &preload, diagnostic);
+		error = compile_variant(ir, made, VA_VARIANT_POSITION, flags, code, room, &first, &work, &preload, diagnostic);
 	} else {
-		error = compile_variant(ir, made, VA_VARIANT_MAIN, code, room, &first, &work, &preload, diagnostic);
+		error = compile_variant(ir, made, VA_VARIANT_MAIN, flags, code, room, &first, &work, &preload, diagnostic);
 	}
 	if (error != 0) {
 		kern_free(code);
@@ -473,7 +495,7 @@ mali_shader_compile_ir(
 	/* Compiles a vertex shader's varying program after the position program, when it writes varyings. */
 	second = 0U;
 	if (ir->stage == DRV_GPU_STAGE_VERTEX && made->varying_mask != 0U) {
-		error = compile_variant(ir, made, VA_VARIANT_VARYING, code + first, room - first, &second, &work, &preload, diagnostic);
+		error = compile_variant(ir, made, VA_VARIANT_VARYING, flags, code + first, room - first, &second, &work, &preload, diagnostic);
 		if (error != 0) {
 			kern_free(code);
 			kern_free(made);
@@ -517,6 +539,7 @@ compile_variant(
 	const struct drv_gpu_shader_ir *ir,
 	struct mali_shader_program *program,
 	uint32_t variant,
+	uint32_t options,
 	uint8_t *out,
 	size_t room,
 	size_t *length,
@@ -546,6 +569,7 @@ compile_variant(
 	}
 	c->program = program;
 	c->variant = variant;
+	c->options = options;
 	if (optimized.instructions != NULL) {
 		c->ir = &optimized;
 	} else {
@@ -559,6 +583,7 @@ compile_variant(
 		kern_memset(c, 0, sizeof(*c));
 		c->program = program;
 		c->variant = variant;
+		c->options = options;
 		c->ir = ir;
 		error = lower_with_room(c);
 	}
@@ -629,6 +654,8 @@ lay_out(
 	uint32_t index;
 	uint32_t location;
 	uint32_t slot;
+	uint32_t message;
+	uint32_t sized;
 
 	/* The push constants come first, and the next words start on an even word. */
 	program->push_bytes = ir->push_bytes;
@@ -679,16 +706,38 @@ lay_out(
 			program->image_count++;
 		}
 	}
-	/* Gives the sizes the program queries their words. */
+	/*
+	 * Gives FAU words to the sizes the program reads: those it queries,
+	 * and a cube's, from which a sample with derivatives computes its
+	 * level.
+	 */
 	for (index = 0U; index < ir->instruction_count; index++) {
 		inst = &ir->instructions[index];
+
+		/* Whether a texture instruction reads its image's sizes. */
+		sized = 0U;
+		if (inst->op == DRV_GPU_IR_TEXTURE) {
+			message = inst->component & DRV_GPU_IR_TEXTURE_MESSAGE_MASK;
+
+			/* A size query reads them all. */
+			if (message == DRV_GPU_IR_TEXTURE_RESINFO)
+				sized = 1U;
+
+			/* A cube sample with derivatives reads the cube's width. */
+			if ((message == DRV_GPU_IR_TEXTURE_SAMPLE_DERIVS ||
+			     message == DRV_GPU_IR_TEXTURE_SAMPLE_DERIV_COMPARE) &&
+			    (inst->image_shape & DRV_GPU_IR_IMAGE_KIND_MASK) == DRV_GPU_IR_IMAGE_CUBE)
+				sized = 1U;
+		}
+
+		/* A buffer's range takes one word, an image's sizes four. */
 		if (inst->op == DRV_GPU_IR_STORAGE_SIZE) {
 			slot = buffer_of(ir, program, inst->location);
 			if (slot < program->buffer_count && program->buffers[slot].size_fau_word == MALI_SHADER_NO_FAU_WORD) {
 				program->buffers[slot].size_fau_word = word;
 				word++;
 			}
-		} else if (inst->op == DRV_GPU_IR_TEXTURE && (inst->component & DRV_GPU_IR_TEXTURE_MESSAGE_MASK) == DRV_GPU_IR_TEXTURE_RESINFO) {
+		} else if (sized != 0U) {
 			for (slot = 0U; slot < program->texture_count; slot++) {
 				if (program->textures[slot].set != inst->location || program->textures[slot].binding != inst->immediate)
 					continue;
@@ -832,6 +881,7 @@ lower_with_room(
 	const struct drv_gpu_shader_ir *ir;
 	struct mali_shader_program *program;
 	uint32_t variant;
+	uint32_t options;
 	uint32_t attempt;
 	int error;
 
@@ -839,6 +889,7 @@ lower_with_room(
 	ir = c->ir;
 	program = c->program;
 	variant = c->variant;
+	options = c->options;
 	error = 0;
 	for (attempt = 0U; attempt < sizeof(reserves) / sizeof(reserves[0]); attempt++) {
 		if (attempt != 0U) {
@@ -846,7 +897,8 @@ lower_with_room(
 			kern_memset(c, 0, sizeof(*c));
 			c->program = program;
 			c->variant = variant;
-				c->ir = ir;
+			c->options = options;
+			c->ir = ir;
 		}
 		c->loop_reserve = reserves[attempt];
 		error = lower(c);
@@ -935,6 +987,7 @@ lower(
 	c->point_size_value = VA_NOT_DEFINED;
 	c->depth_value = VA_NOT_DEFINED;
 	c->sample_mask_value = VA_NOT_DEFINED;
+	c->stencil_value = VA_NOT_DEFINED;
 
 	/* Finds each value's definition and last use. */
 	error = compute_liveness(c);
@@ -1036,7 +1089,7 @@ lower_instruction(
 		break;
 
 	case DRV_GPU_IR_LOAD_UBO:
-		lower_load_ubo(c, inst);
+		lower_load_ubo(c, index);
 		break;
 
 	case DRV_GPU_IR_LOAD_STORAGE:
@@ -1044,10 +1097,18 @@ lower_instruction(
 	case DRV_GPU_IR_LOAD_SHARED:
 	case DRV_GPU_IR_STORE_SHARED:
 		lower_storage(c, inst);
+
+		/* A store to a storage buffer writes memory the draw's kill must wait for. */
+		if (inst->op == DRV_GPU_IR_STORE_STORAGE)
+			c->program->writes_memory = 1U;
 		break;
 
 	case DRV_GPU_IR_ATOMIC:
 		lower_atomic(c, inst);
+
+		/* An atomic on a buffer or an image writes memory; one on shared memory does not leave the workgroup. */
+		if (inst->location != DRV_GPU_IR_LOCATION_SHARED)
+			c->program->writes_memory = 1U;
 		break;
 
 	case DRV_GPU_IR_LOAD_SYSTEM:
@@ -1076,6 +1137,10 @@ lower_instruction(
 	case DRV_GPU_IR_IMAGE_READ:
 	case DRV_GPU_IR_IMAGE_WRITE:
 		lower_image(c, inst);
+
+		/* A store to a storage image writes memory. */
+		if (inst->op == DRV_GPU_IR_IMAGE_WRITE)
+			c->program->writes_memory = 1U;
 		break;
 
 	case DRV_GPU_IR_KILL:
@@ -2147,7 +2212,8 @@ lower_varying(
  * Reads a builtin input: the vertex and instance index from r60 and r61,
  * a fragment's coordinate (x and y from the pixel position in r59, at the
  * pixel's centre; z and w from the special varyings), its point
- * coordinate, and its primitive's number from r57.
+ * coordinate, its primitive's number from r57, the samples it covers
+ * and the number of the sample it runs for from r61.
  *
  * Values referenced: Mesa 26.2.6
  * src/panfrost/compiler/bifrost/valhall/ISA.xml (LD_VAR_SPECIAL: index
@@ -2161,6 +2227,8 @@ lower_special_input(
 	uint32_t dst;
 	uint32_t half;
 	uint32_t special;
+	uint32_t shift;
+	uint32_t mask;
 	uint64_t bits;
 
 	dst = define_value(c, inst->dst);
@@ -2235,6 +2303,32 @@ lower_special_input(
 		return;
 	}
 
+	/*
+	 * gl_SampleID: bits 20:16 of r61 (the sample's number is bits 23:16,
+	 * whose top bits are not to be trusted).
+	 *
+	 * Procedure referenced: Mesa 26.2.6
+	 * src/panfrost/compiler/bifrost/bifrost_compile.c
+	 * (bi_load_sample_id_to: the shift by 16 and the 5-bit mask).
+	 */
+	if (inst->location == DRV_GPU_SHADER_LOCATION_SAMPLE_ID) {
+		shift = temp_constant(c, VA_SAMPLE_ID_SHIFT);
+		mask = temp_constant(c, VA_SAMPLE_ID_MASK);
+		if (c->error != 0)
+			return;
+		emit_alu(c,
+			 VA_OP_RSHIFT_AND_I32 | va_field(VA_LANES_B00, VA_SHIFT_LANES),
+			 dst,
+			 VA_PRELOAD_SAMPLE_ID,
+			 shift,
+			 mask);
+		free_reg(c, shift);
+		free_reg(c, mask);
+		c->preload |= 1U << (VA_PRELOAD_SAMPLE_ID - VA_PRELOAD_FIRST);
+		c->program->reads_sample_id = 1U;
+		return;
+	}
+
 	/* The fragment coordinate's z and w, and the point coordinate, are special varyings. */
 	if (inst->location == DRV_GPU_SHADER_LOCATION_FRAG_COORD) {
 		special = 3U;
@@ -2256,39 +2350,67 @@ lower_special_input(
 }
 
 /*
- * Loads a uniform buffer word: LOAD.i32 from the buffer's address in the
- * FAU at the word's byte offset (a 16-bit immediate; a farther word's
- * address is computed).
+ * Loads uniform buffer words: one LOAD from the buffer's address in the
+ * FAU at the first word's byte offset (a 16-bit immediate; a farther
+ * word's address is computed), of the word alone or, with
+ * MALI_SHADER_OPTION_VECTOR_UBO, of the run of following words
+ * ubo_run() finds, into a block whose registers the run's values take.
  */
 static void
 lower_load_ubo(
 	struct va_compiler *c,
-	const struct drv_gpu_shader_ir_inst *inst)
+	uint32_t index)
 {
+	static const uint64_t loads[4] = {
+		VA_OP_LOAD_I32,
+		VA_OP_LOAD_I64 | ((uint64_t)VA_LOAD_LANE_64_IDENTITY << VA_SHIFT_LOAD_LANE),
+		VA_OP_LOAD_I96 | ((uint64_t)VA_LOAD_LANE_96_IDENTITY << VA_SHIFT_LOAD_LANE),
+		VA_OP_LOAD_I128 | ((uint64_t)VA_LOAD_LANE_128_IDENTITY << VA_SHIFT_LOAD_LANE)
+	};
+	const struct drv_gpu_shader_ir_inst *inst;
 	uint32_t slot;
 	uint32_t word;
 	uint32_t dst;
+	uint32_t count;
+	uint32_t next;
 	uint32_t offset;
 	uint32_t address;
 	uint64_t bits;
+
+	inst = &c->ir->instructions[index];
 
 	/* Finds the buffer's address word. */
 	slot = buffer_slot(c, inst->location);
 	if (c->error != 0)
 		return;
 	word = c->program->buffers[slot].fau_word;
-	dst = define_value(c, inst->dst);
+
+	/* Gives the word its register, or the run's words a block of them. */
+	count = ubo_run(c, index);
+	if (count == 1U) {
+		dst = define_value(c, inst->dst);
+	} else {
+		dst = alloc_block(c, count);
+	}
 	if (c->error != 0)
 		return;
 
+	/* The run's values take the block's registers; their own loads are done. */
+	if (count != 1U)
+		bind_value(c, inst->dst, dst);
+	for (next = 1U; next < count; next++) {
+		bind_value(c, c->ir->instructions[index + next].dst, dst + next);
+		c->done[index + next] = 1U;
+	}
+
 	/* A near offset loads from the FAU address directly. */
 	if (inst->immediate < 0x8000U) {
-		bits = VA_OP_LOAD_I32 | va_source_uniform(word);
+		bits = loads[count - 1U] | va_source_uniform(word);
 		bits |= va_field(va_uniform_page(word), VA_SHIFT_FAU_PAGE);
 		bits |= va_field(inst->immediate, VA_SHIFT_MEMORY_OFFSET);
 		bits |= va_field(1U, VA_SHIFT_LOAD_UNSIGNED);
-		bits |= va_staging(dst, 1U, VA_STAGING_WRITE);
-		emit(c, bits, 0U, va_register_mask(dst, 1U), VA_INST_MESSAGE);
+		bits |= va_staging(dst, count, VA_STAGING_WRITE);
+		emit(c, bits, 0U, va_register_mask(dst, count), VA_INST_MESSAGE);
 		return;
 	}
 
@@ -2298,12 +2420,59 @@ lower_load_ubo(
 	free_reg(c, offset);
 	if (c->error != 0)
 		return;
-	bits = VA_OP_LOAD_I32 | va_source_register(address);
+	bits = loads[count - 1U] | va_source_register(address);
 	bits |= va_field(1U, VA_SHIFT_LOAD_UNSIGNED);
-	bits |= va_staging(dst, 1U, VA_STAGING_WRITE);
-	emit(c, bits, va_register_mask(address, 2U), va_register_mask(dst, 1U), VA_INST_MESSAGE);
+	bits |= va_staging(dst, count, VA_STAGING_WRITE);
+	emit(c, bits, va_register_mask(address, 2U), va_register_mask(dst, count), VA_INST_MESSAGE);
 	free_reg(c, address);
 	free_reg(c, address + 1U);
+}
+
+/*
+ * Counts the uniform buffer words one load reads from the LOAD_UBO at
+ * index: with MALI_SHADER_OPTION_VECTOR_UBO, it and the LOAD_UBOs right
+ * after it of the next words of the same buffer, up to four, kept to two
+ * when the first word's offset is not aligned to 16 bytes and to one
+ * when it is not aligned to 8 (a load is aligned to its size rounded up
+ * to a power of two); otherwise one.
+ *
+ * Procedure referenced: Mesa 26.2.6
+ * src/panfrost/compiler/bifrost/bifrost_nir.c (mem_access_size_align_cb:
+ * at most 16 bytes, aligned to the next power of two of their size).
+ */
+static uint32_t
+ubo_run(
+	const struct va_compiler *c,
+	uint32_t index)
+{
+	const struct drv_gpu_shader_ir_inst *first;
+	const struct drv_gpu_shader_ir_inst *inst;
+	uint32_t count;
+
+	/* Without the option every word is a load of its own. */
+	if ((c->options & MALI_SHADER_OPTION_VECTOR_UBO) == 0U)
+		return 1U;
+
+	/* Takes each following load of the next word of the same buffer. */
+	first = &c->ir->instructions[index];
+	count = 1U;
+	while (count < 4U && index + count < c->ir->instruction_count) {
+		inst = &c->ir->instructions[index + count];
+		if (inst->op != DRV_GPU_IR_LOAD_UBO || inst->location != first->location)
+			break;
+		if (inst->immediate != first->immediate + 4U * count || inst->dst > c->ir->value_count)
+			break;
+		count++;
+	}
+
+	/* Three or four words need 16-byte alignment, two need 8. */
+	if (count > 2U && (first->immediate & 15U) != 0U)
+		count = 2U;
+	if (count == 2U && (first->immediate & 7U) != 0U)
+		count = 1U;
+
+	/* Reports the words of the load. */
+	return count;
 }
 
 /*
@@ -2649,8 +2818,9 @@ lower_system(
  * compare, the bias or level of a biased or levelled sample, then the
  * coordinates (u, v, and r of a 3D image; the direction x, y, z of a
  * cube) and the layer of an array; a texel load's are u, v, the level,
- * then r.  The SAMPLE operations are a 2D image's u and v and the bias
- * or level after them.
+ * then r.  A sample with derivatives has each coordinate followed by
+ * its x and y derivatives.  The SAMPLE operations are a 2D image's u and
+ * v and the bias or level after them.
  */
 static void
 read_texture(
@@ -2671,6 +2841,7 @@ read_texture(
 	texture->ref_slot = VA_NOT_DEFINED;
 	texture->lod_slot = VA_NOT_DEFINED;
 	texture->layer_slot = VA_NOT_DEFINED;
+	texture->stride = 1U;
 
 	/* The SAMPLE operations: a 2D image's u and v, the bias or level after them. */
 	if (inst->op != DRV_GPU_IR_TEXTURE) {
@@ -2738,6 +2909,19 @@ read_texture(
 		texture->first = 2U;
 		break;
 
+	case DRV_GPU_IR_TEXTURE_SAMPLE_DERIVS:
+		texture->gradient = 1U;
+		texture->stride = 3U;
+		break;
+
+	case DRV_GPU_IR_TEXTURE_SAMPLE_DERIV_COMPARE:
+		texture->gradient = 1U;
+		texture->stride = 3U;
+		texture->compare = 1U;
+		texture->ref_slot = 0U;
+		texture->first = 1U;
+		break;
+
 	case DRV_GPU_IR_TEXTURE_LD:
 		texture->kind = VA_TEXTURE_FETCH;
 		texture->lod_slot = 2U;
@@ -2765,13 +2949,23 @@ read_texture(
 	if (message == DRV_GPU_IR_TEXTURE_SAMPLE_LOD || message == DRV_GPU_IR_TEXTURE_SAMPLE_LOD_COMPARE)
 		texture->lod_mode = VA_LOD_MODE_EXPLICIT;
 
+	/*
+	 * A sample with derivatives takes its level from a gradient
+	 * descriptor; a cube's is computed and given explicitly.
+	 */
+	if (texture->gradient != 0U) {
+		texture->lod_mode = VA_LOD_MODE_GRDESC;
+		if (texture->cube != 0U)
+			texture->lod_mode = VA_LOD_MODE_EXPLICIT;
+	}
+
 	/* A cube has no texel load; the layer follows the coordinates (a texel load's is its fourth). */
 	if (texture->cube != 0U && texture->kind == VA_TEXTURE_FETCH) {
 		fail(c, ENOTSUP, "a texel load of a cube");
 		return;
 	}
 	if (texture->array != 0U) {
-		texture->layer_slot = texture->first + texture->coordinates;
+		texture->layer_slot = texture->first + texture->coordinates * texture->stride;
 		if (texture->kind == VA_TEXTURE_FETCH)
 			texture->layer_slot = 3U;
 	}
@@ -2817,10 +3011,30 @@ lower_texture(
 	uint32_t scale;
 	uint32_t write_mask;
 	uint32_t write_count;
+	uint32_t descriptor;
+	uint32_t descriptor_index;
+	uint32_t level;
 	uint64_t bits;
 
-	/* Reads the message and its parameters. */
+	/* Reads the message and its parameters, and finds the texture's slot. */
 	read_texture(c, inst, &texture);
+	if (c->error != 0)
+		return;
+	slot = texture_slot(c, inst->location, inst->immediate);
+	if (c->error != 0)
+		return;
+
+	/*
+	 * A sample with derivatives first makes its gradient descriptor (a
+	 * cube's, its level).
+	 */
+	descriptor = VA_NO_REG;
+	level = VA_NO_REG;
+	if (texture.gradient != 0U && texture.cube != 0U) {
+		level = emit_cube_gradient_level(c, &texture, slot);
+	} else if (texture.gradient != 0U) {
+		descriptor = emit_gradient_descriptor(c, &texture, slot);
+	}
 	if (c->error != 0)
 		return;
 
@@ -2843,8 +3057,8 @@ lower_texture(
 			staging[count] = VA_OPERAND_IMMEDIATE | VA_IMMEDIATE_ZERO;
 			if (texture.parameter_count > 3U)
 				staging[count] = texture.parameters[3];
-		} else if (texture.first + component < texture.parameter_count) {
-			staging[count] = texture.parameters[texture.first + component];
+		} else if (texture.first + component * texture.stride < texture.parameter_count) {
+			staging[count] = texture.parameters[texture.first + component * texture.stride];
 		} else {
 			staging[count] = VA_OPERAND_IMMEDIATE | VA_IMMEDIATE_ZERO;
 		}
@@ -2867,15 +3081,23 @@ lower_texture(
 	lod = VA_OPERAND_NONE;
 	if (texture.lod_slot != VA_NOT_DEFINED && texture.lod_slot < texture.parameter_count)
 		lod = texture.parameters[texture.lod_slot];
+	if (level != VA_NO_REG)
+		lod = level;
 	if (lod != VA_OPERAND_NONE) {
 		staging[count] = lod;
 		count++;
 	}
 
-	/* Finds the texture's slot; the high handle word holds the texel offset's signed nibbles s, t, r. */
-	slot = texture_slot(c, inst->location, inst->immediate);
-	if (c->error != 0)
-		return;
+	/* The gradient descriptor's two words come last; they are copied in below. */
+	descriptor_index = VA_NOT_DEFINED;
+	if (descriptor != VA_NO_REG) {
+		descriptor_index = count;
+		staging[count] = VA_OPERAND_NONE;
+		staging[count + 1U] = VA_OPERAND_NONE;
+		count += 2U;
+	}
+
+	/* The high handle word holds the texel offset's signed nibbles s, t, r. */
 	narrow = (texture.offset >> 8) & 0xFU;
 	narrow |= ((texture.offset >> 4) & 0xFU) << 4;
 	narrow |= (texture.offset & 0xFU) << 8;
@@ -2901,9 +3123,21 @@ lower_texture(
 		emit_cube_coordinates(c,
 				      block,
 				      texture.parameters[texture.first],
-				      texture.parameters[texture.first + 1U],
-				      texture.parameters[texture.first + 2U]);
+				      texture.parameters[texture.first + texture.stride],
+				      texture.parameters[texture.first + 2U * texture.stride]);
 	}
+
+	/* The gradient descriptor follows the other staging values. */
+	if (descriptor != VA_NO_REG) {
+		emit_move(c, block + descriptor_index, descriptor);
+		emit_move(c, block + descriptor_index + 1U, descriptor + 1U);
+		free_reg(c, descriptor);
+		free_reg(c, descriptor + 1U);
+	}
+
+	/* A cube's computed level is in the block now. */
+	if (level != VA_NO_REG)
+		free_reg(c, level);
 
 	/* A sampled array's layer is the nearest integer to the coordinate. */
 	if (layer_index != VA_NOT_DEFINED && texture.kind != VA_TEXTURE_FETCH) {
@@ -3039,6 +3273,265 @@ emit_cube_coordinates(
 	free_reg(c, half);
 	free_reg(c, magnitude);
 	free_reg(c, face);
+}
+
+/*
+ * Makes the gradient descriptor of a sample with derivatives: TEX_GRADIENT
+ * of the texture's table entries (the high handle word zero) with each
+ * coordinate's x and y derivatives in a block of staging registers, the
+ * descriptor's two words in a pair of registers the caller frees.
+ *
+ * Procedure referenced: Mesa 26.2.6
+ * src/panfrost/compiler/pan_nir_lower_tex.c (build_va_gradient_desc: the
+ * derivatives as x, y pairs per coordinate, the flags, the handle's high
+ * word; va_lower_tex: the descriptor's two staging registers after the
+ * others and the grdesc level of detail mode) and bifrost_compile.c
+ * (bi_emit_tex_valhall: TEX_GRADIENT's 32-bit unsigned results).
+ */
+static uint32_t
+emit_gradient_descriptor(
+	struct va_compiler *c,
+	const struct va_texture *texture,
+	uint32_t slot)
+{
+	uint32_t derivatives;
+	uint32_t count;
+	uint32_t handle;
+	uint32_t descriptor;
+	uint32_t component;
+	uint32_t parameter;
+	uint32_t operand;
+	uint64_t bits;
+
+	/* Copies the derivatives into a block: dx, dy of each coordinate in turn. */
+	count = 2U * texture->coordinates;
+	derivatives = alloc_block(c, count);
+	if (c->error != 0)
+		return VA_NO_REG;
+	for (component = 0U; component < count; component++) {
+		parameter = texture->first + (component / 2U) * texture->stride + 1U + component % 2U;
+		operand = VA_OPERAND_IMMEDIATE | VA_IMMEDIATE_ZERO;
+		if (parameter < texture->parameter_count)
+			operand = texture->parameters[parameter];
+		emit_move(c, derivatives + component, operand);
+	}
+
+	/* Writes the handle pair, with no texel offset or level in its high word. */
+	handle = alloc_block(c, 2U);
+	if (c->error != 0)
+		return VA_NO_REG;
+	emit_constant(c, handle, texture_handle(slot));
+	emit_constant(c, handle + 1U, 0U);
+
+	/* Makes the descriptor's two words. */
+	descriptor = alloc_block(c, 2U);
+	if (c->error != 0)
+		return VA_NO_REG;
+	bits = VA_OP_TEX_GRADIENT | va_source_register(handle);
+	bits |= va_field(1U, VA_SHIFT_TEX_LOD_BIAS_DISABLE);
+	bits |= va_field(1U, VA_SHIFT_TEX_LOD_CLAMP_DISABLE);
+	bits |= va_field(1U, VA_SHIFT_TEX_DERIVATIVE_ENABLE);
+	bits |= va_field(descriptor, VA_SHIFT_STAGING_DEST);
+	bits |= va_field(VA_WRITE_MASK_RG, VA_SHIFT_TEX_WRITE_MASK);
+	bits |= va_field(VA_REGISTER_TYPE_U, VA_SHIFT_TEX_REGISTER_TYPE);
+	bits |= va_field(texture->dimension, VA_SHIFT_TEX_DIMENSION);
+	bits |= va_field(1U, VA_SHIFT_TEX_REGISTER_WIDTH);
+	bits |= va_field(1U, VA_SHIFT_STAGING_WRITE_COUNT);
+	bits |= va_field(count, VA_SHIFT_STAGING_COUNT);
+	bits |= va_field(derivatives, VA_SHIFT_DEST);
+	emit(c,
+	     bits,
+	     va_register_mask(handle, 2U) | va_register_mask(derivatives, count),
+	     va_register_mask(descriptor, 2U),
+	     VA_INST_MESSAGE);
+	free_reg(c, handle);
+	free_reg(c, handle + 1U);
+	for (component = 0U; component < count; component++)
+		free_reg(c, derivatives + component);
+
+	/* Reports the descriptor's pair. */
+	return descriptor;
+}
+
+/*
+ * Computes the level of detail of a cube sample with derivatives, which
+ * the sample then gives explicitly: the direction and its derivatives
+ * reordered so the major axis is the third (emit_cube_major()), the
+ * derivatives of the face's coordinates by the quotient rule, and the
+ * level -1 + log2(L * L * max(|dx|^2, |dy|^2)) / 2 for the cube's size L,
+ * kept within [-16, 16] (the 8.8 fixed point level's range), in a
+ * register the caller frees.
+ *
+ * Procedure referenced: Mesa 26.2.6 src/compiler/nir/nir_lower_tex.c
+ * (lower_gradient_cube_map: the selection of the major axis, the
+ * quotient rule and the level, which pan_compiler.c asks for with
+ * lower_txd_cube_map) and src/panfrost/compiler/pan_nir_lower_tex.c
+ * (build_sfixed_8_8: the range of a level).
+ */
+static uint32_t
+emit_cube_gradient_level(
+	struct va_compiler *c,
+	const struct va_texture *texture,
+	uint32_t slot)
+{
+	uint32_t axes[3];
+	uint32_t magnitude[3];
+	uint32_t larger;
+	uint32_t z_major;
+	uint32_t not_x_major;
+	uint32_t direction;
+	uint32_t dx;
+	uint32_t dy;
+	uint32_t size;
+	uint32_t half;
+	uint32_t axis;
+	uint32_t set;
+	uint32_t word;
+	uint32_t parameter;
+
+	/* The magnitudes of the direction's axes. */
+	for (axis = 0U; axis < 3U; axis++) {
+		magnitude[axis] = alloc_block(c, 1U);
+		if (c->error != 0)
+			return VA_NO_REG;
+		emit_alu(c,
+			 VA_OP_FADD_F32 | va_field(1U, VA_SHIFT_ABS_SOURCE0) | va_field(1U, VA_SHIFT_NEG_SOURCE1),
+			 magnitude[axis],
+			 texture->parameters[texture->first + axis * texture->stride],
+			 VA_OPERAND_IMMEDIATE | VA_IMMEDIATE_ZERO,
+			 VA_OPERAND_NONE);
+	}
+
+	/* Masks of a major z, and of a major y or z (z winning a tie over y, y over x). */
+	larger = alloc_block(c, 1U);
+	z_major = alloc_block(c, 1U);
+	not_x_major = alloc_block(c, 1U);
+	if (c->error != 0)
+		return VA_NO_REG;
+	emit_alu(c, VA_OP_FMAX_F32, larger, magnitude[0], magnitude[1], VA_OPERAND_NONE);
+	emit_alu(c,
+		 VA_OP_FCMP_OR_F32 | va_field(VA_CONDITION_GE, VA_SHIFT_CONDITION) | va_field(VA_RESULT_M1, VA_SHIFT_RESULT_TYPE),
+		 z_major,
+		 magnitude[2],
+		 larger,
+		 VA_OPERAND_IMMEDIATE | VA_IMMEDIATE_ZERO);
+	emit_alu(c, VA_OP_FMAX_F32, larger, magnitude[0], magnitude[2], VA_OPERAND_NONE);
+	emit_alu(c,
+		 VA_OP_FCMP_OR_F32 | va_field(VA_CONDITION_GE, VA_SHIFT_CONDITION) | va_field(VA_RESULT_M1, VA_SHIFT_RESULT_TYPE),
+		 not_x_major,
+		 magnitude[1],
+		 larger,
+		 z_major);
+	free_reg(c, larger);
+	for (axis = 0U; axis < 3U; axis++)
+		free_reg(c, magnitude[axis]);
+
+	/* The direction, its x derivatives and its y derivatives with the major axis third. */
+	direction = alloc_block(c, 3U);
+	dx = alloc_block(c, 3U);
+	dy = alloc_block(c, 3U);
+	if (c->error != 0)
+		return VA_NO_REG;
+	for (set = 0U; set < 3U; set++) {
+		for (axis = 0U; axis < 3U; axis++) {
+			parameter = texture->first + axis * texture->stride + set;
+			axes[axis] = VA_OPERAND_IMMEDIATE | VA_IMMEDIATE_ZERO;
+			if (parameter < texture->parameter_count)
+				axes[axis] = texture->parameters[parameter];
+		}
+		if (set == 0U) {
+			emit_cube_major(c, direction, axes, z_major, not_x_major);
+		} else if (set == 1U) {
+			emit_cube_major(c, dx, axes, z_major, not_x_major);
+		} else {
+			emit_cube_major(c, dy, axes, z_major, not_x_major);
+		}
+	}
+	free_reg(c, z_major);
+	free_reg(c, not_x_major);
+
+	/* The face's coordinates over the major axis: q = Q.xy / Q.z. */
+	emit_alu(c, VA_OP_FRCP_F32, direction + 2U, direction + 2U, VA_OPERAND_NONE, VA_OPERAND_NONE);
+	emit_fmul(c, direction, direction, direction + 2U);
+	emit_fmul(c, direction + 1U, direction + 1U, direction + 2U);
+
+	/*
+	 * Each derivative of q by the quotient rule, (dQ.xy - q dQ.z) / Q.z,
+	 * and its squared length in its third register.
+	 */
+	for (set = 0U; set < 2U; set++) {
+		word = dx;
+		if (set == 1U)
+			word = dy;
+		for (axis = 0U; axis < 2U; axis++) {
+			emit_alu(c, VA_OP_FMA_F32 | va_field(1U, VA_SHIFT_NEG_SOURCE0), word + axis, direction + axis, word + 2U, word + axis);
+			emit_fmul(c, word + axis, word + axis, direction + 2U);
+		}
+		emit_fmul(c, word + 2U, word, word);
+		emit_fma(c, word + 2U, word + 1U, word + 1U, word + 2U);
+	}
+
+	/* L * L times the larger squared length. */
+	size = alloc_block(c, 1U);
+	if (c->error != 0)
+		return VA_NO_REG;
+	emit_alu(c, VA_OP_FMAX_F32, dx + 2U, dx + 2U, dy + 2U, VA_OPERAND_NONE);
+	emit_move_uniform(c, size, c->program->textures[slot].size_fau_word);
+	emit_alu(c, VA_OP_U32_TO_F32 | va_field(VA_ROUND_RTE, VA_SHIFT_ROUND_MODE), size, size, VA_OPERAND_NONE, VA_OPERAND_NONE);
+	emit_fmul(c, size, size, size);
+	emit_fmul(c, size, size, dx + 2U);
+	for (axis = 0U; axis < 3U; axis++) {
+		free_reg(c, direction + axis);
+		free_reg(c, dx + axis);
+		free_reg(c, dy + axis);
+	}
+
+	/* The level: half the logarithm less one, kept within 16 levels either way. */
+	emit_log2(c, size, size);
+	half = temp_constant(c, VA_FLOAT_HALF);
+	if (c->error != 0)
+		return VA_NO_REG;
+	emit_alu(c, VA_OP_FMA_F32 | va_field(1U, VA_SHIFT_NEG_SOURCE2), size, size, half, VA_OPERAND_IMMEDIATE | VA_IMMEDIATE_FLOAT_ONE);
+	emit_constant(c, half, VA_FLOAT_SIXTEENTH);
+	emit_alu(c,
+		 VA_OP_FMA_F32 | va_field(1U, VA_SHIFT_NEG_SOURCE2) | va_field(VA_CLAMP_M1_1, VA_SHIFT_CLAMP),
+		 size,
+		 size,
+		 half,
+		 VA_OPERAND_IMMEDIATE | VA_IMMEDIATE_ZERO);
+	emit_constant(c, half, VA_FLOAT_SIXTEEN);
+	emit_fmul(c, size, size, half);
+	free_reg(c, half);
+
+	/* Reports the level's register. */
+	return size;
+}
+
+/*
+ * Reorders three values of a cube's direction (x, y, z) so the major
+ * axis is the third: (x, y, z) for a major z, (x, z, y) for a major y,
+ * (y, z, x) for a major x, into a block of three.
+ *
+ * Procedure referenced: Mesa 26.2.6 src/compiler/nir/nir_lower_tex.c
+ * (lower_gradient_cube_map: the swizzles of the selection).
+ */
+static void
+emit_cube_major(
+	struct va_compiler *c,
+	uint32_t dst,
+	const uint32_t *axes,
+	uint32_t z_major,
+	uint32_t not_x_major)
+{
+	/* The first: x unless x is the major axis, then y. */
+	emit_alu(c, VA_OP_MUX_I32 | va_field(VA_MUX_INT_ZERO, VA_SHIFT_MUX), dst, axes[1], axes[0], not_x_major);
+
+	/* The second: y for a major z, else z. */
+	emit_alu(c, VA_OP_MUX_I32 | va_field(VA_MUX_INT_ZERO, VA_SHIFT_MUX), dst + 1U, axes[2], axes[1], z_major);
+
+	/* The third: the major axis itself. */
+	emit_alu(c, VA_OP_MUX_I32 | va_field(VA_MUX_INT_ZERO, VA_SHIFT_MUX), dst + 2U, axes[0], axes[1], not_x_major);
+	emit_alu(c, VA_OP_MUX_I32 | va_field(VA_MUX_INT_ZERO, VA_SHIFT_MUX), dst + 2U, dst + 2U, axes[2], z_major);
 }
 
 /*
@@ -3414,7 +3907,10 @@ lower_store_output(
 	struct va_compiler *c,
 	const struct drv_gpu_shader_ir_inst *inst)
 {
-	/* The position, the point size, the depth, the sample mask and the located outputs are kept by slot. */
+	/*
+	 * The position, the point size, the depth, the sample mask, the
+	 * stencil reference and the located outputs are kept by slot.
+	 */
 	if (inst->location == DRV_GPU_IR_LOCATION_POSITION) {
 		if (inst->component < 4U)
 			c->position_value[inst->component] = inst->src[0];
@@ -3430,6 +3926,10 @@ lower_store_output(
 	}
 	if (inst->location == DRV_GPU_IR_LOCATION_SAMPLE_MASK) {
 		c->sample_mask_value = inst->src[0];
+		return;
+	}
+	if (inst->location == DRV_GPU_IR_LOCATION_FRAG_STENCIL) {
+		c->stencil_value = inst->src[0];
 		return;
 	}
 	if (inst->location < MALI_SHADER_LOCATIONS && inst->component < 4U) {
@@ -3736,7 +4236,8 @@ lower_varying_end(
 /*
  * Ends a fragment program: the written sample mask ANDed into the
  * preloaded coverage, ATEST of the coverage with colour 0's alpha (1
- * without colour 0), ZS_EMIT of the written depth, then BLEND of each
+ * without colour 0), ZS_EMIT of the written depth and stencil
+ * reference, then BLEND of each
  * colour written, as four 32-bit floats, to its render target with the
  * target's blend descriptor.  The coverage stays in r60, which ATEST and
  * ZS_EMIT read and write.
@@ -3756,8 +4257,10 @@ lower_fragment_end(
 	uint32_t alpha;
 	uint32_t mask;
 	uint32_t depth;
+	uint32_t stencil;
 	uint32_t block;
 	uint64_t bits;
+	uint64_t reads;
 
 	/* A written sample mask keeps only the samples the hardware covers. */
 	c->preload |= 1U << (VA_PRELOAD_COVERAGE - VA_PRELOAD_FIRST);
@@ -3789,23 +4292,40 @@ lower_fragment_end(
 	     va_register_mask(VA_PRELOAD_COVERAGE, 1U),
 	     VA_INST_MESSAGE | VA_INST_ATEST);
 
-	/* Emits the written depth (no stencil) with the tested coverage. */
-	if (c->depth_value != VA_NOT_DEFINED) {
-		depth = value_reg(c, c->depth_value);
+	/*
+	 * Emits the written depth and stencil reference with the tested
+	 * coverage, each from a register (the one not written is the
+	 * constant zero, and its bit is clear).
+	 */
+	if (c->depth_value != VA_NOT_DEFINED || c->stencil_value != VA_NOT_DEFINED) {
+		depth = VA_OPERAND_IMMEDIATE | VA_IMMEDIATE_ZERO;
+		stencil = VA_OPERAND_IMMEDIATE | VA_IMMEDIATE_ZERO;
+		reads = va_register_mask(VA_PRELOAD_COVERAGE, 1U);
+		bits = VA_OP_ZS_EMIT;
+		if (c->depth_value != VA_NOT_DEFINED) {
+			depth = value_reg(c, c->depth_value);
+			reads |= va_register_mask(depth, 1U);
+			bits |= va_field(1U, VA_SHIFT_ZS_EMIT_DEPTH);
+			c->program->writes_depth = 1U;
+		}
+		if (c->stencil_value != VA_NOT_DEFINED) {
+			stencil = value_reg(c, c->stencil_value);
+			reads |= va_register_mask(stencil, 1U);
+			bits |= va_field(1U, VA_SHIFT_ZS_EMIT_STENCIL);
+			c->program->writes_stencil = 1U;
+		}
 		if (c->error != 0)
 			return;
-		bits = VA_OP_ZS_EMIT | va_source_register(depth);
-		bits |= va_field(operand_byte(VA_OPERAND_IMMEDIATE | VA_IMMEDIATE_ZERO), VA_SHIFT_SOURCE1);
+		bits |= operand_byte(depth);
+		bits |= va_field(operand_byte(stencil), VA_SHIFT_SOURCE1);
 		bits |= va_field(va_source_register(VA_PRELOAD_COVERAGE), VA_SHIFT_SOURCE2);
-		bits |= va_field(1U, VA_SHIFT_ZS_EMIT_DEPTH);
 		bits |= va_staging(VA_PRELOAD_COVERAGE, 1U, VA_STAGING_WRITE);
 		emit(c,
 		     bits,
-		     va_register_mask(depth, 1U) | va_register_mask(VA_PRELOAD_COVERAGE, 1U),
+		     reads,
 		     va_register_mask(VA_PRELOAD_COVERAGE, 1U),
 		     VA_INST_MESSAGE | VA_INST_ATEST);
 		release_temps(c);
-		c->program->writes_depth = 1U;
 	}
 
 	/* Blends each colour written. */
