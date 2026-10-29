@@ -10,7 +10,9 @@
  * framebuffer and its render targets, each draw as an indexed vertex
  * and tiling run, then the pass's fragment run.
  *
- * A pass has one subpass of colour attachments.  Its tiles start with
+ * A pass has one subpass of colour attachments and at most one depth
+ * and stencil attachment, whose aspects the tile buffer clears, writes
+ * back and preloads as its ops say (vk-surface.c).  Its tiles start with
  * the attachments' clear colours, and a cleared target writes back every
  * tile.  A colour target 0 the pass loads is read back into the tiles a
  * primitive touches by a pre-frame draw (vk-preload.c); the tiles no
@@ -107,6 +109,18 @@
 #define CLEAR_TAG		2U
 #define CLEAR_COLOR		3U
 
+/*
+ * The tile buffer's format of a colour target without an attachment (one
+ * written nothing, as a pass of only a depth and stencil attachment has):
+ * R8G8B8A8.
+ *
+ * Values referenced:
+ * Mesa 26.2.6 src/panfrost/genxml/v10.xml (enum "Color Buffer Internal
+ * Format": R8G8B8A8 1); src/panfrost/lib/pan_desc.c (pan_emit_rt: a
+ * render target without a view).
+ */
+#define UNUSED_INTERNAL		1U
+
 /* A primitive flag: a varying (secondary) shader runs (struct "Primitive Flags" bit 18). */
 #define PRIMITIVE_SECONDARY	(1U << 18)
 
@@ -141,7 +155,11 @@
 /* The float 1.0's bits, for the depth clamp and the point size. */
 #define FLOAT_ONE		0x3f800000U
 
-/* One pass being built: its targets, its descriptors and its draws. */
+/*
+ * One pass being built: its targets, its descriptors and its draws, and
+ * whether it has a depth and stencil attachment (zs) with its depth and
+ * stencil aspects.
+ */
 struct pass_state {
 	const struct mali_vk_render_pass *pass;
 	const struct mali_vk_framebuffer *framebuffer;
@@ -151,11 +169,17 @@ struct pass_state {
 	uint32_t targets;
 	uint32_t target_mask;
 	unsigned draws;
+	bool zs;
+	bool has_depth;
+	bool has_stencil;
 };
 
 static int tiler_memory(struct mali_vk_build *build, uint64_t *address);
 static int pass_begin(struct mali_vk_build *build, const struct mali_vk_record *entry, struct pass_state *state);
 static bool pass_targets(const struct mali_vk_record *entry, struct pass_state *state, volatile uint8_t *targets_view);
+static bool pass_depth(const struct mali_vk_record *entry, struct pass_state *state, uint32_t *framebuffer_words, volatile uint8_t *extension_view);
+static void draw_depth(const struct mali_vk_build *build, const struct pass_state *state, const struct mali_vk_graphics *graphics, const struct mali_shader_program *fragment, uint32_t *words, uint32_t *flags);
+static void depth_range(const VkViewport *viewport, uint32_t *low, uint32_t *high);
 static int pass_preload(struct mali_vk_build *build, struct pass_state *state, uint64_t *draws);
 static void pass_end(struct mali_vk_build *build, struct pass_state *state, uint64_t fbd);
 static void draw(struct mali_vk_build *build, struct pass_state *state, const struct mali_vk_record *entry);
@@ -287,10 +311,12 @@ pass_begin(
 	uint64_t tiler;
 	uint64_t fbd;
 	uint64_t draws;
+	uint64_t extension_bytes;
 	uint32_t width;
 	uint32_t height;
 	uint32_t mode;
 	bool clean_tiles;
+	bool clean_depth;
 	int error;
 
 	/* The pass and the framebuffer. */
@@ -302,6 +328,8 @@ pass_begin(
 	width = state->framebuffer->width;
 	height = state->framebuffer->height;
 	state->targets = state->pass->color_count;
+	if (state->targets == 0U && state->pass->depth != VK_ATTACHMENT_UNUSED)
+		state->targets = 1U;
 	if (state->targets == 0U || state->targets > MALI_VK_ATTACHMENTS_MAX)
 		return ENOTSUP;
 
@@ -328,13 +356,17 @@ pass_begin(
 	mali_desc_local_storage(words);
 	store(storage_view, words, 8);
 
-	/* The framebuffer descriptor and its targets after it. */
-	fbd_view = mali_vk_build_take(build, MALI_DESC_FBD_BYTES + (uint64_t)state->targets * MALI_DESC_RT_BYTES, 64U, &fbd);
+	/* The framebuffer descriptor, its depth and stencil extension, and its targets after them. */
+	state->zs = state->pass->depth != VK_ATTACHMENT_UNUSED && state->pass->depth < state->framebuffer->count && state->pass->zs_format != NULL;
+	extension_bytes = 0;
+	if (state->zs)
+		extension_bytes = MALI_SURFACE_ZS_BYTES;
+	fbd_view = mali_vk_build_take(build, MALI_DESC_FBD_BYTES + extension_bytes + (uint64_t)state->targets * MALI_DESC_RT_BYTES, 64U, &fbd);
 	if (fbd_view == NULL)
 		return build->error;
 
 	/* Each colour target, and whether a cleared one writes back every tile. */
-	clean_tiles = pass_targets(entry, state, fbd_view + MALI_DESC_FBD_BYTES);
+	clean_tiles = pass_targets(entry, state, fbd_view + MALI_DESC_FBD_BYTES + extension_bytes);
 
 	/* The pre-frame draw of a loaded colour attachment. */
 	error = pass_preload(build, state, &draws);
@@ -357,6 +389,14 @@ pass_begin(
 			      (TILE_PIXELS * TILE_BYTES_PER_PIXEL * state->targets + 1023U) & ~1023U, tiler);
 	words[4] = (uint32_t)(memory + TILER_SAMPLES_AT);
 	words[5] = (uint32_t)((memory + TILER_SAMPLES_AT) >> 32);
+
+	/* The depth and stencil attachment's words and extension; a stored clear of it writes back every tile too. */
+	if (state->zs) {
+		clean_depth = pass_depth(entry, state, words, fbd_view + MALI_DESC_FBD_BYTES);
+		if (clean_depth)
+			clean_tiles = true;
+	}
+
 	if (draws != 0U) {
 		mode = MALI_FRAME_INTERSECT;
 		if (clean_tiles)
@@ -378,7 +418,8 @@ pass_begin(
 
 /*
  * Writes a pass's colour targets after its framebuffer descriptor: each
- * one's memory, format, clear and whether it is stored.  A cleared
+ * one's memory (its view's level and layer), format, clear and whether
+ * it is stored.  A cleared
  * target that is stored writes back the tiles no primitive touched too
  * (else they would keep the old pixels); a loaded or undefined one only
  * those drawn on.  Says whether any target writes back every tile.
@@ -408,6 +449,7 @@ pass_targets(
 	clean_tiles = false;
 	for (index = 0; index < state->targets; index++) {
 		kern_memset(&target, 0, sizeof(target));
+		target.internal = UNUSED_INTERNAL;
 		cleared = false;
 		attachment = state->pass->color[index];
 		if (attachment != VK_ATTACHMENT_UNUSED && attachment < state->framebuffer->count) {
@@ -417,8 +459,8 @@ pass_targets(
 			target.writeback = view->format->writeback;
 			target.swizzle = view->format->swizzle;
 			target.srgb = (view->format->pixel & (1U << 20)) != 0U;
-			target.base = mali_vk_image_address(image);
-			target.row_stride = (uint32_t)image->row_pitch;
+			target.base = mali_vk_image_level_address(image, view->base_level, view->base_layer);
+			target.row_stride = mali_vk_image_level_pitch(image, view->base_level);
 			target.write = state->pass->store_op[attachment] == VK_ATTACHMENT_STORE_OP_STORE && target.base != 0U;
 			if (state->pass->load_op[attachment] == VK_ATTACHMENT_LOAD_OP_CLEAR && clears != NULL && attachment < entry->values[7]) {
 				target.clear[0] = pack_clear(view->format, &clears[attachment * 5U + 1U]);
@@ -555,6 +597,8 @@ pass_end(
 
 	/* The framebuffer and the box of tiles to render, inclusive. */
 	pointer = mali_desc_framebuffer_pointer(fbd, state->targets);
+	if (state->zs)
+		pointer |= mali_surface_zs_pointer();
 	max_x = state->area[0] + state->area[2] - 1U;
 	max_y = state->area[1] + state->area[3] - 1U;
 	if (state->area[2] == 0U || state->area[3] == 0U) {
@@ -622,6 +666,8 @@ draw(
 	uint32_t equation;
 	uint32_t attachment;
 	uint32_t target;
+	uint32_t depth_low;
+	uint32_t depth_high;
 	int32_t scissor[4];
 	int error;
 
@@ -686,30 +732,34 @@ draw(
 		store(blend_view + (uint64_t)target * MALI_DESC_BLEND_BYTES, words, 4);
 	}
 
-	/* The depth and stencil descriptor that passes everything, the depth from a program that writes it. */
-	kern_memset(words, 0, sizeof(words));
-	words[0] = DEPTH_WORD0;
-	words[1] = DEPTH_WORD1;
-	words[4] = DEPTH_WORD4;
-	if (fragment->writes_depth != 0U)
-		words[4] = DEPTH_WORD4_SHADER;
-	store(depth_view, words, 8);
-
 	/*
-	 * The draw's flags: the kill operation (late for a program that
-	 * discards or writes its depth), the faces, the culls, and whether
-	 * the program changes its coverage.
+	 * The depth and stencil descriptor and the draw's kill and update
+	 * operations: of the pipeline's tests in a pass with a depth and
+	 * stencil attachment; else one that passes everything (the depth
+	 * from a program that writes it), the kill late for a program that
+	 * discards or writes its depth.
 	 *
 	 * Procedure referenced:
 	 * Mesa 26.2.6 src/panfrost/vulkan/csf/panvk_vX_cmd_draw.c
 	 * (prepare_dcd: a depth written by the shader forces late kill and
 	 * update; a written sample mask modifies the coverage).
 	 */
+	kern_memset(words, 0, sizeof(words));
+	words[0] = DEPTH_WORD0;
+	words[1] = DEPTH_WORD1;
+	words[4] = DEPTH_WORD4;
+	if (fragment->writes_depth != 0U)
+		words[4] = DEPTH_WORD4_SHADER;
 	flags = (KILL_WEAK_EARLY << 2) | (KILL_WEAK_EARLY << 4);
 	if (fragment->discards != 0U)
 		flags = (KILL_FORCE_LATE << 2) | (KILL_FORCE_LATE << 4);
 	if (fragment->writes_depth != 0U)
 		flags = (KILL_FORCE_LATE << 2) | (KILL_FORCE_LATE << 4);
+	if (state->zs)
+		draw_depth(build, state, graphics, fragment, words, &flags);
+	store(depth_view, words, 8);
+
+	/* The faces, the culls, and whether the program changes its coverage. */
 	if (fragment->writes_sample_mask != 0U)
 		flags |= FLAG_SHADER_COVERAGE;
 	if (graphics->front_face == VK_FRONT_FACE_COUNTER_CLOCKWISE)
@@ -806,8 +856,9 @@ draw(
 	mali_cs_move64(&build->cs, MALI_CS_IDVS_INDEX_BUFFER, index_address);
 	mali_cs_emit(&build->cs, mali_cs_move32(MALI_CS_IDVS_SCISSOR, mali_desc_scissor_low((uint32_t)scissor[0], (uint32_t)scissor[1])));
 	mali_cs_emit(&build->cs, mali_cs_move32(MALI_CS_IDVS_SCISSOR + 1U, mali_desc_scissor_high((uint32_t)scissor[2] - 1U, (uint32_t)scissor[3] - 1U)));
-	mali_cs_emit(&build->cs, mali_cs_move32(MALI_CS_IDVS_DEPTH_LOW, 0));
-	mali_cs_emit(&build->cs, mali_cs_move32(MALI_CS_IDVS_DEPTH_HIGH, FLOAT_ONE));
+	depth_range(viewport, &depth_low, &depth_high);
+	mali_cs_emit(&build->cs, mali_cs_move32(MALI_CS_IDVS_DEPTH_LOW, depth_low));
+	mali_cs_emit(&build->cs, mali_cs_move32(MALI_CS_IDVS_DEPTH_HIGH, depth_high));
 	mali_cs_move64(&build->cs, MALI_CS_IDVS_OCCLUSION, 0);
 
 	/* The varying record's size, the blends, the depth, the flags and the point size. */
@@ -1080,6 +1131,220 @@ clear_rect(
 
 	/* Succeeded: the rectangle is drawn. */
 	return 0;
+}
+
+/*
+ * Writes a pass's depth and stencil attachment: its words of the
+ * framebuffer parameters (the tile buffer's depth format, the clears,
+ * the write backs of the stored aspects and the preloads of the loaded
+ * ones) and the extension of its targets, at the view's level and layer.
+ * Sets the pass's aspects.  Says whether a cleared aspect that is stored
+ * writes back every tile.
+ *
+ * Procedure referenced:
+ * Mesa 26.2.6 src/panfrost/lib/pan_desc.c (pan_emit_fbd: the depth
+ * format, the clear values, the write enables of the aspects not
+ * discarded; pan_emit_zs_crc_ext; pan_get_clean_tile_info).
+ */
+static bool
+pass_depth(
+	const struct mali_vk_record *entry,
+	struct pass_state *state,
+	uint32_t *framebuffer_words,
+	volatile uint8_t *extension_view)
+{
+	struct mali_surface_zs_target target;
+	const struct mali_vk_image_view *view;
+	const struct mali_vk_image *image;
+	const uint32_t *clears;
+	uint32_t words[MALI_SURFACE_ZS_BYTES / 4U];
+	uint32_t attachment;
+	bool cleared;
+
+	/* The attachment's view at its level and layer. */
+	attachment = state->pass->depth;
+	view = state->framebuffer->views[attachment]->payload;
+	image = view->image->payload;
+	kern_memset(&target, 0, sizeof(target));
+	target.format = state->pass->zs_format;
+	target.base = mali_vk_image_level_address(image, view->base_level, view->base_layer);
+	target.pitch = mali_vk_image_level_pitch(image, view->base_level);
+	target.surface_bytes = image->level[view->base_level].bytes;
+	state->has_depth = (target.format->aspects & MALI_SURFACE_ASPECT_DEPTH) != 0U;
+	state->has_stencil = (target.format->aspects & MALI_SURFACE_ASPECT_STENCIL) != 0U;
+
+	/* The ops of each aspect; nothing is written to an image not bound. */
+	target.depth_clear = state->pass->load_op[attachment] == VK_ATTACHMENT_LOAD_OP_CLEAR;
+	target.depth_load = state->pass->load_op[attachment] == VK_ATTACHMENT_LOAD_OP_LOAD;
+	target.depth_store = state->pass->store_op[attachment] == VK_ATTACHMENT_STORE_OP_STORE && target.base != 0U;
+	target.stencil_clear = state->pass->stencil_load_op[attachment] == VK_ATTACHMENT_LOAD_OP_CLEAR;
+	target.stencil_load = state->pass->stencil_load_op[attachment] == VK_ATTACHMENT_LOAD_OP_LOAD;
+	target.stencil_store = state->pass->stencil_store_op[attachment] == VK_ATTACHMENT_STORE_OP_STORE && target.base != 0U;
+	if (target.base == 0U) {
+		target.depth_load = false;
+		target.stencil_load = false;
+	}
+
+	/* The clear value: the depth's float bits and the stencil's byte. */
+	clears = entry->data;
+	if (clears != NULL && attachment < entry->values[7]) {
+		target.depth_clear_bits = clears[attachment * 5U + 1U];
+		target.stencil_clear_value = clears[attachment * 5U + 2U];
+	}
+
+	/* The framebuffer's words and the extension. */
+	mali_surface_zs_framebuffer(framebuffer_words, &target);
+	mali_surface_zs_extension(words, &target);
+	store(extension_view, words, MALI_SURFACE_ZS_BYTES / 4U);
+
+	/* Whether a stored clear writes back every tile. */
+	cleared = false;
+	if (state->has_depth && target.depth_clear && target.depth_store)
+		cleared = true;
+	if (state->has_stencil && target.stencil_clear && target.stencil_store)
+		cleared = true;
+	return cleared;
+}
+
+/*
+ * Writes a draw's depth and stencil descriptor and its kill and update
+ * operations in a pass with a depth and stencil attachment: the
+ * pipeline's tests on the pass's aspects, with the bias, masks and
+ * references the commands set when the pipeline takes them from the
+ * commands, and the program's own depth and stencil.
+ *
+ * Procedure referenced:
+ * Mesa 26.2.6 src/panfrost/vulkan/csf/panvk_vX_cmd_draw.c (prepare_dcd
+ * and the depth and stencil descriptor of a draw, with the dynamic
+ * state).
+ */
+static void
+draw_depth(
+	const struct mali_vk_build *build,
+	const struct pass_state *state,
+	const struct mali_vk_graphics *graphics,
+	const struct mali_shader_program *fragment,
+	uint32_t *words,
+	uint32_t *flags)
+{
+	struct mali_surface_zs_state zs;
+	struct mali_surface_kill kill;
+	uint32_t direction;
+
+	/* The pipeline's state on the pass's aspects, and the program's writes. */
+	zs = graphics->zs;
+	zs.has_depth = state->has_depth;
+	zs.has_stencil = state->has_stencil;
+	zs.shader_depth = fragment->writes_depth != 0U;
+	zs.shader_stencil = fragment->writes_stencil != 0U;
+
+	/* The state the commands set. */
+	if (graphics->dynamic_bias) {
+		zs.bias_constant = build->bias[0];
+		zs.bias_clamp = build->bias[1];
+		zs.bias_slope = build->bias[2];
+	}
+
+	if (graphics->dynamic_compare_mask) {
+		zs.front.compare_mask = build->compare_mask[0];
+		zs.back.compare_mask = build->compare_mask[1];
+	}
+
+	if (graphics->dynamic_write_mask) {
+		zs.front.write_mask = build->write_mask[0];
+		zs.back.write_mask = build->write_mask[1];
+	}
+
+	if (graphics->dynamic_reference) {
+		zs.front.reference = build->reference[0];
+		zs.back.reference = build->reference[1];
+	}
+
+	/* The descriptor. */
+	mali_surface_depth_stencil(words, &zs);
+
+	/* The kill and update operations, keeping the other flags. */
+	kill.state = &zs;
+	kill.coverage = fragment->discards != 0U || fragment->writes_sample_mask != 0U;
+	kill.writes_memory = false;
+	direction = mali_surface_kill_flags(&kill);
+	*flags = (*flags & ~0x3cU) | direction;
+}
+
+/*
+ * Gives a draw's depth clamps: the lesser and the greater of the
+ * viewport's depth range (each within [0, 1], whose float bits order as
+ * the floats do; a negative one is zero).
+ *
+ * Procedure referenced:
+ * Mesa 26.2.6 src/panfrost/vulkan/csf/panvk_vX_cmd_draw.c (the low and
+ * high depth clamps of the viewport's minDepth and maxDepth).
+ */
+static void
+depth_range(
+	const VkViewport *viewport,
+	uint32_t *low,
+	uint32_t *high)
+{
+	uint32_t near;
+	uint32_t far;
+
+	/* The bits, a negative one as zero. */
+	kern_memcpy(&near, &viewport->minDepth, sizeof(near));
+	kern_memcpy(&far, &viewport->maxDepth, sizeof(far));
+	if ((near & 0x80000000U) != 0U)
+		near = 0U;
+	if ((far & 0x80000000U) != 0U)
+		far = 0U;
+
+	/* The lesser first. */
+	*low = near;
+	*high = far;
+	if (far < near) {
+		*low = far;
+		*high = near;
+	}
+}
+
+/*
+ * Keeps the depth bias or a stencil mask or reference a record sets:
+ * the bias's three factors, or the value for each face its face mask
+ * names (front 1, back 2).
+ *
+ * Values referenced: the Vulkan specification 1.0 (VkStencilFaceFlagBits).
+ */
+void
+mali_vk_draw_set_state(
+	struct mali_vk_build *build,
+	const struct mali_vk_record *entry)
+{
+	uint32_t *values;
+	uint32_t face;
+
+	/* The bias. */
+	if (entry->opcode == GPU_OP_CMD_SET_DEPTH_BIAS) {
+		build->bias[0] = entry->values[0];
+		build->bias[1] = entry->values[1];
+		build->bias[2] = entry->values[2];
+		return;
+	}
+
+	/* The stencil value of the command. */
+	if (entry->opcode == GPU_OP_CMD_SET_STENCIL_COMPARE_MASK) {
+		values = build->compare_mask;
+	} else if (entry->opcode == GPU_OP_CMD_SET_STENCIL_WRITE_MASK) {
+		values = build->write_mask;
+	} else if (entry->opcode == GPU_OP_CMD_SET_STENCIL_REFERENCE) {
+		values = build->reference;
+	} else {
+		return;
+	}
+
+	/* Each face the mask names. */
+	for (face = 0; face < 2U; face++) {
+		if ((entry->values[0] & (1U << face)) != 0U)
+			values[face] = entry->values[1];
+	}
 }
 
 /*

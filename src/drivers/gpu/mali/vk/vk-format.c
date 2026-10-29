@@ -56,7 +56,9 @@
  * Valhall format and blendable tables: the order of each format; the
  * depth formats sampled as Z16 UNORM and Z32 in RGBA order on v9 and
  * later); the Vulkan specification (the formats a storage image must
- * take, and R32_UINT and R32_SINT the atomic ones).
+ * take, and R32_UINT and R32_SINT the atomic ones).  X8_D24 and
+ * D24_UNORM_S8 are only depth and stencil attachments (no pixel format:
+ * never sampled).
  */
 static const struct mali_vk_format formats[] = {
 	{ VK_FORMAT_R8_UNORM, 1, PIXEL(163, ORDER_RGB1, 0), 1, 16, SWIZZLE_IDENTITY, true, true, true, false, false, false },
@@ -77,6 +79,8 @@ static const struct mali_vk_format formats[] = {
 	{ VK_FORMAT_R32G32B32A32_SFLOAT, 16, PIXEL(191, ORDER_RGBA, 0), 0, 0, 0, false, true, true, true, false, false },
 	{ VK_FORMAT_D16_UNORM, 2, PIXEL(75, ORDER_RGBA, 0), 0, 0, 0, false, true, false, false, false, true },
 	{ VK_FORMAT_D32_SFLOAT, 4, PIXEL(76, ORDER_RGBA, 0), 0, 0, 0, false, true, false, false, false, true },
+	{ VK_FORMAT_X8_D24_UNORM_PACK32, 4, 0, 0, 0, 0, false, false, false, false, false, true },
+	{ VK_FORMAT_D24_UNORM_S8_UINT, 4, 0, 0, 0, 0, false, false, false, false, false, true },
 };
 
 /* Finds a format the executor takes, or NULL. */
@@ -132,6 +136,8 @@ mali_vk_format_features(
 		features |= VK_FORMAT_FEATURE_STORAGE_IMAGE_ATOMIC_BIT;
 	if (format->render)
 		features |= VK_FORMAT_FEATURE_COLOR_ATTACHMENT_BIT | VK_FORMAT_FEATURE_COLOR_ATTACHMENT_BLEND_BIT | VK_FORMAT_FEATURE_BLIT_DST_BIT;
+	if (mali_surface_zs_find(format->vk) != NULL)
+		features |= VK_FORMAT_FEATURE_DEPTH_STENCIL_ATTACHMENT_BIT;
 
 	/* Succeeded: the features. */
 	return features;

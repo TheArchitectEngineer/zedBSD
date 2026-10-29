@@ -26,6 +26,7 @@
 #include <uapi/gpu-op.h>
 
 #include "drivers/gpu/mali/vk/vk-desc.h"
+#include "drivers/gpu/mali/vk/vk-surface.h"
 #include "drivers/gpu/mali/vk/vk.h"
 
 #include "drivers/gpu/i915/vk/vk-codec.inc"
@@ -233,6 +234,42 @@ mali_vk_image_address(
 	/* The memory's address plus the offset. */
 	memory = image->memory->payload;
 	return memory->resource->gpu_address + image->offset;
+}
+
+/*
+ * Reports the GPU address of a level of a layer of a bound image: the
+ * layer's start (layer after layer) plus the level's offset in it; zero
+ * when not bound or outside the image.
+ */
+uint64_t
+mali_vk_image_level_address(
+	const struct mali_vk_image *image,
+	uint32_t level,
+	uint32_t layer)
+{
+	uint64_t base;
+
+	/* A bound image, a level and a layer of it. */
+	base = mali_vk_image_address(image);
+	if (base == 0U || level >= image->levels || layer >= image->layers)
+		return 0;
+
+	/* The layer's start and the level's offset. */
+	return base + (uint64_t)layer * image->layer_bytes + image->level[level].offset;
+}
+
+/* Reports the row pitch of an image's level, zero outside the image. */
+uint32_t
+mali_vk_image_level_pitch(
+	const struct mali_vk_image *image,
+	uint32_t level)
+{
+	/* A level of the image. */
+	if (image == NULL || level >= image->levels)
+		return 0;
+
+	/* Its pitch. */
+	return image->level[level].pitch;
 }
 
 /*
@@ -467,9 +504,11 @@ buffer_destroy(
 }
 
 /*
- * vkCreateImage: a 2D image of one level of a taken format, of one layer
- * or an array of them (six or more of a cube-compatible one), laid out
- * linearly layer after layer.
+ * vkCreateImage: a 2D image of a taken format, of levels down to one
+ * texel at most, of one layer or an array of them (six or more of a
+ * cube-compatible one), laid out linearly: layer after layer, each
+ * layer its levels one after another.  A depth and stencil attachment
+ * is of a format the tile buffer takes.
  */
 static int
 create_image(
@@ -502,7 +541,10 @@ create_image(
 		error = ENOTSUP;
 	} else if (info.extent.width > MALI_VK_IMAGE_EDGE || info.extent.height > MALI_VK_IMAGE_EDGE) {
 		error = ENOTSUP;
-	} else if (info.mipLevels != 1U || info.arrayLayers == 0U || info.arrayLayers > MALI_VK_IMAGE_LAYERS || info.samples != VK_SAMPLE_COUNT_1_BIT) {
+	} else if (info.mipLevels == 0U || info.mipLevels > mali_surface_level_count(info.extent.width, info.extent.height) || info.mipLevels > MALI_SURFACE_LEVELS) {
+		/* Levels past the one-texel level are not an image's. */
+		error = EINVAL;
+	} else if (info.arrayLayers == 0U || info.arrayLayers > MALI_VK_IMAGE_LAYERS || info.samples != VK_SAMPLE_COUNT_1_BIT) {
 		error = ENOTSUP;
 	} else if ((info.flags & ~(uint32_t)(VK_IMAGE_CREATE_CUBE_COMPATIBLE_BIT | VK_IMAGE_CREATE_MUTABLE_FORMAT_BIT)) != 0U) {
 		/* Another flag (sparse, aliased, 2D views of 3D) is not taken. */
@@ -510,12 +552,15 @@ create_image(
 	} else if ((info.flags & VK_IMAGE_CREATE_CUBE_COMPATIBLE_BIT) != 0U && (info.extent.width != info.extent.height || info.arrayLayers < 6U)) {
 		/* A cube's faces are square, six of them at least. */
 		error = EINVAL;
-	} else if (format->depth && (info.usage & ~(uint32_t)(VK_IMAGE_USAGE_SAMPLED_BIT | VK_IMAGE_USAGE_TRANSFER_SRC_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT)) != 0U) {
-		/* A depth image is only sampled and copied (no depth attachment). */
+	} else if ((info.usage & VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT) != 0U && mali_surface_zs_find(info.format) == NULL) {
+		/* A depth and stencil attachment of a format the tile buffer does not take. */
+		error = ENOTSUP;
+	} else if (format->depth && (info.usage & ~(uint32_t)(VK_IMAGE_USAGE_SAMPLED_BIT | VK_IMAGE_USAGE_TRANSFER_SRC_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT | VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT)) != 0U) {
+		/* A depth image is sampled, copied and a depth and stencil attachment, nothing else. */
 		error = ENOTSUP;
 	}
 
-	/* The payload with its linear layout. */
+	/* The payload with its linear layout: the levels of a layer, the layers after one another. */
 	if (error == 0) {
 		image = kern_calloc(1, sizeof(*image));
 		if (image != NULL) {
@@ -523,10 +568,10 @@ create_image(
 			image->width = info.extent.width;
 			image->height = info.extent.height;
 			image->layers = info.arrayLayers;
-			image->levels = 1U;
+			image->levels = info.mipLevels;
 			image->usage = info.usage;
-			image->row_pitch = ((uint64_t)info.extent.width * format->bytes + MALI_VK_ROW_ALIGN - 1U) & ~(uint64_t)(MALI_VK_ROW_ALIGN - 1U);
-			image->layer_bytes = image->row_pitch * info.extent.height;
+			image->layer_bytes = mali_surface_levels(info.extent.width, info.extent.height, format->bytes, MALI_VK_ROW_ALIGN, info.mipLevels, image->level);
+			image->row_pitch = image->level[0].pitch;
 			image->bytes = image->layer_bytes * info.arrayLayers;
 			image->bytes = (image->bytes + MALI_VK_IMAGE_ALIGN - 1U) & ~(uint64_t)(MALI_VK_IMAGE_ALIGN - 1U);
 		}
@@ -661,7 +706,12 @@ bind(
 	return 0;
 }
 
-/* vkGetImageSubresourceLayout: a layer's offset (layer after layer), its pitch and its bytes. */
+/*
+ * vkGetImageSubresourceLayout: a level's offset (layer after layer, the
+ * levels of a layer one after another), its pitch and its bytes; the
+ * array pitch is a layer's.  A level or a layer outside the image gives
+ * level 0 or layer 0.
+ */
 static int
 subresource_layout(
 	struct mali_vk_session *session,
@@ -673,6 +723,7 @@ subresource_layout(
 	struct mali_vk_image *image;
 	uint64_t named;
 	uint64_t present;
+	uint32_t level;
 
 	/* The image and the subresource. */
 	(void)drv_i915_wire_read_u64(reader);
@@ -689,13 +740,16 @@ subresource_layout(
 	kern_memset(&layout, 0, sizeof(layout));
 	image = mali_vk_payload(session, I915_VK_OBJ_IMAGE, named);
 	if (image != NULL) {
-		layout.offset = 0;
+		level = 0;
+		if (subresource.mipLevel < image->levels)
+			level = subresource.mipLevel;
+		layout.offset = image->level[level].offset;
 		if (subresource.arrayLayer < image->layers)
-			layout.offset = (uint64_t)subresource.arrayLayer * image->layer_bytes;
-		layout.size = image->layer_bytes;
-		layout.rowPitch = image->row_pitch;
+			layout.offset += (uint64_t)subresource.arrayLayer * image->layer_bytes;
+		layout.size = image->level[level].bytes;
+		layout.rowPitch = image->level[level].pitch;
 		layout.arrayPitch = image->layer_bytes;
-		layout.depthPitch = image->layer_bytes;
+		layout.depthPitch = image->level[level].bytes;
 	}
 
 	/* Succeeded: the reply. */
@@ -706,7 +760,7 @@ subresource_layout(
 
 /*
  * vkCreateImageView: a 2D, 2D array, cube or cube array view of layers
- * of the image's one level, its format the image's or one of the same
+ * and levels of the image, its format the image's or one of the same
  * texel size.
  */
 static int
@@ -723,6 +777,7 @@ create_view(
 	uint64_t present;
 	uint64_t created;
 	uint32_t layers;
+	uint32_t levels;
 	int error;
 
 	/* The device, the info and the tail. */
@@ -744,6 +799,17 @@ create_view(
 		error = ENOTSUP;
 	} else if (format->bytes != ((struct mali_vk_image *)image->payload)->format->bytes) {
 		error = ENOTSUP;
+	}
+
+	/* The levels: the rest of the image's for VK_REMAINING_MIP_LEVELS, inside it. */
+	levels = 0U;
+	if (error == 0) {
+		bound = image->payload;
+		levels = info.subresourceRange.levelCount;
+		if (levels == VK_REMAINING_MIP_LEVELS && info.subresourceRange.baseMipLevel < bound->levels)
+			levels = bound->levels - info.subresourceRange.baseMipLevel;
+		if (levels == 0U || info.subresourceRange.baseMipLevel >= bound->levels || levels > bound->levels - info.subresourceRange.baseMipLevel)
+			error = EINVAL;
 	}
 
 	/* The layers: the rest of the image's for VK_REMAINING_ARRAY_LAYERS, inside it, six a cube. */
@@ -796,6 +862,8 @@ create_view(
 		view->base_layer = info.subresourceRange.baseArrayLayer;
 		view->view_type = info.viewType;
 		view->layer_count = layers;
+		view->base_level = info.subresourceRange.baseMipLevel;
+		view->level_count = levels;
 		view->swizzle = swizzle_channel(info.components.r, 0U);
 		view->swizzle |= swizzle_channel(info.components.g, 1U) << 3;
 		view->swizzle |= swizzle_channel(info.components.b, 2U) << 6;
@@ -834,6 +902,9 @@ create_sampler(
 	uint64_t present;
 	uint64_t created;
 	uint32_t word;
+	uint32_t min_lod;
+	uint32_t max_lod;
+	uint32_t bias;
 
 	/* The device, the info and the tail. */
 	kern_memset(&info, 0, sizeof(info));
@@ -845,7 +916,7 @@ create_sampler(
 	if (reader->error != 0)
 		return EINVAL;
 
-	/* The first word: the type, the wrap modes, the filters, no mipmaps. */
+	/* The first word: the type, the wrap modes, the filters, no mipmaps until the levels' range says otherwise. */
 	sampler = kern_calloc(1, sizeof(*sampler));
 	if (sampler != NULL) {
 		word = SAMPLER_TYPE;
@@ -861,11 +932,17 @@ create_sampler(
 			word |= SAMPLER_MAG_NEAREST;
 		sampler->words[0] = word;
 
-		/* No level of detail range (one level), the compare function, one sample of anisotropy, a transparent black border. */
+		/* The compare function, one sample of anisotropy, a transparent black border. */
 		sampler->words[1] = 0;
 		if (info.compareEnable != VK_FALSE)
 			sampler->words[1] |= mali_desc_sampler_compare(info.compareOp);
 		sampler->words[2] = 0;
+
+		/* The levels' range, bias and mipmap mode as float bits; a range of level 0 without a bias keeps no mipmaps. */
+		kern_memcpy(&min_lod, &info.minLod, sizeof(uint32_t));
+		kern_memcpy(&max_lod, &info.maxLod, sizeof(uint32_t));
+		kern_memcpy(&bias, &info.mipLodBias, sizeof(uint32_t));
+		(void)mali_surface_sampler_lod(sampler->words, info.mipmapMode, min_lod, max_lod, bias);
 	}
 
 	/* Succeeded: the reply publishes it. */

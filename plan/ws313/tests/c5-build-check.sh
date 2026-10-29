@@ -64,7 +64,8 @@ mali pagetable tests/mali-pagetable-host-test.c src/drivers/gpu/mali/mali-pageta
 mali firmware tests/mali-firmware-host-test.c src/drivers/gpu/mali/mali-firmware-image.c
 mali interface tests/mali-interface-host-test.c src/drivers/gpu/mali/mali-interface.c src/drivers/gpu/mali/display/osd.c
 mali cs tests/mali-cs-host-test.c src/drivers/gpu/mali/cs/cs-build.c
-mali vk-desc tests/mali-vk-desc-host-test.c src/drivers/gpu/mali/vk/vk-desc.c
+mali vk-desc tests/mali-vk-desc-host-test.c src/drivers/gpu/mali/vk/vk-desc.c src/drivers/gpu/mali/vk/vk-surface.c
+mali vk-surface tests/mali-vk-surface-host-test.c src/drivers/gpu/mali/vk/vk-surface.c
 mali vk-frame tests/mali-vk-frame-host-test.c src/drivers/gpu/mali/vk/vk-frame.c src/drivers/gpu/mali/vk/vk-desc.c
 mali scanout tests/mali-scanout-host-test.c src/drivers/gpu/mali/display/scanout.c
 if timeout 300 cc -std=gnu11 -DKERN_USER_ABI_LP64 -Iinclude -Isrc -I. -idirafter libc/include -Wall -Wextra -Werror \

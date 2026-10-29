@@ -314,6 +314,7 @@ write_resources(
 	uint64_t *table)
 {
 	const struct mali_vk_image *image;
+	const struct mali_surface_level *level;
 	uint32_t words[8];
 	volatile uint8_t *tables_view;
 	volatile uint8_t *texture_view;
@@ -325,10 +326,13 @@ write_resources(
 	uint64_t sampler;
 	uint64_t memory;
 
-	/* The view's image in memory; one not bound draws on cleared tiles. */
+	/* The view's first level and layer in memory; an image not bound draws on cleared tiles. */
 	*table = 0;
 	image = view->image->payload;
-	memory = mali_vk_image_address(image);
+	level = &image->level[0];
+	if (view->base_level < image->levels)
+		level = &image->level[view->base_level];
+	memory = mali_vk_image_level_address(image, view->base_level, view->base_layer);
 	if (memory == 0U)
 		return ENOTSUP;
 
@@ -352,12 +356,12 @@ write_resources(
 	if (sampler_view == NULL)
 		return build->error;
 
-	/* The plane of the image's first layer, linear. */
-	mali_desc_plane(words, view->format->bytes, memory, (uint32_t)image->row_pitch, image->layer_bytes, image->width, image->height);
+	/* The plane of the view's first level and layer, linear. */
+	mali_desc_plane(words, view->format->bytes, memory, level->pitch, level->bytes, level->width, level->height);
 	store(plane_view, words, 8);
 
 	/* The texture of the view's format and swizzle, naming the plane. */
-	mali_desc_texture(words, view->format->pixel, image->width, image->height, view->swizzle, plane);
+	mali_desc_texture(words, view->format->pixel, level->width, level->height, view->swizzle, plane);
 	store(texture_view, words, 8);
 
 	/* The sampler. */

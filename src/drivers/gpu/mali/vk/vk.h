@@ -30,6 +30,7 @@
 #include "drivers/gpu/i915/vk/vk-codec.h"
 #include "drivers/gpu/mali/compiler/shader.h"
 #include "drivers/gpu/mali/render.h"
+#include "drivers/gpu/mali/vk/vk-surface.h"
 
 /* The scratch one command decodes its records into, and the most live objects of a session. */
 #define MALI_VK_ARENA_BYTES		(128U * 1024U)
@@ -73,7 +74,8 @@
  * format that is not rendered to), and the vertex attribute format;
  * whether a storage image may have the format (storage) and a storage
  * image's texels change atomically (atomic), and whether it is a depth
- * format (sampled, compared, never rendered to).
+ * format (sampled and compared; a depth and stencil attachment when
+ * mali_surface_zs_find() knows it).
  */
 struct mali_vk_format {
 	uint32_t vk;
@@ -152,8 +154,10 @@ struct mali_vk_buffer {
 
 /*
  * A VkImage: its format, extent, levels and layers, its linear layout
- * (the row pitch, the bytes of one layer, the bytes of all), its usage,
- * and once bound its memory and offset.
+ * (level 0's row pitch, the bytes of one layer with all its levels --
+ * the array stride --, the bytes of all, and each level's offset in a
+ * layer, row pitch, extent and bytes), its usage, and once bound its
+ * memory and offset.
  */
 struct mali_vk_image {
 	const struct mali_vk_format *format;
@@ -165,14 +169,15 @@ struct mali_vk_image {
 	uint64_t row_pitch;
 	uint64_t layer_bytes;
 	uint64_t bytes;
+	struct mali_surface_level level[MALI_SURFACE_LEVELS];
 	struct mali_vk_object *memory;
 	uint64_t offset;
 };
 
 /*
  * A VkImageView: the image, its format and the texture descriptor and
- * plane it reads as; its type (VkImageViewType) and its layers from
- * base_layer (six a cube).
+ * plane it reads as; its type (VkImageViewType), its layers from
+ * base_layer (six a cube) and its levels from base_level.
  */
 struct mali_vk_image_view {
 	struct mali_vk_object *image;
@@ -181,6 +186,8 @@ struct mali_vk_image_view {
 	uint32_t swizzle;
 	uint32_t view_type;
 	uint32_t layer_count;
+	uint32_t base_level;
+	uint32_t level_count;
 };
 
 /* A VkSampler: the sampler descriptor's eight words. */
@@ -260,6 +267,18 @@ struct mali_vk_graphics {
 	VkViewport viewport;
 	bool scissor_static;
 	VkRect2D scissor;
+
+	/*
+	 * The depth and stencil state (the tests, the faces and the bias;
+	 * the pass's aspects and the program's writes are the draw's), and
+	 * which of it the commands set instead (VK_DYNAMIC_STATE_*: the
+	 * bias, the compare and write masks and the reference).
+	 */
+	struct mali_surface_zs_state zs;
+	bool dynamic_bias;
+	bool dynamic_compare_mask;
+	bool dynamic_write_mask;
+	bool dynamic_reference;
 };
 
 /*
@@ -278,14 +297,23 @@ struct mali_vk_pipeline {
 	uint64_t fragment_address;
 };
 
-/* A VkRenderPass of one subpass: its attachments' formats, load and store ops, and the subpass's colour references. */
+/*
+ * A VkRenderPass of one subpass: its attachments' formats, load and
+ * store ops (the stencil's too), the subpass's colour references, and
+ * its depth and stencil attachment (VK_ATTACHMENT_UNUSED for none) with
+ * the tile buffer's format of it.
+ */
 struct mali_vk_render_pass {
 	uint32_t attachment_count;
 	const struct mali_vk_format *format[MALI_VK_ATTACHMENTS_MAX];
 	uint32_t load_op[MALI_VK_ATTACHMENTS_MAX];
 	uint32_t store_op[MALI_VK_ATTACHMENTS_MAX];
+	uint32_t stencil_load_op[MALI_VK_ATTACHMENTS_MAX];
+	uint32_t stencil_store_op[MALI_VK_ATTACHMENTS_MAX];
 	uint32_t color_count;
 	uint32_t color[MALI_VK_ATTACHMENTS_MAX];
+	uint32_t depth;
+	const struct mali_surface_zs_format *zs_format;
 };
 
 /* A VkFramebuffer: its views, held, and its extent. */
@@ -364,6 +392,10 @@ uint32_t mali_vk_format_features(const struct mali_vk_format *format, bool linea
 /* The GPU address of a bound buffer or image, zero when not bound (vk-memory.c). */
 uint64_t mali_vk_buffer_address(const struct mali_vk_buffer *buffer);
 uint64_t mali_vk_image_address(const struct mali_vk_image *image);
+
+/* A bound image's level of a layer: its GPU address (zero when not bound or outside the image) and its row pitch (zero outside). */
+uint64_t mali_vk_image_level_address(const struct mali_vk_image *image, uint32_t level, uint32_t layer);
+uint32_t mali_vk_image_level_pitch(const struct mali_vk_image *image, uint32_t level);
 
 /* A command buffer emptied of its records (vk-command.c). */
 void mali_vk_command_reset(struct mali_vk_command_buffer *command);

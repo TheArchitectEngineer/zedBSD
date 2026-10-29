@@ -30,6 +30,7 @@ ARM64_MALI_SOURCES := \
 	src/drivers/gpu/mali/vk/vk-pipeline.c \
 	src/drivers/gpu/mali/vk/vk-command.c \
 	src/drivers/gpu/mali/vk/vk-desc.c \
+	src/drivers/gpu/mali/vk/vk-surface.c \
 	src/drivers/gpu/mali/vk/vk-queue.c \
 	src/drivers/gpu/mali/vk/vk-draw.c \
 	src/drivers/gpu/mali/vk/vk-frame.c \

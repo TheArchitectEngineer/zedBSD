@@ -67,6 +67,16 @@ struct mali_vk_build {
 	bool scissor_set;
 	VkRect2D scissor;
 	bool load_warned;
+
+	/*
+	 * The state the commands set for a pipeline that takes it from them:
+	 * the depth bias's constant, clamp and slope factors (float bits),
+	 * and each face's (front 0, back 1) stencil masks and reference.
+	 */
+	uint32_t bias[3];
+	uint32_t compare_mask[2];
+	uint32_t write_mask[2];
+	uint32_t reference[2];
 };
 
 /* Takes stage memory of the submission; NULL with the build's error set when none is left. */
@@ -84,6 +94,9 @@ int mali_vk_build_resources(struct mali_vk_build *build, const struct mali_shade
 
 /* Keeps the state a binding record binds (vk-queue.c). */
 void mali_vk_build_bind(struct mali_vk_build *build, const struct mali_vk_record *entry);
+
+/* Keeps the depth bias or a stencil mask or reference a record sets (vk-draw.c). */
+void mali_vk_draw_set_state(struct mali_vk_build *build, const struct mali_vk_record *entry);
 
 /*
  * Writes a thread storage descriptor into the stage with thread local
