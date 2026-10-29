@@ -322,6 +322,8 @@ run_reference(
 				DST(trial->vertex_id);
 			} else if (inst->location == DRV_GPU_SHADER_LOCATION_INSTANCE_INDEX) {
 				DST(trial->instance_id);
+			} else if (inst->location == DRV_GPU_SHADER_LOCATION_FRONT_FACING) {
+				DST(0xFFFFFFFFU);
 			} else if (inst->location == DRV_GPU_SHADER_LOCATION_FRAG_COORD) {
 				if (inst->component == 0U)
 					FDST((float)trial->frag_x + 0.5f);
@@ -370,6 +372,12 @@ run_reference(
 		case DRV_GPU_IR_RCP: FDST(1.0f / fa); break;
 		case DRV_GPU_IR_SQRT: FDST(sqrtf(fa)); break;
 		case DRV_GPU_IR_EXP2: FDST(exp2f(fa)); break;
+		case DRV_GPU_IR_SIN: FDST(sinf(fa)); break;
+		case DRV_GPU_IR_COS: FDST(cosf(fa)); break;
+		case DRV_GPU_IR_DDX: case DRV_GPU_IR_DDX_FINE: case DRV_GPU_IR_DDY: case DRV_GPU_IR_DDY_FINE:
+			/* One invocation is a quad whose four pixels agree. */
+			FDST(0.0f);
+			break;
 		case DRV_GPU_IR_LOG2: FDST(log2f(fa)); break;
 		case DRV_GPU_IR_FABS: FDST(fabsf(fa)); break;
 		case DRV_GPU_IR_FLOOR: FDST(floorf(fa)); break;
@@ -561,6 +569,8 @@ read_source(
 	number = (byte >> 1) & 0xFU;
 	if (page == 1U && number == 3U)
 		return (byte & 1U) != 0U ? (uint32_t)(SHARED_BASE >> 32) : (uint32_t)SHARED_BASE;
+	if (page == 3U && number == 1U)
+		return 0U;
 	return 0U;
 }
 
@@ -915,6 +925,9 @@ run_model(
 				return;
 			}
 			m.r[dest] = c == 0U ? a : b;
+		} else if (strcmp(name, "CLPER.i32") == 0) {
+			/* One lane is a quad whose four lanes hold the same value. */
+			m.r[dest] = a;
 		} else if (strcmp(name, "IADD.u32") == 0) {
 			m.r[dest] = a + b;
 		} else if (strcmp(name, "ISUB.u32") == 0) {
@@ -1128,6 +1141,26 @@ expected_position(
 	screen[3] = as_bits(recip);
 }
 
+/* A NoPerspective varying is stored multiplied by the clip space w. */
+static void
+expected_varying(
+	const struct drv_gpu_shader_ir *ir,
+	uint32_t location,
+	struct result *reference)
+{
+	uint32_t index;
+	uint32_t component;
+
+	for (index = 0U; index < ir->output_count; index++) {
+		if (ir->outputs[index].location != location || ir->outputs[index].noperspective == 0U)
+			continue;
+		for (component = 0U; component < 4U; component++)
+			reference->varyings[location][component] =
+				as_bits(as_float(reference->varyings[location][component]) * as_float(reference->position[3]));
+		return;
+	}
+}
+
 int
 mali_model_check(
 	const uint32_t *words,
@@ -1205,6 +1238,7 @@ mali_model_check(
 			for (location = 0U; location < 16U; location++) {
 				if ((program->varying_mask & (1U << location)) == 0U)
 					continue;
+				expected_varying(ir, location, reference);
 				for (component = 0U; component < 4U; component++) {
 					if (!close_enough(model->varyings[location][component], reference->varyings[location][component])) {
 						printf("FAIL %s: trial %u: varying %u.%u is %08x, the reference %08x\n", name, run, location, component,

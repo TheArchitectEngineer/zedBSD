@@ -74,8 +74,8 @@
 
 /*
  * Floats the lowering needs as constants: 0.5, 1.0, 2^24, the largest
- * 1 / w the viewport transform keeps (2^15) and its negative, and
- * 1 - 2^-20.
+ * 1 / w the viewport transform keeps (2^15) and its negative,
+ * 1 - 2^-20, 0.25, 1 / (2 pi) and 2 pi.
  *
  * Values referenced: IEEE 754-2019 (binary32 encodings).
  */
@@ -85,6 +85,26 @@
 #define VA_FLOAT_W_RECIP_MAX	0x47000000U
 #define VA_FLOAT_W_RECIP_MIN	0xC7000000U
 #define VA_FLOAT_ONE_LESS_2_POW_20	0x3F7FFFF0U
+#define VA_FLOAT_QUARTER	0x3E800000U
+#define VA_FLOAT_INV_2PI	0x3E22F983U
+#define VA_FLOAT_2PI		0x40C90FDBU
+
+/*
+ * The Taylor coefficients of sin(y) = y (1 + c3 y^2 + c5 y^4 + ... + c11
+ * y^10): -1/3!, 1/5!, -1/7!, 1/9!, -1/11!, whose error on [0, pi / 2] is
+ * below 6e-7.
+ *
+ * Values referenced: the Taylor series of the sine (binary32 encodings
+ * of the reciprocal factorials).
+ */
+#define VA_FLOAT_SIN_C3		0xBE2AAAABU
+#define VA_FLOAT_SIN_C5		0x3C088889U
+#define VA_FLOAT_SIN_C7		0xB9500D01U
+#define VA_FLOAT_SIN_C9		0x3638EF1DU
+#define VA_FLOAT_SIN_C11	0xB2D7322BU
+
+/* The sign bit of a float. */
+#define VA_SIGN_BIT		0x80000000U
 
 /*
  * The largest 1 / w the viewport transform keeps (2^15), so a w near 0
@@ -173,6 +193,8 @@ static void emit_fma(struct va_compiler *c, uint32_t dst, uint32_t a, uint32_t b
 static void emit_log2(struct va_compiler *c, uint32_t dst, uint32_t a);
 static void emit_exp2(struct va_compiler *c, uint32_t dst, uint32_t a);
 static void emit_shift(struct va_compiler *c, uint64_t op, uint32_t dst, uint32_t a, uint32_t amount);
+static void emit_sine(struct va_compiler *c, uint32_t dst, uint32_t a, uint32_t turn_offset);
+static void emit_derivative(struct va_compiler *c, uint32_t op, uint32_t dst, uint32_t a);
 static void emit_divide(struct va_compiler *c, uint32_t op, uint32_t dst, uint32_t n, uint32_t d);
 static void emit_unsigned_divide(struct va_compiler *c, uint32_t quotient, uint32_t remainder, uint32_t n, uint32_t d);
 static void lower_alu(struct va_compiler *c, const struct drv_gpu_shader_ir_inst *inst);
@@ -1097,6 +1119,22 @@ lower_alu(
 		emit_alu(c, VA_OP_F32_TO_U32 | va_field(VA_ROUND_RTZ, VA_SHIFT_ROUND_MODE), dst, a, VA_OPERAND_NONE, VA_OPERAND_NONE);
 		break;
 
+	case DRV_GPU_IR_SIN:
+		emit_sine(c, dst, a, 0U);
+		break;
+
+	case DRV_GPU_IR_COS:
+		/* cos(x) = sin(x + pi / 2): a quarter turn more. */
+		emit_sine(c, dst, a, VA_FLOAT_QUARTER);
+		break;
+
+	case DRV_GPU_IR_DDX:
+	case DRV_GPU_IR_DDX_FINE:
+	case DRV_GPU_IR_DDY:
+	case DRV_GPU_IR_DDY_FINE:
+		emit_derivative(c, inst->op, dst, a);
+		break;
+
 	case DRV_GPU_IR_UDIV:
 	case DRV_GPU_IR_UMOD:
 	case DRV_GPU_IR_IDIV:
@@ -1278,6 +1316,160 @@ emit_exp2(
 	emit_alu(c, VA_OP_FEXP_F32, dst, scale, scaled, VA_OPERAND_NONE);
 	free_reg(c, scale);
 	free_reg(c, scaled);
+}
+
+/*
+ * Computes sin(2 pi (a / (2 pi) + turn_offset)): the angle in turns
+ * reduced to [-1/2, 1/2] by the nearest whole turn, its magnitude folded
+ * to [0, 1/4] (sin(pi - y) = sin(y)), the Taylor polynomial there, and
+ * the sign of the turn given back.
+ */
+static void
+emit_sine(
+	struct va_compiler *c,
+	uint32_t dst,
+	uint32_t a,
+	uint32_t turn_offset)
+{
+	static const uint32_t coefficients[] = {
+		VA_FLOAT_SIN_C9,
+		VA_FLOAT_SIN_C7,
+		VA_FLOAT_SIN_C5,
+		VA_FLOAT_SIN_C3
+	};
+	uint32_t turn;
+	uint32_t whole;
+	uint32_t fold;
+	uint32_t square;
+	uint32_t constant;
+	uint32_t index;
+
+	/* Allocates the turn, its whole part (then the polynomial), the fold and the square. */
+	turn = alloc_block(c, 1U);
+	whole = alloc_block(c, 1U);
+	fold = alloc_block(c, 1U);
+	square = alloc_block(c, 1U);
+	constant = alloc_block(c, 1U);
+	if (c->error != 0)
+		return;
+
+	/* The angle in turns, less its nearest whole turn. */
+	emit_constant(c, constant, VA_FLOAT_INV_2PI);
+	if (turn_offset != 0U) {
+		emit_constant(c, fold, turn_offset);
+		emit_fma(c, turn, a, constant, fold);
+	} else {
+		emit_fmul(c, turn, a, constant);
+	}
+	emit_alu(c, VA_OP_FROUND_F32 | va_field(VA_ROUND_RTE, VA_SHIFT_ROUND_MODE), whole, turn, VA_OPERAND_NONE, VA_OPERAND_NONE);
+	emit_alu(c, VA_OP_FADD_F32 | va_field(1U, VA_SHIFT_NEG_SOURCE1), turn, turn, whole, VA_OPERAND_NONE);
+
+	/* Folds the magnitude: min(|t|, 1/2 - |t|), then to radians. */
+	emit_constant(c, constant, VA_FLOAT_HALF);
+	emit_alu(c, VA_OP_FADD_F32 | va_field(1U, VA_SHIFT_ABS_SOURCE0) | va_field(1U, VA_SHIFT_NEG_SOURCE1), fold, turn, VA_OPERAND_IMMEDIATE | VA_IMMEDIATE_ZERO, VA_OPERAND_NONE);
+	emit_alu(c, VA_OP_FADD_F32 | va_field(1U, VA_SHIFT_NEG_SOURCE1), whole, constant, fold, VA_OPERAND_NONE);
+	emit_alu(c, VA_OP_FMIN_F32, fold, fold, whole, VA_OPERAND_NONE);
+	emit_constant(c, constant, VA_FLOAT_2PI);
+	emit_fmul(c, fold, fold, constant);
+
+	/* Evaluates y (1 + y^2 (c3 + y^2 (c5 + ... + y^2 c11))) by Horner's rule. */
+	emit_fmul(c, square, fold, fold);
+	emit_constant(c, whole, VA_FLOAT_SIN_C11);
+	for (index = 0U; index < sizeof(coefficients) / sizeof(coefficients[0]); index++) {
+		emit_constant(c, constant, coefficients[index]);
+		emit_fma(c, whole, whole, square, constant);
+	}
+	emit_fma(c, whole, whole, square, VA_OPERAND_IMMEDIATE | VA_IMMEDIATE_FLOAT_ONE);
+	emit_fmul(c, whole, whole, fold);
+
+	/* Gives the result the sign of the reduced turn. */
+	emit_constant(c, constant, VA_SIGN_BIT);
+	emit_alu(c, VA_OP_LSHIFT_AND_I32 | va_field(VA_LANES_B00, VA_SHIFT_LANES), turn, turn, VA_OPERAND_IMMEDIATE | VA_IMMEDIATE_ZERO, constant);
+	emit_alu(c, VA_OP_LSHIFT_XOR_I32 | va_field(VA_LANES_B00, VA_SHIFT_LANES), dst, whole, VA_OPERAND_IMMEDIATE | VA_IMMEDIATE_ZERO, turn);
+	free_reg(c, turn);
+	free_reg(c, whole);
+	free_reg(c, fold);
+	free_reg(c, square);
+	free_reg(c, constant);
+}
+
+/*
+ * Computes a derivative across the pixel's quad with CLPER, which reads a
+ * value from another lane of the quad (lane 0 top left, 1 top right, 2
+ * bottom left, 3 bottom right): coarse, the top left pixel's difference
+ * for all four (lane 1 or 2 less lane 0); fine, the neighbour across the
+ * axis (the lane exclusive-or 1 or 2) less the lane's own value, with
+ * the sign flipped on the right or bottom lanes, where the neighbour is
+ * on the other side.
+ *
+ * Procedure referenced: Mesa 26.2.6
+ * src/panfrost/compiler/bifrost/bifrost_compile.c (bi_clper,
+ * bi_emit_derivative).
+ */
+static void
+emit_derivative(
+	struct va_compiler *c,
+	uint32_t op,
+	uint32_t dst,
+	uint32_t a)
+{
+	uint32_t axis;
+	uint32_t left;
+	uint32_t right;
+	uint32_t lane;
+	uint64_t clper;
+	uint64_t bits;
+
+	/* Chooses the axis's lane bit. */
+	axis = 1U;
+	if (op == DRV_GPU_IR_DDY || op == DRV_GPU_IR_DDY_FINE)
+		axis = 2U;
+	left = alloc_block(c, 1U);
+	right = alloc_block(c, 1U);
+	if (c->error != 0)
+		return;
+
+	/* CLPER in the quad, an inactive lane reading zero; the lane comes from a byte of 0x03020100. */
+	clper = VA_OP_CLPER_I32 | va_field(VA_SUBGROUP_QUAD, VA_SHIFT_SUBGROUP);
+	clper |= va_field(va_source_immediate(VA_IMMEDIATE_INTEGERS_0123), VA_SHIFT_SOURCE1);
+
+	/* A coarse derivative reads lane 0 and the lane across the axis. */
+	if (op == DRV_GPU_IR_DDX || op == DRV_GPU_IR_DDY) {
+		emit(c,
+		     clper | va_source_register(a) | va_field(VA_LANES_B00, VA_SHIFT_LANES) | va_dest(left),
+		     va_register_mask(a, 1U),
+		     va_register_mask(left, 1U),
+		     0U);
+		emit(c,
+		     clper | va_source_register(a) | va_field(VA_LANES_B00 + axis, VA_SHIFT_LANES) | va_dest(right),
+		     va_register_mask(a, 1U),
+		     va_register_mask(right, 1U),
+		     0U);
+		emit_alu(c, VA_OP_FADD_F32 | va_field(1U, VA_SHIFT_NEG_SOURCE1), dst, right, left, VA_OPERAND_NONE);
+		free_reg(c, left);
+		free_reg(c, right);
+		return;
+	}
+
+	/* A fine derivative reads the neighbour across the axis. */
+	bits = clper | va_source_register(a) | va_field(VA_LANES_B00 + axis, VA_SHIFT_LANES);
+	bits |= va_field(VA_LANE_OPERATION_XOR, VA_SHIFT_LANE_OPERATION) | va_dest(right);
+	emit(c, bits, va_register_mask(a, 1U), va_register_mask(right, 1U), 0U);
+	emit_alu(c, VA_OP_FADD_F32 | va_field(1U, VA_SHIFT_NEG_SOURCE1), left, right, a, VA_OPERAND_NONE);
+
+	/* Flips the sign where the lane's axis bit is set: (lane & axis) << (31 or 30) into the sign. */
+	lane = right;
+	emit(c,
+	     VA_OP_MOV_I32 | va_source_special(VA_SPECIAL_LANE_ID, 0U) | va_field(3U, VA_SHIFT_FAU_PAGE) | va_dest(lane),
+	     0U,
+	     va_register_mask(lane, 1U),
+	     0U);
+	emit_constant(c, dst, axis);
+	emit_alu(c, VA_OP_LSHIFT_AND_I32 | va_field(VA_LANES_B00, VA_SHIFT_LANES), lane, lane, VA_OPERAND_IMMEDIATE | VA_IMMEDIATE_ZERO, dst);
+	emit_constant(c, dst, 32U - axis);
+	emit_alu(c, VA_OP_LSHIFT_XOR_I32 | va_field(VA_LANES_B00, VA_SHIFT_LANES), dst, lane, dst, left);
+	free_reg(c, left);
+	free_reg(c, right);
 }
 
 /*
@@ -1710,6 +1902,18 @@ lower_special_input(
 		emit_move(c, dst, VA_PRELOAD_INSTANCE_ID);
 		c->preload |= 1U << (VA_PRELOAD_INSTANCE_ID - VA_PRELOAD_FIRST);
 		c->program->reads_instance_index = 1U;
+		return;
+	}
+
+	/* A front face has bit 0 of the primitive flags clear. */
+	if (inst->location == DRV_GPU_SHADER_LOCATION_FRONT_FACING) {
+		emit_alu(c,
+			 VA_OP_ICMP_OR_U32 | va_field(VA_CONDITION_EQ, VA_SHIFT_CONDITION) | va_field(VA_RESULT_M1, VA_SHIFT_RESULT_TYPE),
+			 dst,
+			 VA_PRELOAD_PRIMITIVE_FLAGS,
+			 VA_OPERAND_IMMEDIATE | VA_IMMEDIATE_ZERO,
+			 VA_OPERAND_IMMEDIATE | VA_IMMEDIATE_ZERO);
+		c->preload |= 1U << (VA_PRELOAD_PRIMITIVE_FLAGS - VA_PRELOAD_FIRST);
 		return;
 	}
 

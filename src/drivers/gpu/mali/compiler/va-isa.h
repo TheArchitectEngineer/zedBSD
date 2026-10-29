@@ -83,17 +83,18 @@
 #define VA_IMMEDIATE_FLOAT_ONE		16U
 
 /*
- * The special values of FAU pages 0 and 1: the alpha test datum, the
- * blend descriptor of render target 0 (the others follow it), and the
- * workgroup local storage pointer.
+ * The special values of FAU pages 0, 1 and 3: the alpha test datum, the
+ * blend descriptor of render target 0 (the others follow it), the
+ * workgroup local storage pointer, and the lane's number in the warp.
  *
  * Values referenced: Mesa 26.2.6
  * src/panfrost/compiler/bifrost/valhall/ISA.xml (enums "FAU special page
- * 0" and "FAU special page 1").
+ * 0", "FAU special page 1" and "FAU special page 3").
  */
 #define VA_SPECIAL_ATEST_DATUM		5U
 #define VA_SPECIAL_BLEND_DESCRIPTOR_0	8U
 #define VA_SPECIAL_WORKGROUP_LOCAL	3U
+#define VA_SPECIAL_LANE_ID		1U
 
 /*
  * The flow control values: waits on dependency slots (a mask of slots 0
@@ -124,7 +125,7 @@
  * NOP, BRANCHZ, DISCARD.f32, BARRIER, MOV.i32, FADD.f32, FMIN.f32,
  * FMAX.f32, FMA.f32, FRCP.f32, FRSQ.f32, FLOGD.f32, FEXP.f32,
  * FADD_LSCALE.f32, FROUND.f32, FREXPE.f32, IADD.u32,
- * ISUB.u32, IMUL.i32, IADD_IMM.i32, SHADDX.u64, MKVEC.v2i16, S32_TO_F32,
+ * ISUB.u32, IMUL.i32, IADD_IMM.i32, CLPER.i32, SHADDX.u64, MKVEC.v2i16, S32_TO_F32,
  * U32_TO_F32, F32_TO_S32, F32_TO_U32, F16_TO_F32, U16_TO_F32,
  * V2F32_TO_V2F16,
  * LSHIFT_AND.i32, LSHIFT_OR.i32, LSHIFT_XOR.i32, RSHIFT_OR.i32, MUX.i32,
@@ -152,6 +153,7 @@
 #define VA_OP_ISUB_U32			0x00A0000000010000ULL
 #define VA_OP_IMUL_I32			0x00A00000000A0000ULL
 #define VA_OP_IADD_IMM_I32		0x0110000000000000ULL
+#define VA_OP_CLPER_I32			0x00A00000000F0000ULL
 #define VA_OP_SHADDX_U64		0x01A3000000070000ULL
 #define VA_OP_MKVEC_V2I16		0x00A1000000050000ULL
 #define VA_OP_S32_TO_F32		0x0090000000090000ULL
@@ -231,7 +233,10 @@
 /* A MUX that keeps its first source where the mask is zero. */
 #define VA_MUX_INT_ZERO			1U
 
-/* The byte lanes b00 of a shift, and the widening .w0 of a 64-bit source. */
+/*
+ * The byte lanes b00 of a shift (b11, b22 and b33 follow it), and the
+ * widening .w0 of a 64-bit source.
+ */
 #define VA_LANES_B00			4U
 #define VA_WIDEN64_W0			8U
 
@@ -280,6 +285,23 @@
 #define VA_UPDATE_STORE			0U
 #define VA_UPDATE_CLOBBER		3U
 #define VA_SAMPLE_CENTER		0U
+
+/*
+ * A CLPER's lane operation (bits 33:32), its inactive lanes' result (bits
+ * 25:22) and its subgroup (bits 39:36): the plain and the exclusive-or
+ * lane, zero, and the quad.
+ *
+ * Values referenced: Mesa 26.2.6
+ * src/panfrost/compiler/bifrost/valhall/ISA.xml (enums "Lane
+ * operation", "Inactive result", "Subgroup size") and va_pack.c
+ * (va_pack_alu, CLPER.i32).
+ */
+#define VA_SHIFT_LANE_OPERATION		32U
+#define VA_SHIFT_INACTIVE_RESULT	22U
+#define VA_SHIFT_SUBGROUP		36U
+#define VA_LANE_OPERATION_NONE		0U
+#define VA_LANE_OPERATION_XOR		1U
+#define VA_SUBGROUP_QUAD		1U
 
 #define VA_ATOMIC_ADD			2U
 #define VA_ATOMIC_SMIN			8U
@@ -337,7 +359,8 @@
 /*
  * The preloaded registers: the compute local id (r55, r56), the workgroup
  * id (r57 to r59), the vertex's internal output index (r59), its vertex
- * and instance index (r60, r61), a fragment's pixel position (r59), its
+ * and instance index (r60, r61), a fragment's primitive flags (r58, bit 0
+ * set for a back face), its pixel position (r59), its
  * coverage (r60) and the interpolation's sample source (r61).
  *
  * Values referenced: Mesa 26.2.6
@@ -351,6 +374,7 @@
 #define VA_PRELOAD_OUTPUT_INDEX		59U
 #define VA_PRELOAD_VERTEX_ID		60U
 #define VA_PRELOAD_INSTANCE_ID		61U
+#define VA_PRELOAD_PRIMITIVE_FLAGS	58U
 #define VA_PRELOAD_POSITION_XY		59U
 #define VA_PRELOAD_COVERAGE		60U
 #define VA_PRELOAD_VARYING_SOURCE	61U

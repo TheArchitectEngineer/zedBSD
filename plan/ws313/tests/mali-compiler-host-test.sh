@@ -5,7 +5,8 @@
 # Copyright (C) 2026 Awe Morris; SPDX-License-Identifier: Zlib
 #
 # usage: plan/ws313/tests/mali-compiler-host-test.sh [TRIALS]   (from anywhere; 200 trials by default)
-# Needs cc, python3 and glslc.  MESA (default build/ref/mesa-26.2.6-src/mesa-26.2.6) is Mesa's source tree; without
+# The modules are plan/ws313/tests/mali-compiler-shaders/*, plan/tools/nvrtx/sm75/* and the gpu-compute host shaders
+# add, ids and atomic, and the compositor's quad.  Needs cc, python3 and glslc.  MESA (default build/ref/mesa-26.2.6-src/mesa-26.2.6) is Mesa's source tree; without
 # it the assembler cases and the table check are skipped.  Output goes in a new directory below build/pc; nothing is
 # removed.  Nothing here is evidence about the GPU.
 set -eu
@@ -32,6 +33,9 @@ fi
 for source in "$repo"/plan/tools/nvrtx/sm75/*.comp "$repo/plan/tools/gpu-compute/host/shaders/add.comp" \
 	"$repo/plan/tools/gpu-compute/host/shaders/ids.comp" "$repo/plan/tools/gpu-compute/host/shaders/atomic.comp"; do
 	glslc --target-env=vulkan1.0 -fshader-stage=compute -o "$out/$(basename "$source" .comp).comp.spv" "$source"
+done
+for source in "$repo"/plan/ws313/tests/mali-compiler-shaders/*; do
+	glslc --target-env=vulkan1.0 -o "$out/mali-$(basename "$source").spv" "$source"
 done
 for source in "$repo"/plan/tools/nvrtx/sm75/texture.vert "$repo"/plan/tools/nvrtx/sm75/texture.frag \
 	"$repo/userland/desktop/wayland/shaders/quad.vert" "$repo/userland/desktop/wayland/shaders/quad.frag"; do
