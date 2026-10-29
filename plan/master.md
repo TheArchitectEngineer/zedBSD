@@ -104,7 +104,7 @@ main に未 merge の branch は [registry](agents/registry.md) の試験待ち�
 ### 次の番号
 
 <!-- master:next:start -->
-BUG-363 · q1695 · WS318 · KL_VERSION 101（100 は WS314 p013 の kl_launch、未 merge）。使う前に衝突を確かめる（`ls plan/bugs`・`ls -d plan/ws*`・`grep q16 plan/queue.md`）。
+BUG-363 · q1695 · WS318 · KL_VERSION 102（101 は WS314 p015、未 merge）。使う前に衝突を確かめる（`ls plan/bugs`・`ls -d plan/ws*`・`grep q16 plan/queue.md`）。
 <!-- master:next:end -->
 
 ## 目的
