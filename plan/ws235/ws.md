@@ -54,6 +54,7 @@ Parent: [Master](../master.md)
 | [ws235-p007](phase007/phase.md) | 他の chip の版の表と差の hook（8125・8125B・8125D・8126。実機は未確かめ。8122・8121・8120 は版の値が未確認） | 4 LW | cleared（2026-10-29 11:0x P1、q1669-i04。EPHY・PHY の表、他の chip は未確かめ、8122・8121・8120 は版の値が無く入れない） | p003 |
 | ws235-p008 | 規約の全文の見直し | 2 LW | planned | 全て |
 
+- RTL8122・8121・8120 は未実装: 版の値（TXCFG）が Linux の r8169（2026-10-29 の torvalds/linux.git）にも FreeBSD rge にも無く、版の表に入れられない（[p007](phase007/phase.md)）。
 - server の build の config（`config/ci/config-amd64-server.mk`、ユーザーの物）で有効にするのは、p005 の後にユーザーに頼む（担当は変えない）。
 - 同じ機械の Linux の値は下の「p001 の判断」の 5（backports の kernel）。
 
