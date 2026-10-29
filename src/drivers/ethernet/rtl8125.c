@@ -408,9 +408,14 @@
 /*
  * The rings: descriptors per ring, the bytes of a receive buffer and of a
  * transmit bounce buffer, which hold a whole frame, and the alignments.
+ * The receive ring holds about 1.2 ms of full-size frames at 10 Gbit/s,
+ * for the network worker's pauses.
+ *
+ * Value referenced: FreeBSD sys/dev/rge/if_rgereg.h, main
+ * 8fa55fdcae4ecbd2ec13ef91cc9d172095e21189 (RGE_RX_LIST_CNT).
  */
 #define RTL_TX_COUNT			512U
-#define RTL_RX_COUNT			512U
+#define RTL_RX_COUNT			1024U
 #define RTL_DESCRIPTOR_BYTES		32U
 #define RTL_BUFFER_BYTES		2048U
 #define RTL_RING_ALIGNMENT		256U
