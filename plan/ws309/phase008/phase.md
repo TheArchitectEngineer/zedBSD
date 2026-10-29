@@ -3,7 +3,7 @@
 # ws309-p008 render を GPU の queue の唯一の持ち主に (1): fence 付きの task と queue の lock
 
 - 親: [WS309](../ws.md)、設計 [design.md](../design.md) §4.1（レビュー 1）・§4.2・§11 の (1)、J2。Queue: q1662-i04・i05・i06（P1）。
-- 状態: cleared（2026-10-29 12:2x P1 q1662-i06。QEMU Venus `task-guest.sh` PASS。arm64・riscv64・FreeBSD の build と実機は未実施）。
+- 状態: cleared（2026-10-29 12:2x P1 q1662-i06。QEMU Venus `task-guest.sh` PASS。arm64・riscv64 の build は b5416a6fa で exit 0・warning 0。FreeBSD の build と実機は未実施）。
 - 依存: p002。
 
 ## 済み（6eab69097）
@@ -36,4 +36,4 @@
   WLSHM DONE、保持した窓の色が画面の中央の 3750/3750、FAILED・VULKAN_ERROR なし。比べ（同じ image に基点 cb6c3f489 の wayland、`build/ws309/p008b-base`、各 1 回）:
   2 つ目以降の 5 s の窓で pass_max_us 375〜392 ms（基点 492〜500 ms）、vk_outside_max_us 128〜245 ms（基点 249〜499 ms）。残る vk_outside は shm の image の破棄の quiesce（p009）と見ている（未確かめ）。
   画面は基点と時計の文字の他は同じ。
-- 未実施: arm64・riscv64 の build（sysroot の許可は amd64 だけ）、FreeBSD の build、実機（RDNA・VF2）、import の溢れ（33 個以上の新しい GPU buffer を 1 frame で）の経路の試験、回転（batch_end の task）の試験。
+- 未実施: FreeBSD の build、実機（RDNA・VF2）、import の溢れ（33 個以上の新しい GPU buffer を 1 frame で）の経路の試験、回転（batch_end の task）の試験。

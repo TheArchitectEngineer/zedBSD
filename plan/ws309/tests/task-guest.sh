@@ -31,7 +31,7 @@ if [ $failed = 0 ]; then
 	# moves over the middle of the screen, where a window is placed.
 	G_TIMEOUT=200 g run 'chmod 755 /bin/wayland; export XDG_RUNTIME_DIR=/tmp HOME=/tmp/p008dev; mkdir -p $HOME; rm -f /tmp/wayland-0; /bin/wayland --testing --glass --log-frames --timeout=300 --width=1280 --height=800 > /tmp/task.log 2>&1 </dev/null & sleep 5; aat-input start --width 1280 --height 800 > /tmp/aat.log 2>&1; for size in 400x300 640x480 300x200 400x300 800x500; do wlshm --size=$size --band=ff00ff00 --cursor=ffff0000 --cursor-every=2 --frames=90 --token=s$size >> /tmp/wlshm.log 2>&1 </dev/null & sleep 1; for step in 1 2 3 4 5 6; do aat-input move-to $((600 + step * 7)) $((380 + step * 5)) >/dev/null 2>&1; sleep 0.3; done; wait $!; done; wlshm --size=400x300 --color=ff2040c0 --hold --token=hold >> /tmp/wlshm.log 2>&1 </dev/null & sleep 6; echo started' > "$out/guest-start.out" 2>&1
 	python3 -I plan/ws035/tests/zdesktop-check.py "$out/task.png" --runtime "$GUEST_RUNTIME" > "$out/check.log" 2>&1
-	G_TIMEOUT=60 g run 'echo "== compositor"; grep -E "KWL (READY|THREADS|FAILED|VULKAN_ERROR|PERF pass|CURSOR_PLANE)" /tmp/task.log; echo "== tasks"; grep -c "KWL TASK done" /tmp/task.log; grep "KWL TASK done" /tmp/task.log | grep -vc "result=0$"; echo "== windows"; grep -E "WLSHM (DONE|FAILED|ENTER)" /tmp/wlshm.log' > "$out/guest.out" 2>&1
+	G_TIMEOUT=60 g run 'echo "== compositor"; grep -E "KWL (READY|THREADS|FAILED|VULKAN_ERROR|PERF pass|CURSOR_PLANE)" /tmp/task.log; echo "== graves"; grep "KWL GRAVE" /tmp/task.log | awk -F= "{s+=\$2} END {print s+0}"; echo "== tasks"; grep -c "KWL TASK done" /tmp/task.log; grep "KWL TASK done" /tmp/task.log | grep -vc "result=0$"; echo "== windows"; grep -E "WLSHM (DONE|FAILED|ENTER)" /tmp/wlshm.log' > "$out/guest.out" 2>&1
 	g run "aat-input stop >/dev/null 2>&1; $stop_all" > /dev/null 2>&1
 fi
 python3 -I - "$GUEST_RUNTIME/qmp.sock" <<'PY' > "$out/quit.log" 2>&1
@@ -84,7 +84,8 @@ if not passes:
 	fail("no KWL PERF pass line")
 else:
 	worst = max(float(re.search(r"pass_max_us=(\d+)", line).group(1)) for line in passes)
-	print("task-guest: tasks=%s pass_max_us(max)=%.0f" % (tasks[0] if tasks else "?", worst))
+	graves = section("graves")
+	print("task-guest: tasks=%s graves=%s pass_max_us(max)=%.0f" % (tasks[0] if tasks else "?", graves[0] if graves else "?", worst))
 try:
 	from PIL import Image
 	picture = Image.open(sys.argv[2]).convert("RGB")

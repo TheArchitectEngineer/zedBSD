@@ -41,6 +41,8 @@ static VkResult image_layout(struct kwl_compose *compose, VkImage image, VkImage
 static VkResult image_layout_record(VkCommandBuffer command, VkImage image, VkImageLayout old_layout);
 static void image_copy_record(VkCommandBuffer command, struct kwl_import *import);
 static void image_release(struct kwl_compose *compose, struct kwl_import *import);
+static void image_unlink(struct kwl_compose *compose, struct kwl_import *import);
+static void image_bury(struct kwl_compose *compose, struct kwl_import *import);
 static uint32_t word(const unsigned char *bytes, size_t offset);
 static uint32_t kwl_row_sum(const unsigned char *row, uint32_t width);
 
@@ -180,7 +182,8 @@ kwl_shm_upload(
 
 /*
  * Releases a surface's wl_shm image: now when no frame is in flight,
- * otherwise after the frame (it may be sampling it).
+ * otherwise after the frames given before (they may be sampling it), with
+ * no wait.  No frame takes its staging from now on.
  */
 void
 kwl_shm_image_destroy(
@@ -194,12 +197,9 @@ kwl_shm_image_destroy(
 	if (surface->shm_image == NULL || compose == NULL)
 		return;
 
-	/* A frame in flight finishes first. */
-	kwl_compose_quiesce(server);
-
-	/* The Vulkan objects, then the record. */
-	image_release(compose, surface->shm_image);
-	free(surface->shm_image);
+	/* Out of the list the next frames copy from, then let go. */
+	image_unlink(compose, surface->shm_image);
+	kwl_compose_bury(compose, surface->shm_image, image_bury);
 	surface->shm_image = NULL;
 }
 
@@ -1051,6 +1051,35 @@ image_layout_record(
 
 	/* Succeeded: the move is recorded. */
 	return VK_SUCCESS;
+}
+
+/* Takes an image out of the list of host images, so that no later frame copies its staging. */
+static void
+image_unlink(
+	struct kwl_compose *compose,
+	struct kwl_import *import)
+{
+	struct kwl_import **position;
+
+	/* The link to this exact record, if it is still listed. */
+	for (position = &compose->host_images; *position != NULL; position = &(*position)->host_next) {
+		if (*position == import) {
+			*position = import->host_next;
+			import->host_next = NULL;
+			break;
+		}
+	}
+}
+
+/* Destroys a let go host image and frees its record, once nothing given before uses it (kwl_compose_bury). */
+static void
+image_bury(
+	struct kwl_compose *compose,
+	struct kwl_import *import)
+{
+	/* Its objects, then the record. */
+	image_release(compose, import);
+	free(import);
 }
 
 /* Destroys what image_create made, whatever part of it was made. */

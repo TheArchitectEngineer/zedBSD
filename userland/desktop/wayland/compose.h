@@ -144,6 +144,25 @@ struct kwl_import {
 /* The glass look's images and glyphs (glass.c). */
 struct kwl_glass;
 
+struct kwl_compose;
+
+/* Destroys a record let go (kwl_compose_bury) and frees it, once nothing given before uses it. */
+typedef void kwl_grave_destroy_fn(struct kwl_compose *compose, struct kwl_import *import);
+
+/*
+ * An image let go while a drawing or a task given before may still use it
+ * (compose.c): the record, which nothing else refers to from now on, how
+ * many drawings had been given then (drawings) and how to destroy it.  It
+ * is destroyed once that many drawings have completed and its own task
+ * (the record's task) has.
+ */
+struct kwl_grave {
+	struct kwl_grave *next;
+	uint64_t drawings;
+	struct kwl_import *import;
+	kwl_grave_destroy_fn *destroy;
+};
+
 /* One small image of the backdrop (backdrop.c): drawn into by the small pass, and sampled linearly. */
 struct kwl_backdrop_target {
 	VkImage image;
@@ -776,6 +795,14 @@ struct kwl_compose {
 	uint64_t task_done;
 	VkResult task_error;
 	/*
+	 * The drawings (frames and layers' pictures) given to the render thread
+	 * and those whose completion was applied (they complete in their order),
+	 * and the images let go meanwhile (kwl_compose_bury), oldest first.
+	 */
+	uint64_t drawings_given;
+	uint64_t drawings_done;
+	struct kwl_grave *graves;
+	/*
 	 * The backdrop (backdrop.c); the framebuffer of the frame being
 	 * recorded, which its pass is taken up again on; and the blurred scene
 	 * the glass samples from now on in the frame (VK_NULL_HANDLE: the
@@ -931,6 +958,7 @@ void kwl_compose_task_flush(struct kwl_compose *compose);
 int kwl_compose_task_ready(struct kwl_compose *compose, const struct kwl_import *import);
 int kwl_compose_tasks_busy(struct kwl_compose *compose);
 void kwl_compose_task_wait(struct kwl_compose *compose, uint64_t number);
+void kwl_compose_bury(struct kwl_compose *compose, struct kwl_import *import, kwl_grave_destroy_fn *destroy);
 void kwl_queue_lock(struct kwl_compose *compose);
 void kwl_queue_unlock(struct kwl_compose *compose);
 void kwl_device_wait_idle(struct kwl_compose *compose);
