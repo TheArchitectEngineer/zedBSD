@@ -78,7 +78,7 @@ ssh_check() {
 	while [ $n -lt 90 ]; do
 		answer=$(timeout 20 ssh -i plan/tmp/guest/id_ed25519 -p "$port" -o BatchMode=yes -o StrictHostKeyChecking=no \
 			-o UserKnownHostsFile=/dev/null -o ConnectTimeout=5 tester@127.0.0.1 \
-			'id -un; hostname; cat /var/db/installer/units | cut -f1 | tr "\n" " "; swapon -s 2>&1 | tail -1' 2> /dev/null) && break
+			'id -un; hostname; cat /var/db/installer/units | cut -f1 | tr "\n" " "; ls -ld /home/tester' 2> /dev/null) && break
 		answer=
 		sleep 5
 		n=$((n + 1))

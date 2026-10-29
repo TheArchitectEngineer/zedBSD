@@ -6,7 +6,8 @@
 # a swap partition), the SATA disk (the base and OpenSSH, a swap file) and the 4096 disk (the base and OpenSSH, a swap
 # partition); on the USB disk an empty GPT, then the editor's requests (a partition with a new ESP, another one) and an
 # install on the chosen partitions.  Each installed root and ESP is then read back (accounts, hostname, sshd, fstab,
-# the record, the kernel, the loader and zedbsd.cfg), the harness's SSH keys and net.conf are put on the NVMe and SATA
+# the record, the kernel, the loader and zedbsd.cfg; the home is made at the installed system's first boot by its
+# homes service), the harness's SSH keys and net.conf are put on the NVMe and SATA
 # roots (for the boots that follow), and last a file is written to the SATA root, renamed and synced with the root
 # left mounted, for the host to read through the loader's reader.  Each step prints "STEP name ok|fail"; the last line
 # is "P009 DONE".
@@ -14,7 +15,7 @@
 w=/tmp/p009
 mkdir -p $w /mnt/p009r /mnt/p009e
 admin=/usr/libexec/install-admin
-step() { name=$1; shift; if "$@" > $w/step.txt 2>&1; then echo "STEP $name ok"; else echo "STEP $name fail"; cat $w/step.txt; fi; }
+step() { sname=$1; shift; if "$@" > $w/step.txt 2>&1; then echo "STEP $sname ok"; else echo "STEP $sname fail"; cat $w/step.txt; fi; }
 f() { printf '%d:%s' "${#1}" "$1"; }
 probe() { $admin probe > $w/probe.txt 2> $w/probe.err; }
 # A disk's field ($3, the probe's column) by its sector size ($1) and its size in sectors ($2).
@@ -46,16 +47,16 @@ live=$(awk -F'\t' '$1 == "disk" && $8 == 1 { print $3 " " $2 " " $5 " " $6 " " $
 echo "LIVE $live"
 printf '%s\n' "install disk $live whole 536870912 0 units 1 base $people" > $w/live.req
 session $w/live.req $w/live.out
-step live-refused grep -q '^FAIL check 16' $w/live.out
+step live-refused grep -q '^FAIL check .* Device or resource busy' $w/live.out
 
 # A whole disk ($1 sector bytes, $2 sectors, $3 swap bytes, $4 a name, the rest the units).
 install_whole() {
-	b=$1; s=$2; swap=$3; name=$4; shift 4
-	printf '%s\n' "install $(disk_words "$b" "$s") whole 536870912 $swap units $# $* $people" > $w/$name.req
-	session $w/$name.req $w/$name.out
-	status=$?
-	grep -E '^(STEP|STATE|FAIL|DONE)' $w/$name.out | sed "s/^/OUT $name /"
-	return $status
+	wb=$1; ws=$2; wswap=$3; wname=$4; shift 4
+	printf '%s\n' "install $(disk_words "$wb" "$ws") whole 536870912 $wswap units $# $* $people" > $w/$wname.req
+	session $w/$wname.req $w/$wname.out
+	wstatus=$?
+	grep -E '^(STEP|STATE|FAIL|DONE)' $w/$wname.out | sed "s/^/OUT $wname /"
+	return $wstatus
 }
 step install-nvme install_whole 512 16777216 1073741824 nvme base desktop firmware network-openssh lang-clang
 probe
@@ -102,7 +103,7 @@ check_installed() {
 	step "$name-shadow" sh -c "grep '^tester:' /mnt/p009r/etc/shadow | grep -q '^tester:\\\$'"
 	step "$name-root-hash" sh -c "test \"\$(grep '^root:' /mnt/p009r/etc/shadow)\" != \"\$(grep '^root:' /etc/shadow)\""
 	step "$name-group" grep -q 'tester' /mnt/p009r/etc/group
-	step "$name-home" test -d /mnt/p009r/home/tester
+	step "$name-no-old-home" sh -c "! test -e /mnt/p009r/home/user"
 	step "$name-hostname" grep -q 'p009host' /mnt/p009r/etc/rc.conf
 	step "$name-kernel" cmp /mnt/p009r/boot/vmunix /opt/installer/boot/vmunix
 	step "$name-logo" cmp /mnt/p009r/boot/logo.ppm /opt/installer/boot/logo.ppm
@@ -124,8 +125,8 @@ check_installed() {
 harness() {
 	mkdir -p /mnt/p009r/home/tester/.ssh &&
 	cp /root/.ssh/authorized_keys /mnt/p009r/home/tester/.ssh/authorized_keys &&
-	chmod 700 /mnt/p009r/home/tester/.ssh && chmod 600 /mnt/p009r/home/tester/.ssh/authorized_keys &&
-	chown -R 1000:1000 /mnt/p009r/home/tester/.ssh &&
+	chmod 700 /mnt/p009r/home/tester /mnt/p009r/home/tester/.ssh && chmod 600 /mnt/p009r/home/tester/.ssh/authorized_keys &&
+	chown -R 1000:1000 /mnt/p009r/home/tester &&
 	cp /etc/net.conf /mnt/p009r/etc/net.conf &&
 	cp /etc/ssh/ssh_host_*_key /etc/ssh/ssh_host_*_key.pub /mnt/p009r/etc/ssh/ &&
 	chmod 600 /mnt/p009r/etc/ssh/ssh_host_*_key
