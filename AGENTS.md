@@ -55,7 +55,9 @@
 - **区切りの報告**: 着手の前・完了・修正（file・要点・SHA）・試験に入る・別の作業へ移る（理由）を Q1 へ短く SendMessage（返事を待たずに続けてよい）。
 - **削除しない**: rm・rmdir・unlink・`find -delete`・`shutil.rmtree`・`os.remove` を、直にも script の中でも走らせない。消す物は path と理由を
   Q1 に送り、Q1 が自分の pipeline（`plan/tools/q1-clean.sh` など）で消す。例外: make の規則（Makefile・`*.mk`）が自分の worktree の
-  `build/` の自分の出力を消すこと、guest の中の削除。script の出力先は `plan/tools/fresh-out.sh` か `build/tmp/` の新しい directory。
+  `build/` の自分の出力を消すこと、guest の中の削除、plan/tools.md に登録した guest の道具（`plan/tools/guest/guest.py`、
+  `plan/tools/keiland-linux/`・`plan/tools/keiland-freebsd/` の build-guest.sh・guest.py など）が自分の worktree の `build/` の中の自分の一時の file
+  （image の途中の物・overlay・socket・session）を消すこと（2026-10-30 ユーザー「決めの事項は、許可します。」）。script の出力先は `plan/tools/fresh-out.sh` か `build/tmp/` の新しい directory。
   `git mv`・`git rm` は、消す file の一覧を先に Q1 に送り OK を得てから。
 - **権限・security の判定で止められたら**、別の経路で同じ結果を作らずに止まって Q1 に返す。Q1 も回避せず、ユーザーに対処を聞く
   （回避はアカウントの停止につながる）。ユーザーが承認したら、Q1 は担当をラップアップし、同じ名前で起動し直して承認の引用とともに再開させる。
