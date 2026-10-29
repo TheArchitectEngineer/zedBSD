@@ -20,7 +20,7 @@
 | 担当 | Queue | WS と次の手 | 実機 |
 | --- | --- | --- | --- |
 | P1 | q1662-i10 返却 | [ws309](ws309/ws.md) p016〜p018 cleared（main b9c381154）。残りは p015（ユーザーの判断 2 つ待ち） | — |
-| P2 | q1690-i02 返却 | [ws314](ws314/ws.md) p013〜p015 cleared（main 9c51d9f45）、次は p007（libbrowser）から | — |
+| P2 | q1690-i02 返却 | [ws314](ws314/ws.md) p001〜p008・p011〜p015 cleared（main d4b58dd84）、残りは p009（解説の追記）・p010（規約） | — |
 | P3 | q1694-i01 in-progress | [ws315](ws315/ws.md) Realtek の vendor mode の driver（設計から）。WS221 p014 cleared（5330 NCM send 2097・recv 1449、main 68d7c0caf） | 5330 |
 | P4 | q1665-i10 返却 | [ws307](ws307/ws.md) p011 cleared（通し 25 STEP・日本語の画面、main adeab690a）。残りは p007（HAL の案の承認待ち）・p004・p014 規約 | — |
 | P5 | q1693-i01 in-progress | [ws291](ws291/ws.md) NVIDIA の段 p011（model 50 fps）、WS243 completed・BUG-361 直した（main 95807962e） | 10.0.10.3 |
@@ -104,7 +104,7 @@ main に未 merge の branch は [registry](agents/registry.md) の試験待ち�
 ### 次の番号
 
 <!-- master:next:start -->
-BUG-363 · q1695 · WS318 · KL_VERSION 103（102 は WS314 p008、未 merge）。使う前に衝突を確かめる（`ls plan/bugs`・`ls -d plan/ws*`・`grep q16 plan/queue.md`）。
+BUG-363 · q1695 · WS318 · KL_VERSION 103。使う前に衝突を確かめる（`ls plan/bugs`・`ls -d plan/ws*`・`grep q16 plan/queue.md`）。
 <!-- master:next:end -->
 
 ## 目的
