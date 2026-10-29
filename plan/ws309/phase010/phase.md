@@ -3,7 +3,7 @@
 # ws309-p010 blur の thread（T9）とその都度の decode（A1）: 壁紙・出力の大きさ・回転
 
 - 親: [WS309](../ws.md)、設計 [design.md](../design.md) §2（T9・A1）・§3.2（lane）・§3.5（その都度）・§4.7。Queue: q1662-i07（P1）。
-- 状態: in-progress（2026-10-29 13:3x P1。T9・A1 と会話の中の壁紙・landscape・出力の大きさの変化まで実装、QEMU `grave-guest.sh` PASS。残りは下の「残り」）。
+- 状態: cleared（2026-10-29 P1 q1662-i08。QEMU `grave-guest.sh`・`resize-guest.sh` PASS。回転は p012 へ、下の「結果」）。
 - 依存: p009（cleared）。
 
 ## 今（基点 166958a7a、branch `agent/p1-ws309g`）
@@ -58,6 +58,31 @@
 
 ## 残り（次の起動はここから）
 
-1. 回転（`kwl_glass_size_prepare`、park の中で main が read・decode・描画）を A1・T9 へ: 回転の手順（T3、p012）が結果を待つ形になるので p012 で一緒に行う案（Q1 に確かめる）。
+1. 回転（`kwl_glass_size_prepare`、park の中で main が read・decode・描画）を A1・T9 へ: **p012 で display の thread（T3）の手順と一緒に行う**（2026-10-29 Q1 の判断、q1662-i08 の依頼）。この Phase の範囲から外す。
 2. 出力の大きさの変化の試験: QEMU で `kwl_glass_resize` を通す経路（output-switch.c の出力の切り替え、VENUS_OUTPUTS=2 など）を探し、古い image の引き伸ばしと結果の表示を確かめる。
 3. 起動の prefetch（READY の前）は今のまま（原則 1 の例外）。
+
+## 出力の大きさの変化の試験（q1662-i08、branch `agent/p1-ws309h`）
+
+- 経路: WS113 の実績（T1-357b PASS）の QEMU の D-Bus display の 2 head（`VENUS_DISPLAY=dbus VENUS_OUTPUTS=2`、`plan/tools/guest/venus-head.sh`）。head 0 を抜くと出力が display 1 へ
+  1024x768 で移り（`kwl_output_switch` → `kwl_compose_output_open` → `kwl_output_rotated` の RESIZED → `output_resized` → `kwl_glass_resize`）、head 0 を挿し直して head 1 を抜くと 1280x800 へ戻る。
+  dbus では VNC が無いので絵は compositor の試験用の capture（keiland-shot）で取る。
+- 試験: 新しい `plan/ws309/tests/resize-guest.sh OUT IMAGE WAYLAND`。判定の条件（走らせる前に決めた物、2026-10-29 13:39）: 2 つの移動それぞれで
+  (a) `KWL OUTPUT switch name=Venus virtual display N width= height=` と `KWL OUTPUT resized`、(b) その後の `KWL GLASS resize width= height= ms= images=`（images= の有る形が T9 の経路。main の経路の形には images= が無い）、
+  (c) resized とその行の間に `KWL COMPOSE frame=` が 1 つ以上（壁紙を作る間も古い image で frame が出た = main が待たなかった。wlshm の窓を描き続けさせる）、
+  (d) capture が出力の大きさで、一色でない（標本の channel の幅 24 以上）。全体: `KWL READY`、`displays count=2`、KWL FAILED・VULKAN_ERROR が無い、compositor が生きている。
+  ms=・間の frame の数・pass_max_us は表示だけ（判定しない）。引き伸ばしの絵そのものは撮る時の運なので判定しない（(c) で代える）。
+- 1 回目 `build/ws309/p010d`（2026-10-29 13:4x）: FAIL「the desktop was not fitted」。log では移動も大きさの変化も起きていた（`KWL OUTPUT resized width=1024 height=768` → `switch name=…display 1`、
+  `KWL GLASS resize width=1024 height=768 ms=732 images=new`、戻りも 1280x800 で `ms=748 images=new`、capture は 1024x768・1280x800）。原因は script の行の順の誤り:
+  `resized` は open の中（`kwl_output_rotated`）で出るので `switch` の行より前にある。script は switch の後を探していた。
+  直し（判定の条件の中身は変えず、探す順だけ、走らせ直す前に記録し Q1 に知らせた）: resized は前の移動の後から switch の行の前までで探す。
+  参考: その区間の `KWL PERF pass` の pass_max_us=2289630（2.3 s）は display の切り替え（main の close・open）で、T3（p012）の対象。
+- 2 回目 `build/ws309/p010e`（直した script、同じ image `build/ws309/img`（この worktree で `config-amd64-p1.mk` から作った）・`build/ws309/img/bin/wayland`）: **PASS**。
+  小へ: `KWL GLASS resize width=1024 height=768 ms=842 images=new`、その間の frame 7、capture 1024x768（すりガラスの壁紙と窓、目で見た）。
+  大へ: `ms=751 images=new`、間の frame 4、capture 1280x800。KWL FAILED・VULKAN_ERROR 無し、compositor は生きていた。pass_max_us（表示だけ）2303680: 切り替えの close・open（p012）。
+  build: image の build（`test-image.sh`）exit 0、wayland と本 tree の source の warning 0（log の warning は openssh・perl の locale だけ）。
+
+## 結果
+
+- cleared（2026-10-29 q1662-i08 P1）: T9・A1、会話の中の壁紙・landscape・出力の大きさの変化を thread へ。QEMU Venus `grave-guest.sh`（p010c）と `resize-guest.sh`（p010e）PASS。
+- 移した物: 回転の `kwl_glass_size_prepare` は p012（Q1 の判断）。未実施: 実機、FreeBSD の build。
