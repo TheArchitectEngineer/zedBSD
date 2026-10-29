@@ -93,6 +93,37 @@ static const struct uvc_guid_entry uvc_guids[] = {
 	}
 };
 
+/*
+ * The controls the driver offers, as UVC controls of the processing unit
+ * and the camera terminal.
+ *
+ * Value(s) referenced: USB Video Class 1.1 §A.9.4 (camera terminal
+ * control selectors), §A.9.5 (processing unit control selectors),
+ * §3.7.2.3 (the camera terminal's bmControls bits) and §3.7.2.5 (the
+ * processing unit's bmControls bits); the value sizes and signs are the
+ * controls' tables in §4.2.2.1 and §4.2.2.3.  The power line frequency
+ * reports no range; its values are 0 (off), 1 (50 Hz) and 2 (60 Hz).
+ */
+static const struct uvc_control_map uvc_controls[] = {
+	{ CAM_CONTROL_BRIGHTNESS, UVC_UNIT_PROCESSING, 0x02U, 0U, 2U, UVC_CONTROL_SIGNED, 0, 0, "brightness" },
+	{ CAM_CONTROL_CONTRAST, UVC_UNIT_PROCESSING, 0x03U, 1U, 2U, 0U, 0, 0, "contrast" },
+	{ CAM_CONTROL_HUE, UVC_UNIT_PROCESSING, 0x06U, 2U, 2U, UVC_CONTROL_SIGNED, 0, 0, "hue" },
+	{ CAM_CONTROL_SATURATION, UVC_UNIT_PROCESSING, 0x07U, 3U, 2U, 0U, 0, 0, "saturation" },
+	{ CAM_CONTROL_SHARPNESS, UVC_UNIT_PROCESSING, 0x08U, 4U, 2U, 0U, 0, 0, "sharpness" },
+	{ CAM_CONTROL_GAMMA, UVC_UNIT_PROCESSING, 0x09U, 5U, 2U, 0U, 0, 0, "gamma" },
+	{ CAM_CONTROL_WHITE_BALANCE, UVC_UNIT_PROCESSING, 0x0aU, 6U, 2U, 0U, 0, 0, "white balance temperature" },
+	{ CAM_CONTROL_WHITE_BALANCE_AUTO, UVC_UNIT_PROCESSING, 0x0bU, 12U, 1U, UVC_CONTROL_BOOLEAN, 0, 1, "white balance auto" },
+	{ CAM_CONTROL_BACKLIGHT, UVC_UNIT_PROCESSING, 0x01U, 8U, 2U, 0U, 0, 0, "backlight compensation" },
+	{ CAM_CONTROL_GAIN, UVC_UNIT_PROCESSING, 0x04U, 9U, 2U, 0U, 0, 0, "gain" },
+	{ CAM_CONTROL_POWER_LINE, UVC_UNIT_PROCESSING, 0x05U, 10U, 1U, UVC_CONTROL_FIXED_RANGE, 0, 2, "power line frequency" },
+	{ CAM_CONTROL_EXPOSURE, UVC_UNIT_CAMERA, 0x04U, 3U, 4U, 0U, 0, 0, "exposure time" },
+	{ CAM_CONTROL_EXPOSURE_AUTO, UVC_UNIT_CAMERA, 0x02U, 1U, 1U, UVC_CONTROL_BOOLEAN | UVC_CONTROL_AE_MODE, 0, 1, "exposure auto" },
+	{ CAM_CONTROL_FOCUS, UVC_UNIT_CAMERA, 0x06U, 5U, 2U, 0U, 0, 0, "focus" },
+	{ CAM_CONTROL_FOCUS_AUTO, UVC_UNIT_CAMERA, 0x08U, 17U, 1U, UVC_CONTROL_BOOLEAN, 0, 1, "focus auto" },
+	{ CAM_CONTROL_ZOOM, UVC_UNIT_CAMERA, 0x0bU, 9U, 2U, 0U, 0, 0, "zoom" }
+};
+
+static uint32_t uvc_desc_bitmap(const uint8_t *descriptor, size_t length, size_t size_offset);
 static int uvc_desc_input_header(struct uvc_stream_desc *stream, const uint8_t *descriptor, size_t length);
 static int uvc_desc_format(struct uvc_stream_desc *stream, const uint8_t *descriptor, size_t length, enum uvc_format_kind kind);
 static int uvc_desc_frame(struct uvc_stream_desc *stream, const uint8_t *descriptor, size_t length, enum uvc_format_kind kind);
@@ -224,9 +255,21 @@ uvc_desc_control_feed(
 
 		control->processing_unit = 1U;
 		control->processing_unit_id = descriptor[UVC_PROCESSING_UNIT_ID];
+		control->processing_controls = uvc_desc_bitmap(descriptor, length, UVC_PROCESSING_CONTROL_SIZE);
 		control->units++;
 		break;
 	case UVC_VC_INPUT_TERMINAL:
+		/* A camera terminal carries the exposure, focus and zoom controls. */
+		if (length > UVC_CAMERA_CONTROL_SIZE &&
+		    uvc_get16(descriptor, UVC_TERMINAL_TYPE) == UVC_ITT_CAMERA &&
+		    control->camera_terminal == 0U) {
+			control->camera_terminal = 1U;
+			control->camera_terminal_id = descriptor[3];
+			control->camera_controls = uvc_desc_bitmap(descriptor, length, UVC_CAMERA_CONTROL_SIZE);
+		}
+
+		control->units++;
+		break;
 	case UVC_VC_OUTPUT_TERMINAL:
 	case UVC_VC_SELECTOR_UNIT:
 	case UVC_VC_EXTENSION_UNIT:
@@ -238,6 +281,183 @@ uvc_desc_control_feed(
 	}
 
 	/* Succeeded: the descriptor is read. */
+	return 0;
+}
+
+/*
+ * Finds the UVC control of a CAM_CONTROL_* id.
+ */
+const struct uvc_control_map *
+uvc_control_lookup(
+	uint32_t id)
+{
+	unsigned index;
+
+	/* The table is short; a straight search. */
+	for (index = 0U; index < sizeof(uvc_controls) / sizeof(uvc_controls[0]); index++) {
+		if (uvc_controls[index].id == id)
+			return &uvc_controls[index];
+	}
+
+	/* No such control. */
+	return NULL;
+}
+
+/*
+ * Reports the n-th UVC control the driver knows.
+ */
+const struct uvc_control_map *
+uvc_control_at(
+	unsigned index)
+{
+	/* Past the last there is none. */
+	if (index >= sizeof(uvc_controls) / sizeof(uvc_controls[0]))
+		return NULL;
+
+	/* Succeeded: the entry. */
+	return &uvc_controls[index];
+}
+
+/*
+ * Tells whether the device declares a control and which unit carries it.
+ */
+int
+uvc_control_present(
+	const struct uvc_control_desc *control,
+	const struct uvc_control_map *map,
+	uint8_t *unit_id)
+{
+	uint32_t controls;
+
+	/* The unit's bitmap and ID. */
+	if (map->unit == UVC_UNIT_PROCESSING && control->processing_unit != 0U) {
+		controls = control->processing_controls;
+		*unit_id = control->processing_unit_id;
+	} else if (map->unit == UVC_UNIT_CAMERA && control->camera_terminal != 0U) {
+		controls = control->camera_controls;
+		*unit_id = control->camera_terminal_id;
+	} else {
+		return 0;
+	}
+
+	/* A clear bit is a control the device does not have. */
+	if ((controls & ((uint32_t)1U << map->bit)) == 0U)
+		return 0;
+
+	/* Succeeded: the device has the control. */
+	return 1;
+}
+
+/*
+ * Reads a control's value from the bytes of a GET request.
+ */
+int64_t
+uvc_control_decode(
+	const struct uvc_control_map *map,
+	const uint8_t *bytes)
+{
+	uint32_t raw;
+
+	/* The little-endian field of the control's size. */
+	if (map->size == 1U)
+		raw = bytes[0];
+	else if (map->size == 2U)
+		raw = uvc_get16(bytes, 0U);
+	else
+		raw = uvc_get32(bytes, 0U);
+
+	/* A signed 16-bit field extends its sign; the other fields are unsigned. */
+	if ((map->flags & UVC_CONTROL_SIGNED) != 0U && map->size == 2U)
+		return (int64_t)(int16_t)(uint16_t)raw;
+	if ((map->flags & UVC_CONTROL_SIGNED) != 0U && map->size == 1U)
+		return (int64_t)(int8_t)(uint8_t)raw;
+
+	/* Succeeded: the unsigned value. */
+	return (int64_t)raw;
+}
+
+/*
+ * Writes a control's value into the bytes of a SET request.
+ */
+int
+uvc_control_encode(
+	const struct uvc_control_map *map,
+	int64_t value,
+	uint8_t *bytes)
+{
+	int64_t minimum;
+	int64_t maximum;
+
+	/* The range the control's bytes can hold. */
+	if (map->size == 1U) {
+		minimum = 0;
+		maximum = 0xff;
+	} else if (map->size == 2U) {
+		minimum = 0;
+		maximum = 0xffff;
+	} else {
+		minimum = 0;
+		maximum = 0xffffffffLL;
+	}
+
+	if ((map->flags & UVC_CONTROL_SIGNED) != 0U) {
+		minimum = -(maximum / 2) - 1;
+		maximum = maximum / 2;
+	}
+
+	/* Refuses a value the field cannot hold. */
+	if (value < minimum || value > maximum)
+		return EINVAL;
+
+	/* The little-endian field. */
+	if (map->size == 1U)
+		bytes[0] = (uint8_t)value;
+	else if (map->size == 2U)
+		uvc_put16(bytes, 0U, (uint16_t)value);
+	else
+		uvc_put32(bytes, 0U, (uint32_t)value);
+
+	/* Succeeded: the bytes hold the value. */
+	return 0;
+}
+
+/*
+ * Chooses the auto-exposure mode to set for a 0/1 switch.
+ */
+uint8_t
+uvc_ae_mode_choose(
+	uint8_t supported,
+	int64_t automatic)
+{
+	/* Manual exposure. */
+	if (automatic == 0) {
+		if ((supported & UVC_AE_MANUAL) != 0U)
+			return UVC_AE_MANUAL;
+		return 0U;
+	}
+
+	/* Aperture priority is what webcams call automatic; full auto otherwise. */
+	if ((supported & UVC_AE_APERTURE_PRIORITY) != 0U)
+		return UVC_AE_APERTURE_PRIORITY;
+	if ((supported & UVC_AE_AUTO) != 0U)
+		return UVC_AE_AUTO;
+
+	/* The device has no automatic mode. */
+	return 0U;
+}
+
+/*
+ * Tells whether an auto-exposure mode is automatic.
+ */
+int64_t
+uvc_ae_mode_automatic(
+	uint8_t mode)
+{
+	/* Full auto and aperture priority set the exposure time themselves. */
+	if ((mode & (UVC_AE_AUTO | UVC_AE_APERTURE_PRIORITY)) != 0U)
+		return 1;
+
+	/* Manual and shutter priority leave the exposure time to the user. */
 	return 0;
 }
 
@@ -987,6 +1207,39 @@ uvc_desc_colorformat(
 
 	/* Succeeded: the colour is recorded. */
 	return 0;
+}
+
+/*
+ * Reads a unit's bmControls: bControlSize at size_offset, the bitmap
+ * after it, at most four bytes and no further than the descriptor.
+ */
+static uint32_t
+uvc_desc_bitmap(
+	const uint8_t *descriptor,
+	size_t length,
+	size_t size_offset)
+{
+	uint32_t bitmap;
+	size_t count;
+	size_t index;
+
+	/* No size field, no controls. */
+	if (length <= size_offset)
+		return 0U;
+
+	/* The bytes the descriptor declares and holds, little endian. */
+	count = descriptor[size_offset];
+	if (count > 4U)
+		count = 4U;
+	bitmap = 0U;
+	for (index = 0U; index < count; index++) {
+		if (size_offset + 1U + index >= length)
+			break;
+		bitmap |= (uint32_t)descriptor[size_offset + 1U + index] << (8U * index);
+	}
+
+	/* Succeeded: the controls' bits. */
+	return bitmap;
 }
 
 /* Finds the format opened last, or NULL. */

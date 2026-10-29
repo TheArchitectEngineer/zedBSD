@@ -302,6 +302,106 @@ case_control(
 	printf("control header: PASS\n");
 }
 
+/*
+ * Reads the processing unit's and the camera terminal's bmControls, and
+ * the controls' coding: the lookup, the presence bits, signed and
+ * unsigned fields, the range of a field and the auto-exposure switch.
+ */
+static void
+case_controls(
+	void)
+{
+	/* A processing unit (ID 2): brightness, contrast, gain, power line, WB auto. */
+	static const uint8_t pu[] = {
+		11, 0x24, 0x05, 2, 1, 0x00, 0x00, 2, 0x03, 0x16, 0
+	};
+	/* A camera terminal (ID 1): AE mode, exposure time, focus auto (bit 17). */
+	static const uint8_t ct[] = {
+		18, 0x24, 0x02, 1, 0x01, 0x02, 0, 0, 0, 0, 0, 0, 0, 0, 3, 0x0a, 0x00, 0x02
+	};
+	/* An input terminal that is not a camera (a composite input, 0x0401). */
+	static const uint8_t other[] = {
+		8, 0x24, 0x02, 5, 0x01, 0x04, 0, 0
+	};
+	/* A processing unit cut short before its bitmap. */
+	static const uint8_t short_pu[] = {
+		8, 0x24, 0x05, 4, 1, 0x00, 0x00, 2
+	};
+	const struct uvc_control_map *map;
+	struct uvc_control_desc control;
+	uint8_t bytes[4];
+	uint8_t unit_id;
+	int error;
+
+	/* The bitmaps and the IDs. */
+	memset(&control, 0, sizeof(control));
+	error = uvc_desc_control_feed(&control, other, sizeof(other));
+	assert(error == 0);
+	assert(control.camera_terminal == 0U);
+	error = uvc_desc_control_feed(&control, pu, sizeof(pu));
+	assert(error == 0);
+	error = uvc_desc_control_feed(&control, ct, sizeof(ct));
+	assert(error == 0);
+	assert(control.processing_unit_id == 2U);
+	assert(control.processing_controls == 0x1603U);
+	assert(control.camera_terminal_id == 1U);
+	assert(control.camera_controls == 0x02000aU);
+
+	/* Presence follows the bits and names the unit. */
+	map = uvc_control_lookup(CAM_CONTROL_BRIGHTNESS);
+	assert(map != NULL && uvc_control_present(&control, map, &unit_id) && unit_id == 2U);
+	map = uvc_control_lookup(CAM_CONTROL_HUE);
+	assert(map != NULL && !uvc_control_present(&control, map, &unit_id));
+	map = uvc_control_lookup(CAM_CONTROL_POWER_LINE);
+	assert(map != NULL && uvc_control_present(&control, map, &unit_id));
+	map = uvc_control_lookup(CAM_CONTROL_WHITE_BALANCE_AUTO);
+	assert(map != NULL && uvc_control_present(&control, map, &unit_id));
+	map = uvc_control_lookup(CAM_CONTROL_FOCUS_AUTO);
+	assert(map != NULL && uvc_control_present(&control, map, &unit_id) && unit_id == 1U);
+	map = uvc_control_lookup(CAM_CONTROL_EXPOSURE);
+	assert(map != NULL && uvc_control_present(&control, map, &unit_id));
+	map = uvc_control_lookup(CAM_CONTROL_ZOOM);
+	assert(map != NULL && !uvc_control_present(&control, map, &unit_id));
+	assert(uvc_control_lookup(CAM_CONTROL_SENSOR_GAIN) == NULL);
+	assert(uvc_control_at(0U) != NULL);
+	assert(uvc_control_at(64U) == NULL);
+
+	/* A cut-short unit has no controls. */
+	memset(&control, 0, sizeof(control));
+	error = uvc_desc_control_feed(&control, short_pu, sizeof(short_pu));
+	assert(error == 0);
+	assert(control.processing_unit == 1U && control.processing_controls == 0U);
+
+	/* Signed brightness, unsigned contrast, the exposure's 32 bits. */
+	map = uvc_control_lookup(CAM_CONTROL_BRIGHTNESS);
+	error = uvc_control_encode(map, -64, bytes);
+	assert(error == 0 && bytes[0] == 0xc0U && bytes[1] == 0xffU);
+	assert(uvc_control_decode(map, bytes) == -64);
+	assert(uvc_control_encode(map, 40000, bytes) == EINVAL);
+	assert(uvc_control_encode(map, -32768, bytes) == 0);
+	map = uvc_control_lookup(CAM_CONTROL_CONTRAST);
+	assert(uvc_control_encode(map, -1, bytes) == EINVAL);
+	assert(uvc_control_encode(map, 65535, bytes) == 0 && uvc_control_decode(map, bytes) == 65535);
+	map = uvc_control_lookup(CAM_CONTROL_EXPOSURE);
+	assert(uvc_control_encode(map, 156, bytes) == 0);
+	assert(bytes[0] == 156U && bytes[1] == 0U && bytes[2] == 0U && bytes[3] == 0U);
+	assert(uvc_control_decode(map, bytes) == 156);
+	map = uvc_control_lookup(CAM_CONTROL_POWER_LINE);
+	assert(map->size == 1U && map->minimum == 0 && map->maximum == 2);
+
+	/* The auto-exposure switch and the device's modes. */
+	assert(uvc_ae_mode_choose(0x09U, 1) == UVC_AE_APERTURE_PRIORITY);
+	assert(uvc_ae_mode_choose(0x03U, 1) == UVC_AE_AUTO);
+	assert(uvc_ae_mode_choose(0x09U, 0) == UVC_AE_MANUAL);
+	assert(uvc_ae_mode_choose(0x01U, 1) == 0U);
+	assert(uvc_ae_mode_choose(0x08U, 0) == 0U);
+	assert(uvc_ae_mode_automatic(UVC_AE_APERTURE_PRIORITY) == 1);
+	assert(uvc_ae_mode_automatic(UVC_AE_AUTO) == 1);
+	assert(uvc_ae_mode_automatic(UVC_AE_MANUAL) == 0);
+	assert(uvc_ae_mode_automatic(UVC_AE_SHUTTER_PRIORITY) == 0);
+	printf("controls: PASS\n");
+}
+
 /* Parses the streaming descriptors into stream. */
 static void
 stream_parse(
@@ -716,6 +816,7 @@ main(
 	void)
 {
 	case_control();
+	case_controls();
 	case_stream();
 	case_probe();
 	case_alternates();

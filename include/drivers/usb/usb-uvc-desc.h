@@ -72,8 +72,62 @@
  */
 #define UVC_SET_CUR			0x01U
 #define UVC_GET_CUR			0x81U
+#define UVC_GET_MIN			0x82U
+#define UVC_GET_MAX			0x83U
+#define UVC_GET_RES			0x84U
+#define UVC_GET_INFO			0x86U
+#define UVC_GET_DEF			0x87U
 #define UVC_VS_PROBE_CONTROL		0x01U
 #define UVC_VS_COMMIT_CONTROL		0x02U
+
+/*
+ * The bits of a control's GET_INFO answer: GET and SET are supported,
+ * and the control is disabled while an automatic mode runs.
+ *
+ * Value(s) referenced: USB Video Class 1.1 §4.1.2 (GET_INFO, the
+ * bmCapabilities bits D0 to D2).
+ */
+#define UVC_INFO_GET			0x01U
+#define UVC_INFO_SET			0x02U
+#define UVC_INFO_DISABLED		0x04U
+
+/*
+ * The camera terminal's type and the layout of the units that carry
+ * controls.
+ *
+ * Value(s) referenced: USB Video Class 1.1 §B.2 (ITT_CAMERA 0x0201),
+ * §3.7.2.3 (camera terminal: bTerminalID at 3, wTerminalType at 4,
+ * bControlSize at 14, bmControls at 15) and §3.7.2.5 (processing unit:
+ * bControlSize at 7, bmControls at 8).
+ */
+#define UVC_ITT_CAMERA			0x0201U
+#define UVC_TERMINAL_TYPE		4U
+#define UVC_CAMERA_CONTROL_SIZE		14U
+#define UVC_PROCESSING_CONTROL_SIZE	7U
+
+/* The units a control belongs to. */
+#define UVC_UNIT_PROCESSING		1U
+#define UVC_UNIT_CAMERA			2U
+
+/*
+ * How a control's value is coded: signed, a 0/1 switch, the camera's
+ * auto-exposure mode bitmap, or a range the device does not report.
+ */
+#define UVC_CONTROL_SIGNED		0x01U
+#define UVC_CONTROL_BOOLEAN		0x02U
+#define UVC_CONTROL_AE_MODE		0x04U
+#define UVC_CONTROL_FIXED_RANGE		0x08U
+
+/*
+ * The auto-exposure modes of the camera terminal's AE mode control.
+ *
+ * Value(s) referenced: USB Video Class 1.1 §4.2.2.1.2 (bAutoExposureMode:
+ * D0 manual, D1 auto, D2 shutter priority, D3 aperture priority).
+ */
+#define UVC_AE_MANUAL			0x01U
+#define UVC_AE_AUTO			0x02U
+#define UVC_AE_SHUTTER_PRIORITY		0x04U
+#define UVC_AE_APERTURE_PRIORITY	0x08U
 
 /*
  * The fields of the PROBE/COMMIT record, by offset.
@@ -131,6 +185,28 @@ struct uvc_control_desc {
 	unsigned units;
 	unsigned processing_unit;
 	uint8_t processing_unit_id;
+	uint32_t processing_controls;
+	unsigned camera_terminal;
+	uint8_t camera_terminal_id;
+	uint32_t camera_controls;
+};
+
+/*
+ * One framework control as a UVC control: the unit, the selector, the
+ * bit of the unit's bmControls that says the device has it, the bytes of
+ * its value and how they are coded (UVC_CONTROL_*).  minimum and maximum
+ * are the range of a UVC_CONTROL_FIXED_RANGE control.
+ */
+struct uvc_control_map {
+	uint32_t id;
+	uint8_t unit;
+	uint8_t selector;
+	uint8_t bit;
+	uint8_t size;
+	uint8_t flags;
+	int64_t minimum;
+	int64_t maximum;
+	const char *name;
 };
 
 /*
@@ -247,6 +323,37 @@ int uvc_desc_control_feed(struct uvc_control_desc *control, const uint8_t *descr
  * Returns 0, or EINVAL when parsing has to stop (stream->stopped).
  */
 int uvc_desc_stream_feed(struct uvc_stream_desc *stream, const uint8_t *descriptor, size_t length);
+
+/* Finds the UVC control of a CAM_CONTROL_* id, or NULL. */
+const struct uvc_control_map *uvc_control_lookup(uint32_t id);
+
+/* Reports the n-th UVC control the driver knows, or NULL past the last. */
+const struct uvc_control_map *uvc_control_at(unsigned index);
+
+/*
+ * Tells whether the device declares a control, and the ID of the unit
+ * that carries it.  Returns 1 or 0.
+ */
+int uvc_control_present(const struct uvc_control_desc *control, const struct uvc_control_map *map, uint8_t *unit_id);
+
+/* Reads a control's value from the bytes of a GET request. */
+int64_t uvc_control_decode(const struct uvc_control_map *map, const uint8_t *bytes);
+
+/*
+ * Writes a control's value into the bytes of a SET request.  Returns 0,
+ * or EINVAL for a value the control's bytes cannot hold.
+ */
+int uvc_control_encode(const struct uvc_control_map *map, int64_t value, uint8_t *bytes);
+
+/*
+ * Chooses the auto-exposure mode to set: manual for 0, otherwise the
+ * automatic mode the device's GET_RES bitmap offers (aperture priority,
+ * then full auto).  Returns 0 when the device offers none.
+ */
+uint8_t uvc_ae_mode_choose(uint8_t supported, int64_t automatic);
+
+/* Tells whether an auto-exposure mode is an automatic one (1) or manual (0). */
+int64_t uvc_ae_mode_automatic(uint8_t mode);
 
 /* Maps an uncompressed format's GUID to a CAM_FORMAT_* code, or 0. */
 uint32_t uvc_desc_guid_format(const uint8_t *guid);

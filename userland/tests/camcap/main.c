@@ -14,11 +14,14 @@
  * each frame's sequence, size, flags and time, the frame rate, and the
  * node's counters.  A mode the host cannot carry is told with the
  * payload it needs and the most the host takes.  --probe-only streams
- * without reading frames and tells only the counters.
+ * without reading frames and tells only the counters.  --controls tells
+ * every control's range and value; --control id=value sets one after the
+ * format (it may be given up to eight times).
  *
  *   camcap [-d /dev/cam0] [-f mjpeg|yuyv] [-w width] [-h height]
  *          [-i interval_100ns] [-b buffers] [-n frames] [-o path] [-a]
- *          [-t timeout_ms] [-l] [--probe-only ms]
+ *          [-t timeout_ms] [-l] [--probe-only ms] [--controls]
+ *          [--control id=value]
  */
 
 #include "userland/tests/camcommon/camcommon.h"
@@ -44,6 +47,15 @@
 #define CAMCAP_DEFAULT_TIMEOUT_MS	3000U
 #define CAMCAP_DEFAULT_OUTPUT		"camcap"
 
+/* The most --control options one run takes. */
+#define CAMCAP_CONTROLS_MAX		8U
+
+/* The control ids --controls asks about: the sensor's and the USB camera's. */
+#define CAMCAP_CONTROL_FIRST_SENSOR	1U
+#define CAMCAP_CONTROL_LAST_SENSOR	10U
+#define CAMCAP_CONTROL_FIRST_USB	32U
+#define CAMCAP_CONTROL_LAST_USB		52U
+
 /* The exit statuses: success, a usage error, a mode the host cannot carry, any other failure. */
 #define CAMCAP_EXIT_OK			0
 #define CAMCAP_EXIT_USAGE		1
@@ -68,6 +80,10 @@ struct camcap_options {
 	unsigned probe_ms;
 	int save_all;
 	int list;
+	int list_controls;
+	unsigned control_count;
+	uint32_t control_ids[CAMCAP_CONTROLS_MAX];
+	int64_t control_values[CAMCAP_CONTROLS_MAX];
 };
 
 /*
@@ -90,6 +106,9 @@ static int camcap_capture(int descriptor, const struct camcap_options *options, 
 static int camcap_save(const struct camcap_options *options, const struct cam_format *format, const uint8_t *frame, uint32_t used, unsigned number);
 static void camcap_sleep_ms(unsigned milliseconds);
 static void camcap_record(void *record, size_t size);
+static int camcap_parse_control(const char *text, struct camcap_options *options);
+static void camcap_print_controls(int descriptor);
+static int camcap_set_controls(int descriptor, const struct camcap_options *options);
 
 /*
  * Captures frames as the command line asks.
@@ -133,6 +152,15 @@ main(
 
 	camcommon_print_info(&info);
 
+	/* --controls tells the controls; with -l too it goes on to the formats. */
+	if (options.list_controls) {
+		camcap_print_controls(descriptor);
+		if (!options.list) {
+			close(descriptor);
+			return CAMCAP_EXIT_OK;
+		}
+	}
+
 	/* -l lists the formats and ends there. */
 	if (options.list) {
 		error = camcommon_print_formats(descriptor, &info);
@@ -148,6 +176,13 @@ main(
 		close(descriptor);
 		if (error == ENOSPC)
 			return CAMCAP_EXIT_NO_BANDWIDTH;
+		return CAMCAP_EXIT_FAILED;
+	}
+
+	/* The controls asked for, now that this open owns the camera. */
+	error = camcap_set_controls(descriptor, &options);
+	if (error != 0) {
+		close(descriptor);
 		return CAMCAP_EXIT_FAILED;
 	}
 
@@ -224,6 +259,10 @@ camcap_parse(
 			options->list = 1;
 			continue;
 		}
+		if (strcmp(option, "--controls") == 0) {
+			options->list_controls = 1;
+			continue;
+		}
 
 		/* Every other option has a value. */
 		if (index + 1 >= argc)
@@ -257,6 +296,9 @@ camcap_parse(
 			options->timeout_ms = (unsigned)strtoul(value, NULL, 0);
 		} else if (strcmp(option, "--probe-only") == 0) {
 			options->probe_ms = (unsigned)strtoul(value, NULL, 0);
+		} else if (strcmp(option, "--control") == 0) {
+			if (camcap_parse_control(value, options) != 0)
+				return EINVAL;
 		} else {
 			return EINVAL;
 		}
@@ -278,7 +320,8 @@ camcap_usage(
 	fprintf(stderr,
 	    "usage: camcap [-d /dev/cam0] [-f mjpeg|yuyv] [-w width] [-h height]\n"
 	    "              [-i interval_100ns] [-b buffers] [-n frames] [-o path] [-a]\n"
-	    "              [-t timeout_ms] [-l] [--probe-only ms]\n");
+	    "              [-t timeout_ms] [-l] [--probe-only ms] [--controls]\n"
+	    "              [--control id=value]\n");
 }
 
 /*
@@ -593,4 +636,118 @@ camcap_record(
 	words = record;
 	words[0] = CAM_ABI_VERSION;
 	words[1] = (uint32_t)size;
+}
+
+/* Reads one --control id=value into the options; EINVAL for a bad one or too many. */
+static int
+camcap_parse_control(
+	const char *text,
+	struct camcap_options *options)
+{
+	const char *equals;
+	char *end;
+	unsigned long id;
+	long long value;
+
+	/* Room for one more. */
+	if (options->control_count >= CAMCAP_CONTROLS_MAX)
+		return EINVAL;
+
+	/* The id before the '=' and the value after it, both whole numbers. */
+	equals = strchr(text, '=');
+	if (equals == NULL || equals == text || equals[1] == '\0')
+		return EINVAL;
+	id = strtoul(text, &end, 0);
+	if (end != equals)
+		return EINVAL;
+	value = strtoll(equals + 1, &end, 0);
+	if (*end != '\0')
+		return EINVAL;
+
+	/* Succeeded: the control is kept for after the format. */
+	options->control_ids[options->control_count] = (uint32_t)id;
+	options->control_values[options->control_count] = (int64_t)value;
+	options->control_count++;
+	return 0;
+}
+
+/* Tells every control the camera has: its name, range, step, default and value. */
+static void
+camcap_print_controls(
+	int descriptor)
+{
+	struct cam_control_info info;
+	struct cam_control control;
+	uint32_t id;
+	int status;
+
+	/* The sensor's ids, then the USB camera's. */
+	for (id = CAMCAP_CONTROL_FIRST_SENSOR; id <= CAMCAP_CONTROL_LAST_USB; id++) {
+		if (id > CAMCAP_CONTROL_LAST_SENSOR && id < CAMCAP_CONTROL_FIRST_USB)
+			continue;
+
+		/* The range; a control the camera does not have is not told. */
+		camcap_record(&info, sizeof(info));
+		info.id = id;
+		status = ioctl(descriptor, CAM_GET_CONTROL_INFO, &info);
+		if (status < 0) {
+			printf("control %u: CAM_GET_CONTROL_INFO: %s\n", (unsigned)id, strerror(errno));
+			continue;
+		}
+		if ((info.flags & CAM_CONTROL_UNSUPPORTED) != 0U)
+			continue;
+
+		/* The value now. */
+		camcap_record(&control, sizeof(control));
+		control.id = id;
+		status = ioctl(descriptor, CAM_GET_CONTROL, &control);
+		if (status < 0) {
+			printf("control %u %s: %lld..%lld step %lld default %lld%s%s, value: %s\n", (unsigned)id, info.name,
+			    (long long)info.minimum, (long long)info.maximum, (long long)info.step, (long long)info.default_value,
+			    (info.flags & CAM_CONTROL_BOOLEAN) != 0U ? " switch" : "",
+			    (info.flags & CAM_CONTROL_READ_ONLY) != 0U ? " read-only" : "", strerror(errno));
+			continue;
+		}
+
+		printf("control %u %s: %lld..%lld step %lld default %lld%s%s, value %lld\n", (unsigned)id, info.name,
+		    (long long)info.minimum, (long long)info.maximum, (long long)info.step, (long long)info.default_value,
+		    (info.flags & CAM_CONTROL_BOOLEAN) != 0U ? " switch" : "",
+		    (info.flags & CAM_CONTROL_READ_ONLY) != 0U ? " read-only" : "", (long long)control.value);
+	}
+}
+
+/* Sets the controls the command line asked for and reads each back. */
+static int
+camcap_set_controls(
+	int descriptor,
+	const struct camcap_options *options)
+{
+	struct cam_control control;
+	unsigned index;
+	int status;
+	int error;
+
+	/* Each one in the order given. */
+	for (index = 0U; index < options->control_count; index++) {
+		camcap_record(&control, sizeof(control));
+		control.id = options->control_ids[index];
+		control.value = options->control_values[index];
+		status = ioctl(descriptor, CAM_SET_CONTROL, &control);
+		if (status < 0) {
+			error = errno;
+			fprintf(stderr, "camcap: control %u = %lld: %s\n", (unsigned)control.id, (long long)control.value,
+			    strerror(error));
+			return error;
+		}
+
+		/* What the device took. */
+		camcap_record(&control, sizeof(control));
+		control.id = options->control_ids[index];
+		status = ioctl(descriptor, CAM_GET_CONTROL, &control);
+		if (status == 0)
+			printf("control %u set, now %lld\n", (unsigned)control.id, (long long)control.value);
+	}
+
+	/* Succeeded: every control asked for is set. */
+	return 0;
 }

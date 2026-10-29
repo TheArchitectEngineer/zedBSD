@@ -44,6 +44,12 @@
 /* The longest line of the descriptor dump. */
 #define UVC_LOG_LINE			160U
 
+/* The limit of one control request on the default control pipe. */
+#define UVC_UNIT_CONTROL_TIMEOUT_MS	1000U
+
+/* The largest value of a control the driver offers, in bytes. */
+#define UVC_CONTROL_BYTES_MAX		4U
+
 /* The interfaces the driver takes: a camera's VideoControl interface. */
 static const struct drv_usb_id usb_uvc_ids[] = {
 	{
@@ -77,6 +83,12 @@ static int usb_uvc_start(void *argument);
 static void usb_uvc_stop(void *argument);
 static int usb_uvc_read_counters(void *argument, struct cam_counters *counters);
 static uint32_t usb_uvc_host_payload_max(void *argument);
+static int usb_uvc_control_info(void *argument, uint32_t id, struct cam_control_info *info);
+static int usb_uvc_get_control(void *argument, uint32_t id, int64_t *value);
+static int usb_uvc_set_control(void *argument, uint32_t id, int64_t value);
+static int usb_uvc_unit_request(struct usb_uvc *uvc, uint8_t request, const struct uvc_control_map *map, uint8_t unit_id, uint8_t *bytes, size_t length);
+static int usb_uvc_unit_value(struct usb_uvc *uvc, uint8_t request, const struct uvc_control_map *map, uint8_t unit_id, int64_t *value);
+static unsigned usb_uvc_control_count(const struct usb_uvc *uvc);
 
 /* The driver, registered once at boot. */
 static struct drv_usb_driver usb_uvc_driver = {
@@ -97,6 +109,9 @@ static const struct drv_cam_source_ops usb_uvc_source = {
 	.set_mode = usb_uvc_set_mode,
 	.start = usb_uvc_start,
 	.stop = usb_uvc_stop,
+	.control_info = usb_uvc_control_info,
+	.get_control = usb_uvc_get_control,
+	.set_control = usb_uvc_set_control,
 	.read_counters = usb_uvc_read_counters,
 	.host_payload_max = usb_uvc_host_payload_max
 };
@@ -566,6 +581,15 @@ usb_uvc_dump(
 	    (unsigned)uvc->stream.endpoint_address,
 	    transport);
 
+	/* The units that carry controls, with their bmControls. */
+	kern_logf("usb-uvc: %s: processing unit %u controls 0x%x, camera terminal %u controls 0x%x, %u controls offered\n",
+	    uvc->tag,
+	    uvc->control.processing_unit != 0U ? (unsigned)uvc->control.processing_unit_id : 0U,
+	    (unsigned)uvc->control.processing_controls,
+	    uvc->control.camera_terminal != 0U ? (unsigned)uvc->control.camera_terminal_id : 0U,
+	    (unsigned)uvc->control.camera_controls,
+	    usb_uvc_control_count(uvc));
+
 	/* Each format with its frames. */
 	for (index = 0U; index < uvc->stream.format_count; index++)
 		usb_uvc_dump_format(uvc, &uvc->stream.formats[index]);
@@ -718,6 +742,10 @@ usb_uvc_register_camera(
 		else
 			desc.capabilities |= CAM_CAP_YUV;
 	}
+
+	/* Controls, when the device declares any the driver knows. */
+	if (usb_uvc_control_count(uvc) != 0U)
+		desc.capabilities |= CAM_CAP_CONTROLS;
 
 	/* The node. */
 	error = drv_cam_register(&desc, &uvc->camera);
@@ -1063,4 +1091,273 @@ usb_uvc_host_payload_max(
 
 	/* Succeeded: the largest alternate the host takes. */
 	return uvc_alternate_host_max(uvc->alternates, uvc->alternate_count);
+}
+
+/*
+ * Describes a control: unsupported unless the device declares it and
+ * answers GET_INFO with GET, read-only without SET, and its range, step
+ * and default from GET_MIN, GET_MAX, GET_RES and GET_DEF.  A switch is
+ * 0 to 1; the auto-exposure switch reads the device's default mode.
+ */
+static int
+usb_uvc_control_info(
+	void *argument,
+	uint32_t id,
+	struct cam_control_info *info)
+{
+	const struct uvc_control_map *map;
+	struct usb_uvc *uvc;
+	uint8_t bytes[UVC_CONTROL_BYTES_MAX];
+	uint8_t unit_id;
+	int64_t value;
+	int error;
+
+	/* A control the driver does not know, or the device does not declare, stays unsupported. */
+	uvc = argument;
+	info->flags = CAM_CONTROL_UNSUPPORTED;
+	map = uvc_control_lookup(id);
+	if (map == NULL)
+		return 0;
+	kern_snprintf(info->name, sizeof(info->name), "%s", map->name);
+	if (!uvc_control_present(&uvc->control, map, &unit_id))
+		return 0;
+
+	/* GET_INFO says what the device lets the host do; a control it does not answer stays unsupported. */
+	kern_memset(bytes, 0, sizeof(bytes));
+	error = usb_uvc_unit_request(uvc, UVC_GET_INFO, map, unit_id, bytes, 1U);
+	if (error != 0 || (bytes[0] & UVC_INFO_GET) == 0U)
+		return 0;
+	info->flags = 0U;
+	if ((bytes[0] & UVC_INFO_SET) == 0U)
+		info->flags |= CAM_CONTROL_READ_ONLY;
+
+	/* A switch or a fixed range: only the default is asked. */
+	if ((map->flags & (UVC_CONTROL_BOOLEAN | UVC_CONTROL_FIXED_RANGE)) != 0U) {
+		if ((map->flags & UVC_CONTROL_BOOLEAN) != 0U)
+			info->flags |= CAM_CONTROL_BOOLEAN;
+		info->minimum = map->minimum;
+		info->maximum = map->maximum;
+		info->step = 1;
+		error = usb_uvc_unit_value(uvc, UVC_GET_DEF, map, unit_id, &value);
+		if (error != 0)
+			return error;
+		info->default_value = value;
+
+		/* Succeeded: the switch or the fixed range. */
+		return 0;
+	}
+
+	/* The device's range, step and default. */
+	error = usb_uvc_unit_value(uvc, UVC_GET_MIN, map, unit_id, &info->minimum);
+	if (error == 0)
+		error = usb_uvc_unit_value(uvc, UVC_GET_MAX, map, unit_id, &info->maximum);
+	if (error == 0)
+		error = usb_uvc_unit_value(uvc, UVC_GET_RES, map, unit_id, &info->step);
+	if (error == 0)
+		error = usb_uvc_unit_value(uvc, UVC_GET_DEF, map, unit_id, &info->default_value);
+
+	/* Reports a device that declared the control but did not answer for it. */
+	if (error != 0)
+		return error;
+
+	/* Succeeded: the control's range. */
+	return 0;
+}
+
+/* Reads a control's current value (GET_CUR). */
+static int
+usb_uvc_get_control(
+	void *argument,
+	uint32_t id,
+	int64_t *value)
+{
+	const struct uvc_control_map *map;
+	struct usb_uvc *uvc;
+	uint8_t unit_id;
+	int error;
+
+	/* Refuses a control the device does not have. */
+	uvc = argument;
+	map = uvc_control_lookup(id);
+	if (map == NULL || !uvc_control_present(&uvc->control, map, &unit_id))
+		return EOPNOTSUPP;
+
+	/* The device's current value. */
+	error = usb_uvc_unit_value(uvc, UVC_GET_CUR, map, unit_id, value);
+	if (error != 0)
+		return error;
+
+	/* Succeeded: the value. */
+	return 0;
+}
+
+/*
+ * Sets a control (SET_CUR).  A switch takes 0 or 1; the auto-exposure
+ * switch becomes the device's manual or automatic mode.  A value outside
+ * the device's range is EINVAL, and a control GET_INFO calls read-only
+ * or disabled by an automatic mode is EACCES.
+ */
+static int
+usb_uvc_set_control(
+	void *argument,
+	uint32_t id,
+	int64_t value)
+{
+	const struct uvc_control_map *map;
+	struct usb_uvc *uvc;
+	uint8_t bytes[UVC_CONTROL_BYTES_MAX];
+	uint8_t unit_id;
+	int64_t minimum;
+	int64_t maximum;
+	int error;
+
+	/* Refuses a control the device does not have. */
+	uvc = argument;
+	map = uvc_control_lookup(id);
+	if (map == NULL || !uvc_control_present(&uvc->control, map, &unit_id))
+		return EOPNOTSUPP;
+
+	/* Refuses a control the device does not let the host set now. */
+	kern_memset(bytes, 0, sizeof(bytes));
+	error = usb_uvc_unit_request(uvc, UVC_GET_INFO, map, unit_id, bytes, 1U);
+	if (error != 0)
+		return error;
+	if ((bytes[0] & UVC_INFO_SET) == 0U || (bytes[0] & UVC_INFO_DISABLED) != 0U)
+		return EACCES;
+
+	/* The range: a switch's or a fixed one, else the device's. */
+	if ((map->flags & (UVC_CONTROL_BOOLEAN | UVC_CONTROL_FIXED_RANGE)) != 0U) {
+		minimum = map->minimum;
+		maximum = map->maximum;
+	} else {
+		error = usb_uvc_unit_value(uvc, UVC_GET_MIN, map, unit_id, &minimum);
+		if (error == 0)
+			error = usb_uvc_unit_value(uvc, UVC_GET_MAX, map, unit_id, &maximum);
+		if (error != 0)
+			return error;
+	}
+
+	if (value < minimum || value > maximum)
+		return EINVAL;
+
+	/* The bytes: the auto-exposure mode the device offers, or the value itself. */
+	kern_memset(bytes, 0, sizeof(bytes));
+	if ((map->flags & UVC_CONTROL_AE_MODE) != 0U) {
+		error = usb_uvc_unit_request(uvc, UVC_GET_RES, map, unit_id, bytes, map->size);
+		if (error != 0)
+			return error;
+		bytes[0] = uvc_ae_mode_choose(bytes[0], value);
+		if (bytes[0] == 0U)
+			return EINVAL;
+	} else {
+		error = uvc_control_encode(map, value, bytes);
+		if (error != 0)
+			return error;
+	}
+
+	/* SET_CUR. */
+	error = usb_uvc_unit_request(uvc, UVC_SET_CUR, map, unit_id, bytes, map->size);
+	if (error != 0)
+		return error;
+
+	/* Succeeded: the device has the value. */
+	return 0;
+}
+
+/*
+ * Issues one class request to a unit of the VideoControl interface.
+ *
+ * Value(s) referenced: USB Video Class 1.1 §4.2 (bmRequestType 0x21 for
+ * SET and 0xA1 for GET, wValue the control selector in the high byte,
+ * wIndex the unit or terminal ID in the high byte and the interface in
+ * the low byte).
+ */
+static int
+usb_uvc_unit_request(
+	struct usb_uvc *uvc,
+	uint8_t request,
+	const struct uvc_control_map *map,
+	uint8_t unit_id,
+	uint8_t *bytes,
+	size_t length)
+{
+	uint8_t request_type;
+	uint16_t value;
+	uint16_t index;
+	size_t actual;
+	int error;
+
+	/* GET requests read, SET requests write. */
+	request_type = DRV_USB_REQUEST_CLASS | DRV_USB_RECIP_INTERFACE;
+	if ((request & DRV_USB_DIR_IN) != 0U)
+		request_type |= DRV_USB_DIR_IN;
+
+	/* The selector, the unit and the VideoControl interface. */
+	value = (uint16_t)((uint16_t)map->selector << 8);
+	index = (uint16_t)(((uint16_t)unit_id << 8) | (uint16_t)drv_usb_interface_number(uvc->control_interface));
+
+	/* The request on the default control pipe. */
+	actual = 0U;
+	error = drv_usb_control(uvc->device, request_type, request, value, index, bytes, length, UVC_UNIT_CONTROL_TIMEOUT_MS, &actual);
+	if (error != 0)
+		return error;
+
+	/* Refuses a short answer to a GET, which would read as a wrong value. */
+	if ((request & DRV_USB_DIR_IN) != 0U && actual < length)
+		return EIO;
+
+	/* Succeeded: bytes holds the answer, or the device has the value. */
+	return 0;
+}
+
+/* Reads one value of a control (GET_CUR, MIN, MAX, RES or DEF) as the framework sees it. */
+static int
+usb_uvc_unit_value(
+	struct usb_uvc *uvc,
+	uint8_t request,
+	const struct uvc_control_map *map,
+	uint8_t unit_id,
+	int64_t *value)
+{
+	uint8_t bytes[UVC_CONTROL_BYTES_MAX];
+	int error;
+
+	/* The field of the control's size. */
+	kern_memset(bytes, 0, sizeof(bytes));
+	error = usb_uvc_unit_request(uvc, request, map, unit_id, bytes, map->size);
+	if (error != 0)
+		return error;
+
+	/* The auto-exposure mode reads as a switch; the others as numbers. */
+	if ((map->flags & UVC_CONTROL_AE_MODE) != 0U)
+		*value = uvc_ae_mode_automatic(bytes[0]);
+	else
+		*value = uvc_control_decode(map, bytes);
+
+	/* Succeeded: the value. */
+	return 0;
+}
+
+/* Counts the controls the driver knows that the device declares. */
+static unsigned
+usb_uvc_control_count(
+	const struct usb_uvc *uvc)
+{
+	const struct uvc_control_map *map;
+	uint8_t unit_id;
+	unsigned count;
+	unsigned index;
+
+	/* Every known control the device's units declare. */
+	count = 0U;
+	for (index = 0U; ; index++) {
+		map = uvc_control_at(index);
+		if (map == NULL)
+			break;
+		if (uvc_control_present(&uvc->control, map, &unit_id))
+			count++;
+	}
+
+	/* The number. */
+	return count;
 }

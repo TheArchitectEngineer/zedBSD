@@ -156,7 +156,17 @@ hue 34, saturation 35, sharpness 36, gamma 37, white balance temperature 38
 and its automatic mode 39, backlight compensation 40, gain 41, power line
 frequency 42, exposure 48 and its automatic mode 49, focus 50 and its
 automatic mode 51, zoom 52). A control the camera does not have reports
-`CAM_CONTROL_UNSUPPORTED`, and setting it fails with `EOPNOTSUPP`.
+`CAM_CONTROL_UNSUPPORTED`, and reading or setting it fails with
+`EOPNOTSUPP`. A camera with at least one control sets `CAM_CAP_CONTROLS`.
+
+- The range, step and default come from the device. A switch
+  (`CAM_CONTROL_BOOLEAN`: the automatic white balance, exposure and focus)
+  is 0 or 1. The power line frequency is 0 (off), 1 (50 Hz) or 2 (60 Hz).
+- The exposure time is in units of 100 µs. Automatic exposure 1 selects the
+  device's automatic mode (aperture priority where it has one), 0 manual.
+- A value outside the range fails with `EINVAL`. A control the device
+  reports read-only, or one disabled while its automatic mode is on (the
+  exposure time under automatic exposure), fails with `EACCES`.
 
 ## USB cameras
 
