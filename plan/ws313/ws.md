@@ -12,6 +12,8 @@ Resume point: p001（調べと設計）。担当は P7（q1675）。
 
 - 2026-10-29（続き）: 「WS313の進め方は、Linuxを参考に、カーネル、ドライバを揃えておいてください。実機テストなしでコードだけ書いて揃えておいてください。今日の夜、まとめてテストします。」→ Q1: p001 は短くし、実機の試験なしで全ての block の code を書いて揃える（build・host・QEMU の virt まで）。各 Phase は「実装済み・実機未試験」。夜の実機の試験の手順と script を用意する。
 
+- 2026-10-29（続き）: 「WS313は調査、コード作成などで、2つまでサブエージェントを作って並列化し、効率化してください。」→ Q1: P7 の配下は同時 2 つまで、file・directory を分けて衝突させない。
+
 ## 目標（Q1 の解釈）
 
 - 新しい board「ODROID-C5」を足す。SoC は Amlogic S905X5M（arm64）。BSP は `src/hal/arm64/bsp-s905x5m/`（既存の `bsp-rpi4`・`bsp-rpi5` と同じ並び）、platform の build（`platform/arm64/` の board の分け方に倣う）、`config/ci/config-odroid-c5.mk`。
