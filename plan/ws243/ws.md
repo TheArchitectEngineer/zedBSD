@@ -20,7 +20,7 @@ Resume point: 完了。残りは下の「制限・移管」（i915・amdrdna の
 
 - 原文:「NVDECですが、動画アプリでの再生で、NVDECからGPUバッファに描画して、それをコンポジタが描画する流れにして、1080p60が再生できるようにしてください。CPUメモリはあくまでも機能性テストの1ステップです。」
 - 解釈（Q1）: p006 の目的は、動画の app（Video Player）が 1080p60 を再生できること。NVDEC が GPU の buffer（VkImage）へ decode し、app はそれを CPU を通さずに（export・共有）使い、compositor が描く。受け入れは RTX 2070 での 1080p60 の再生の計測を含む。CPU の readback の道は機能の試験（hash の照合）の 1 段としてだけ残す。guardrail の一時の例外は外す。(a) の host cached な memory type はこの目的には要らない（覚え書きだけ）。
-- 完了の条件への効き方（P5 の読み）: 上の「目的と完了の条件」の Video Player の再生は GPU の道（[p006](phase006/phase.md)）で、1080p60 を落とさず（FRAMES の late と表示の数で見る）に再生することを加える。
+- 完了の条件への効き方（P5 の読み）: 上の「目的と完了の条件」の Video Player の再生は GPU の道（p006）で、1080p60 を落とさず（FRAMES の late と表示の数で見る）に再生することを加える。
 
 ## 目的と完了の条件（当初）
 
@@ -34,7 +34,7 @@ Resume point: 完了。残りは下の「制限・移管」（i915・amdrdna の
 
 - decode の正しさ（readback の道、機能の試験）: `rtx-p004.sh … video` の V1 で 4 本とも software（`nv12-hashes.py`）と hash が順に一致:
   1080p30 150/150、1080p60 596/596、720p30 90/90、1080p24 Main 149/149（2026-10-30 01:29〜、vmunix 3454572979）。readback の道の速さは 3.5 fps（機能の試験の 1 段に限る）。
-- GPU の道（[p006](phase006/phase.md)）: Video Player が libmedia の decode の image（SAMPLED の NV12）を export・import し、plane の view を自分の shader で描き、自分の窓へ。
+- GPU の道（p006）: Video Player が libmedia の decode の image（SAMPLED の NV12）を export・import し、plane の view を自分の shader で描き、自分の窓へ。
   全画面 4 本とも `PRESENT own=1 gpu_pictures=1`・「pictures the GPU holds」・read-back 0・FAILED 無し。1080p60 は shown 584/596・late 12（decode 120 枚/2 s）、
   1080p30 148/150、720p30 88/90、1080p24 148/149。窓（1280x720）でも合成されて写る（shot に動画、shown 543/596・late 53）。
 - 開始の止まりの原因と直し: nvrtx の blob の VRAM の消しが CPU の PRAMIN で約 31.7 MB/s（8 MB で 0.25 s）だった。256 KiB 以上の blob を driver の work channel の
@@ -49,7 +49,7 @@ Resume point: 完了。残りは下の「制限・移管」（i915・amdrdna の
 - design.md・p006 の設計は「Video Player・libvulkan・libmedia は変えない」としていたが、Video Player は amd64 で自前の presenter を使わず（`VP_GPU_PRESENT` が arm64 だけ）、
   GPU の picture を頼んでいなかった。Q1 の判断（2026-10-30 00:4x、要約）: ユーザーの決定が動画 app での GPU の道の再生なので videoplayer は WS243 の範囲。→ amd64 でも 1。
 - nvrtx の側にも足りない物が 2 つあった: export の識別の op（`GPU_OP_GET_PHYSICAL_DEVICE_PROPERTIES2`）と `GPU_CAP_ALLOCATION_SHARE`。
-- VRAM の消しの copy engine 化は nvrtx の memory の core の変更。Q1 の判断（2026-10-30 01:1x、要約）: 普通の技術の判断として WS243 の範囲で扱う。詳細は [p006](phase006/phase.md)。
+- VRAM の消しの copy engine 化は nvrtx の memory の core の変更。Q1 の判断（2026-10-30 01:1x、要約）: 普通の技術の判断として WS243 の範囲で扱う。詳細は p006。
 
 ## 制限・移管
 
@@ -66,12 +66,12 @@ Resume point: 完了。残りは下の「制限・移管」（i915・amdrdna の
 
 | ID | 内容 | 状態 |
 | --- | --- | --- |
-| [p001](phase001/phase.md) | 設計（design.md）: NVDEC の channel、picture の parameter、DPB と出力、Vulkan Video の object、license、試験の道 | cleared（2026-10-30、設計どおり実装され p004・p006 の実機で確かめた） |
-| [p002](phase002/phase.md) | 実装: NVDEC の channel と engine、work channel の copy の object | cleared（2026-10-30、p004 の実機: nvdec-channel ok・copy object） |
-| [p003](phase003/phase.md) | 実装: Vulkan Video の object、RESULT_STATUS の query、H.264 の decode、NV12 と readback | cleared（2026-10-30、p004・p006 の実機: hash 4 本一致） |
-| [p004](phase004/phase.md) | 実機の debug（readback の道、1080p30 の速さ） | cleared（2026-10-29 q1677-i02 P5） |
-| [p005](phase005/phase.md) | 規約の全文の見直し | cleared（2026-10-29 q1677-i02 P5） |
-| [p006](phase006/phase.md) | GPU の道（sampled NV12・export、Video Player の presenter、VRAM の消しの copy engine）、RTX 2070 で 1080p60 | cleared（2026-10-30 q1677-i02 P5） |
+| p001 | 設計（design.md）: NVDEC の channel、picture の parameter、DPB と出力、Vulkan Video の object、license、試験の道 | cleared（2026-10-30、設計どおり実装され p004・p006 の実機で確かめた） |
+| p002 | 実装: NVDEC の channel と engine、work channel の copy の object | cleared（2026-10-30、p004 の実機: nvdec-channel ok・copy object） |
+| p003 | 実装: Vulkan Video の object、RESULT_STATUS の query、H.264 の decode、NV12 と readback | cleared（2026-10-30、p004・p006 の実機: hash 4 本一致） |
+| p004 | 実機の debug（readback の道、1080p30 の速さ） | cleared（2026-10-29 q1677-i02 P5） |
+| p005 | 規約の全文の見直し | cleared（2026-10-29 q1677-i02 P5） |
+| p006 | GPU の道（sampled NV12・export、Video Player の presenter、VRAM の消しの copy engine）、RTX 2070 で 1080p60 | cleared（2026-10-30 q1677-i02 P5） |
 
 ## 実装だけの担当 P6（2026-10-29、q1667）
 
