@@ -27,7 +27,7 @@
 | [p006](phase006/phase.md) | `camcheck` と `pattern.html`（D11）で画素の試験、HDMI capture の YUYV と 1080p の受け入れ、drop の測定、stop/start 100 回の leak、2 つ目の open、device の quirk、bulk の device があれば実地（3〜4 LW） | p004b（高い mode は p005） | in-progress（実装済み・試験未実施、agent/p6-ws282d） |
 | [p007](phase007/phase.md) | Linux の xHCI の quirk の表 → Pi 5・Pi 4・VF2 の確認（T1）、IRQ の中の staging の複写の時間（1.5〜2.5 LW） | p006 | in-progress（表と試験の config だけ、3 板の確認と複写の時間は未実施、agent/p6-ws282d） |
 | [p008](phase008/phase.md) | `CAM_MEMORY_IMPORT`（GPU core と bcm2711 の share の差分は WS282 の担当が書き Q1 が merge、D9）、`camvk`（4〜5 LW） | p004b、p007（Pi 5）、WS279 の V3D | in-progress（実装済み・試験未実施、agent/p6-ws282d） |
-| [p009](phase009/phase.md) | `docs/reference/camera.md`、`KERN_SYSTEM_EVENT_CAMERA` と sessiond の seat（Q1 に依頼）、`camcap`・`camcheck` を Tools に（1〜2 LW） | p006 | in-progress（文書は済み、system.h・seat.c・cam.c の差分は Q1 への patch の案で未適用、agent/p6-ws282d） |
+| [p009](phase009/phase.md) | `docs/reference/camera.md`、`KERN_SYSTEM_EVENT_CAMERA` と sessiond の seat（Q1 に依頼）、`camcap`・`camcheck` を Tools に（1〜2 LW） | p006 | in-progress（文書・camera の system event・seat の差分を実装、試験未実施、agent/p6-ws282d。login 画面の account に camera を渡さないのは推しの暫定・ユーザーの確認待ち） |
 | p010 | control（UVC の processing unit、id 32 以降。ユーザー「最初は無し」なので後で、2〜3 LW） | p004b | planning |
 | p011 | 規約の全文の見直しと license の監査（2 LW） | p008・p009 | planned |
 | p012 | SuperSpeed の isochronous（TD の分割、FIFO の定数、WS197 の source）。USB 3 の device を買ってから（見積もり未定） | p005、device | planning |
@@ -51,3 +51,4 @@
 - 2026-10-29 P6（q1667-i04、agent/p6-ws282c、基点 c60cdbd44）: p002 の mapping の寿命の 2 点は cam.c でなく host の fixture が file の hold を写していなかった物と分かり、fixture を直した（cam.c は変えず）。rpi4 の vmunix も rc 0・warning 0。試験は未実施。続きは p003。
 - 2026-10-29 P6（q1667-i04）: p003 の uvc（descriptor・bind・PROBE/COMMIT・登録・devfs の 0600）と p004a/p004b の stream・assembler を実装、amd64・rpi4・rpi5・vf2・pcat の vmunix が rc 0・warning 0。試験は未実施。詳細は [phase003](phase003/phase.md)。
 - 2026-10-29 P6（q1667-i05、agent/p6-ws282d、基点 d3e2a737d）: p005（xHCI の high-bandwidth）・p006（camcheck・pattern.html）・p007（quirk の表と 3 板の config）・p008（GPU の allocation の backing、`CAM_MEMORY_IMPORT`、camvk）を実装。host の試験（cam・uvc・xhci-hb・camcheck）と build だけ、実機・QEMU は未実施。詳細は各 phase.md。
+- 2026-10-29 P6（q1667-i05）: p009 の camera の system event（`KERN_SYSTEM_EVENT_CAMERA`）と sessiond の seat の `/dev/camN` を Q1 の指示で branch に適用。login 画面の account には camera を渡さない（推しの暫定・ユーザーの確認待ち）。p010（UVC の control）は Q1 の指示で着手。

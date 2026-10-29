@@ -42,6 +42,7 @@
 #include <kern/waitq.h>
 #include <uapi/errno.h>
 #include <uapi/fcntl.h>
+#include <uapi/system.h>
 #include <uapi/time.h>
 
 #define UNUSED_PARAMETER(parameter) ((void)(parameter))
@@ -63,6 +64,9 @@
 extern int drv_gpu_shared_backing(struct kernel_handle *handle, struct drv_gpu_scanout_backing *backing, uint64_t *device_identity) __attribute__((weak));
 extern int kern_pmem_map_uncached(const struct kern_pmem *run, void **mapped) __attribute__((weak));
 extern int kern_pmem_unmap_uncached(void *mapped, size_t size) __attribute__((weak));
+
+/* The system's events, which a kernel may be built without. */
+extern void kern_system_event_post(uint32_t class_bit, uint32_t action, int32_t value, const char *subject, const char *detail) __attribute__((weak));
 
 /*
  * The states of a stream.
@@ -181,6 +185,7 @@ static int cam_number_reserve(struct drv_cam_device *device);
 static void cam_number_release(struct drv_cam_device *device);
 static void cam_device_release(void *argument);
 static uint64_t cam_now_ns(void);
+static void cam_post(const struct drv_cam_device *device, uint32_t action);
 static int cam_enter(struct drv_cam_device *device);
 static void cam_leave(struct drv_cam_device *device);
 static void cam_queue_append(struct drv_cam_slot **head, struct drv_cam_slot **tail, struct drv_cam_slot *slot);
@@ -322,6 +327,9 @@ drv_cam_register(
 	/* Keeps the caller reference for the retirement. */
 	device->node = node;
 
+	/* Tells the seat that a camera came, so its user is given the node. */
+	cam_post(device, KERN_SYSTEM_EVENT_ADD);
+
 	/* Succeeded: the camera is visible in /dev. */
 	kern_logf("cam: %s: %s (%s) at %s\n", name, device->desc.device_name, device->driver_name, device->desc.location);
 	*result = device;
@@ -375,6 +383,7 @@ drv_cam_unregister(
 	(void)cdev_unregister(device->node);
 	cdev_release(device->node);
 	device->node = NULL;
+	cam_post(device, KERN_SYSTEM_EVENT_REMOVE);
 
 	/* Gives back the number for the next camera. */
 	cam_number_release(device);
@@ -714,6 +723,25 @@ cam_device_release(
 	/* No file or mapping is left, so the buffers can go with the device. */
 	cam_buffers_free(device);
 	kern_free(device);
+}
+
+/* Tells the system's events that a camera node came or went. */
+static void
+cam_post(
+	const struct drv_cam_device *device,
+	uint32_t action)
+{
+	char subject[KERN_SYSTEM_EVENT_SUBJECT_MAX];
+	char detail[KERN_SYSTEM_EVENT_DETAIL_MAX];
+
+	/* A kernel without the system's events posts nothing. */
+	if (kern_system_event_post == NULL)
+		return;
+
+	/* The node, the driver and the product, then the event. */
+	kern_snprintf(subject, sizeof(subject), "cam%u", device->number);
+	kern_snprintf(detail, sizeof(detail), "driver=%s name=%s", device->driver_name, device->desc.device_name);
+	kern_system_event_post(KERN_SYSTEM_EVENT_CAMERA, action, 0, subject, detail);
 }
 
 /* Reads the monotonic clock in nanoseconds. */

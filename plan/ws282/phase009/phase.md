@@ -3,13 +3,15 @@
 # ws282-p009 文書、camera の system event と seat、道具の登録
 
 - Parent: [ws282](../ws.md)、Queue: q1667 / q1667-i05（P6、実装だけ・試験なし、branch agent/p6-ws282d）
-- Status: in-progress（文書は書いた。他の WS の source の差分は Q1 への依頼の案として patch に置いただけで、適用していない。seat の切り替えと挿入の確認は未実施）
+- Status: in-progress（文書と camera の system event・seat の差分を実装。seat の切り替えと挿入の確認は未実施）
 
 ## 実装した事
 
 - `docs/reference/camera.md`（新規）と `docs/reference/README.md` の索引: node と権限（0600、seat が user に渡す、`KERN_SYSTEM_EVENT_CAMERA`）、所有、record の作法、18 の request の表と誤り、poll、format の表、buffer（DEVICE と IMPORT の手順・`EXDEV`・fence の後の QUEUE）、metadata、control の id、USB の制約（`host_payload_max`・`ENOSPC`・HS の 3072・SS は無し・bulk）、suspend の制約（isochronous の stream 中は眠らない、app は蓋・sleep の前に `STREAM_OFF`）、道具（camcap・camcheck・camvk）。docs の規則どおり plan/ への link は無い。
 
-## Q1 への依頼（案、未適用）: `plan/ws282/phase009/camera-event.patch`
+## camera の system event と seat（`plan/ws282/phase009/camera-event.patch` を Q1 の指示で branch に適用）
+
+- 2026-10-29 Q1「camera-event.patch を自分の branch（agent/p6-ws282d）に当てて commit してください。include/uapi/system.h は UAPI で HAL ではないので事前承認は要りません。…推し（login 画面の account には camera を渡さない）で進めてください。」→ 適用した。login 画面の account に camera を渡さない事は**推しの暫定・ユーザーの確認待ち**。
 
 - SHA-256 `d74638b238d0e98a29d1709ecc07f7e079623163ddc8f12ca31734cb1df886f1`、基点はこの branch の先頭（`git apply --check` で当たる事を確かめた）。
 - 中身（design §3.9・D4）:
@@ -29,4 +31,4 @@
 
 ## 未実施
 
-- patch の適用（Q1）、seat の切り替えと camera の挿入で `/dev/cam0` の所有が変わる事の確認（実機）。
+- seat の切り替えと camera の挿入で `/dev/cam0` の所有が変わる事の確認（実機）。
