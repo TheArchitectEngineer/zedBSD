@@ -890,8 +890,10 @@ ncm_set_max_datagram(
 				    DRV_USB_RECIP_INTERFACE,
 			    request.request, request.value,
 			    request.payload, request.length, &actual);
-	if (error != 0 || actual != request.length)
-		return error != 0 ? error : EIO;
+	if (error != 0)
+		return error;
+	if (actual != request.length)
+		return EIO;
 
 	/* Reads back what the device took; a device that does not answer leaves 0. */
 	*read_back = 0;

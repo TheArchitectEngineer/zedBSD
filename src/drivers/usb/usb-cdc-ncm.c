@@ -167,11 +167,14 @@ drv_usb_cdc_ncm_negotiate_nth16(
 		longest = shortest;
 	while (shortest < longest) {
 		middle = (uint16_t)(shortest + (longest - shortest + 1U) / 2U);
-		if (datagram_fits(&candidate, middle) == 0)
+		error = datagram_fits(&candidate, middle);
+		if (error == 0)
 			shortest = middle;
 		else
 			longest = (uint16_t)(middle - 1U);
 	}
+
+	/* Settles on the longest datagram that fitted. */
 	candidate.max_datagram_size = shortest;
 
 	*profile = candidate;

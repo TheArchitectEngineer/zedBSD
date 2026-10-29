@@ -609,7 +609,9 @@ ipv6_link_update(
 			interface->link.retrans_ms = values->retrans_ms;
 		if (values->mtu >= IPV6_MINIMUM_MTU) {
 			interface->ra_mtu = values->mtu;
-			interface->link.mtu = values->mtu <= device->mtu ? values->mtu : device->mtu;
+			interface->link.mtu = values->mtu;
+			if (values->mtu > device->mtu)
+				interface->link.mtu = device->mtu;
 		}
 	}
 

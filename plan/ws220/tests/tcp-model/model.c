@@ -476,6 +476,8 @@ main(
 			packet_buf_free(held[--held_count]);
 			settings.pool_held_free--;
 		}
+
+		/* Says how many packets the other senders keep. */
 		printf("tcp-model: pool held by other senders: %u packets\n", held_count);
 	}
 
@@ -1399,7 +1401,9 @@ rewrite_window(
 
 	/* The field: the bytes, scaled as A reads them. */
 	field = settings.peer_window;
-	a = sender != NULL ? tcp_of(sender) : NULL;
+	a = NULL;
+	if (sender != NULL)
+		a = tcp_of(sender);
 	if (a != NULL && a->wscale_on != 0 && (frame->data[13] & 0x02U) == 0)
 		field >>= a->peer_wscale;
 	if (field > 0xffffU)
@@ -1632,12 +1636,17 @@ run_writer(
 		 */
 		tcp = tcp_of(sender);
 		window = tcp->peer_window;
-		if (window == 0)
-			window = tcp->send_mss != 0 ? tcp->send_mss : 536U;
+		if (window == 0) {
+			window = 536U;
+			if (tcp->send_mss != 0)
+				window = tcp->send_mss;
+		}
 		if (tcp->cwnd != 0 && tcp->cwnd < window)
 			window = tcp->cwnd;
 		in_flight = tcp->send_next - tcp->send_unacknowledged;
-		segment = tcp->send_mss != 0 && tcp->send_mss < length ? tcp->send_mss : (uint32_t)length;
+		segment = (uint32_t)length;
+		if (tcp->send_mss != 0 && tcp->send_mss < length)
+			segment = tcp->send_mss;
 		buffer_room = tcp->send_bytes == 0 || tcp->send_bytes + segment <= sender->send_hiwat_bytes;
 		if (tcp->send_count < TCP_SEND_QUEUE_MAX && buffer_room &&
 		    (in_flight == 0 || in_flight + (uint32_t)length <= window))

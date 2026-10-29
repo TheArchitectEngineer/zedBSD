@@ -7,7 +7,7 @@
 
 /*
  * A TCP throughput probe: connects to a peer that sinks or sources a
- * stream (plan/ws221/tests/perf-peer.py on the host) and moves bytes one
+ * stream on the host and moves bytes one
  * way for a number of seconds.
  *
  *   tcp-perf send|recv ADDRESS PORT SECONDS [CHUNK]
@@ -76,10 +76,8 @@ static double perf_now(void);
 static void perf_tick(int signal_number);
 static int perf_start_timer(void);
 static void perf_count(struct perf_progress *progress, size_t bytes);
-static int perf_send(int descriptor, unsigned char *buffer, unsigned long chunk, unsigned long seconds,
-    struct perf_progress *progress);
-static int perf_receive(int descriptor, unsigned char *buffer, unsigned long chunk, unsigned long seconds,
-    struct perf_progress *progress);
+static int perf_send(int descriptor, unsigned char *buffer, unsigned long chunk, unsigned long seconds, struct perf_progress *progress);
+static int perf_receive(int descriptor, unsigned char *buffer, unsigned long chunk, unsigned long seconds, struct perf_progress *progress);
 
 /*
  * Moves bytes the way the command line asks and prints the rates.
@@ -96,6 +94,7 @@ main(
 	unsigned long index;
 	double elapsed;
 	char direction;
+	const char *name;
 	ssize_t sent;
 	int descriptor;
 	int sending;
@@ -112,6 +111,8 @@ main(
 		fprintf(stderr, "tcp-perf: no memory for a chunk of %lu bytes\n", chunk);
 		return 1;
 	}
+
+	/* The bytes of the chunk differ from one to the next. */
 	for (index = 0; index < chunk; index++)
 		buffer[index] = (unsigned char)((index * 131UL + 7UL) & 0xffUL);
 
@@ -123,7 +124,14 @@ main(
 	}
 
 	/* The direction byte, which the peer reads first. */
-	direction = sending ? 'S' : 'R';
+	direction = 'R';
+	name = "recv";
+	if (sending) {
+		direction = 'S';
+		name = "send";
+	}
+
+	/* Sends the byte. */
 	sent = write(descriptor, &direction, 1);
 	if (sent != 1) {
 		fprintf(stderr, "tcp-perf: the direction byte was not sent\n");
@@ -143,6 +151,8 @@ main(
 		free(buffer);
 		return 1;
 	}
+
+	/* Moves the bytes in the direction asked. */
 	if (sending)
 		error = perf_send(descriptor, buffer, chunk, seconds, &progress);
 	else
@@ -151,15 +161,14 @@ main(
 	close(descriptor);
 	free(buffer);
 	if (error != 0) {
-		fprintf(stderr, "tcp-perf: %s failed after %llu bytes: %s\n", sending ? "send" : "recv", progress.total,
-		    strerror(error));
+		fprintf(stderr, "tcp-perf: %s failed after %llu bytes: %s\n", name, progress.total, strerror(error));
 		return 1;
 	}
 
 	/* Succeeded: the rate over the whole transfer. */
 	if (elapsed <= 0.0)
 		elapsed = 1e-9;
-	printf("TCP-PERF %s seconds=%.3f bytes=%llu mbps=%.1f\n", sending ? "send" : "recv", elapsed, progress.total,
+	printf("TCP-PERF %s seconds=%.3f bytes=%llu mbps=%.1f\n", name, elapsed, progress.total,
 	    (double)progress.total * 8.0 / elapsed / 1e6);
 	return 0;
 }
@@ -174,6 +183,8 @@ perf_parse(
 	unsigned long *chunk)
 {
 	char *end;
+	int compare;
+	int compare_recv;
 
 	/* Refuses a command line without the direction, the address, the port and the duration. */
 	if (argc != 5 && argc != 6) {
@@ -182,9 +193,11 @@ perf_parse(
 	}
 
 	/* The direction. */
-	if (strcmp(argv[1], "send") == 0) {
+	compare = strcmp(argv[1], "send");
+	compare_recv = strcmp(argv[1], "recv");
+	if (compare == 0) {
 		*sending = 1;
-	} else if (strcmp(argv[1], "recv") == 0) {
+	} else if (compare_recv == 0) {
 		*sending = 0;
 	} else {
 		fprintf(stderr, "tcp-perf: the direction is send or recv, not %s\n", argv[1]);
@@ -380,6 +393,8 @@ perf_send(
 				continue;
 			return error;
 		}
+
+		/* The bytes count toward the second's rate. */
 		perf_count(progress, (size_t)moved);
 	}
 
@@ -434,6 +449,8 @@ perf_receive(
 				continue;
 			return error;
 		}
+
+		/* The bytes count toward the second's rate. */
 		perf_count(progress, (size_t)moved);
 	}
 

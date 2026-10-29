@@ -169,6 +169,8 @@ ipv4_output_routed(
 		packet_buf_free(packet);
 		return ENOBUFS;
 	}
+
+	/* Fills in the fixed fields of the header. */
 	kern_memset(header, 0, sizeof(*header));
 	header->version_ihl = 0x45U;
 	wire_put16(header->total_length, (uint16_t)packet->length);

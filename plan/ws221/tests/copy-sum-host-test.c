@@ -45,6 +45,8 @@ main(void)
 		printf("copy-sum-host-test: FAIL (%u)\n", failures);
 		return 1;
 	}
+
+	/* Succeeded: both tests agreed with the references. */
 	printf("copy-sum-host-test: PASS (word %zu bytes)\n", sizeof(unsigned long));
 	return 0;
 }
@@ -61,6 +63,7 @@ test_copy(void)
 	size_t to;
 	size_t index;
 	size_t length;
+	int differs;
 
 	/* Random bytes to copy. */
 	for (index = 0; index < sizeof(source); index++)
@@ -75,7 +78,8 @@ test_copy(void)
 				memset(theirs, 0x5a, sizeof(theirs));
 				kern_memcpy(mine + 64 + to, source + from, length);
 				memcpy(theirs + 64 + to, source + from, length);
-				if (memcmp(mine, theirs, sizeof(mine)) != 0) {
+				differs = memcmp(mine, theirs, sizeof(mine));
+				if (differs != 0) {
 					if (failures < 10)
 						printf("  FAIL: copy from %zu to %zu of %zu bytes\n", from, to, length);
 					failures++;
@@ -107,12 +111,14 @@ test_checksum(void)
 			expected = reference_checksum(buffer + offset, length);
 			if (mine != expected) {
 				if (failures < 20)
-					printf("  FAIL: checksum at %zu of %zu bytes: %04x, not %04x\n", offset, length, mine,
-					    expected);
+					printf("  FAIL: checksum at %zu of %zu bytes: %04x, not %04x\n",
+					    offset, length, mine, expected);
 				failures++;
 			}
 		}
 	}
+
+	/* The worst case for the carries: every bit set. */
 	memset(buffer, 0xff, sizeof(buffer));
 	for (offset = 0; offset < 8U; offset++) {
 		mine = net_checksum(buffer + offset, 4097);

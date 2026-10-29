@@ -2075,12 +2075,14 @@ wlan_timer_run(
 	uint64_t now_ticks)
 {
 	unsigned index;
+	unsigned stations;
 	struct wlan_station *station;
 
 	/* Runs the timer of every live station; none at all is the common case. */
 	if (atomic_load_acquire(&wlan_initialized) != 2U)
 		return;
-	if (__atomic_load_n(&wlan_stations_used, __ATOMIC_ACQUIRE) == 0)
+	stations = __atomic_load_n(&wlan_stations_used, __ATOMIC_ACQUIRE);
+	if (stations == 0)
 		return;
 	for (index = 0U; index < NET_DEVICE_MAX; index++) {
 		if (station_index_enter(index, &station) != 0)
@@ -2103,6 +2105,7 @@ wlan_timer_next_deadline(
 	struct wlan_station *station;
 	unsigned long enabled;
 	uint64_t candidate;
+	unsigned stations;
 
 	/* Starts out with no deadline pending. */
 	result = 0U;
@@ -2110,7 +2113,8 @@ wlan_timer_next_deadline(
 	/* Reports no deadline until the subsystem is fully up, nor without a station. */
 	if (atomic_load_acquire(&wlan_initialized) != 2U)
 		return 0U;
-	if (__atomic_load_n(&wlan_stations_used, __ATOMIC_ACQUIRE) == 0)
+	stations = __atomic_load_n(&wlan_stations_used, __ATOMIC_ACQUIRE);
+	if (stations == 0)
 		return 0U;
 
 	/* Takes the earliest deadline any live station is waiting on. */
@@ -2173,12 +2177,14 @@ wlan_work_pending(
 	struct wlan_station *station;
 	unsigned long enabled;
 	uint64_t now;
+	unsigned stations;
 	int pending;
 
 	/* Asks every live station whether it has work due; none at all is the common case. */
 	if (atomic_load_acquire(&wlan_initialized) != 2U)
 		return 0;
-	if (__atomic_load_n(&wlan_stations_used, __ATOMIC_ACQUIRE) == 0)
+	stations = __atomic_load_n(&wlan_stations_used, __ATOMIC_ACQUIRE);
+	if (stations == 0)
 		return 0;
 	for (index = 0U; index < NET_DEVICE_MAX; index++) {
 		if (station_index_enter(index, &station) != 0)
@@ -4201,6 +4207,7 @@ station_index_enter(
 	struct wlan_station *station;
 	unsigned long registry_enabled;
 	unsigned long enabled;
+	unsigned slot_used;
 	int error;
 
 	/* Starts out reporting that no station was found. */
@@ -4218,7 +4225,8 @@ station_index_enter(
 	 * found on the next pass, as it would be had the lock been taken a
 	 * moment earlier.
 	 */
-	if (__atomic_load_n(&wlan_stations[index].used, __ATOMIC_ACQUIRE) == 0)
+	slot_used = __atomic_load_n(&wlan_stations[index].used, __ATOMIC_ACQUIRE);
+	if (slot_used == 0)
 		return ENODEV;
 
 	/* Takes a reference on the station the index names. */

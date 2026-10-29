@@ -146,9 +146,13 @@ networkd_lan_set_mtu(
 {
 	size_t index;
 	int differs;
+	int valid;
 
 	/* Rejects what cannot be held. */
-	if (lan == NULL || interface == NULL || !name_valid(interface))
+	if (lan == NULL || interface == NULL)
+		return -1;
+	valid = name_valid(interface);
+	if (!valid)
 		return -1;
 
 	/* The interface's record, when the configuration names it. */

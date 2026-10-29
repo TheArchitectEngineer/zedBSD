@@ -31,6 +31,8 @@
 /* The longest hold in seconds. */
 #define HOLD_SECONDS_MAX 3600UL
 
+static int hold_number(const char *text, unsigned long minimum, unsigned long maximum, unsigned long *value);
+
 /* Reads a decimal number in [minimum, maximum] into *value. */
 static int
 hold_number(
@@ -69,10 +71,24 @@ main(
 	ssize_t length;
 	ssize_t largest;
 	int descriptor;
+	int error;
 
 	/* Reads the port and the hold. */
-	if (argc != 3 || hold_number(argv[1], 1, 65535, &port) != 0 ||
-	    hold_number(argv[2], 1, HOLD_SECONDS_MAX, &seconds) != 0) {
+	if (argc != 3) {
+		fprintf(stderr, "usage: udp-hold PORT SECONDS\n");
+		return 2;
+	}
+
+	/* The port to hold. */
+	error = hold_number(argv[1], 1, 65535, &port);
+	if (error != 0) {
+		fprintf(stderr, "usage: udp-hold PORT SECONDS\n");
+		return 2;
+	}
+
+	/* How long to hold. */
+	error = hold_number(argv[2], 1, HOLD_SECONDS_MAX, &seconds);
+	if (error != 0) {
 		fprintf(stderr, "usage: udp-hold PORT SECONDS\n");
 		return 2;
 	}
@@ -91,11 +107,14 @@ main(
 		free(buffer);
 		return 1;
 	}
+
+	/* The address it listens on: every local one, on the port. */
 	memset(&address, 0, sizeof(address));
 	address.sin_family = AF_INET;
 	address.sin_port = htons((unsigned short)port);
 	address.sin_addr.s_addr = htonl(INADDR_ANY);
-	if (bind(descriptor, (const struct sockaddr *)&address, sizeof(address)) != 0) {
+	error = bind(descriptor, (const struct sockaddr *)&address, sizeof(address));
+	if (error != 0) {
 		fprintf(stderr, "udp-hold: bind: %s\n", strerror(errno));
 		close(descriptor);
 		free(buffer);
@@ -127,5 +146,7 @@ main(
 	printf("UDP-HOLD port=%lu queued=%lu bytes=%llu largest=%ld\n", port, queued, total, (long)largest);
 	close(descriptor);
 	free(buffer);
+
+	/* Succeeded: the queue was reported. */
 	return 0;
 }

@@ -57,6 +57,7 @@ main(
 	char **argv)
 {
 	int function_result;
+	int status;
 	char *end;
 	unsigned long v;
 	uint64_t rtt;
@@ -168,9 +169,12 @@ main(
 			/* The echo's data bytes. */
 			v = strtoul(argv[arg + 1], &end, 10);
 			if (*end != '\0' || end == argv[arg + 1] || v < PING_DATA_MIN || v > PING_DATA_MAX) {
-				function_result = usage();
-				return function_result;
+				/* Refuses a size outside what an echo carries. */
+				status = usage();
+				return status;
 			}
+
+			/* The size is kept for the echoes. */
 			data_size = (size_t)v;
 		} else if (strcmp(argv[arg], "-W") == 0) {
 			/* Validates the command-line arguments. */
@@ -225,6 +229,8 @@ main(
 			printf("ping: socket: %s\n", strerror(socket6_error));
 			return 1;
 		}
+
+		/* Pings the IPv6 peer. */
 		error = ping6(descriptor6, &peer6, argv[arg], count, interval_ms, timeout_ms, data_size);
 		return error;
 	}
@@ -511,6 +517,8 @@ ping6(
 		i = (unsigned)strlen(numeric);
 		snprintf(numeric + i, sizeof(numeric) - i, "%%%s", zone);
 	}
+
+	/* Announces the peer and the size of each echo. */
 	printf("PING6 %s (%s): %zu data bytes\n", name, numeric, data_size);
 
 	/* The request's buffer, and the reply's (the message without its IPv6 header, RFC 3542). */

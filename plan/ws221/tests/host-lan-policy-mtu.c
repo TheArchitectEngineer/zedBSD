@@ -180,21 +180,35 @@ round_trip(
 	struct networkd_lan_record again;
 	char text[NETWORKD_LAN_RECORD_MAX];
 	size_t length;
+	int status;
+	int differs;
 
 	/* The text. */
-	if (networkd_lan_record_format(record, text, sizeof(text), &length) != 0)
+	status = networkd_lan_record_format(record, text, sizeof(text), &length);
+	if (status != 0)
 		return -1;
-	if (length != strlen(expected) || memcmp(text, expected, length) != 0) {
+	differs = 1;
+	if (length == strlen(expected))
+		differs = memcmp(text, expected, length);
+	if (differs != 0) {
 		printf("  wrote: %.*s\n", (int)length, text);
 		return -1;
 	}
 
 	/* The fields read back. */
-	if (networkd_lan_record_parse(text, length, &again) != 0)
+	status = networkd_lan_record_parse(text, length, &again);
+	if (status != 0)
 		return -1;
-	if (strcmp(again.interface, record->interface) != 0 || again.mode != record->mode ||
-	    strcmp(again.address, record->address) != 0 || strcmp(again.netmask, record->netmask) != 0 ||
-	    again.dhcp_timeout != record->dhcp_timeout || again.mtu != record->mtu)
+	if (again.mode != record->mode || again.dhcp_timeout != record->dhcp_timeout || again.mtu != record->mtu)
+		return -1;
+	differs = strcmp(again.interface, record->interface);
+	if (differs != 0)
+		return -1;
+	differs = strcmp(again.address, record->address);
+	if (differs != 0)
+		return -1;
+	differs = strcmp(again.netmask, record->netmask);
+	if (differs != 0)
 		return -1;
 
 	/* Agreed. */

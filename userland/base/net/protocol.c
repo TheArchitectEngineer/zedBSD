@@ -398,6 +398,8 @@ networkd_lan_record_format(
 		errno = EINVAL;
 		return -1;
 	}
+
+	/* Rejects an MTU outside the range a record may carry. */
 	if (record->mtu != 0U &&
 	    (record->mtu < NETWORKD_LAN_RECORD_MTU_MIN ||
 	     record->mtu > NETWORKD_LAN_RECORD_MTU_MAX)) {
@@ -420,10 +422,14 @@ networkd_lan_record_format(
 		errno = EINVAL;
 		return -1;
 	}
+
+	/* Rejects a record that did not fit. */
 	if (count < 0 || (size_t)count >= capacity) {
 		errno = EOVERFLOW;
 		return -1;
 	}
+
+	/* Remembers how much of the output is written. */
 	used = (size_t)count;
 
 	/* Appends the MTU of an interface the daemon configures. */
@@ -433,11 +439,15 @@ networkd_lan_record_format(
 			errno = EOVERFLOW;
 			return -1;
 		}
+
+		/* The MTU words are part of the record now. */
 		used += (size_t)count;
 	}
 
 	/* Reports the record's length. */
 	*length = used;
+
+	/* Succeeded: the record is written. */
 	return 0;
 }
 
@@ -459,6 +469,11 @@ networkd_lan_record_parse(
 	char *rest;
 	unsigned words;
 	uint32_t timeout;
+	size_t word_length;
+	void *nul;
+	int compare;
+	int compare_dhcp;
+	int compare_static;
 	int parsed;
 
 	/* Rejects a record that cannot be held or carries a NUL. */
@@ -466,10 +481,15 @@ networkd_lan_record_parse(
 		errno = EINVAL;
 		return -1;
 	}
-	if (memchr(text, '\0', length) != NULL) {
+
+	/* A NUL would end the record early. */
+	nul = memchr(text, '\0', length);
+	if (nul != NULL) {
 		errno = EINVAL;
 		return -1;
 	}
+
+	/* Takes a copy the words can be cut out of. */
 	memcpy(copy, text, length);
 	copy[length] = '\0';
 
@@ -481,30 +501,47 @@ networkd_lan_record_parse(
 			errno = EINVAL;
 			return -1;
 		}
+
+		/* Keeps the word and goes on to the next. */
 		word[words] = token;
 		words++;
 		token = strtok_r(NULL, " ", &rest);
 	}
 
 	/* Every record names an interface and what is asked of it. */
-	if (words < 2U || strlen(word[0]) >= sizeof(record->interface)) {
+	if (words < 2U) {
 		errno = EINVAL;
 		return -1;
 	}
+
+	/* The name must fit the record. */
+	word_length = strlen(word[0]);
+	if (word_length >= sizeof(record->interface)) {
+		errno = EINVAL;
+		return -1;
+	}
+
+	/* Starts the record with the interface name. */
 	memset(record, 0, sizeof(*record));
 	strcpy(record->interface, word[0]);
 
 	/* Reads the kind of record and its operands. */
-	if (strcmp(word[1], "disabled") == 0 && words == 2U) {
+	compare = strcmp(word[1], "disabled");
+	compare_dhcp = strcmp(word[1], "dhcp");
+	compare_static = strcmp(word[1], "static");
+	if (compare == 0 && words == 2U) {
 		/* Left alone by the daemon. */
 		record->mode = NETWORKD_LAN_RECORD_DISABLED;
-	} else if (strcmp(word[1], "dhcp") == 0 && (words == 3U || words == 5U)) {
+	} else if (compare_dhcp == 0 && (words == 3U || words == 5U)) {
 		/* DHCP with its timeout, and an MTU. */
-		parsed = parse_decimal(word[2], strlen(word[2]), &timeout);
+		word_length = strlen(word[2]);
+		parsed = parse_decimal(word[2], word_length, &timeout);
 		if (parsed != 0 || timeout == 0U || timeout > 3600U) {
 			errno = EINVAL;
 			return -1;
 		}
+
+		/* The mode and its timeout. */
 		record->mode = NETWORKD_LAN_RECORD_DHCP;
 		record->dhcp_timeout = (unsigned)timeout;
 		if (words == 5U) {
@@ -512,13 +549,22 @@ networkd_lan_record_parse(
 			if (parsed != 0)
 				return -1;
 		}
-	} else if (strcmp(word[1], "static") == 0 && (words == 4U || words == 6U)) {
+	} else if (compare_static == 0 && (words == 4U || words == 6U)) {
 		/* A static address and mask, and an MTU. */
-		if (strlen(word[2]) >= sizeof(record->address) ||
-		    strlen(word[3]) >= sizeof(record->netmask)) {
+		word_length = strlen(word[2]);
+		if (word_length >= sizeof(record->address)) {
 			errno = EINVAL;
 			return -1;
 		}
+
+		/* The mask must fit too. */
+		word_length = strlen(word[3]);
+		if (word_length >= sizeof(record->netmask)) {
+			errno = EINVAL;
+			return -1;
+		}
+
+		/* The mode and its address and mask. */
 		record->mode = NETWORKD_LAN_RECORD_STATIC;
 		strcpy(record->address, word[2]);
 		strcpy(record->netmask, word[3]);
@@ -533,7 +579,7 @@ networkd_lan_record_parse(
 		return -1;
 	}
 
-	/* Read. */
+	/* Succeeded: the record is read. */
 	return 0;
 }
 
@@ -731,16 +777,20 @@ lan_record_mtu(
 	unsigned *mtu)
 {
 	uint32_t value;
+	size_t text_length;
+	int compare;
 	int parsed;
 
 	/* The key is "mtu". */
-	if (strcmp(key, "mtu") != 0) {
+	compare = strcmp(key, "mtu");
+	if (compare != 0) {
 		errno = EINVAL;
 		return -1;
 	}
 
 	/* The value is a decimal within the bounds. */
-	parsed = parse_decimal(text, strlen(text), &value);
+	text_length = strlen(text);
+	parsed = parse_decimal(text, text_length, &value);
 	if (parsed != 0 ||
 	    value < NETWORKD_LAN_RECORD_MTU_MIN ||
 	    value > NETWORKD_LAN_RECORD_MTU_MAX) {
@@ -748,7 +798,7 @@ lan_record_mtu(
 		return -1;
 	}
 
-	/* Read. */
+	/* Succeeded: the MTU is read. */
 	*mtu = (unsigned)value;
 	return 0;
 }

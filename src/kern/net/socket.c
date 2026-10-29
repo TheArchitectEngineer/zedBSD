@@ -678,6 +678,7 @@ socket_enqueue_packet(
 
 	spin_unlock_irqrestore(&socket->lock, irq);
 
+	/* Tells the pollers of the socket that data arrived. */
 	socket_poll_notify(socket);
 
 	/* Reports the queued packet. */
@@ -708,6 +709,7 @@ socket_enqueue_stream(
 	unsigned long irq;
 	size_t room;
 	size_t fill;
+	unsigned references;
 	int jumbo;
 	int error;
 
@@ -723,7 +725,10 @@ socket_enqueue_stream(
 	if (socket->lifecycle != SOCKET_OPEN ||
 	    packet->length > socket->receive_hiwat_bytes ||
 	    socket->receive_bytes > socket->receive_hiwat_bytes - packet->length) {
-		error = socket->lifecycle != SOCKET_OPEN ? EPIPE : ENOBUFS;
+		if (socket->lifecycle != SOCKET_OPEN)
+			error = EPIPE;
+		else
+			error = ENOBUFS;
 		spin_unlock_irqrestore(&socket->lock, irq);
 		packet_buf_free(packet);
 		return error;
@@ -732,9 +737,13 @@ socket_enqueue_stream(
 	/* The room at the end of the waiting packet, when it is unshared. */
 	tail = socket->receive_tail;
 	room = 0;
-	if (tail != NULL && refcount_load(&tail->refcount) == 1U)
-		room = tail->capacity - (size_t)(tail->data - tail->storage) -
-		    tail->length;
+	if (tail != NULL) {
+		references = refcount_load(&tail->refcount);
+		if (references == 1U) {
+			room = tail->capacity - (size_t)(tail->data - tail->storage) -
+			    tail->length;
+		}
+	}
 
 	/* All of it there. */
 	if (packet->length <= room) {
@@ -784,6 +793,7 @@ socket_enqueue_stream(
 
 	spin_unlock_irqrestore(&socket->lock, irq);
 
+	/* Tells the pollers of the socket that data arrived. */
 	socket_poll_notify(socket);
 
 	/* Reports the queued data. */
@@ -942,6 +952,7 @@ socket_requeue_packet_front(
 
 	spin_unlock_irqrestore(&socket->lock, irq);
 
+	/* Tells the pollers of the socket that data is back. */
 	socket_poll_notify(socket);
 
 	/* Reports the requeued packet. */
@@ -1201,5 +1212,6 @@ socket_wake_queue(
 
 	spin_unlock_irqrestore(&socket->lock, irq);
 
+	/* Tells the pollers of the socket that its state changed. */
 	socket_poll_notify(socket);
 }

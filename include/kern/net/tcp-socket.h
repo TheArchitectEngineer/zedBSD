@@ -70,7 +70,7 @@ enum tcp_state {
 /*
  * One segment in the send ring: its copy, where it lies in the sequence
  * space, its TCP flags, whether it went out as a probe of a window that
- * could not take it (ws220-p005; set when it is marked sent), and whether
+ * could not take it (set when it is marked sent), and whether
  * it has never been handed to the device (fresh: a short last segment
  * that Nagle's algorithm holds takes the next write's bytes), and whether
  * it was made unsent again after it went (rewound: by a timeout's
