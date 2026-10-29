@@ -9,7 +9,7 @@ lib=$build/lib
 out=build/ws314-host-test
 mkdir -p "$out"
 case $build in *tsan*) sanitize=-fsanitize=thread ;; *) sanitize= ;; esac
-cc $sanitize -std=gnu17 -Wall -Wextra -Werror -O1 -g -Iuserland/desktop/include -I"$build/include" \
+cc $sanitize -DKL_TEST_OWN_SERVER -std=gnu17 -Wall -Wextra -Werror -O1 -g -Iuserland/desktop/include -I"$build/include" \
 	"plan/ws314/tests/$test-test.c" -o "$out/$test-test" -L"$lib" -lkeiland -lwayland-server -pthread \
 	-Wl,-rpath,"$PWD/$lib" || exit 1
 dir=$(mktemp -d "$PWD/$out/run.XXXXXX")

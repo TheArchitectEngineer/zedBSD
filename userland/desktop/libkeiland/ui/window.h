@@ -161,6 +161,9 @@ struct kl_app {
 	/* The processes the application started, a list through their app_next (process.c). */
 	struct kl_process *processes;
 
+	/* The copies of programs bound to the application, a list through their app_next (instance.c). */
+	struct kl_instance *instances;
+
 	/* The descriptors watched and what for (KL_APP_FD_*). */
 	int fds[KL_APP_FDS_MAX];
 	unsigned fd_events[KL_APP_FDS_MAX];
@@ -637,6 +640,12 @@ void keiui_app_forget(struct kl_app *app, struct kl_window *window);
 int keiui_app_post_event(struct kl_app *app, const struct kl_app_event *event);
 struct kl_app_event *keiui_app_slot(struct kl_app *app);
 void keiui_app_forget_process(struct kl_app *app, const struct kl_process *process);
+void keiui_app_forget_instance(struct kl_app *app, const struct kl_instance *instance);
+
+/* The copies bound to an application (instance.c): their events queued, one taken, and every one unbound. */
+void keiui_instances_queue(struct kl_app *app);
+void keiui_instance_taken(struct kl_app_event *event);
+void keiui_instances_unbind(struct kl_app *app);
 int keiui_window_post_input(struct kl_window *window, uint32_t code, void *data);
 struct kl_menu_service *keiui_app_menu_service(struct kl_app *app);
 

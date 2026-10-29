@@ -71,6 +71,8 @@ void keiui_lock_give(struct keiui_lock *lock);
 keiui_thread_id keiui_thread_self(void);
 int keiui_thread_is(keiui_thread_id thread);
 int keiui_thread_start(void *(*run)(void *), void *argument);
+int keiui_thread_start_joined(void *(*run)(void *), void *argument, keiui_thread_id *thread);
+void keiui_thread_join(keiui_thread_id thread);
 void keiui_thread_name(const char *name);
 
 #endif

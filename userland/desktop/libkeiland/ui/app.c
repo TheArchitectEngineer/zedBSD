@@ -178,8 +178,10 @@ kl_app_close(
 	/* Each window (its close takes it out of the list), and each process (its threads no longer reach the application). */
 	while (app->windows != NULL)
 		kl_window_close(app->windows);
-	if (app->post_open)
+	if (app->post_open) {
 		keiui_processes_close(app);
+		keiui_instances_unbind(app);
+	}
 
 	/* The appearance, the system and the menu service. */
 	kl_appearance_close(app->appearance);
@@ -262,8 +264,9 @@ kl_app_dispatch(
 		return -1;
 	}
 
-	/* The processes' news so far, then no longer than until a repeat is due, and not at all while events wait. */
+	/* The processes' and the copies' news so far, then no longer than until a repeat is due, and not at all while events wait. */
 	keiui_processes_queue(app);
+	keiui_instances_queue(app);
 	timeout_ms = app_wait(app, timeout_ms, kl_clock_us());
 
 	/* The compositor's descriptor, then each one watched. */
@@ -315,6 +318,7 @@ kl_app_dispatch(
 	/* The posts that wait, the processes' news, the descriptors that became ready, then the repeats now due. */
 	app_posts_move(app);
 	keiui_processes_queue(app);
+	keiui_instances_queue(app);
 	app_fd_events(app, descriptors, watched);
 	app_repeat(app);
 
@@ -475,6 +479,7 @@ kl_app_take(
 	app->event_first = (app->event_first + 1U) % KEIUI_APP_EVENTS;
 	app->event_count--;
 	keiui_process_taken(event);
+	keiui_instance_taken(event);
 
 	/* Succeeded: one event taken. */
 	return 1;
@@ -1095,6 +1100,36 @@ keiui_app_forget_process(
 	for (index = 0; index < app->event_count; index++) {
 		from = (app->event_first + index) % KEIUI_APP_EVENTS;
 		if (app->events[from].process == process)
+			continue;
+		to = (app->event_first + kept) % KEIUI_APP_EVENTS;
+		if (to != from)
+			app->events[to] = app->events[from];
+		kept++;
+	}
+
+	/* The queue is as long as what was kept. */
+	app->event_count = kept;
+}
+
+/*
+ * Takes a copy's events out of the application's queue (the others keep
+ * their order).
+ */
+void
+keiui_app_forget_instance(
+	struct kl_app *app,
+	const struct kl_instance *instance)
+{
+	unsigned kept;
+	unsigned index;
+	unsigned from;
+	unsigned to;
+
+	/* The queue again without the copy's events. */
+	kept = 0;
+	for (index = 0; index < app->event_count; index++) {
+		from = (app->event_first + index) % KEIUI_APP_EVENTS;
+		if (app->events[from].instance == instance)
 			continue;
 		to = (app->event_first + kept) % KEIUI_APP_EVENTS;
 		if (to != from)

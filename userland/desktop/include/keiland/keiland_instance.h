@@ -20,6 +20,7 @@ extern "C" {
 
 struct wl_display;
 struct wl_surface;
+struct kl_app;
 
 /*
  * One copy of a program, and the activation.
@@ -31,6 +32,8 @@ struct wl_surface;
  * and brings its window to the front with the token (kl_activate).  The
  * copies find each other through a socket in the user's runtime directory
  * (XDG_RUNTIME_DIR), which must be the user's own and closed to others.
+ * The copy that runs binds itself to its application (kl_instance_bind):
+ * the requests then arrive as the application's KL_APP_INSTANCE events.
  *
  * An activation token is a compositor's permission to bring a window to
  * the front (xdg_activation_v1).  A program started by the desktop has one
@@ -63,6 +66,16 @@ int kl_instance_open(const char *name, const char *request, struct kl_instance *
  * over (for the program's poll), or -1 for NULL.
  */
 int kl_instance_fd(const struct kl_instance *instance);
+
+/*
+ * KL_VERSION 99: has the requests of later starts arrive as the
+ * application's KL_APP_INSTANCE events (event.instance), from now until the
+ * copy is closed or the application closes (whichever comes first).  A
+ * thread of the copy's own takes them; it keeps up to eight not yet taken.
+ * Returns 0, EINVAL (no copy, or bound already), or another error of the
+ * system.
+ */
+int kl_instance_bind(struct kl_instance *instance, struct kl_app *app);
 
 /*
  * Takes one request handed over: 1 with the request and the token (an

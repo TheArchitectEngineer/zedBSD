@@ -20,7 +20,10 @@ while IFS= read -r file; do
 done < "$work/common" > "$work/C1"
 
 # No device ioctl in the compositor or libkeiland: the input devices are libkeiland-backend's (ws131-p007).
+# libkeiland's platform layer (libkeiland/platform/: starts processes without showing the app an fd or pid; Guardrail
+# "app と設定") tells a process's terminal its size.
 while IFS= read -r file; do
+    case $file in userland/desktop/libkeiland/platform/*) continue ;; esac
     awk '/ioctl[[:space:]]*\(/ {print FILENAME ":" FNR ": " $0}' "$file"
 done < "$work/common" > "$work/C2"
 
@@ -56,23 +59,14 @@ find include/libc \( -name 'keiland.h' -o -name 'keiui.h' -o -name 'keiland-ui.h
     -o -name 'browser.h' -o -name 'wayland*' -o -name 'xdg-shell*' \
     -o -name 'primary-selection*' -o -name 'tablet-unstable*' \) -print > "$work/C5"
 
-# Linux selection belongs to the OS modules; the evdev header bridges constants.
+# Linux selection belongs to the OS modules (and libkeiland's platform layer, libkeiland/platform/: starts processes
+# without showing the app an fd or pid; Guardrail "app と設定"); the evdev header bridges constants.
 find userland/desktop \
     \( -path '*/zedbsd' -o -path '*/linux' -o -path '*/freebsd' -o -path '*/wpa' \
-    -o -path 'userland/desktop/libkeiland-backend-*' \) -prune \
+    -o -path 'userland/desktop/libkeiland-backend-*' -o -path 'userland/desktop/libkeiland/platform' \) -prune \
     -o -name '*.[ch]' -print |
 while IFS= read -r file; do
     [ "$file" != userland/desktop/libkeiland-backend/keiland-backend-evdev.h ] || continue
-    # D14 (2026-10-03 user): Terminal's pty header, <pty.h> or FreeBSD's <libutil.h>, is chosen by one macro block
-    # (ws131-p018 moved it into terminal/main.c); the block holds only those includes.
-    if [ "$file" = userland/desktop/terminal/main.c ]; then
-        awk '/^[[:space:]]*#[[:space:]]*(if|ifdef|elif).*(__linux__|__FreeBSD__)/ {
-            getline next_line
-            if (next_line ~ /^[[:space:]]*#[[:space:]]*include[[:space:]]*<libutil\.h>/) next
-            print FILENAME ":" FNR - 1 ": " $0
-        }' "$file"
-        continue
-    fi
     awk '/^[[:space:]]*#[[:space:]]*(if|ifdef|elif).*(__linux__|__FreeBSD__)/ {print FILENAME ":" FNR ": " $0}' "$file"
 done > "$work/L1"
 

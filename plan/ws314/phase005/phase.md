@@ -45,8 +45,12 @@
   99・99・99・3）、stream 0 の TERMINATE（SIGNALED 15、終わりの後の kill は 0）、環境（設定・削除）と directory、ENOENT（PATH と path）、
   terminal（`stty size` 24 80 → resize → 30 100、`stty -echo` の mode、exit 4 と最後の出力）、HANGUP（SIGNALED 1）、close の後に event 無し。
   PASS（3 回）。TSan の libkeiland でも PASS・警告 0。post-test も PASS。
-- `plan/tools/keiland-os-boundary/check.sh`: 前からの FAIL（installer/admin・B5 ほか）に加え、新しい file が A4（`process-posix.c` の
-  `posix_spawn`・`execve`）・C2（`ioctl`）・L1（`platform-posix.c`・`process-posix.c` の `#if __FreeBSD__`）で引っかかる。platform の層の
-  許可の行が要る（`plan/tools/` は Q1 の物。Q1 に依頼）。Terminal・Phone の A4 の許可の行は不要になった。
+- `plan/tools/keiland-os-boundary/check.sh`（Q1 が check.sh と app-allow.tsv を q1690 の所有に足した、2026-10-30）: platform の層を path で
+  例外にした（C2 と L1 は check.sh で `userland/desktop/libkeiland/platform/` を除く、A4 と A1（`/dev/null`）は app-allow.tsv の行、理由
+  「libkeiland's platform layer (starts processes without showing the app an fd or pid; Guardrail app と設定)」）。phone/main.c の A4 の行を外した。
+  terminal/main.c の A4 の行は新しい窓の二重の fork（p013 で kl_launch へ）が残るので p013 まで残す。L1 の Terminal の pty の header の特例
+  （D14）は Terminal から `#if` が消えたので外した。結果: 基点（6485c1ddc の git archive）と比べて新しい FAIL は B5 の
+  `keiland_process`（p001 の分割から続く B5 の類。基点の archive は git が無く B5 を数えないので差に出る）だけ。消えた FAIL: installer/helper.c の
+  A4（fork・execv）。前からの FAIL（installer/admin・installer の A1・A5・C4、libbrowser の A1、B5）はそのまま。
 - 未実施: zedBSD（QEMU）での Terminal・Installer の probe・Phone の viewer の動き、`waitid(WNOWAIT)`・`forkpty`・`posix_spawn` の zedBSD の実装での
   試験。

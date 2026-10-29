@@ -457,6 +457,7 @@ main_loop(
 	int status;
 	int pace;
 	int timeout;
+	int error;
 
 	/* The first frame's canvas. */
 	status = main_canvas_make();
@@ -470,8 +471,12 @@ main_loop(
 	if (status != 0)
 		return -1;
 
-	/* A later start of Settings wakes the wait. */
-	main_window.extra_fd = kl_instance_fd(main_instance);
+	/* A later start of Settings arrives as the application's event. */
+	if (main_instance != NULL) {
+		error = kl_instance_bind(main_instance, main_window.app);
+		if (error != 0)
+			se_log("INSTANCE bind error=%d", error);
+	}
 
 	/* The log line the tests wait for. */
 	se_log("READY width=%u height=%u glass=%d page=%s", main_present.extent.width, main_present.extent.height, main_app.glass, se_pages[main_app.page].word);
@@ -518,7 +523,10 @@ main_loop(
 		main_request();
 
 		/* The pages later starts handed over, and their window brought to the front. */
-		main_handed_over();
+		if (main_window.handed_over) {
+			main_window.handed_over = 0;
+			main_handed_over();
+		}
 
 		/* Time passes for the interface (the minute About shows), and the system reports (the network and the sound follow it). */
 		se_ui_tick(&main_app, now);

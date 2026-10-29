@@ -58,10 +58,9 @@ se_window_open(
 	struct kl_app_options app_options;
 	int error;
 
-	/* Nothing held yet; no finger is the pointer and no descriptor is watched. */
+	/* Nothing held yet; no finger is the pointer. */
 	memset(window, 0, sizeof(*window));
 	window->touch_id = -1;
-	window->extra_fd = -1;
 
 	/* The application: the connection, and the identity of its windows. */
 	memset(&app_options, 0, sizeof(app_options));
@@ -109,13 +108,6 @@ se_window_dispatch(
 	int status;
 	int taken;
 
-	/* A later start of Settings wakes the wait (the main loop reads the socket itself). */
-	if (window->extra_fd >= 0 && !window->extra_watched) {
-		status = kl_app_watch_fd(window->app, window->extra_fd, KL_APP_FD_READ);
-		if (status == 0)
-			window->extra_watched = 1;
-	}
-
 	/* Nothing is waited for while input is already queued. */
 	if (window->event_count != 0U)
 		timeout = 0;
@@ -132,6 +124,8 @@ se_window_dispatch(
 			break;
 		if (event.kind == KL_APP_WINDOW && event.window == window->kui)
 			window_event(window, &event.input);
+		if (event.kind == KL_APP_INSTANCE)
+			window->handed_over = 1;
 	}
 
 	/* Succeeded: the events so far have run. */
@@ -224,7 +218,6 @@ se_window_close(
 
 	/* Nothing is held. */
 	memset(window, 0, sizeof(*window));
-	window->extra_fd = -1;
 	window->touch_id = -1;
 }
 

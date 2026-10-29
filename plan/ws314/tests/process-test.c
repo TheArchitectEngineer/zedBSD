@@ -14,7 +14,9 @@
 
 #include <keiland/keiland.h>
 
+#ifdef KL_TEST_OWN_SERVER
 #include <wayland-server.h>
+#endif
 
 #include <errno.h>
 #include <pthread.h>
@@ -25,11 +27,16 @@
 #include <string.h>
 #include <time.h>
 
+#ifdef KL_TEST_OWN_SERVER
 static struct wl_display *server;
+#endif
+#ifdef KL_TEST_OWN_SERVER
 static _Atomic int server_stop;
+#endif
 static struct kl_app *app;
 static int failures;
 
+#ifdef KL_TEST_OWN_SERVER
 static const struct wl_interface fake_compositor = { "wl_compositor", 4, 0, NULL, 0, NULL };
 static const struct wl_interface fake_shell = { "xdg_wm_base", 1, 0, NULL, 0, NULL };
 
@@ -55,6 +62,46 @@ server_run(void *argument)
 	}
 	return NULL;
 }
+#endif
+
+/* The display: a server of the test's own (the host), or the compositor's (WAYLAND_DISPLAY, a zedBSD guest). */
+#ifdef KL_TEST_OWN_SERVER
+static pthread_t server_thread;
+
+static const char *
+test_server_start(void)
+{
+	const char *socket_name;
+
+	server = wl_display_create();
+	socket_name = wl_display_add_socket_auto(server);
+	if (socket_name == NULL)
+		return NULL;
+	setenv("WAYLAND_DISPLAY", socket_name, 1);
+	wl_global_create(server, &fake_compositor, 4, NULL, bind_nothing);
+	wl_global_create(server, &fake_shell, 1, NULL, bind_nothing);
+	pthread_create(&server_thread, NULL, server_run, NULL);
+	return socket_name;
+}
+
+static void
+test_server_stop(void)
+{
+	server_stop = 1;
+	pthread_join(server_thread, NULL);
+}
+#else
+static const char *
+test_server_start(void)
+{
+	return getenv("WAYLAND_DISPLAY") != NULL ? getenv("WAYLAND_DISPLAY") : "wayland-0";
+}
+
+static void
+test_server_stop(void)
+{
+}
+#endif
 
 static uint64_t
 now_ms(void)
@@ -450,16 +497,11 @@ int
 main(void)
 {
 	struct kl_app_options options;
-	pthread_t server_thread;
 	const char *socket_name;
 
-	server = wl_display_create();
-	socket_name = wl_display_add_socket_auto(server);
+	socket_name = test_server_start();
 	if (socket_name == NULL)
 		return 1;
-	wl_global_create(server, &fake_compositor, 4, NULL, bind_nothing);
-	wl_global_create(server, &fake_shell, 1, NULL, bind_nothing);
-	pthread_create(&server_thread, NULL, server_run, NULL);
 
 	memset(&options, 0, sizeof(options));
 	options.display = socket_name;
@@ -481,8 +523,7 @@ main(void)
 	case_close();
 
 	kl_app_close(app);
-	server_stop = 1;
-	pthread_join(server_thread, NULL);
+	test_server_stop();
 	printf("%s failures=%d\n", failures == 0 ? "PASS" : "FAIL", failures);
 	return failures == 0 ? 0 : 1;
 }

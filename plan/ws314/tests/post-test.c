@@ -16,7 +16,9 @@
 
 #include <keiland/keiland.h>
 
+#ifdef KL_TEST_OWN_SERVER
 #include <wayland-server.h>
+#endif
 
 #include <errno.h>
 #include <stdatomic.h>
@@ -39,10 +41,15 @@ struct poster {
 	pthread_t thread;
 };
 
+#ifdef KL_TEST_OWN_SERVER
 static struct wl_display *server;
+#endif
+#ifdef KL_TEST_OWN_SERVER
 static _Atomic int server_stop;
+#endif
 
 /* An interface by name only: the client binds nothing of it. */
+#ifdef KL_TEST_OWN_SERVER
 static const struct wl_interface fake_compositor = { "wl_compositor", 4, 0, NULL, 0, NULL };
 static const struct wl_interface fake_shell = { "xdg_wm_base", 1, 0, NULL, 0, NULL };
 
@@ -73,6 +80,46 @@ server_run(
 	}
 	return NULL;
 }
+#endif
+
+/* The display: a server of the test's own (the host), or the compositor's (WAYLAND_DISPLAY, a zedBSD guest). */
+#ifdef KL_TEST_OWN_SERVER
+static pthread_t server_thread;
+
+static const char *
+test_server_start(void)
+{
+	const char *socket_name;
+
+	server = wl_display_create();
+	socket_name = wl_display_add_socket_auto(server);
+	if (socket_name == NULL)
+		return NULL;
+	setenv("WAYLAND_DISPLAY", socket_name, 1);
+	wl_global_create(server, &fake_compositor, 4, NULL, bind_nothing);
+	wl_global_create(server, &fake_shell, 1, NULL, bind_nothing);
+	pthread_create(&server_thread, NULL, server_run, NULL);
+	return socket_name;
+}
+
+static void
+test_server_stop(void)
+{
+	server_stop = 1;
+	pthread_join(server_thread, NULL);
+}
+#else
+static const char *
+test_server_start(void)
+{
+	return getenv("WAYLAND_DISPLAY") != NULL ? getenv("WAYLAND_DISPLAY") : "wayland-0";
+}
+
+static void
+test_server_stop(void)
+{
+}
+#endif
 
 static void *
 poster_run(
@@ -112,7 +159,6 @@ main(void)
 	struct kl_app_options options;
 	struct kl_app_event event;
 	struct kl_app *app;
-	pthread_t server_thread;
 	const char *socket_name;
 	uintptr_t own_next;
 	uintptr_t sequence;
@@ -123,15 +169,9 @@ main(void)
 	int status;
 
 	/* The server and its two globals. */
-	server = wl_display_create();
-	socket_name = wl_display_add_socket_auto(server);
-	if (socket_name == NULL) {
-		fprintf(stderr, "no socket\n");
+	socket_name = test_server_start();
+	if (socket_name == NULL)
 		return 1;
-	}
-	wl_global_create(server, &fake_compositor, 4, NULL, bind_nothing);
-	wl_global_create(server, &fake_shell, 1, NULL, bind_nothing);
-	pthread_create(&server_thread, NULL, server_run, NULL);
 
 	/* The application. */
 	memset(&options, 0, sizeof(options));
@@ -216,8 +256,7 @@ main(void)
 	}
 
 	kl_app_close(app);
-	server_stop = 1;
-	pthread_join(server_thread, NULL);
+	test_server_stop();
 	printf("PASS posts=%u threads=%u own=%u ms=%lu\n", total, THREADS, OWN_POSTS, (unsigned long)(now_ms() - start));
 	return 0;
 }

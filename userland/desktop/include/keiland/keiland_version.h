@@ -148,6 +148,7 @@ extern "C" {
  *  97: events posted from any thread, kl_app_post and KL_APP_POST, kl_window_post with data
  *      (kl_window_event's data) from any thread
  *  98: the programs an application starts, kl_process_* and KL_APP_PROCESS
+ *  99: a copy's requests as the application's events, kl_instance_bind and KL_APP_INSTANCE
  *
  * The file chooser of KL_VERSION 12 moved to the widgets with KL_VERSION 16:
  * kl_file_chooser_* of <keiland/keiland_file_chooser.h>, made of the
@@ -157,7 +158,7 @@ extern "C" {
  * are kl_settings_* of <keiland/keiland_settings.h>, and desktop.conf is the
  * compositor's own file.
  */
-#define KL_VERSION 98U
+#define KL_VERSION 99U
 
 /*
  * Reports the interface version of the library that was loaded.

@@ -240,6 +240,43 @@ keiui_thread_start(
 }
 
 /*
+ * Starts a thread of the library's own that its owner waits for
+ * (keiui_thread_join), with every signal blocked as keiui_thread_start's.
+ */
+int
+keiui_thread_start_joined(
+	void *(*run)(void *),
+	void *argument,
+	keiui_thread_id *thread)
+{
+	sigset_t all;
+	sigset_t kept;
+	int error;
+
+	/* Every signal blocked while it starts, then the caller's mask again. */
+	(void)sigfillset(&all);
+	(void)pthread_sigmask(SIG_SETMASK, &all, &kept);
+	error = pthread_create(thread, NULL, run, argument);
+	(void)pthread_sigmask(SIG_SETMASK, &kept, NULL);
+	if (error != 0)
+		return error;
+
+	/* Succeeded: the thread runs. */
+	return 0;
+}
+
+/*
+ * Waits for a thread started by keiui_thread_start_joined to end.
+ */
+void
+keiui_thread_join(
+	keiui_thread_id thread)
+{
+	/* The thread's end. */
+	(void)pthread_join(thread, NULL);
+}
+
+/*
  * Names the calling thread for the debugger, where the system keeps names.
  */
 void
