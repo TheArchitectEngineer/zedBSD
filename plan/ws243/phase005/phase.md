@@ -24,9 +24,10 @@ Status: cleared（2026-10-29 q1677-i02 P5。WS243 が足した・変えた C の
   探しの末尾の失敗の return（`nvrtx_nvdec_context_bytes` の ENOENT、`nvrtx_video_dpb_entry` の ENOSPC。全部を見て初めて決まる失敗）。
 - `resource_image_supported` の返り値「2」の定数化（既存の関数の返り値の約束に触れるので comment に留めた）。
 
-## 気づいた事（動作、未修正）
+## 気づいた事（動作）と直し
 
-- `vk-video.c` の `video_parameters_create`: `nvrtx_vk_object_retain(owner)` が失敗しても `max_sps`・`max_pps` を代入する。後の error の判定で破棄されるので害は無い。
+- `vk-video.c` の `video_parameters_create`: `nvrtx_vk_object_retain(owner)` が失敗しても `max_sps`・`max_pps` を代入していた（後の error の判定で破棄されるので害は無かった）。
+  Q1 の指示で直した: retain が成功した時だけ session と容量を記録する。build rc 0・warning 0・check PASS（cksum 1672525563）、nvdec 88/0・wire 32/0・nvrtx-vk 86/0。
 
 ## 確かめた事
 

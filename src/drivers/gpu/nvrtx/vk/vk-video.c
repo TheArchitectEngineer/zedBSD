@@ -1219,11 +1219,13 @@ video_parameters_create(
 			error = ENOMEM;
 	}
 
-	/* Holds the session the parameters belong to, and records their capacity. */
-	if (error == 0) {
+	/* Holds the session the parameters belong to. */
+	if (error == 0)
 		error = nvrtx_vk_object_retain(owner);
-		if (error == 0)
-			parameters->session = owner;
+
+	/* Records the session and the parameters' capacity once the session is held. */
+	if (error == 0) {
+		parameters->session = owner;
 		parameters->max_sps = chain.max_sps;
 		parameters->max_pps = chain.max_pps;
 	}
