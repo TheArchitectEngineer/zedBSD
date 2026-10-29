@@ -3,7 +3,7 @@
 # The platform provides DYNAMIC_SYSROOT, DYNAMIC_LINK_CFLAGS,
 # DYNAMIC_LINK_LDFLAGS and DYNAMIC_ELF_MACHINE. Source and link dependencies
 # stay identical on amd64, arm64 and riscv64; libc, rtld and assembly stay platform-owned.
-DYNAMIC_PORTABLE_PROGRAMS := vkdemo vkcompute vkreset vkcoherency vkimage vkstage vkmatrix vkquad vkvideo-probe media-probe display-events wayland wltest acquire-fence-test gpu-forge-test menu-probe keiland-settings keiland-system printtest keiland-notify mediastorage fidoctl passkey-fido2 titlebar-probe popup-probe subsurface-probe seat-probe tablet-probe data-probe extras-probe wlshm keiland-ime ime-probe mview terminal files settings monitor notes pdfviewer imageview videoplayer music photos phone calendar mailer textedit kuidemo browser browser-probe glxtest zgears egltest glescompute xserver gpu-fence-test gpu-share-test hvs-load
+DYNAMIC_PORTABLE_PROGRAMS := vkdemo vkcompute vkreset vkcoherency vkimage vkstage vkmatrix vkquad vkvideo-probe media-probe display-events wayland wltest acquire-fence-test gpu-forge-test menu-probe keiland-settings keiland-system printtest keiland-notify mediastorage fidoctl passkey-fido2 titlebar-probe popup-probe subsurface-probe seat-probe tablet-probe data-probe extras-probe wlshm keiland-ime ime-probe mview terminal files settings monitor notes pdfviewer imageview videoplayer music photos phone calendar mailer textedit kuidemo browser browser-probe glxtest zgears egltest glescompute xserver gpu-fence-test gpu-share-test hvs-load camvk
 
 $(eval $(call ZEDBSD_LIBUTIL_RULE,$(DYNAMIC_DIR),$(LD),$(DYNAMIC_LINK_LDFLAGS),$(DYNAMIC_ELF_MACHINE)))
 
@@ -279,6 +279,23 @@ $(BUILD)/bin/vkmatrix: $(DYNAMIC_SYSROOT)/usr/lib/crt1.o \
  -Wl,-z,stack-size=0x100000,--allow-shlib-undefined \
  -Wl,--dynamic-linker=/lib/ld.so \
  $(DYNAMIC_SYSROOT)/usr/lib/crt1.o $(DYNAMIC_VKMATRIX_OBJS) \
+ -L$(DYNAMIC_DIR) -Wl,-rpath-link,$(DYNAMIC_DIR) \
+ -l:libvulkan.so -l:libc.so -o $@
+	$(PYTHON) $(DYNAMIC_VULKAN_CHECK) --machine $(DYNAMIC_ELF_MACHINE) --role application \
+ --needed libvulkan.so --needed libc.so $@
+
+# The camera to Vulkan test is a plain Vulkan client like vkcompute, with the camera tools' common code.
+DYNAMIC_CAMVK_OBJS := $(call ZEDBSD_USERLAND_OBJECTS,$(DYNAMIC_DIR)/obj,camvk)
+
+$(BUILD)/bin/camvk: $(DYNAMIC_SYSROOT)/usr/lib/crt1.o \
+	$(DYNAMIC_CAMVK_OBJS) $(DYNAMIC_DIR)/libvulkan.so $(DYNAMIC_DIR)/libc.so \
+	$(DYNAMIC_DIR)/ld.so $(DYNAMIC_VULKAN_CHECK)
+	@mkdir -p $(dir $@)
+	$(CC) $(DYNAMIC_LINK_CFLAGS) -nostdlib -pie -Wl,--no-relax \
+ -Wl,--hash-style=gnu,-z,now,-z,relro,-z,separate-code \
+ -Wl,-z,stack-size=0x100000,--allow-shlib-undefined \
+ -Wl,--dynamic-linker=/lib/ld.so \
+ $(DYNAMIC_SYSROOT)/usr/lib/crt1.o $(DYNAMIC_CAMVK_OBJS) \
  -L$(DYNAMIC_DIR) -Wl,-rpath-link,$(DYNAMIC_DIR) \
  -l:libvulkan.so -l:libc.so -o $@
 	$(PYTHON) $(DYNAMIC_VULKAN_CHECK) --machine $(DYNAMIC_ELF_MACHINE) --role application \
@@ -1090,6 +1107,19 @@ $(DYNAMIC_DIR)/libmedia.so: $(DYNAMIC_MEDIA_LIBRARY_OBJS) $(DYNAMIC_DIR)/libc.so
  $(DYNAMIC_MEDIA_LIBRARY_OBJS) -L$(DYNAMIC_DIR) -l:libc.so -o $@
 	$(PYTHON) tools/build/check-dynamic-elf.py --machine $(DYNAMIC_ELF_MACHINE) --role shared-library \
  --needed libc.so --soname libmedia.so $@
+
+# The YOLOX-Nano detector library runs on the CPU or, when a Vulkan loader is there, through it by dlopen; it
+# links the C library alone, and only the calls of <yolox.h> leave it.
+DYNAMIC_YOLOX_LIBRARY_OBJS := $(call ZEDBSD_USERLAND_OBJECTS,$(DYNAMIC_DIR)/obj,libyolox)
+
+$(DYNAMIC_DIR)/libyolox.so: $(DYNAMIC_YOLOX_LIBRARY_OBJS) $(DYNAMIC_DIR)/libc.so \
+	userland/desktop/libyolox/exports.map tools/build/check-dynamic-elf.py
+	$(LD) $(DYNAMIC_LINK_LDFLAGS) -shared -soname libyolox.so --hash-style=both -Bsymbolic-functions \
+ -z defs -z now -z relro -z separate-code -z stack-size=0x100000 \
+ --version-script=userland/desktop/libyolox/exports.map \
+ $(DYNAMIC_YOLOX_LIBRARY_OBJS) -L$(DYNAMIC_DIR) -l:libc.so -o $@
+	$(PYTHON) tools/build/check-dynamic-elf.py --machine $(DYNAMIC_ELF_MACHINE) --role shared-library \
+ --needed libc.so --soname libyolox.so $@
 
 # The Web browser engine (WS074, libbrowser since ws074-p057) keeps its modules in subdirectories of
 # userland/desktop/libbrowser and includes their private headers from that root; it imports standard Vulkan for its

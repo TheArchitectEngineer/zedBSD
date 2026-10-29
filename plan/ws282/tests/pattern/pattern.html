@@ -1,0 +1,118 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Camera Test Pattern</title>
+<!--
+  zedBSD
+  Copyright (C) 2026 Awe Morris
+  SPDX-License-Identifier: Zlib
+
+  The picture camcheck reads through an HDMI capture device.  Shown full
+  screen on the PC whose HDMI output feeds the capture device.
+
+    ?mode=yuyv   patches, grey steps, the frame counter and an 8-pixel checker
+    ?mode=mjpeg  the same without the checker (a fine checker is JPEG's worst
+                 input and would raise the bit rate past the link)
+
+  The layout is in fractions of the screen so that the capture's scaling does
+  not matter; camcheck (userland/tests/camcheck/analyze.h) uses the same
+  fractions.  Click or press a key for full screen.
+-->
+<style>
+  :root { color-scheme: dark; }
+  html, body { margin: 0; padding: 0; height: 100%; background: #000; overflow: hidden; }
+  canvas { display: block; width: 100vw; height: 100vh; }
+</style>
+</head>
+<body>
+<canvas id="pattern"></canvas>
+<script>
+"use strict";
+
+/* The layout, in fractions of the screen (camcheck's CAMCHECK_* constants). */
+const PATCH_TOP = 0.04, PATCH_BOTTOM = 0.30;
+const STEP_TOP = 0.34, STEP_BOTTOM = 0.52;
+const COUNTER_TOP = 0.58, COUNTER_BOTTOM = 0.78;
+const CHECKER_TOP = 0.84;
+const COUNTER_BITS = 16;
+const STEPS = 8;
+const CHECKER_PIXELS = 8;
+
+/* The patches, left to right: red, green, blue, white, black, grey 50 %, yellow, cyan, magenta. */
+const PATCHES = [
+  "rgb(255,0,0)", "rgb(0,255,0)", "rgb(0,0,255)",
+  "rgb(255,255,255)", "rgb(0,0,0)", "rgb(128,128,128)",
+  "rgb(255,255,0)", "rgb(0,255,255)", "rgb(255,0,255)"
+];
+
+const mode = new URLSearchParams(location.search).get("mode") === "mjpeg" ? "mjpeg" : "yuyv";
+const canvas = document.getElementById("pattern");
+const context = canvas.getContext("2d", { alpha: false });
+let counter = 0;
+
+/* The canvas in device pixels, so that the checker is 8 real pixels. */
+function resize() {
+  const ratio = window.devicePixelRatio || 1;
+  canvas.width = Math.round(window.innerWidth * ratio);
+  canvas.height = Math.round(window.innerHeight * ratio);
+  drawStatic();
+}
+
+/* The parts that do not change: patches, steps and the checker. */
+function drawStatic() {
+  const w = canvas.width, h = canvas.height;
+  context.fillStyle = "#000";
+  context.fillRect(0, 0, w, h);
+  for (let i = 0; i < PATCHES.length; i++) {
+    const x0 = Math.round(i * w / PATCHES.length), x1 = Math.round((i + 1) * w / PATCHES.length);
+    context.fillStyle = PATCHES[i];
+    context.fillRect(x0, Math.round(PATCH_TOP * h), x1 - x0, Math.round((PATCH_BOTTOM - PATCH_TOP) * h));
+  }
+  for (let i = 0; i < STEPS; i++) {
+    const v = Math.round(i * 255 / (STEPS - 1));
+    const x0 = Math.round(i * w / STEPS), x1 = Math.round((i + 1) * w / STEPS);
+    context.fillStyle = "rgb(" + v + "," + v + "," + v + ")";
+    context.fillRect(x0, Math.round(STEP_TOP * h), x1 - x0, Math.round((STEP_BOTTOM - STEP_TOP) * h));
+  }
+  if (mode === "yuyv") {
+    context.fillStyle = "#fff";
+    for (let y = Math.round(CHECKER_TOP * h); y < h; y += CHECKER_PIXELS)
+      for (let x = ((y / CHECKER_PIXELS) & 1) * CHECKER_PIXELS; x < w; x += 2 * CHECKER_PIXELS)
+        context.fillRect(x, y, CHECKER_PIXELS, CHECKER_PIXELS);
+  }
+}
+
+/* The counter: 16 squares, the most significant bit at the left, white for 1. */
+function drawCounter() {
+  const w = canvas.width, h = canvas.height;
+  const y0 = Math.round(COUNTER_TOP * h), y1 = Math.round(COUNTER_BOTTOM * h);
+  for (let bit = 0; bit < COUNTER_BITS; bit++) {
+    const x0 = Math.round(bit * w / COUNTER_BITS), x1 = Math.round((bit + 1) * w / COUNTER_BITS);
+    const one = (counter >> (COUNTER_BITS - 1 - bit)) & 1;
+    context.fillStyle = one ? "#fff" : "#000";
+    context.fillRect(x0, y0, x1 - x0, y1 - y0);
+  }
+}
+
+/* One display frame: the counter goes up by one. */
+function tick() {
+  drawCounter();
+  counter = (counter + 1) & 0xffff;
+  requestAnimationFrame(tick);
+}
+
+function fullScreen() {
+  if (!document.fullscreenElement && document.documentElement.requestFullscreen)
+    document.documentElement.requestFullscreen().catch(function () {});
+}
+
+window.addEventListener("resize", resize);
+document.addEventListener("click", fullScreen);
+document.addEventListener("keydown", fullScreen);
+resize();
+requestAnimationFrame(tick);
+</script>
+</body>
+</html>

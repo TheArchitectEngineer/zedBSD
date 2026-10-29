@@ -10,19 +10,21 @@
  * (/dev/input/event*), the panel's light (/dev/backlight/backlight*,
  * ws113-p013), and the security keys' raw HID nodes
  * (/dev/input/hidraw*) and the smart card slots (/dev/smartcard*,
- * ws161-p002, the user's approval U3) belong to the seat's user, 0600,
- * while sessiond runs a greeter or a session, and go back to root when it
- * stops (the keys and the cards to root alone: whoever opens one can ask
- * the key to sign).  The login screen is not given the keys and the cards
- * (ws172: its security key login is passkey's, which opens them as root).
+ * ws161-p002, the user's approval U3) and the cameras (/dev/cam*) belong
+ * to the seat's user, 0600, while sessiond runs a greeter or a session,
+ * and go back to root when it stops (the keys and the cards to root alone:
+ * whoever opens one can ask the key to sign; the cameras to root alone:
+ * whoever opens one sees the room).  The login screen is not given the
+ * keys, the cards and the cameras (ws172: its security key login is
+ * passkey's, which opens them as root).
  *
  * devfs keeps an owner and a mode given to a name, also for a node made
  * again under that name (a keyboard plugged in again).  A node that appears
  * for the first time comes with devfs's own owner.  sessiond hears the
- * system's events of the input devices and of the USB devices (the smart
- * card slots) on /dev/system (ws132-p002) and gives the devices again as
- * soon as one comes (BUG-264: the compositor, which hears the same event,
- * then finds the node already its user's).  The loops that wait for the
+ * system's events of the input devices, of the USB devices (the smart
+ * card slots) and of the cameras on /dev/system (ws132-p002) and gives
+ * the devices again as soon as one comes (BUG-264: the compositor,
+ * which hears the same event, then finds the node already its user's).  The loops that wait for the
  * greeter and the session still give them every second, for a kernel
  * without the events and for the nodes that post none (a display that
  * attaches late).
@@ -56,18 +58,22 @@
 /* The smart card slots sessiond looks for: /dev/smartcard0 to smartcard7. */
 #define SEAT_SMARTCARD_COUNT	8U
 
+/* The cameras sessiond looks for: /dev/cam0 to /dev/cam3. */
+#define SEAT_CAMERA_COUNT	4U
+
 /* devfs's own modes, which the devices go back to. */
 #define SEAT_GPU_MODE		0666
 #define SEAT_INPUT_MODE		0640
 #define SEAT_BACKLIGHT_MODE	0644
 #define SEAT_KEY_MODE		0600
+#define SEAT_CAMERA_MODE	0600
 
 /* The wheel group, which owns the input devices when no one has the seat. */
 #define SEAT_WHEEL_GID		0
 
 /* The kernel's system device, and the classes of its events that bring or take a seat's device. */
 #define SEAT_SYSTEM_NODE	"/dev/system"
-#define SEAT_EVENT_CLASSES	(KERN_SYSTEM_EVENT_INPUT | KERN_SYSTEM_EVENT_USB)
+#define SEAT_EVENT_CLASSES	(KERN_SYSTEM_EVENT_INPUT | KERN_SYSTEM_EVENT_USB | KERN_SYSTEM_EVENT_CAMERA)
 
 /* The records one read of the events takes. */
 #define SEAT_EVENT_READ		8U
@@ -83,6 +89,7 @@ static int seat_events = -1;
 
 static void seat_set(const char *path, uid_t uid, gid_t gid, mode_t mode);
 static void seat_input(const char *prefix, uid_t uid, gid_t gid, mode_t mode);
+static void seat_cameras(uid_t uid, gid_t gid);
 static void seat_events_fail(const char *what, int error);
 
 /*
@@ -114,24 +121,26 @@ sessiond_seat_give(
 		seat_set(path, uid, gid, 0600);
 	}
 
-	/* The login screen's account gets no security key nor smart card slot: they stay root's. */
+	/* The login screen's account gets no security key, smart card slot nor camera: they stay root's. */
 	if (!keys) {
 		seat_input("hidraw", 0, SEAT_WHEEL_GID, SEAT_KEY_MODE);
 		for (index = 0U; index < SEAT_SMARTCARD_COUNT; index++) {
 			snprintf(path, sizeof(path), "/dev/smartcard%u", index);
 			seat_set(path, 0, SEAT_WHEEL_GID, SEAT_KEY_MODE);
 		}
+		seat_cameras(0, SEAT_WHEEL_GID);
 
 		/* The login screen's account has the display and the input devices only. */
 		return;
 	}
 
-	/* A session's user gets every security key's raw node and every smart card slot. */
+	/* A session's user gets every security key's raw node, every smart card slot and every camera. */
 	seat_input("hidraw", uid, gid, 0600);
 	for (index = 0U; index < SEAT_SMARTCARD_COUNT; index++) {
 		snprintf(path, sizeof(path), "/dev/smartcard%u", index);
 		seat_set(path, uid, gid, 0600);
 	}
+	seat_cameras(uid, gid);
 }
 
 /*
@@ -160,11 +169,12 @@ sessiond_seat_restore(
 		seat_set(path, 0, SEAT_WHEEL_GID, SEAT_BACKLIGHT_MODE);
 	}
 
-	/* Every smart card slot, root's alone. */
+	/* Every smart card slot and every camera, root's alone. */
 	for (index = 0U; index < SEAT_SMARTCARD_COUNT; index++) {
 		snprintf(path, sizeof(path), "/dev/smartcard%u", index);
 		seat_set(path, 0, SEAT_WHEEL_GID, SEAT_KEY_MODE);
 	}
+	seat_cameras(0, SEAT_WHEEL_GID);
 }
 
 /*
@@ -270,6 +280,22 @@ sessiond_seat_events_collect(
 
 	/* Succeeded: nothing came. */
 	return 0;
+}
+
+/* Gives every camera node an owner, 0600 (devfs's own mode, so root's alone when given back). */
+static void
+seat_cameras(
+	uid_t uid,
+	gid_t gid)
+{
+	char path[32];
+	unsigned index;
+
+	/* Every camera that is there. */
+	for (index = 0U; index < SEAT_CAMERA_COUNT; index++) {
+		snprintf(path, sizeof(path), "/dev/cam%u", index);
+		seat_set(path, uid, gid, SEAT_CAMERA_MODE);
+	}
 }
 
 /* Gives one device node an owner and a mode, when the node is there. */

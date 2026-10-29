@@ -437,6 +437,10 @@ endif
 ifeq ($(CONFIG_DRIVER_USB_HUB),y)
 AMD64_USB_CLASS_SOURCES += src/drivers/usb/usb-hub.c
 endif
+# The USB Video Class cameras, on the camera framework.
+ifeq ($(CONFIG_DRIVER_USB_UVC),y)
+AMD64_USB_CLASS_SOURCES += src/drivers/usb/usb-uvc.c src/drivers/usb/usb-uvc-desc.c src/drivers/usb/usb-uvc-stream.c src/drivers/usb/usb-uvc-payload.c
+endif
 ifeq ($(CONFIG_DRIVER_USB_RTL8822BU),y)
 AMD64_USB_CLASS_SOURCES += src/drivers/wifi/rtl8822b/rtl8822b.c \
 	src/drivers/wifi/rtl8822b/rtl8822b-security.c \
@@ -534,6 +538,10 @@ AMD64_KERNEL_SOURCES += \
 	src/drivers/platform/pcat/graphics/font.c \
 	src/drivers/platform/pcat/graphics/text.c \
 	src/drivers/platform/pcat/serial-mirror.c
+endif
+# The camera framework, /dev/camN; the camera source drivers build on it.
+ifneq ($(filter y,$(CONFIG_DRIVER_CAMERA) $(CONFIG_DRIVER_USB_UVC)),)
+AMD64_KERNEL_SOURCES += src/drivers/camera/cam.c
 endif
 AMD64_KERNEL_SOURCES += $(KERN_NET_SOURCES) $(KERN_BLOCK_IDENTITY_SOURCES) \
 	$(KERN_UFS_SOURCES)
@@ -1023,7 +1031,7 @@ $(BUILD)/bin/$(1): $(AMD64_APP_INPUTS) $(AMD64_USER_BASIC_COMMON_OBJ) \
  $(call ZEDBSD_USERLAND_OBJECTS,$(AMD64_APP_OBJ),$(1)) $(AMD64_APP_LIBS) -o $$@
 	$(AMD64_APP_CHECK) $$@
 endef
-$(foreach command,$(filter-out vkdemo vkcompute vkreset vkcoherency vkimage vkstage vkquad vkvideo-probe media-probe mediastorage display-events wltest wlshm mview wayland terminal files notes monitor pdfviewer settings imageview textedit videoplayer music photos phone calendar mailer kuidemo browser browser-probe xserver egltest glescompute glxtest zgears gpu-share-test gpu-fence-test acquire-fence-test gpu-forge-test menu-probe titlebar-probe popup-probe subsurface-probe seat-probe data-probe extras-probe tablet-probe keiland-ime ime-probe keiland-settings keiland-system keiland-notify printtest fidoctl passkey-fido2,$(USER_BASIC_COMMANDS)),\
+$(foreach command,$(filter-out camvk vkdemo vkcompute vkreset vkcoherency vkimage vkstage vkquad vkvideo-probe media-probe mediastorage display-events wltest wlshm mview wayland terminal files notes monitor pdfviewer settings imageview textedit videoplayer music photos phone calendar mailer kuidemo browser browser-probe xserver egltest glescompute glxtest zgears gpu-share-test gpu-fence-test acquire-fence-test gpu-forge-test menu-probe titlebar-probe popup-probe subsurface-probe seat-probe data-probe extras-probe tablet-probe keiland-ime ime-probe keiland-settings keiland-system keiland-notify printtest fidoctl passkey-fido2,$(USER_BASIC_COMMANDS)),\
 	$(eval $(call AMD64_USER_BASIC_COMMAND,$(command))))
 # Static programs (the class static, ws168-p002): linked with the static C
 # library alone and no runtime linker, as a child that sandbox_spawn starts

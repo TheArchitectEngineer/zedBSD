@@ -24,6 +24,7 @@
 #include <drivers/pci/pci-xhci.h>
 #include <drivers/usb/usb.h>
 #include <drivers/usb/usb-hid.h>
+#include <drivers/usb/usb-uvc.h>
 #include <drivers/usb/usb-hub.h>
 #include <drivers/usb/usb-storage.h>
 #include <drivers/usb/usb-uas.h>
@@ -268,6 +269,13 @@ register_usb_drivers(
 	error = drv_usb_rtl8822bu_driver_register();
 	if (error != 0)
 		kern_logf("usb: RTL8822BU registration failed (%d)\n", error);
+#endif
+
+	/* Registers the USB Video Class cameras. */
+#if CONFIG_DRIVER_USB_UVC
+	error = drv_usb_uvc_driver_register();
+	if (error != 0)
+		kern_logf("usb: video class registration failed (%d)\n", error);
 #endif
 
 	/* Registers the keyboard and mouse driver. */

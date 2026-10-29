@@ -50,6 +50,7 @@ static int render_export(void *opaque, void *private_session, void *private_reso
 static void render_release(void *opaque, void *shared);
 static int render_import(void *opaque, void *private_session, void *shared, uint32_t flags, void **result, uint32_t *identifier);
 static int render_backing(void *opaque, void *shared, struct drv_gpu_scanout_backing *backing);
+static int render_allocation_backing(void *opaque, void *shared, struct drv_gpu_scanout_backing *backing);
 static int render_device(void *opaque, void *private_session, struct gpu_device_info *info);
 static int render_stop_begin(void *opaque, void *private_session, int error);
 static int render_stop_poll(void *opaque, void *private_session);
@@ -664,6 +665,26 @@ render_backing(
 	return 0;
 }
 
+/* Supplies the physical pages of a retained allocation-only capability to another driver. */
+static int
+render_allocation_backing(
+	void *opaque,
+	void *shared,
+	struct drv_gpu_scanout_backing *backing)
+{
+	int error;
+
+	(void)opaque;
+
+	/* Describes the pages of an allocation-only export; an image export has the scanout view instead. */
+	error = bcm2711_shared_allocation_backing(shared, backing);
+	if (error != 0)
+		return error;
+
+	/* Succeeded: the caller borrows the pages while it holds the capability. */
+	return 0;
+}
+
 /* Identifies the independent renderer without inventing a core-owned companion ID. */
 static int
 render_device(
@@ -953,6 +974,7 @@ bind_render(
 	controller->share_operations.release = render_release;
 	controller->share_operations.import_resource = render_import;
 	controller->share_operations.get_scanout_backing = render_backing;
+	controller->share_operations.get_allocation_backing = render_allocation_backing;
 	controller->scanout_operations.query_device = render_device;
 
 	/* Checked global reset follows all external owner retirement, never ordinary destruction. */

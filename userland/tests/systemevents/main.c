@@ -62,6 +62,7 @@ static const struct class_name class_names[] = {
 	{"input", KERN_SYSTEM_EVENT_INPUT},
 	{"network", KERN_SYSTEM_EVENT_NETWORK},
 	{"usb", KERN_SYSTEM_EVENT_USB},
+	{"camera", KERN_SYSTEM_EVENT_CAMERA},
 	{"overflow", KERN_SYSTEM_EVENT_OVERFLOW},
 };
 

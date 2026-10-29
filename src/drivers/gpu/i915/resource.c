@@ -57,6 +57,7 @@ static const struct drv_gpu_share_ops i915_share_ops = {
 	i915_share_export,
 	i915_share_release,
 	i915_share_import,
+	NULL,
 	NULL
 };
 

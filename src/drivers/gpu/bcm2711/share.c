@@ -202,6 +202,34 @@ bcm2711_shared_backing(
 }
 
 /*
+ * Describes an allocation-only export's RAM for another driver: one
+ * contiguous run, uncached when the allocation is.
+ */
+int
+bcm2711_shared_allocation_backing(
+	struct bcm2711_shared *shared,
+	struct drv_gpu_scanout_backing *backing)
+{
+	/* An image export has the scanout view instead. */
+	if (shared->has_image)
+		return ENOTSUP;
+
+	/* Describes the allocation as one contiguous run of pages. */
+	backing->pages = shared->pages;
+	backing->page_count = shared->page_count;
+	backing->bytes = shared->buffer->bytes;
+	backing->page_bytes = 4096;
+	backing->flags = DRV_GPU_BACKING_CONTIGUOUS;
+
+	/* Tells the other driver to map the run uncached when the allocation is uncached. */
+	if (shared->buffer->uncached)
+		backing->flags |= DRV_GPU_BACKING_UNCACHED;
+
+	/* Succeeded: the run and its cache policy stay as they are while the export lives. */
+	return 0;
+}
+
+/*
  * Imports only a live native capability, acquiring its own allocation reference.
  */
 int

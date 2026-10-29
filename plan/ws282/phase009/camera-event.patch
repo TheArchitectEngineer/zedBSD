@@ -1,0 +1,230 @@
+diff --git a/include/uapi/system.h b/include/uapi/system.h
+index 2b73d52c6..17180f89d 100644
+--- a/include/uapi/system.h
++++ b/include/uapi/system.h
+@@ -325,8 +325,9 @@ _Static_assert(offsetof(struct system_usb_device_info, driver) == 32U,
+ #define KERN_SYSTEM_EVENT_INPUT		0x00000020U	/* an input device added or removed */
+ #define KERN_SYSTEM_EVENT_NETWORK	0x00000040U	/* a network interface added or removed */
+ #define KERN_SYSTEM_EVENT_USB		0x00000080U	/* a USB device attached or detached; a smart card slot's card in or out (CHANGE) */
++#define KERN_SYSTEM_EVENT_CAMERA	0x00000100U	/* a camera added or removed */
+ #define KERN_SYSTEM_EVENT_OVERFLOW	0x80000000U	/* events were lost (always delivered) */
+-#define KERN_SYSTEM_EVENT_CLASSES	0x000000ffU
++#define KERN_SYSTEM_EVENT_CLASSES	0x000001ffU
+ 
+ /* What happened. */
+ #define KERN_SYSTEM_EVENT_ADD		1U
+diff --git a/src/drivers/camera/cam.c b/src/drivers/camera/cam.c
+index 6a91e2640..e38055f84 100644
+--- a/src/drivers/camera/cam.c
++++ b/src/drivers/camera/cam.c
+@@ -42,6 +42,7 @@
+ #include <kern/waitq.h>
+ #include <uapi/errno.h>
+ #include <uapi/fcntl.h>
++#include <uapi/system.h>
+ #include <uapi/time.h>
+ 
+ #define UNUSED_PARAMETER(parameter) ((void)(parameter))
+@@ -64,6 +65,9 @@ extern int drv_gpu_shared_backing(struct kernel_handle *handle, struct drv_gpu_s
+ extern int kern_pmem_map_uncached(const struct kern_pmem *run, void **mapped) __attribute__((weak));
+ extern int kern_pmem_unmap_uncached(void *mapped, size_t size) __attribute__((weak));
+ 
++/* The system's events, which a kernel may be built without. */
++extern void kern_system_event_post(uint32_t class_bit, uint32_t action, int32_t value, const char *subject, const char *detail) __attribute__((weak));
++
+ /*
+  * The states of a stream.
+  *
+@@ -181,6 +185,7 @@ static int cam_number_reserve(struct drv_cam_device *device);
+ static void cam_number_release(struct drv_cam_device *device);
+ static void cam_device_release(void *argument);
+ static uint64_t cam_now_ns(void);
++static void cam_post(const struct drv_cam_device *device, uint32_t action);
+ static int cam_enter(struct drv_cam_device *device);
+ static void cam_leave(struct drv_cam_device *device);
+ static void cam_queue_append(struct drv_cam_slot **head, struct drv_cam_slot **tail, struct drv_cam_slot *slot);
+@@ -322,6 +327,9 @@ drv_cam_register(
+ 	/* Keeps the caller reference for the retirement. */
+ 	device->node = node;
+ 
++	/* Tells the seat that a camera came, so its user is given the node. */
++	cam_post(device, KERN_SYSTEM_EVENT_ADD);
++
+ 	/* Succeeded: the camera is visible in /dev. */
+ 	kern_logf("cam: %s: %s (%s) at %s\n", name, device->desc.device_name, device->driver_name, device->desc.location);
+ 	*result = device;
+@@ -375,6 +383,7 @@ drv_cam_unregister(
+ 	(void)cdev_unregister(device->node);
+ 	cdev_release(device->node);
+ 	device->node = NULL;
++	cam_post(device, KERN_SYSTEM_EVENT_REMOVE);
+ 
+ 	/* Gives back the number for the next camera. */
+ 	cam_number_release(device);
+@@ -716,6 +725,25 @@ cam_device_release(
+ 	kern_free(device);
+ }
+ 
++/* Tells the system's events that a camera node came or went. */
++static void
++cam_post(
++	const struct drv_cam_device *device,
++	uint32_t action)
++{
++	char subject[KERN_SYSTEM_EVENT_SUBJECT_MAX];
++	char detail[KERN_SYSTEM_EVENT_DETAIL_MAX];
++
++	/* A kernel without the system's events posts nothing. */
++	if (kern_system_event_post == NULL)
++		return;
++
++	/* The node, the driver and the product, then the event. */
++	kern_snprintf(subject, sizeof(subject), "cam%u", device->number);
++	kern_snprintf(detail, sizeof(detail), "driver=%s name=%s", device->driver_name, device->desc.device_name);
++	kern_system_event_post(KERN_SYSTEM_EVENT_CAMERA, action, 0, subject, detail);
++}
++
+ /* Reads the monotonic clock in nanoseconds. */
+ static uint64_t
+ cam_now_ns(
+diff --git a/userland/desktop/sessiond/seat.c b/userland/desktop/sessiond/seat.c
+index 0aef71519..8cf94728b 100644
+--- a/userland/desktop/sessiond/seat.c
++++ b/userland/desktop/sessiond/seat.c
+@@ -10,17 +10,19 @@
+  * (/dev/input/event*), the panel's light (/dev/backlight/backlight*,
+  * ws113-p013), and the security keys' raw HID nodes
+  * (/dev/input/hidraw*) and the smart card slots (/dev/smartcard*,
+- * ws161-p002, the user's approval U3) belong to the seat's user, 0600,
+- * while sessiond runs a greeter or a session, and go back to root when it
+- * stops (the keys and the cards to root alone: whoever opens one can ask
+- * the key to sign).  The login screen is not given the keys and the cards
+- * (ws172: its security key login is passkey's, which opens them as root).
++ * ws161-p002, the user's approval U3) and the cameras (/dev/cam*) belong
++ * to the seat's user, 0600, while sessiond runs a greeter or a session,
++ * and go back to root when it stops (the keys and the cards to root alone:
++ * whoever opens one can ask the key to sign; the cameras to root alone:
++ * whoever opens one sees the room).  The login screen is not given the
++ * keys, the cards and the cameras (ws172: its security key login is
++ * passkey's, which opens them as root).
+  *
+  * devfs keeps an owner and a mode given to a name, also for a node made
+  * again under that name (a keyboard plugged in again).  A node that appears
+  * for the first time comes with devfs's own owner.  sessiond hears the
+- * system's events of the input devices and of the USB devices (the smart
+- * card slots) on /dev/system (ws132-p002) and gives the devices again as
++ * system's events of the input devices, of the USB devices (the smart
++ * card slots) and of the cameras on /dev/system (ws132-p002) and gives the devices again as
+  * soon as one comes (BUG-264: the compositor, which hears the same event,
+  * then finds the node already its user's).  The loops that wait for the
+  * greeter and the session still give them every second, for a kernel
+@@ -56,18 +58,22 @@
+ /* The smart card slots sessiond looks for: /dev/smartcard0 to smartcard7. */
+ #define SEAT_SMARTCARD_COUNT	8U
+ 
++/* The cameras sessiond looks for: /dev/cam0 to /dev/cam3. */
++#define SEAT_CAMERA_COUNT	4U
++
+ /* devfs's own modes, which the devices go back to. */
+ #define SEAT_GPU_MODE		0666
+ #define SEAT_INPUT_MODE		0640
+ #define SEAT_BACKLIGHT_MODE	0644
+ #define SEAT_KEY_MODE		0600
++#define SEAT_CAMERA_MODE	0600
+ 
+ /* The wheel group, which owns the input devices when no one has the seat. */
+ #define SEAT_WHEEL_GID		0
+ 
+ /* The kernel's system device, and the classes of its events that bring or take a seat's device. */
+ #define SEAT_SYSTEM_NODE	"/dev/system"
+-#define SEAT_EVENT_CLASSES	(KERN_SYSTEM_EVENT_INPUT | KERN_SYSTEM_EVENT_USB)
++#define SEAT_EVENT_CLASSES	(KERN_SYSTEM_EVENT_INPUT | KERN_SYSTEM_EVENT_USB | KERN_SYSTEM_EVENT_CAMERA)
+ 
+ /* The records one read of the events takes. */
+ #define SEAT_EVENT_READ		8U
+@@ -83,6 +89,7 @@ static int seat_events = -1;
+ 
+ static void seat_set(const char *path, uid_t uid, gid_t gid, mode_t mode);
+ static void seat_input(const char *prefix, uid_t uid, gid_t gid, mode_t mode);
++static void seat_cameras(uid_t uid, gid_t gid);
+ static void seat_events_fail(const char *what, int error);
+ 
+ /*
+@@ -114,24 +121,26 @@ sessiond_seat_give(
+ 		seat_set(path, uid, gid, 0600);
+ 	}
+ 
+-	/* The login screen's account gets no security key nor smart card slot: they stay root's. */
++	/* The login screen's account gets no security key, smart card slot nor camera: they stay root's. */
+ 	if (!keys) {
+ 		seat_input("hidraw", 0, SEAT_WHEEL_GID, SEAT_KEY_MODE);
+ 		for (index = 0U; index < SEAT_SMARTCARD_COUNT; index++) {
+ 			snprintf(path, sizeof(path), "/dev/smartcard%u", index);
+ 			seat_set(path, 0, SEAT_WHEEL_GID, SEAT_KEY_MODE);
+ 		}
++		seat_cameras(0, SEAT_WHEEL_GID);
+ 
+ 		/* The login screen's account has the display and the input devices only. */
+ 		return;
+ 	}
+ 
+-	/* A session's user gets every security key's raw node and every smart card slot. */
++	/* A session's user gets every security key's raw node, every smart card slot and every camera. */
+ 	seat_input("hidraw", uid, gid, 0600);
+ 	for (index = 0U; index < SEAT_SMARTCARD_COUNT; index++) {
+ 		snprintf(path, sizeof(path), "/dev/smartcard%u", index);
+ 		seat_set(path, uid, gid, 0600);
+ 	}
++	seat_cameras(uid, gid);
+ }
+ 
+ /*
+@@ -160,11 +169,12 @@ sessiond_seat_restore(
+ 		seat_set(path, 0, SEAT_WHEEL_GID, SEAT_BACKLIGHT_MODE);
+ 	}
+ 
+-	/* Every smart card slot, root's alone. */
++	/* Every smart card slot and every camera, root's alone. */
+ 	for (index = 0U; index < SEAT_SMARTCARD_COUNT; index++) {
+ 		snprintf(path, sizeof(path), "/dev/smartcard%u", index);
+ 		seat_set(path, 0, SEAT_WHEEL_GID, SEAT_KEY_MODE);
+ 	}
++	seat_cameras(0, SEAT_WHEEL_GID);
+ }
+ 
+ /*
+@@ -272,6 +282,22 @@ sessiond_seat_events_collect(
+ 	return 0;
+ }
+ 
++/* Gives every camera node an owner, 0600 (devfs's own mode, so root's alone when given back). */
++static void
++seat_cameras(
++	uid_t uid,
++	gid_t gid)
++{
++	char path[32];
++	unsigned index;
++
++	/* Every camera that is there. */
++	for (index = 0U; index < SEAT_CAMERA_COUNT; index++) {
++		snprintf(path, sizeof(path), "/dev/cam%u", index);
++		seat_set(path, uid, gid, SEAT_CAMERA_MODE);
++	}
++}
++
+ /* Gives one device node an owner and a mode, when the node is there. */
+ static void
+ seat_set(
+diff --git a/userland/tests/systemevents/main.c b/userland/tests/systemevents/main.c
+index a6ad1ff79..17d986061 100644
+--- a/userland/tests/systemevents/main.c
++++ b/userland/tests/systemevents/main.c
+@@ -62,6 +62,7 @@ static const struct class_name class_names[] = {
+ 	{"input", KERN_SYSTEM_EVENT_INPUT},
+ 	{"network", KERN_SYSTEM_EVENT_NETWORK},
+ 	{"usb", KERN_SYSTEM_EVENT_USB},
++	{"camera", KERN_SYSTEM_EVENT_CAMERA},
+ 	{"overflow", KERN_SYSTEM_EVENT_OVERFLOW},
+ };
+ 
