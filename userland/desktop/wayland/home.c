@@ -359,6 +359,7 @@ static void home_settle(struct kwl_server *server, float from, float to);
 static void home_erase(struct kwl_server *server, uint32_t characters);
 static void home_erase_bytes(struct kwl_server *server, uint32_t bytes);
 static int home_launch(struct kwl_server *server, unsigned app);
+static void home_launched(struct kwl_server *server, pid_t pid, int error, void *context);
 static struct kwl_object *home_running_window(struct kwl_server *server, unsigned app);
 static void home_search_changed(struct kwl_server *server);
 static void home_log_icons(void);
@@ -1620,79 +1621,6 @@ kwl_home_launched(
 }
 
 /*
- * Starts a command with /bin/sh -c in a session of its own, without the
- * compositor's descriptors and with the compositor's socket in its
- * environment.  Returns the child's process ID, or -1 with errno set.
- */
-pid_t
-kwl_spawn(
-	struct kwl_server *server,
-	const char *command)
-{
-	char token[KWL_ACTIVATION_TOKEN_SIZE];
-	char directory[108];
-	const char *name;
-	char *slash;
-	pid_t child;
-	int descriptor;
-	int error;
-
-	/*
-	 * The program's activation token (activation.c, ws089-p016): with it
-	 * the program may bring a window to the front, its own or that of a
-	 * running copy of itself it hands its request to.  A program starts
-	 * without one when none can be made.
-	 */
-	error = kwl_activation_issue(server, command, "spawn", token, sizeof(token));
-	if (error != 0)
-		token[0] = '\0';
-
-	/* Forks the process that runs the command. */
-	child = fork();
-	if (child < 0)
-		return -1;
-
-	/* The child: its own session, none of the compositor's descriptors, the socket's place, and the command. */
-	if (child == 0) {
-		(void)setsid();
-		for (descriptor = 3; descriptor < 1024; descriptor++)
-			(void)close(descriptor);
-		descriptor = open("/dev/null", O_RDONLY);
-		if (descriptor >= 0 && descriptor != 0) {
-			(void)dup2(descriptor, 0);
-			(void)close(descriptor);
-		}
-
-		/* The socket as XDG_RUNTIME_DIR and WAYLAND_DISPLAY, the way clients look for it. */
-		snprintf(directory, sizeof(directory), "%s", server->socket_path);
-		slash = strrchr(directory, '/');
-		name = directory;
-		if (slash != NULL) {
-			*slash = '\0';
-			name = slash + 1;
-			(void)setenv("XDG_RUNTIME_DIR", directory, 1);
-		}
-
-		/* The socket's name within that directory. */
-		(void)setenv("WAYLAND_DISPLAY", name, 1);
-
-		/* The program's own activation token, never one the compositor was started with. */
-		if (token[0] != '\0') {
-			(void)setenv("XDG_ACTIVATION_TOKEN", token, 1);
-		} else {
-			(void)unsetenv("XDG_ACTIVATION_TOKEN");
-		}
-
-		/* Only a failed exec comes back. */
-		(void)execl("/bin/sh", "sh", "-c", command, (char *)NULL);
-		_exit(127);
-	}
-
-	/* Succeeded: the parent has the child's process ID. */
-	return child;
-}
-
-/*
  * Opens App Home, or closes it when it shows or is opening (the Windows
  * key pressed alone, ws142-p002, seat.c).
  */
@@ -2784,9 +2712,10 @@ home_launch(
 	unsigned app)
 {
 	struct kwl_object *running;
-	pid_t child;
 	unsigned slot;
+	char *name;
 	int differs;
+	int error;
 
 	/* Lock Screen locks the session (App Home closes behind it). */
 	differs = strcmp(home_apps[app].command, HOME_LOCK);
@@ -2820,9 +2749,11 @@ home_launch(
 	}
 
 	/* The application, in its own session with the compositor's socket. */
-	child = kwl_spawn(server, home_apps[app].command);
-	if (child < 0) {
-		printf("KWL HOME launch name=%s error=%d\n", home_apps[app].name, errno);
+	name = strdup(home_apps[app].name);
+	error = kwl_spawn(server, home_apps[app].command, home_launched, name);
+	if (error != 0) {
+		printf("KWL HOME launch name=%s error=%d\n", home_apps[app].name, error);
+		free(name);
 		return 0;
 	}
 
@@ -2840,9 +2771,28 @@ home_launch(
 		server->home_launch_rect[3] = HOME_ICON;
 	}
 
-	/* Succeeded: the application is starting. */
-	printf("KWL HOME launch name=%s pid=%d\n", home_apps[app].name, (int)child);
+	/* Succeeded: the application is starting (home_launched logs it). */
 	return 0;
+}
+
+/* Logs an application's start from Home (its name, the job's copy, and its process ID or the failure). */
+static void
+home_launched(
+	struct kwl_server *server,
+	pid_t pid,
+	int error,
+	void *context)
+{
+	char *name;
+
+	/* The line the tests read, then the name's copy goes. */
+	(void)server;
+	name = context;
+	if (error != 0)
+		printf("KWL HOME launch name=%s error=%d\n", name != NULL ? name : "?", error);
+	else
+		printf("KWL HOME launch name=%s pid=%d\n", name != NULL ? name : "?", (int)pid);
+	free(name);
 }
 
 /*

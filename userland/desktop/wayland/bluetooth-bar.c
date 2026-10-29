@@ -109,6 +109,7 @@ static void bar_read(void);
 static int bar_shown(void);
 static void bar_open(struct kwl_server *server);
 static void bar_close(struct kwl_server *server, const char *via);
+static void bar_settings_started(struct kwl_server *server, pid_t pid, int error, void *context);
 static void bar_layout(struct kwl_server *server);
 static void bar_add_row(enum bar_row_kind kind, const char *text, int32_t height, unsigned device);
 static void bar_act(struct kwl_server *server, const struct bar_row *row);
@@ -619,7 +620,6 @@ bar_act(
 	const struct kl_backend_bluetooth_device *device;
 	unsigned request;
 	unsigned on;
-	pid_t child;
 	int error;
 	int acts;
 
@@ -631,8 +631,9 @@ bar_act(
 
 	/* Settings, on its Bluetooth page; the menu goes. */
 	if (row->kind == BAR_ROW_SETTINGS) {
-		child = kwl_spawn(server, BAR_SETTINGS_COMMAND);
-		printf("KWL BT bar settings pid=%ld\n", (long)child);
+		error = kwl_spawn(server, BAR_SETTINGS_COMMAND, bar_settings_started, NULL);
+		if (error != 0)
+			printf("KWL BT bar settings pid=-1 errno=%d\n", error);
 		bar_close(server, "settings");
 		return;
 	}
@@ -929,4 +930,22 @@ bar_draw_switch(
 	glass_draw_solid(server, command, (float)x, (float)(middle - 10), 36.0f, 20.0f, 10.0f, accent);
 	glass_draw_solid(server, command, (float)(x + 18), (float)(middle - 8), 16.0f, 16.0f, 8.0f, white);
 	kwl_accent_done(server, kept);
+}
+
+/* Logs Settings' start from the menu (its process ID, or -1 and the errno). */
+static void
+bar_settings_started(
+	struct kwl_server *server,
+	pid_t pid,
+	int error,
+	void *context)
+{
+	/* The line the tests read. */
+	(void)server;
+	(void)context;
+	if (error != 0) {
+		printf("KWL BT bar settings pid=-1 errno=%d\n", error);
+		return;
+	}
+	printf("KWL BT bar settings pid=%ld\n", (long)pid);
 }

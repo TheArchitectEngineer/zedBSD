@@ -21,6 +21,7 @@ WAYLAND_FREEBSD_SOURCES := userland/desktop/wayland/main.c \
 	userland/desktop/wayland/glass.c \
 	userland/desktop/wayland/shell.c \
 	userland/desktop/wayland/home.c \
+	userland/desktop/wayland/spawn.c \
 	userland/desktop/wayland/corner.c \
 	userland/desktop/wayland/keyboard.c \
 	userland/desktop/wayland/keyboard-layout.c \

@@ -92,7 +92,11 @@ struct kwl_ime_app {
 
 /*
  * The system's input method: its process and connection, its objects, the
- * text input it is activated for, and where each held key went.
+ * text input it is activated for, and where each held key went.  The
+ * process is started by the file I/O thread (spawn.c): its ID is 0 until
+ * the start comes back, and an end asked meanwhile waits in kill_pending
+ * (sent when the ID comes); starting_client and starting_method are the
+ * connection's number and the argument the start's line names.
  *
  * The language is kept for each application (ws095-p016, the user's
  * request of 2026-10-04): apps holds the language each application last
@@ -117,6 +121,9 @@ struct kwl_ime_app {
  */
 struct kwl_ime {
 	pid_t pid;
+	unsigned kill_pending;
+	unsigned long long starting_client;
+	const char *starting_method;
 	struct kwl_client *client;
 	uint64_t starts[3];
 	unsigned start_index;
