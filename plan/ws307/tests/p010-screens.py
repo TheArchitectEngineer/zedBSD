@@ -13,7 +13,9 @@ log read over SSH), and photographs each screen and dialog:
   install dialog, S9, S11.
 
 With --language ja the desktop's language is set to Japanese first (the setting ui.language that Settings' Languages
-page writes, set to 1 with keiland-settings as the live session's user), the installer's words follow without a restart
+page writes, set to 1 as the live session's user with keiland-settings, userland/tests/keiland-settings, which is no
+part of the image: IMAGE's build's bin/keiland-settings is copied in, so build it with
+"make ... $(BUILD)/bin/keiland-settings" first), the installer's words follow without a restart
 (INSTALLER LANGUAGE language=ja), and the same screens are photographed in Japanese.
 
 The pictures go to OUT/shots/NN-name.png (QMP screendump of the Venus head, or its VNC when screendump has no surface).
@@ -50,8 +52,14 @@ LANGUAGES = {"ja": 1}
 
 def language(run: Run, code: str):
 	"""Sets the desktop's language as the live session's user (ui.language) and waits for the installer to follow."""
+	# The settings' client (userland/tests/keiland-settings) is no part of the image: it is the build's, copied in.
+	client = Path(run.image).resolve().parent / "bin/keiland-settings"
+	put = run.guest("put", str(client), "/tmp/keiland-settings", timeout=120)
+	if put.returncode != 0:
+		raise Failed(f"keiland-settings not copied from {client}: {put.stderr.strip()}")
+	run.root("chmod 755 /tmp/keiland-settings", 60)
 	mark = len(run.read_log())
-	command = f"cd; export XDG_RUNTIME_DIR=/run/user/1000 WAYLAND_DISPLAY=wayland-0; /bin/keiland-settings set ui.language {LANGUAGES[code]}"
+	command = f"cd; export XDG_RUNTIME_DIR=/run/user/1000 WAYLAND_DISPLAY=wayland-0; /tmp/keiland-settings set ui.language {LANGUAGES[code]}"
 	status, text = run.root(f"su {LIVE_USER} -c {shlex.quote(command)}", 60)
 	if status != 0:
 		raise Failed(f"keiland-settings: {status} {text.strip()}")

@@ -3,7 +3,7 @@
 # ws307-p011 通しの試験
 
 - 親: [WS307](../ws.md)。仕様: [spec.md](../spec.md) §12。Queue: q1665 / q1665-i08（担当 P4、2026-10-29、worktree p4-ws307l）、q1665-i10（P4、2026-10-29、worktree p4-ws307n、基点 main 8ba9bdbbb: BUG-356・357 の直しを含む）。
-- Status: in-progress（q1665-i10: 5 回目を途中で止めた。q1688（UFS の遅さ BUG-355・358）の後に流し直す）
+- Status: in-progress（q1665-i10: 12 回目で p011-install.py PASS。日本語の画面の後に Q1 の判定）
 - 承認: q1665-i01 と同じ（Q1 の中継）。2026-10-29 Q1 の判断: p004 抜きで進める（GTK4 の app の build の確かめだけを p004 の後に残す）。
 - 前提: p010（installer の app）、p009（install-admin）、p006・p008 の 4096。
 
@@ -52,12 +52,14 @@
   - 8 回目（`p011.u2sndh3h`）: 開き直しが働き、k4（4096 の全体、既定の項目、S11）まで ok。「他の OS」の S4 で大きさ「1 GiB」を入れて「作成」を押した後、`INSTALLER EDIT` の行が 180 s 出ず FAIL（installer の log に helper の session も無い。画面を撮っていなかったので原因は未確認）。S4 の大きさを入れた後と FAIL の時の画面を撮るよう直した。
   - 9 回目（`p011.fl2cf9xe`）: 8 回目と同じ所で FAIL。S4 の画面（`19-other-s4-size.png`・`20-failed.png`）で欄が「7890 MiB1 GiB」になり、installer は「Type a size such as 20 GiB or 512 MiB.」を出して何も作らなかった（log の行は無い）。切り分け（`build/ws307-test/probe.*`）: live の session の欄で Backspace が空白を消さない（Q1 が [BUG-360](../../bugs/BUG-360.md) に登録）。`set_field` を Ctrl+A と打ち込みに直した（bb56483e0）。Q1 の指示で、読めない大きさを log にも出すよう installer を直し（`flow.c` の `EDIT refused reason=size|room`、67a3dd649）、p011 に size-refused を足した。
   - 10 回目（`p011.4yxae838`、67a3dd649 の前の image）: other まで ok。USB の S4 で「すぐに書く」の dialog を閉じていなかった（試験の誤り）ので FAIL。1d177cb34 で直した。
-- p011 の受け入れは未達（MBR・zedbsd.cfg・1 GiB・live の拒みの GUI の確かめは 4・5 回目で ok）。
+  - 11 回目（`p011.r99kxhe0`、67a3dd649 の image）: size-refused（`EDIT refused reason=size parts=3->3`）・other まで ok。空の GPT の USB の S4 で ESP と partition を作った後、「次へ」が押せないまま FAIL（「The disk needs an EFI system partition…」）。WS307 の不具合: `disk.c` の `disk_esp_enough` が kernel の identity の fs の型 `vfat` を求めていたが、identity は partition が現れた時に決まり、S4 が後で FAT32 にした ESP は型が空のまま（blkid に TYPE 無し、ESP の先頭には FAT がある、`build/ws307-test/probe.9shbdri3`）。helper は FAT を mount して見ているので、型を求めるのをやめた（01b12baa6）。host の `installer-model-test.sh` にこの場合を足した（直す前 FAIL、後 PASS）。
+  - 12 回目（`p011.9yb97ua0`、01b12baa6 の tree の `build/q1688-img`）: **PASS**。`p011-install: PASS`、STEP 25 個が全て ok: map・refused-tiny・refused-live（`disk-sdc`）・refused-mbr・refused-zcfg・cancel・damage・failure（4096 の NVMe の全体、既定の項目、`failed step=unpack errno=5`）・restore・nvme・nvme-harness・k4（4096 の全体、既定の項目、S11）・size-refused・other（`STATE loader` に ZEDBSD）・usb（`STATE swap file`）・other-untouched・other-loader-kept・other-file-kept・other-loader-ours・other-cfg（`kernel=rootpart:/boot/vmunix`・`swap0=PARTUUID=`）・boot-nvme・boot-k4・boot-usb（`boot-*/login.png`、boot-k4 の PNG は目で見て login prompt）・ssh-nvme（`alice`・`p011host`・導入した unit の記録）。画面の PNG は `shots/` に 33 枚。導入の時間は 4096 の全体でも約 2 分（q1688 の前は 30 分で終わらなかった）。
+- 判定の材料: 上の STEP（guest の session の log を SSH で読む、QMP、VNC の PNG、host の disk の file の検査、boot-test.sh、SSH）。QEMU の console・serial の log は使っていない。6 回目の解析は gdbstub で kernel の `klog_buffer` を読んだ。
+- 試験の条件の補い: 試験の disk と stick は cache=unsafe（BUG-359 の回避、Q1 の了承）。S11 の後は installer を閉じて開き直す（spec §4.11 の S11 は「閉じる」と「再起動」だけ）。欄は Ctrl+A と打ち込み（BUG-360 の回避）。
 
 ## 未実施・残り
 
-- q1688（BUG-355・358 の直し）の後に p011 を流し直す（4096 の導入を既定の項目に戻して）。その後に日本語の画面（`p010-screens.py --language ja`）。
-- 導入（cancel の後の failure・nvme・other・usb・k4）・host の検査・導入先の起動・SSH は未実施。
+- 日本語の画面（`p010-screens.py --language ja`）: 下の「日本語の画面」。
 - GTK4 の app の build の確かめ（p004 の後、Q1 の判断）。
 - Boot#### の確かめ（p007 の承認待ち）。
 - 同じ image を dd した disk との同居（spec §11.2 の既知の制限: 同じ image の 2 台は PARTUUID が重なり曖昧）。
