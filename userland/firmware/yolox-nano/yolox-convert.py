@@ -160,6 +160,9 @@ def load_state(path):
         for name, tensor in checkpoint["model"].items():
             if not isinstance(tensor, Tensor):
                 continue
+            # A batch norm's step counter (a LongStorage) is not a weight; it is never read.
+            if name.endswith(".num_batches_tracked"):
+                continue
             if tensor.storage.kind not in STORAGE_ELEMENT:
                 raise SystemExit("yolox-convert: %s: storage %s" % (name, tensor.storage.kind))
             code, width = STORAGE_ELEMENT[tensor.storage.kind]
