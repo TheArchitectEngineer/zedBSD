@@ -39,8 +39,9 @@ extra="$extra tcp-perf send $server_ip $port $seconds | tail -1; tcp-perf recv $
 extra="$extra echo ping-a; ping -c 3 -W 3 -s 1472 $server_ip; echo ---;"
 extra="$extra echo user | sudo -S ifconfig ue0 mtu 9000; echo mtu9000-rc=\$?; ifconfig ue0 | head -1;"
 extra="$extra echo user | sudo -S ifconfig ue0 mtu 1500; echo mtu1500-rc=\$?; echo ping-b; ping -c 3 -W 3 -s 1472 $server_ip; echo ---;"
-extra="$extra echo user | sudo -S ifconfig ue0 down; echo down-rc=\$?; sleep 2; echo user | sudo -S ifconfig ue0 up; echo up-rc=\$?;"
-extra="$extra sleep 8; echo ping-c; ping -c 3 -W 3 -s 1472 $server_ip; echo ---;"
+# The down and up run detached on the 5330: this SSH session goes over ue0 itself and does not live through the down.
+extra="$extra echo user | sudo -S sh -c '(ifconfig ue0 down; echo down-rc=\$?; sleep 2; ifconfig ue0 up; echo up-rc=\$?) > /tmp/ws315-cycle.txt 2>&1 &';"
+extra="$extra sleep 15; cat /tmp/ws315-cycle.txt; echo ping-c; ping -c 3 -W 3 -s 1472 $server_ip; echo ---;"
 extra="$extra dmesg | grep -E 'usb-rtl815x' | tail -6; echo ---; sysctl net.tcpstats | head -1; ifconfig ue0"
 [ "${CAMERA:-0}" = 1 ] && extra="$extra; echo ---; echo user | sudo -S camcap -n 10 -t 5000 -o /tmp/ws315-cam.jpg 2>&1 | tail -6; echo camcap-rc=\$?"
 T=$((seconds * 2 + 180)) EXTRA=$extra timeout 2700 sh plan/tools/hw5330/5330-run.sh "${MODE:---nvme-kernel}" "$image" "ws315-$name" \
