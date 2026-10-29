@@ -987,6 +987,11 @@ node_perf_report(
 	taken.streams = __atomic_exchange_n(&node->counts.streams, 0U, __ATOMIC_RELAXED);
 	taken.stream_bytes = __atomic_exchange_n(&node->counts.stream_bytes, 0U, __ATOMIC_RELAXED);
 	taken.stream_us = __atomic_exchange_n(&node->counts.stream_us, 0U, __ATOMIC_RELAXED);
+	taken.cursor_sets = __atomic_exchange_n(&node->counts.cursor_sets, 0U, __ATOMIC_RELAXED);
+	taken.cursor_same = __atomic_exchange_n(&node->counts.cursor_same, 0U, __ATOMIC_RELAXED);
+	taken.cursor_set_us = __atomic_exchange_n(&node->counts.cursor_set_us, 0U, __ATOMIC_RELAXED);
+	taken.cursor_moves = __atomic_exchange_n(&node->counts.cursor_moves, 0U, __ATOMIC_RELAXED);
+	taken.cursor_move_us = __atomic_exchange_n(&node->counts.cursor_move_us, 0U, __ATOMIC_RELAXED);
 	node->perf_since_us = now;
 
 	/* The runs and the frames, each line within the log's 79 columns: the runs a wait saw end, from their submission. */
@@ -1025,6 +1030,14 @@ node_perf_report(
 	    (unsigned long long)taken.streams,
 	    (unsigned long long)(taken.stream_bytes / 1024U),
 	    (unsigned long long)taken.stream_us);
+
+	/* The cursor's images and moves, each with the average time it held the node's lock. */
+	nvrtx_stage_mark("perf: cursor sets %llu same %llu avg %lluus, moves %llu avg %lluus",
+	    (unsigned long long)taken.cursor_sets,
+	    (unsigned long long)taken.cursor_same,
+	    (unsigned long long)node_perf_average(taken.cursor_set_us, taken.cursor_sets),
+	    (unsigned long long)taken.cursor_moves,
+	    (unsigned long long)node_perf_average(taken.cursor_move_us, taken.cursor_moves));
 
 	/* The CPU's window: what is mapped now, the most at once, and its size. */
 	nvrtx_bo_window_use(node->gpu, &used, &peak, &size);
