@@ -166,7 +166,7 @@ static int work_session_arena(struct nvrtx_gpu *gpu, struct nvrtx_work_channel *
 static int work_session_region(struct nvrtx_gpu *gpu, struct nvrtx_work_channel *channel);
 static int work_channel(struct nvrtx_gpu *gpu, struct nvrtx_work_channel *channel);
 static int work_objects(struct nvrtx_gpu *gpu, struct nvrtx_work_channel *channel);
-static int work_first(struct nvrtx_gpu *gpu, struct nvrtx_work_channel *channel);
+static int work_first(struct nvrtx_gpu *gpu, struct nvrtx_work_channel *channel, bool wait);
 static int work_channel_free(struct nvrtx_gpu *gpu, struct nvrtx_work_channel *channel);
 static int work_map_entries(struct nvrtx_gpu *gpu, uint64_t va, const uint8_t *entries, uint64_t pages);
 static int work_entries_write(struct nvrtx_gpu *gpu, uint64_t va, const uint8_t *entries, uint64_t pages);
@@ -255,7 +255,7 @@ nvrtx_work_start(
 	nvrtx_stage_mark("work-channel ok: work channel %u on runlist %u", (unsigned)WORK_CHID, (unsigned)gpu->engine.pick.graphics_runlist);
 
 	/* The classes on their subchannels, and the first fence. */
-	error = work_first(gpu, driver);
+	error = work_first(gpu, driver, true);
 	if (error != 0)
 		return error;
 
@@ -387,7 +387,7 @@ nvrtx_work_channel_open(
 	if (error == 0)
 		error = work_objects(gpu, channel);
 	if (error == 0)
-		error = work_first(gpu, channel);
+		error = work_first(gpu, channel, false);
 	if (error != 0) {
 		nvrtx_stage_mark("channel %u: no session channel (%d)", (unsigned)chid, error);
 		(void)nvrtx_work_channel_close(gpu, channel);
@@ -1386,12 +1386,15 @@ work_objects(
 
 /*
  * Runs the channel's first submission: both classes on their subchannels,
- * then its fence.
+ * then its fence, waited for when wait is set (the driver's channel at the
+ * start; a session's channel is made while other channels may hold the
+ * graphics engine, and its runs follow the submission on the ring).
  */
 static int
 work_first(
 	struct nvrtx_gpu *gpu,
-	struct nvrtx_work_channel *channel)
+	struct nvrtx_work_channel *channel,
+	bool wait)
 {
 	uint8_t *push;
 	uint64_t push_va;
@@ -1417,11 +1420,15 @@ work_first(
 	kern_memset(channel->entry_fence, 0, sizeof(channel->entry_fence));
 	channel->ready = 1;
 
-	/* Submits it and waits for its fence. */
+	/* Submits it; the last ring entry, whose fence slot holds it, is written again only after its fence. */
 	start = nvrtx_now_us();
 	fence = 0U;
 	error = nvrtx_work_channel_submit(gpu, channel, push_va, length, &fence);
 	if (error == 0)
+		channel->entry_fence[NVRTX_WORK_RING_ENTRIES - 1U] = fence;
+
+	/* Waits for its fence when asked (a session's channel's later runs follow it on the ring instead). */
+	if (error == 0 && wait)
 		error = nvrtx_work_channel_wait(channel, fence, WORK_FIRST_FENCE_US);
 	if (error != 0) {
 		channel->ready = 0;
@@ -1432,6 +1439,10 @@ work_first(
 		    (unsigned)work_semaphore(channel));
 		return error;
 	}
+
+	/* A first fence not waited for is not told. */
+	if (!wait)
+		return 0;
 
 	/* Succeeded: the channel ran its first work. */
 	waited = nvrtx_now_us() - start;
