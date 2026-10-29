@@ -872,7 +872,7 @@ screen_disks(
 		if (reason != NULL) {
 			(void)snprintf(detail, sizeof(detail), "%s", kl_tr(reason));
 		} else {
-			table = "none";
+			table = kl_tr("none");
 			if (disk->table[0] != '\0')
 				table = disk->table;
 			(void)snprintf(detail, sizeof(detail), "%s: %s, %u %s", kl_tr("Partition table"), table, disk->entries, kl_tr("partitions"));
