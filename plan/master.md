@@ -19,7 +19,7 @@
 
 | 担当 | Queue | WS と次の手 | 実機 |
 | --- | --- | --- | --- |
-| P1 | q1669-i04 in-progress | [ws235](ws235/ws.md) RTL81xx の共通の driver で RTL8127 が 10G で動いた（p001〜p005 cleared）→ p006 RTL8127 の拡張（10.0.10.3）。WS309 は止めた（p001〜p007・p019 cleared、再開点は p008 の残り 1） | 10.0.10.3（時間の枠） |
+| P1 | q1662-i06 in-progress | [ws309](ws309/ws.md) Keiland の compositor の thread の整理を p008 の残り 1 から再開（WS235 は 2026-10-29 completed） | — |
 | P2 | q1670-i02 in-progress | [ws291](ws291/ws.md) の NVIDIA の段（RTX 2070）、RDNA の案 A・B は host・QEMU まで | 10.0.10.3（時間の枠） |
 | P3 | q1664-i04 in-progress | [ws221](ws221/ws.md) p004・p005 cleared、受けの窓を byte・window scale shift 5。残り p008・p009 の残り・p006・p007、その後 WS311（CUBIC）、p010 は WS235 の後 | VF2 |
 | P4 | q1665-i07 in-progress（p009 install-admin の段 5 から） | [ws307](ws307/ws.md) p002〜p014: spec.md どおりに実装 | QEMU |
