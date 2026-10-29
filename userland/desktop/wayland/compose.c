@@ -93,6 +93,7 @@ static VkResult compose_op_wait(void *context, unsigned slot, uint64_t timeout_n
 static VkResult compose_op_submit_task(void *context, VkCommandBuffer command, VkFence fence);
 static VkResult compose_op_wait_task(void *context, VkFence fence, uint64_t timeout_ns);
 static void compose_task_done(struct kwl_server *server, const struct kwl_render_message *message);
+static unsigned compose_graves(struct kwl_compose *compose, unsigned all);
 static VkResult compose_replay_commands(struct kwl_compose *compose, unsigned slot, struct kwl_render_outcome *outcome);
 static void compose_rec_timed(struct kwl_server *server, const struct kwl_render_outcome *outcome);
 static void compose_hold(struct kwl_server *server, struct kwl_object **windows, unsigned count);
@@ -890,6 +891,7 @@ kwl_compose_draw(
 	/* The list goes to the render thread after the moves recorded before it: the frame is in flight until it completes; the want went down. */
 	compose->walk_cycles = kwl_cycles() - compose->walk_start_cycles;
 	compose->in_flight++;
+	compose->drawings_given++;
 	compose->flight_ms = kwl_milliseconds();
 	compose->ready_valid = 0U;
 	compose->want_kind = KWL_RENDER_NONE;
@@ -1005,6 +1007,7 @@ kwl_compose_poll(
 	struct kwl_render_message *messages;
 	struct kwl_render_message *message;
 	struct kwl_compose *compose;
+	unsigned destroyed;
 
 	/* Nothing runs without the thread. */
 	compose = server->compose;
@@ -1026,6 +1029,11 @@ kwl_compose_poll(
 		compose_message(server, message);
 		free(message);
 	}
+
+	/* The images let go that nothing given uses any more, told with the frames' lines (--log-frames). */
+	destroyed = compose_graves(compose, 0U);
+	if (destroyed != 0U && server->log_frames)
+		printf("KWL GRAVE destroyed=%u\n", destroyed);
 
 	/* A wait for the thread that lasts is told. */
 	compose_stalled(server);
@@ -1099,9 +1107,10 @@ kwl_compose_close(
 		compose->render_started = 0U;
 	}
 
-	/* The device idle, then the output's objects. */
+	/* The device idle, then the images let go, then the output's objects. */
 	if (compose->device != VK_NULL_HANDLE)
 		kwl_device_wait_idle(compose);
+	(void)compose_graves(compose, 1U);
 	kwl_compose_output_close(server);
 	kwl_arrow_destroy(server);
 	kwl_glass_close(server);
@@ -3000,6 +3009,47 @@ kwl_compose_task_wait(
 }
 
 /*
+ * Lets go of an image record (allocated, and referred to by nothing else
+ * from now on): destroyed now when no drawing given and not completed and
+ * no task that moves it may still use it, otherwise once they have
+ * completed (at a later poll), without waiting.  destroy releases its
+ * objects and frees the record.  Without memory for the wait
+ * the compositor ends, as nothing in use may be destroyed.
+ */
+void
+kwl_compose_bury(
+	struct kwl_compose *compose,
+	struct kwl_import *import,
+	kwl_grave_destroy_fn *destroy)
+{
+	struct kwl_grave *grave;
+	struct kwl_grave **tail;
+	int ready;
+
+	/* Nothing in flight uses it: now. */
+	ready = kwl_compose_task_ready(compose, import);
+	if (ready && compose->drawings_done >= compose->drawings_given) {
+		destroy(compose, import);
+		return;
+	}
+
+	/* Its grave; without memory nothing can wait, and nothing in use may be destroyed. */
+	grave = calloc(1, sizeof(*grave));
+	if (grave == NULL) {
+		kwl_fatal("KWL FAILED site=compose_bury errno=%d", ENOMEM);
+		_exit(1);
+	}
+	grave->drawings = compose->drawings_given;
+	grave->import = import;
+	grave->destroy = destroy;
+
+	/* The end of the list, where it waits after the graves let go before it. */
+	for (tail = &compose->graves; *tail != NULL; tail = &(*tail)->next)
+		continue;
+	*tail = grave;
+}
+
+/*
  * Gives out a descriptor set of the image layout: one an image gave back, or
  * a new one from the pool.
  */
@@ -4270,6 +4320,7 @@ kwl_compose_submit_quiet(
 	compose->walk_slot = (compose->walk_slot + 1U) % KWL_FRAME_SLOTS;
 	compose->walk_cycles = kwl_cycles() - compose->walk_start_cycles;
 	compose->in_flight++;
+	compose->drawings_given++;
 	compose->flight_ms = kwl_milliseconds();
 	compose->ready_valid = 0U;
 	compose->want_kind = KWL_RENDER_NONE;
@@ -4670,6 +4721,43 @@ compose_message(
 }
 
 /*
+ * Destroys the images let go whose drawings and task have completed, or
+ * every one (all: the device idle at the end); returns how many.
+ */
+static unsigned
+compose_graves(
+	struct kwl_compose *compose,
+	unsigned all)
+{
+	struct kwl_grave **link;
+	struct kwl_grave *grave;
+	unsigned destroyed;
+	int ready;
+
+	/* Each grave, in the order let go. */
+	destroyed = 0U;
+	link = &compose->graves;
+	while (*link != NULL) {
+		/* Still in use by a drawing or its task given before. */
+		grave = *link;
+		ready = kwl_compose_task_ready(compose, grave->import);
+		if (!all && (!ready || compose->drawings_done < grave->drawings)) {
+			link = &grave->next;
+			continue;
+		}
+
+		/* Destroyed, and out of the list. */
+		*link = grave->next;
+		grave->destroy(compose, grave->import);
+		free(grave);
+		destroyed++;
+	}
+
+	/* Succeeded: the number destroyed. */
+	return destroyed;
+}
+
+/*
  * Applies a task's completion: its command buffer and fence go, and every
  * task up to it has completed (the images it moved are ready).  A task
  * that could not be submitted or waited for ends the compositor.
@@ -4720,8 +4808,9 @@ compose_completed(
 	unsigned index;
 	unsigned quiet;
 
-	/* The walk and the replay of the drawing (KWL PERF walk); its slot. */
+	/* The walk and the replay of the drawing (KWL PERF walk); its slot; one more drawing is done with what it used. */
 	compose = server->compose;
+	compose->drawings_done++;
 	outcome = &message->outcome;
 	slot = &compose->slots[message->job.slot % KWL_FRAME_SLOTS];
 	slot->flying = 0U;
