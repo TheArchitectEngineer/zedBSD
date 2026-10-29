@@ -3,6 +3,34 @@ Programming a Keiland application
 
 Status: how-to guide
 
+<!-- WRITE (the new interfaces, read first): This guide gets three chapters after chapter 7 for the interfaces a
+program uses instead of descriptors and system calls: posts from other threads (chapter 8), processes and a terminal
+(chapter 9), one copy of a program and starting other programs (chapter 10).  Chapter 7's translations now follow the
+application's KL_APP_LANGUAGE event (its section is rewritten, see the WRITE there), and a few sentences of the
+introduction and chapter 1 change (see the WRITE at each).
+
+1. Write the new chapters in the pattern of chapters 1 to 7: what the program does and its picture (the image link
+   and the caption the chapter's summary WRITE gives), the program whole (already below, under its marker), "Reading
+   the program" (line links of the form [lines 155-165](keiland-examples/08-worker.c#L155-L165) with the two to six
+   lines quoted under the sentence), "The rules" (each with a link back to the lines), "Pitfalls", and one sentence
+   that leads to the next chapter.  A chapter with two programs has the second as a "###" section with its own
+   reading, rules and pitfalls, as chapter 4 has 04-counter-parts.c.
+2. The line numbers in these WRITE comments were taken from the files; check each against the file before citing it,
+   and quote the code by copying the lines.  Do not edit code inside the blocks under "example:" markers: a test
+   compares each block with its file (a catalog sits in a ```text block).
+3. Every new program has the shape of 04-counter.c (the struct with app, window, ui, text, style and canvas; the
+   resize, draw, frame and input functions; dirty, moving, resized and closed).  Say only what is new against it, "as
+   in chapter 4" for the rest.
+4. Define each term once, in bold, where the chapter's summary WRITE says; later chapters use it.
+5. Never mention file descriptors, kl_app_watch_fd, KL_APP_FD or kl_instance_fd, nor the history of the interface:
+   the guide describes the interface as it is.  Do not present UNIX calls (fork, exec, pipe, poll, waitpid, kill,
+   signals) as something a program does: the point of these interfaces is that the program does not, and the same
+   source builds where they do not exist.  The threads in the programs are standard C11 threads (<threads.h>:
+   thrd_create, thrd_join, mtx_t, cnd_t, and <stdatomic.h>); name them as standard C.
+6. Do not link into plan/.  English, in the plain style of docs/style.md.  Link each component's header where it is
+   first used.  Delete every WRITE comment when the text is written.
+-->
+
 This guide shows how to write a desktop application with libkeiland, the library that every Keiland program uses to draw, to read its input and to talk to the desktop. It teaches by programs. Each chapter is built on one complete program that compiles, links and runs. You read the program first, then a walk through it line by line, then the rules that the program showed.
 
 The chapters go in the order a program is built:
@@ -14,6 +42,14 @@ The chapters go in the order a program is built:
 5. [The widgets](#5-the-widgets): fields, lists, switches, sliders, and widgets you make yourself.
 6. [Menus](#6-menus): the window's menu and context menus.
 7. [Other services](#7-other-services): glass, appearance, translations, files, the clipboard and notifications.
+<!-- WRITE (introduction, the list of chapters): add three items in the same form:
+8. [Work on other threads](#8-work-on-other-threads): a worker thread that hands its results to the window, and a
+   language whose catalogs are read on a thread.
+9. [Other programs](#9-other-programs): a program the window talks to, and a shell in a terminal of its own.
+10. [Running once and starting programs](#10-running-once-and-starting-programs): one copy of a program per user, and
+   starting a program apart from the application.
+The sentence above the list ("in the order a program is built") stays true if it says that chapters 8 to 10 are what
+a program adds as it grows. -->
 
 ## The programs
 
@@ -29,6 +65,21 @@ The programs are in [keiland-examples/](keiland-examples/). Each one grows out o
 | [05-widgets.c](keiland-examples/05-widgets.c) | 5 | A field, a list, a switch, a slider and a widget of your own | 04 |
 | [06-menu.c](keiland-examples/06-menu.c) | 6 | The counter with a window menu and a context menu | 04 |
 | [07-services.c](keiland-examples/07-services.c) | 7 | Glass, appearance, translations, a file chooser, the clipboard, a notification | 04 |
+
+<!-- WRITE (introduction, the table of programs): add these rows to the table above (the comment sits after the
+table so that it does not break it):
+| 08-worker.c | 8 | Primes counted on a worker thread; its progress and its result posted to the window | 04 |
+| 08-language.c | 8 | The desktop's language followed, its catalogs read on a thread; the latest change wins | 07 |
+| 09-sort.c | 9 | sort as a process: its input written, its output read by the line, its errors and exit code | 04 |
+| 09-shell.c | 9 | sh in a terminal of its own: its output as bytes, the terminal's size and modes | 05 (the field) |
+| 10-instance.c | 10 | One copy per user: later starts hand their requests over; Start Another launches it again | 04 |
+Under the table add one sentence: the Japanese catalogs of
+07-services.c and 08-language.c are in keiland-examples/locale/ja/; installed as
+KEILAND_DATADIR/keiland/locale/ja/NAME.tr (/usr/share/keiland/locale/ja/ on zedBSD), they make those programs speak
+Japanese when the desktop does.  In "Building and running a program": the programs of chapter 8 use C11 threads,
+which zedBSD's C library holds, and glibc from 2.34 (an older glibc needs -lpthread); FreeBSD keeps them in
+libstdthreads (add -lstdthreads).  10-instance.c needs XDG_RUNTIME_DIR to be the user's own directory (mode 0700), as a Keiland session
+sets it. -->
 
 ## How to read this guide
 
@@ -66,6 +117,10 @@ cc -DFONT_DIR='"/opt/keiland/share/fonts"' -o counter 04-counter.c -lkeiland
 ```
 
 Every libkeiland call of an application is made from the one thread that opened it.
+
+<!-- WRITE (introduction, the threads): the sentence above is no longer the whole truth.  Say: every libkeiland call
+of an application is made from the one thread that opened it, but the posts (kl_app_post and kl_window_post), which
+the program's other threads use to hand work back to it (chapter 8), and kl_tr_read (chapter 8). -->
 
 ## 1. The application
 
@@ -226,6 +281,8 @@ if (event.kind == KL_APP_THEME)
 
 - A program has one `struct kl_app`. Open it first, close it last. `kl_app_close` closes the windows that are still open, so the order of closing is forgiving, but the application must outlive everything made from it ([lines 34-36](keiland-examples/01-app.c#L34-L36), [75-76](keiland-examples/01-app.c#L75-L76)).
 - Every libkeiland call of the application is made from the one thread that opened it.
+  <!-- WRITE (chapter 1, rules): add "but kl_app_post and kl_window_post, which other threads call to hand the
+  application an event of their own (chapter 8)". -->
 - Everything that happens to the program arrives through one queue, in the order it happened. A window's typed text and a menu's Ctrl+S therefore keep their order ([lines 63-72](keiland-examples/01-app.c#L63-L72)).
 - The program reads the queue in two steps: `kl_app_dispatch` waits and queues, `kl_app_take` hands the events over one at a time. Take every queued event before you dispatch again ([lines 55-72](keiland-examples/01-app.c#L55-L72)).
 - A held key repeats by itself inside `kl_app_dispatch`. The repeats are queued as key inputs with `repeated` set.
@@ -236,11 +293,21 @@ if (event.kind == KL_APP_THEME)
   | `KL_APP_WINDOW` | An input of one of the application's windows: `event.window` and `event.input` (chapter 2). |
   | `KL_APP_THEME` | The desktop's appearance changed (light or dark, the accent): draw every window again ([line 70](keiland-examples/01-app.c#L70)). |
 
+<!-- WRITE (chapter 1, the table of kinds): add four rows to the table above, one line each, linking the chapter:
+| KL_APP_LANGUAGE | The desktop's language changed; event.language names the language it changed to (chapter 7). |
+| KL_APP_POST | An event of the program's own: event.code and event.data, posted from any thread (chapter 8). |
+| KL_APP_PROCESS | News of a process the program started: event.process, and event.ready says what (chapter 9). |
+| KL_APP_INSTANCE | Later starts of the program handed it requests: event.instance (chapter 10). |
+Add one sentence: a program looks at kind first and ignores the kinds it does not use; 01-app.c uses only
+KL_APP_THEME. -->
+
 The component's header is [keiland_app.h](../../userland/desktop/include/keiland/keiland_app.h).
 
 ### Pitfalls
 
 - Calling libkeiland from a second thread. The application belongs to the thread that opened it.
+  <!-- WRITE (chapter 1, pitfalls): add "Another thread hands the application its results with kl_app_post or
+  kl_window_post (chapter 8)." -->
 - Dispatching again while the queue is not empty. Dispatch returns at once in that case, so a loop that forgets to take everything runs hot.
 - Ignoring `kl_app_open`'s failure. A program started outside a Keiland session has no compositor to talk to.
 
@@ -3733,9 +3800,8 @@ The window is a card with three buttons: Open..., Copy Path and Notify. Open... 
 
 /*
  * Everything the program keeps: its connection, window and widgets, the
- * desktop's settings it follows the language through, the file chooser
- * while it is open, the path chosen, how many files were opened, and
- * what the main loop has to do next.
+ * file chooser while it is open, the path chosen, how many files were
+ * opened, and what the main loop has to do next.
  */
 struct services {
 	struct kl_app *app;
@@ -3744,7 +3810,6 @@ struct services {
 	struct kl_text text;
 	struct kl_style style;
 	struct kl_canvas canvas;
-	struct kl_settings *settings;
 	struct kl_file_chooser *chooser;
 	uint32_t *pixels;
 	uint32_t width;
@@ -3764,7 +3829,7 @@ static int services_frame(struct services *services);
 static void services_input(struct services *services, const struct kl_window_event *input);
 static void services_open(struct services *services);
 static void services_chosen(void *data, struct kl_file_chooser *chooser, unsigned result, const char *path, size_t filter);
-static void services_language(void *data, const char *language);
+static void services_language(struct services *services, const char *language);
 
 /* What the file chooser calls when it has its answer. */
 static const struct kl_file_chooser_listener services_chooser_listener = {
@@ -3792,11 +3857,8 @@ main(void)
 		return 1;
 	}
 
-	/* Follows the language chosen in Settings: reads the catalogs now and whenever it changes. */
-	services.settings = kl_settings_open(kl_app_display(services.app), NULL);
-	if (services.settings == NULL)
-		return 1;
-	status = kl_tr_follow(services.settings, DOMAIN, services_language, &services);
+	/* Speaks the desktop's language: reads the catalogs of the language the application heard when it opened. */
+	status = kl_tr_open(DOMAIN, kl_app_language(services.app));
 	if (status != 0)
 		fprintf(stderr, "services: the texts stay in English (%s)\n", strerror(status));
 
@@ -3842,9 +3904,6 @@ main(void)
 		if (status != 0)
 			break;
 
-		/* Runs the settings' watches on what the dispatch read (a new language calls services_language). */
-		(void)kl_settings_dispatch(services.settings);
-
 		/* Takes every event queued, in order. */
 		for (;;) {
 			taken = kl_app_take(services.app, &event);
@@ -3854,6 +3913,10 @@ main(void)
 			/* The appearance changed: kl_theme_default's colours are new, the frame is drawn with them. */
 			if (event.kind == KL_APP_THEME)
 				services.dirty = 1;
+
+			/* The desktop's language changed: the event names the language it changed to. */
+			if (event.kind == KL_APP_LANGUAGE)
+				services_language(&services, event.language);
 
 			/* An input of the window; none of the chooser's window comes here. */
 			if (event.kind == KL_APP_WINDOW && event.window == services.window)
@@ -3884,14 +3947,14 @@ main(void)
 		}
 	}
 
-	/* Closes the chooser, the settings, the widgets' record, the frame, the font and the connection. */
+	/* Closes the chooser, the widgets' record, the frame, the font, the texts and the connection. */
 	if (services.chooser != NULL)
 		kl_file_chooser_destroy(services.chooser);
-	kl_settings_close(services.settings);
 	kl_ui_destroy(services.ui);
 	kl_canvas_release(&services.canvas);
 	free(services.pixels);
 	kl_text_close(&services.text);
+	kl_tr_close();
 	kl_app_close(services.app);
 
 	/* Succeeded: the window was closed. */
@@ -4158,31 +4221,32 @@ services_chosen(
 }
 
 /*
- * Draws the window again in the language just chosen: kl_tr gives the new
- * language's texts from now on.
+ * Speaks the language the desktop changed to: reads its catalogs, so that
+ * kl_tr gives its texts from now on, and draws the window again.
  */
 static void
 services_language(
-	void *data,
+	struct services *services,
 	const char *language)
 {
-	struct services *services;
+	int status;
 
-	(void)language;
+	/* The new language's catalogs (English after a failure). */
+	status = kl_tr_open(DOMAIN, language);
+	if (status != 0)
+		fprintf(stderr, "services: the texts are in English (%s)\n", strerror(status));
 
 	/* The title and every text of the next frame in the new language. */
-	services = data;
-	if (services->window != NULL)
-		kl_window_set_title(services->window, kl_tr("Services"));
+	kl_window_set_title(services->window, kl_tr("Services"));
 	services->dirty = 1;
 }
 ```
 
 ### Appearance, theme and accent
 
-`kl_theme_default()` gives the colours and sizes that every widget draws with. They follow the desktop's **appearance**, light or dark, and the **accent**, the colour the user chose to mark selections and main buttons. When either changes, a `KL_APP_THEME` event comes and the program draws its windows again ([lines 166-168](keiland-examples/07-services.c#L166-L168)). The program asks for the theme afresh in every frame ([lines 271-274](keiland-examples/07-services.c#L271-L274)).
+`kl_theme_default()` gives the colours and sizes that every widget draws with. They follow the desktop's **appearance**, light or dark, and the **accent**, the colour the user chose to mark selections and main buttons. When either changes, a `KL_APP_THEME` event comes and the program draws its windows again ([lines 158-160](keiland-examples/07-services.c#L158-L160)). The program asks for the theme afresh in every frame ([lines 267-270](keiland-examples/07-services.c#L267-L270)).
 
-`kl_appearance_get(NULL)` tells which appearance is shown ([lines 294-301](keiland-examples/07-services.c#L294-L301)):
+`kl_appearance_get(NULL)` tells which appearance is shown ([lines 290-297](keiland-examples/07-services.c#L290-L297)):
 
 ```c
 shown = kl_appearance_get(NULL);
@@ -4202,7 +4266,7 @@ see_through = kl_window_see_through(services.window);
 services.style.glass = see_through;
 ```
 
-A window is see-through when its frames are blended by their alpha: always for `KL_PRESENT_SHM`, and for `KL_PRESENT_VULKAN` when its swapchain is premultiplied. `kl_window_see_through` tells which. Then the program changes its drawing in two ways. It clears the ground to nothing, because the compositor draws the glass there. And it draws the card with `kl_panel`, which draws the veil over the glass ([lines 276-292](keiland-examples/07-services.c#L276-L292)):
+A window is see-through when its frames are blended by their alpha: always for `KL_PRESENT_SHM`, and for `KL_PRESENT_VULKAN` when its swapchain is premultiplied. `kl_window_see_through` tells which. Then the program changes its drawing in two ways. It clears the ground to nothing, because the compositor draws the glass there. And it draws the card with `kl_panel`, which draws the veil over the glass ([lines 272-288](keiland-examples/07-services.c#L272-L288)):
 
 ```c
 if (services->style.glass) {
@@ -4214,7 +4278,7 @@ if (services->style.glass) {
 kl_panel(&services->style, card, 0);
 ```
 
-After each frame it says where the panel is ([lines 360-374](keiland-examples/07-services.c#L360-L374)):
+After each frame it says where the panel is ([lines 356-370](keiland-examples/07-services.c#L356-L370)):
 
 ```c
 panel.radius = CARD_RADIUS;
@@ -4222,9 +4286,57 @@ panel.kind = KL_GLASS_CARD;
 status = kl_window_set_glass(services->window, &panel, 1U);
 ```
 
-The panel's rectangle and radius go to the compositor with `kl_window_set_glass`. If it fails, with `ENOTSUP` or another error, the program stops using glass: the next frame is drawn opaque ([lines 369-373](keiland-examples/07-services.c#L369-L373)). The header is [keiland_glass.h](../../userland/desktop/include/keiland/keiland_glass.h).
+The panel's rectangle and radius go to the compositor with `kl_window_set_glass`. If it fails, with `ENOTSUP` or another error, the program stops using glass: the next frame is drawn opaque ([lines 365-369](keiland-examples/07-services.c#L365-L369)). The header is [keiland_glass.h](../../userland/desktop/include/keiland/keiland_glass.h).
 
 ### Text in the user's language
+
+<!-- WRITE (chapter 7, text in the user's language): rewrite this section for the program as it is now: it follows
+the desktop's language through the application's KL_APP_LANGUAGE event and no longer opens kl_settings.  The two
+code blocks about kl_settings_open and kl_tr_follow, the paragraph on kl_tr_follow's callback, and the paragraph and
+block on kl_settings_dispatch (with its link to lines 157-158, which no longer exist) go.  Keep the first paragraph
+(catalog, domain, the English text as the key, the files' place) and the paragraph on kl_tr, kl_trn and kl_tr_format
+(its links were renumbered for the new file).  In this order:
+1. Lines 105-108: at the start the program reads the catalogs of kl_app_language(app), the desktop's language as the
+   application heard it when it opened ("en" when the compositor tells none), with kl_tr_open(DOMAIN, language).
+   Quote them.  Define "language name" here: "en", "ja", ..., as kl_tr_open takes it.
+2. Lines 162-164: KL_APP_LANGUAGE says the desktop's language changed; event.language names the language it changed
+   to.  Define KL_APP_LANGUAGE here (chapter 1's table points here).
+3. Lines 468-487 (services_language): kl_tr_open(DOMAIN, language) with the event's language, the window's title set
+   again (the title is a text too) and dirty set, so that the next frame is all in the new language.  Quote 479-486.
+4. The rules of this part, in a short list: use the language the event carries, and do not read the desktop's setting
+   back at the event: changes that come one after another come as events in the same order, and the setting may
+   already hold a later change than the event's; the last event tells the language now.  A text kl_tr gave lives
+   until the language changes: keep none across the event (that is why the title is set again).  kl_tr is used from
+   one thread.
+5. The catalog of this program, keiland-examples/locale/ja/services.tr, is shown whole just below this comment.
+   Explain its lines: "#" begins a comment; the fields are separated by tabs; "msg ENGLISH TEXT" is one text,
+   "plural SINGULAR PLURAL FORM..." one text for counts (Japanese has one form, English two), and "ctx CONTEXT
+   ENGLISH TEXT" one for kl_trc.  It is installed as KEILAND_DATADIR/keiland/locale/ja/services.tr (on zedBSD
+   /usr/share/keiland/locale/ja/services.tr); while developing, kl_tr_open_directory reads catalogs from another
+   directory.  Picture keiland-examples/07-services-ja.png: the same program started after the desktop's language
+   became Japanese (by 08-language.c's Switch Language): its card in Japanese ("外観: ライト", "開いたファイル 0 件",
+   開く... and the other buttons, the title サービス).
+6. One paragraph: kl_tr_follow (keiland_tr.h) does the same for a program that has no kl_app: it watches the setting
+   ui.language through a kl_settings, and needs kl_settings_dispatch after every dispatch of the display.  An
+   application uses KL_APP_LANGUAGE.
+7. One sentence: reading catalogs is file I/O; when it may be slow, read them on a thread (chapter 8's second
+   program).
+-->
+
+<!-- example: keiland-examples/locale/ja/services.tr -->
+```text
+# The texts of 07-services.c in Japanese (domain services).  Installed as KEILAND_DATADIR/keiland/locale/ja/services.tr.
+msg	Services	サービス
+msg	Light	ライト
+msg	Dark	ダーク
+msg	Appearance: {1}	外観: {1}
+plural	{1} file opened	{1} files opened	開いたファイル {1} 件
+msg	Open...	開く...
+msg	Copy Path	パスをコピー
+msg	Notify	通知
+msg	Open	開く
+```
+
 
 The program writes its texts in English and looks each one up in its **catalog**, a file of translations. The English text is the key: `kl_tr("Open")` gives the text in the user's language, or `"Open"` itself when the catalog has none. A catalog belongs to a **domain**, a name of lower-case letters, digits, `-` and `_`. Each program has its own domain, and the desktop's programs share `KL_TR_SHARED_DOMAIN`. The catalog files are `KEILAND_DATADIR/keiland/locale/LANGUAGE/DOMAIN.tr`.
 
@@ -4239,7 +4351,7 @@ if (status != 0)
 	fprintf(stderr, "services: the texts stay in English (%s)\n", strerror(status));
 ```
 
-`kl_tr_follow` reads the catalogs in that language now, and again whenever the language changes. After each change it calls back, so that the program can draw again ([lines 472-490](keiland-examples/07-services.c#L472-L490)):
+`kl_tr_follow` reads the catalogs in that language now, and again whenever the language changes. After each change it calls back, so that the program can draw again ([lines 468-487](keiland-examples/07-services.c#L468-L487)):
 
 ```c
 services = data;
@@ -4256,7 +4368,7 @@ status = kl_app_dispatch(services.app, timeout);
 (void)kl_settings_dispatch(services.settings);
 ```
 
-In a frame, `kl_tr` gives a text ([lines 294-306](keiland-examples/07-services.c#L294-L306)). `kl_trn` chooses the singular or a plural for a count. `kl_tr_format` fills `{1}` to `{9}` with the strings that follow, in any order the language needs, and a `NULL` ends them:
+In a frame, `kl_tr` gives a text ([lines 290-302](keiland-examples/07-services.c#L290-L302)). `kl_trn` chooses the singular or a plural for a count. `kl_tr_format` fills `{1}` to `{9}` with the strings that follow, in any order the language needs, and a `NULL` ends them:
 
 ```c
 (void)kl_tr_format(line, sizeof(line), kl_trn("{1} file opened", "{1} files opened", services->opened), count, (const char *)NULL);
@@ -4278,7 +4390,7 @@ options.fallback_font = FALLBACK_FONT;
 services->chooser = kl_file_chooser_open(kl_app_display(services->app), kl_window_toplevel(services->window), &options, &services_chooser_listener, services);
 ```
 
-The program asks for it over its window with `kl_file_chooser_open`, and passes a **listener**: a structure of callbacks ([lines 82-84](keiland-examples/07-services.c#L82-L84)). Only one chooser is open at a time, and the Open button is disabled while it is ([lines 316-317](keiland-examples/07-services.c#L316-L317), [427-429](keiland-examples/07-services.c#L427-L429)).
+The program asks for it over its window with `kl_file_chooser_open`, and passes a **listener**: a structure of callbacks ([lines 80-82](keiland-examples/07-services.c#L80-L82)). Only one chooser is open at a time, and the Open button is disabled while it is ([lines 312-313](keiland-examples/07-services.c#L312-L313), [423-425](keiland-examples/07-services.c#L423-L425)).
 
 The program keeps running. The answer comes once, through the listener, during a dispatch:
 
@@ -4292,20 +4404,3171 @@ if (result == KL_FILE_CHOOSER_CHOSEN) {
 services->answered = 1;
 ```
 
-The callback keeps the path and adds it to the desktop's **recent list** with `kl_recent_add`. The chooser must be destroyed afterwards. Here the main loop does it, once it sees that the answer came ([lines 175-181](keiland-examples/07-services.c#L175-L181)). The callback may destroy it too. The headers are [keiland_file_chooser.h](../../userland/desktop/include/keiland/keiland_file_chooser.h) and [keiland_recent.h](../../userland/desktop/include/keiland/keiland_recent.h).
+The callback keeps the path and adds it to the desktop's **recent list** with `kl_recent_add`. The chooser must be destroyed afterwards. Here the main loop does it, once it sees that the answer came ([lines 171-177](keiland-examples/07-services.c#L171-L177)). The callback may destroy it too. The headers are [keiland_file_chooser.h](../../userland/desktop/include/keiland/keiland_file_chooser.h) and [keiland_recent.h](../../userland/desktop/include/keiland/keiland_recent.h).
 
 ### The clipboard
 
-`kl_window_copy(window, text, length)` puts text on the clipboard ([line 330](keiland-examples/07-services.c#L330)). `kl_window_paste(window, buffer, size)` reads it, as the Paste action does in chapter 6, and `kl_window_can_paste(window)` tells whether there is text. The text widgets of chapter 5 use the window's clipboard by themselves, once `kl_ui_window_text` has tied them to it.
+`kl_window_copy(window, text, length)` puts text on the clipboard ([line 326](keiland-examples/07-services.c#L326)). `kl_window_paste(window, buffer, size)` reads it, as the Paste action does in chapter 6, and `kl_window_can_paste(window)` tells whether there is text. The text widgets of chapter 5 use the window's clipboard by themselves, once `kl_ui_window_text` has tied them to it.
 
 ### Notifications
 
-`kl_app_notify(app, title, body)` shows a notification under the program's application ID ([line 337](keiland-examples/07-services.c#L337)). `kl_app_notify_lock` also says what the lock screen shows of it.
+`kl_app_notify(app, title, body)` shows a notification under the program's application ID ([line 333](keiland-examples/07-services.c#L333)). `kl_app_notify_lock` also says what the lock screen shows of it.
 
 ### The desktop's settings and system
+
+<!-- WRITE (chapter 7, the desktop's settings): add one or two sentences to the paragraph below: the desktop's
+language is a setting too (ui.language), but an application learns of its changes from KL_APP_LANGUAGE, not by
+watching the setting.  A program asks for a change with kl_settings_set or kl_settings_set_int; the change comes back
+as a change, to it and to every other program (08-language.c does this, chapter 8). -->
 
 `kl_settings_open(kl_app_display(app), name)` reads, watches and asks to change the desktop's settings (`kl_settings_get`, `kl_settings_watch`, `kl_settings_set`). `kl_app_system(app)` gives the desktop's system, `kl_system_*`: the network, the sound, the power, the removable devices, the displays and the printers. Each of these is asked of the compositor. The program reads no system file and talks to no daemon itself. The headers are [keiland_settings.h](../../userland/desktop/include/keiland/keiland_settings.h) and [keiland_system.h](../../userland/desktop/include/keiland/keiland_system.h).
 
 ### Sound
 
 A program plays sound through a stream of the desktop: `kl_audio_stream_open`, `kl_audio_stream_write` and `kl_audio_stream_dispatch`. See [keiland_audio.h](../../userland/desktop/include/keiland/keiland_audio.h).
+
+<!-- WRITE (chapter 7, the lead): one sentence that leads to chapter 8: so far all the work ran on the application's
+thread, between two frames; a long job there would leave the window unanswered until it ended. -->
+
+## 8. Work on other threads
+
+<!-- WRITE (chapter 8, summary): The program counts the prime numbers below 20,000,000 on a thread of its own, a
+worker.  Start starts a count; the bar and the line under it follow the count; Stop ends it early.  The window keeps
+answering all the while: it can be moved and resized, and Stop works, because the application's thread never does the
+counting.  Picture keiland-examples/08-worker.png: taken 2.5 seconds after Start was clicked: the bar part of the way,
+"N primes below M so far.", Start disabled and Stop enabled.
+
+It grows from 04-counter.c.  New: the two records the threads hand each other (struct count and struct progress),
+the worker (primes_count), one function for every event (primes_event, because the end of the program takes events
+too), primes_post, primes_start and primes_finish.
+
+Terms first defined here, in bold: worker (a thread of the program's own that does a long job), post (an event of the
+program's own: a code and a data pointer, handed to the application from any thread), the code of a post (a number
+the program gives meaning to), owning a record (the one thread that may read and write it now; ownership passes with
+a post).  The headers: keiland_app.h (kl_app_post), keiland_window.h (kl_window_post).  Build as the others; see the
+introduction for C11 threads on FreeBSD. -->
+
+<!-- example: keiland-examples/08-worker.c -->
+```c
+/*
+ * zedBSD
+ * Copyright (C) 2026 Awe Morris
+ *
+ * SPDX-License-Identifier: Zlib
+ */
+
+/*
+ * A window that counts the prime numbers below a limit on a thread of its
+ * own (a worker), so that the window keeps answering while it counts.  The
+ * worker tells the window how far it got with kl_window_post, and hands the
+ * finished count back to the application with kl_app_post.  Stop asks the
+ * worker to end early.
+ */
+
+#include <keiland/keiland.h>
+#include <errno.h>
+#include <stdatomic.h>
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+#include <threads.h>
+
+/* Where the desktop's fonts are (/opt/keiland/share/fonts for a Linux build under /opt/keiland). */
+#ifndef FONT_DIR
+#define FONT_DIR	"/usr/share/fonts"
+#endif
+#define FONT		FONT_DIR "/keiland.ttf"
+#define FALLBACK_FONT	FONT_DIR "/keiland-fallback.ttf"
+
+/* The widgets' ids. */
+#define ID_START	1U
+#define ID_STOP		2U
+
+/* The program's own codes of its posts: how far a count got (to the window), and a count's end (to the application). */
+#define POST_PROGRESS	1U
+#define POST_FINISHED	2U
+
+/* The numbers counted, and how many the worker looks at between two reports. */
+#define LIMIT		20000000UL
+#define STEP		200000UL
+
+/* The buttons' width and the room around them, in pixels. */
+#define BUTTON_WIDTH	96
+#define MARGIN		24
+
+/*
+ * One count: what the worker is given (the application, the window, the
+ * limit), what it found (how far it went, the primes below that), and the
+ * flag the window raises to stop it.  The application's thread owns the
+ * record until the worker starts, and again from the POST_FINISHED that
+ * hands it back; only stop is shared in between.
+ */
+struct count {
+	struct kl_app *app;
+	struct kl_window *window;
+	unsigned long limit;
+	unsigned long done;
+	unsigned long primes;
+	atomic_int stop;
+};
+
+/* One report of how far a count got: made by the worker, freed by the one who takes the post. */
+struct progress {
+	unsigned long done;
+	unsigned long primes;
+};
+
+/*
+ * Everything the program keeps: its connection, window and widgets, the
+ * count running (NULL when none) and its thread, what the window shows of
+ * it, and what the main loop has to do next.
+ */
+struct primes {
+	struct kl_app *app;
+	struct kl_window *window;
+	struct kl_ui *ui;
+	struct kl_text text;
+	struct kl_style style;
+	struct kl_canvas canvas;
+	uint32_t *pixels;
+	uint32_t width;
+	uint32_t height;
+	struct count *count;
+	thrd_t worker;
+	unsigned long done;
+	unsigned long found;
+	char status[128];
+	int dirty;
+	int moving;
+	int resized;
+	int closed;
+};
+
+static int primes_resize(struct primes *primes);
+static void primes_draw(struct primes *primes, uint64_t now_us);
+static int primes_frame(struct primes *primes);
+static void primes_event(struct primes *primes, const struct kl_app_event *event);
+static void primes_input(struct primes *primes, const struct kl_window_event *input);
+static void primes_post(struct primes *primes, uint32_t code, void *data);
+static void primes_start(struct primes *primes);
+static void primes_finish(struct primes *primes);
+static int primes_count(void *argument);
+static int primes_is_prime(unsigned long number);
+
+int
+main(void)
+{
+	static struct primes primes;
+	struct kl_window_options window_options;
+	struct kl_app_options app_options;
+	struct kl_app_event event;
+	int timeout;
+	int status;
+	int taken;
+
+	/* Connects to the desktop. */
+	memset(&app_options, 0, sizeof(app_options));
+	app_options.application = "org.example.Primes";
+	primes.app = kl_app_open(&app_options);
+	if (primes.app == NULL) {
+		fprintf(stderr, "primes: no desktop (%s)\n", strerror(errno));
+		return 1;
+	}
+
+	/* Opens the window. */
+	memset(&window_options, 0, sizeof(window_options));
+	window_options.title = "Primes";
+	window_options.width = 440;
+	window_options.height = 240;
+	window_options.present = KL_PRESENT_VULKAN;
+	primes.window = kl_app_window_create(primes.app, &window_options);
+	if (primes.window == NULL) {
+		fprintf(stderr, "primes: no window (%s)\n", strerror(errno));
+		return 1;
+	}
+
+	/* Makes the widgets' record and opens the font. */
+	primes.ui = kl_ui_create();
+	if (primes.ui == NULL)
+		return 1;
+	status = kl_text_open(&primes.text, FONT, FALLBACK_FONT);
+	if (status != 0) {
+		fprintf(stderr, "primes: no font %s (%s)\n", FONT, strerror(status));
+		return 1;
+	}
+	primes.style.text = &primes.text;
+	snprintf(primes.status, sizeof(primes.status), "Not counted yet.");
+
+	/* Makes the first frame. */
+	status = primes_resize(&primes);
+	if (status != 0)
+		return 1;
+
+	/* Runs until the window is closed; the worker's posts arrive among the other events. */
+	while (!primes.closed) {
+		/* Waits for the desktop or a post: not at all while a frame is due, a frame's time while something moves. */
+		timeout = -1;
+		if (primes.moving)
+			timeout = 16;
+		if (primes.dirty || primes.resized)
+			timeout = 0;
+		status = kl_app_dispatch(primes.app, timeout);
+		if (status != 0)
+			break;
+
+		/* Takes every event queued, in order. */
+		for (;;) {
+			taken = kl_app_take(primes.app, &event);
+			if (!taken)
+				break;
+			primes_event(&primes, &event);
+		}
+
+		/* A new size: a new frame of that size. */
+		if (primes.resized) {
+			primes.resized = 0;
+			status = primes_resize(&primes);
+			if (status != 0)
+				break;
+		}
+
+		/* Something changed or moves: draws and shows a frame. */
+		if (primes.dirty || primes.moving) {
+			status = primes_frame(&primes);
+			if (status != 0)
+				break;
+		}
+	}
+
+	/* Ends a count still running before the application closes: no thread may post after it. */
+	primes_finish(&primes);
+
+	/* Frees the widgets' record, the frame and the font, and closes the window and the connection. */
+	kl_ui_destroy(primes.ui);
+	kl_canvas_release(&primes.canvas);
+	free(primes.pixels);
+	kl_text_close(&primes.text);
+	kl_app_close(primes.app);
+
+	/* Succeeded: the window was closed. */
+	return 0;
+}
+
+/*
+ * Makes the frame at the window's size; nonzero when it cannot.
+ */
+static int
+primes_resize(
+	struct primes *primes)
+{
+	uint32_t *pixels;
+	int status;
+
+	/* Sets the presenter to the window's size, which it reports. */
+	status = kl_window_present_resize(primes->window, &primes->width, &primes->height);
+	if (status != 0)
+		return -1;
+
+	/* Allocates the frame. */
+	pixels = malloc((size_t)primes->width * primes->height * sizeof(pixels[0]));
+	if (pixels == NULL)
+		return -1;
+
+	/* Puts the canvas on the new pixels in place of the old ones; the widgets draw on it. */
+	if (primes->pixels != NULL)
+		kl_canvas_release(&primes->canvas);
+	free(primes->pixels);
+	primes->pixels = pixels;
+	status = kl_canvas_init(&primes->canvas, primes->pixels, primes->width, (int)primes->width, (int)primes->height);
+	if (status != 0)
+		return -1;
+	primes->style.canvas = &primes->canvas;
+
+	/* Succeeded: the new frame is drawn next. */
+	primes->dirty = 1;
+	return 0;
+}
+
+/*
+ * Draws one frame: the question, how far the count got, what it found,
+ * and the Start and Stop buttons.
+ */
+static void
+primes_draw(
+	struct primes *primes,
+	uint64_t now_us)
+{
+	const struct kl_theme *theme;
+	struct kl_rect whole;
+	struct kl_rect bar;
+	struct kl_rect start;
+	struct kl_rect stop;
+	unsigned start_flags;
+	unsigned stop_flags;
+	char line[64];
+	double fraction;
+	int baseline;
+	int clicked;
+
+	/* Starts the frame. */
+	theme = kl_theme_default();
+	primes->style.theme = theme;
+	kl_ui_begin(primes->ui, now_us);
+
+	/* Paints the ground. */
+	whole.x = 0;
+	whole.y = 0;
+	whole.width = (int)primes->width;
+	whole.height = (int)primes->height;
+	kl_canvas_gradient(&primes->canvas, &whole, theme->ground_top, theme->ground_bottom);
+
+	/* The question. */
+	snprintf(line, sizeof(line), "Primes below %lu", (unsigned long)LIMIT);
+	baseline = kl_text_center(theme->text_body, MARGIN, 24);
+	(void)kl_text_draw(&primes->text, &primes->canvas, MARGIN, baseline, line, strlen(line), theme->text_body, 1, theme->text);
+
+	/* How far the count got, as a bar, and what it found. */
+	bar.x = MARGIN;
+	bar.y = MARGIN + 44;
+	bar.width = (int)primes->width - 2 * MARGIN;
+	bar.height = 6;
+	fraction = (double)primes->done / (double)LIMIT;
+	kl_progress(&primes->style, &bar, fraction, now_us);
+	baseline = kl_text_center(theme->text_body, bar.y + 16, 24);
+	(void)kl_text_draw(&primes->text, &primes->canvas, MARGIN, baseline, primes->status, strlen(primes->status), theme->text_body, 0, theme->text_secondary);
+
+	/* Lays out the two buttons in a row at the bottom. */
+	start.x = MARGIN;
+	start.y = (int)primes->height - MARGIN - theme->control_height;
+	start.width = BUTTON_WIDTH;
+	start.height = theme->control_height;
+	stop = start;
+	stop.x = start.x + BUTTON_WIDTH + 12;
+
+	/* Start: a new count on a worker; disabled while one runs. */
+	start_flags = KL_BUTTON_PRIMARY;
+	if (primes->count != NULL)
+		start_flags |= KL_BUTTON_DISABLED;
+	clicked = kl_button(primes->ui, &primes->style, ID_START, &start, "Start", start_flags);
+	if (clicked)
+		primes_start(primes);
+
+	/* Stop: asks the worker to end; its count comes back as usual, cut short. */
+	stop_flags = 0U;
+	if (primes->count == NULL)
+		stop_flags = KL_BUTTON_DISABLED;
+	clicked = kl_button(primes->ui, &primes->style, ID_STOP, &stop, "Stop", stop_flags);
+	if (clicked && primes->count != NULL)
+		atomic_store(&primes->count->stop, 1);
+
+	/* Ends the frame. */
+	primes->moving = kl_ui_end(primes->ui, now_us);
+	kl_ui_window_text(primes->ui, primes->window);
+}
+
+/*
+ * Draws and shows a frame; nonzero when the frame cannot be shown.
+ */
+static int
+primes_frame(
+	struct primes *primes)
+{
+	int status;
+
+	/* Draws the frame. */
+	primes->dirty = 0;
+	primes_draw(primes, kl_clock_us());
+
+	/* Hands it to the compositor. */
+	status = kl_window_present(primes->window, primes->pixels, primes->width);
+	if (status == EAGAIN) {
+		/* The window's size changed under the frame: a new frame of the new size. */
+		primes->resized = 1;
+	} else if (status != 0) {
+		/* Refuses to go on when the frame could not be shown. */
+		return -1;
+	}
+
+	/* Succeeded: the frame is shown. */
+	return 0;
+}
+
+/*
+ * Acts on one event of the application: the theme, the window's input,
+ * and the posts, whether they came to the window or to the application.
+ */
+static void
+primes_event(
+	struct primes *primes,
+	const struct kl_app_event *event)
+{
+	/* The appearance changed: the theme's colours are new. */
+	if (event->kind == KL_APP_THEME)
+		primes->dirty = 1;
+
+	/* A post to the window comes among its input, as an input of its own kind. */
+	if (event->kind == KL_APP_WINDOW && event->window == primes->window) {
+		if (event->input.kind == KL_WINDOW_POST) {
+			primes_post(primes, event->input.code, event->input.data);
+			return;
+		}
+		primes_input(primes, &event->input);
+	}
+
+	/* A post to the application, or one to a window that closed before it came. */
+	if (event->kind == KL_APP_POST)
+		primes_post(primes, event->code, event->data);
+}
+
+/*
+ * Gives one input of the window to the widgets, or acts on it.
+ */
+static void
+primes_input(
+	struct primes *primes,
+	const struct kl_window_event *input)
+{
+	int taken;
+
+	/* The window's own inputs: a new size, the close button. */
+	if (input->kind == KL_WINDOW_RESIZE) {
+		primes->resized = 1;
+		return;
+	}
+	if (input->kind == KL_WINDOW_CLOSE) {
+		primes->closed = 1;
+		return;
+	}
+
+	/* The rest is the widgets'. */
+	taken = kl_ui_window_input(primes->ui, input);
+	if (taken)
+		primes->dirty = 1;
+}
+
+/*
+ * Takes one of the worker's posts: a report of progress, which is shown
+ * and freed, or the count handed back, which ends it.  The data of each is
+ * the program's from now on.
+ */
+static void
+primes_post(
+	struct primes *primes,
+	uint32_t code,
+	void *data)
+{
+	struct progress *progress;
+	struct count *count;
+	const char *how;
+
+	/* A report: shown, then freed (a worker's reports come before its count, never after). */
+	if (code == POST_PROGRESS) {
+		progress = data;
+		primes->done = progress->done;
+		primes->found = progress->primes;
+		snprintf(primes->status, sizeof(primes->status), "%lu primes below %lu so far.", primes->found, primes->done);
+		free(progress);
+		primes->dirty = 1;
+		return;
+	}
+
+	/* The count handed back: its thread is ending, so it is joined; the record is the program's again. */
+	if (code == POST_FINISHED) {
+		count = data;
+		(void)thrd_join(primes->worker, NULL);
+		primes->done = count->done;
+		primes->found = count->primes;
+		how = "Done";
+		if (count->done < count->limit)
+			how = "Stopped";
+		snprintf(primes->status, sizeof(primes->status), "%s: %lu primes below %lu.", how, primes->found, primes->done);
+		free(count);
+		primes->count = NULL;
+		primes->dirty = 1;
+	}
+}
+
+/*
+ * Starts a count on a worker thread.
+ */
+static void
+primes_start(
+	struct primes *primes)
+{
+	struct count *count;
+	int status;
+
+	/* The count's record, handed to the worker. */
+	count = calloc(1, sizeof(*count));
+	if (count == NULL) {
+		snprintf(primes->status, sizeof(primes->status), "No memory to count.");
+		return;
+	}
+	count->app = primes->app;
+	count->window = primes->window;
+	count->limit = LIMIT;
+	atomic_init(&count->stop, 0);
+
+	/* The worker: from here until POST_FINISHED, the record is its own but for stop. */
+	status = thrd_create(&primes->worker, primes_count, count);
+	if (status != thrd_success) {
+		free(count);
+		snprintf(primes->status, sizeof(primes->status), "No thread to count on.");
+		return;
+	}
+	primes->count = count;
+	primes->done = 0;
+	primes->found = 0;
+	snprintf(primes->status, sizeof(primes->status), "Counting...");
+}
+
+/*
+ * Ends a count still running when the program ends: asks the worker to
+ * stop, waits for its thread, and takes the posts it left, whose data
+ * would be lost with the application otherwise.
+ */
+static void
+primes_finish(
+	struct primes *primes)
+{
+	struct kl_app_event event;
+	int status;
+	int taken;
+
+	/* Nothing runs. */
+	if (primes->count == NULL)
+		return;
+
+	/* Stops the worker; its thread has posted all it will once it is joined. */
+	atomic_store(&primes->count->stop, 1);
+	(void)thrd_join(primes->worker, NULL);
+
+	/* Takes the posts left, without waiting, until its count came back (the last of them). */
+	while (primes->count != NULL) {
+		status = kl_app_dispatch(primes->app, 0);
+		if (status != 0)
+			break;
+		taken = kl_app_take(primes->app, &event);
+		if (!taken)
+			break;
+		if (event.kind == KL_APP_WINDOW && event.input.kind == KL_WINDOW_POST) {
+			primes_post(primes, event.input.code, event.input.data);
+		} else if (event.kind == KL_APP_POST) {
+			primes_post(primes, event.code, event.data);
+		}
+	}
+}
+
+/*
+ * The worker: counts the primes below the limit, reports every STEP
+ * numbers, and hands the count back when it is done or asked to stop.  It
+ * calls nothing of libkeiland but the two posts, which any thread may.
+ */
+static int
+primes_count(
+	void *argument)
+{
+	struct count *count;
+	struct progress *progress;
+	unsigned long number;
+	int stop;
+	int prime;
+	int status;
+
+	/* Looks at every number below the limit, one at a time. */
+	count = argument;
+	for (number = 2; number < count->limit; number++) {
+		/* Every STEP numbers: ends when asked, or tells the window how far it got. */
+		if (number % STEP == 0) {
+			stop = atomic_load(&count->stop);
+			if (stop)
+				break;
+			progress = malloc(sizeof(*progress));
+			if (progress != NULL) {
+				progress->done = number;
+				progress->primes = count->primes;
+				status = kl_window_post(count->window, POST_PROGRESS, progress);
+				if (status != 0)
+					free(progress);
+			}
+		}
+
+		/* Counts the number when it is a prime. */
+		prime = primes_is_prime(number);
+		if (prime)
+			count->primes++;
+	}
+	count->done = number;
+
+	/* Hands the count back; it fails only without memory, and then the window shows the count as running. */
+	status = kl_app_post(count->app, POST_FINISHED, count);
+	if (status != 0)
+		fprintf(stderr, "primes: the count was lost (%s)\n", strerror(status));
+
+	/* The thread's end: the application's thread joins it. */
+	return 0;
+}
+
+/*
+ * Reports whether a number is a prime, by trying its odd divisors up to
+ * its square root.
+ */
+static int
+primes_is_prime(
+	unsigned long number)
+{
+	unsigned long divisor;
+
+	/* 0 and 1 are not primes, 2 is, and no other even number is. */
+	if (number < 2UL)
+		return 0;
+	if (number == 2UL)
+		return 1;
+	if (number % 2UL == 0)
+		return 0;
+
+	/* Tries the odd divisors up to the square root. */
+	for (divisor = 3UL; divisor * divisor <= number; divisor += 2UL) {
+		if (number % divisor == 0)
+			return 0;
+	}
+
+	/* No divisor: a prime. */
+	return 1;
+}
+```
+
+### Reading the program
+
+<!-- WRITE (chapter 8, reading the program), in this order:
+1. Lines 35-37: the codes of the program's posts.  A post carries a 32-bit code and a pointer, and libkeiland looks
+   at neither: the program decides what they mean.  Define "post" and "code" here.
+2. Lines 47-67: the records.  struct count goes to the worker at the start and comes back at the end; while the
+   worker has it, only stop is shared, and stop is an atomic_int, read and written with atomic_load and
+   atomic_store.  struct progress is one report, made by the worker and freed by the one who takes it.  Define
+   "owning" here: at any moment one thread owns a record, and a post hands it over.
+3. Lines 439-471 (primes_start): the record filled, then thrd_create starts the worker with it (lines 460-466).  From
+   here until POST_FINISHED comes back, the program does not touch the record but for stop.
+4. Lines 510-558 (primes_count), the worker: it looks at every number; every STEP numbers it reads stop and ends when
+   asked, or posts a report to the window with kl_window_post (lines 529-542).  When a post fails it did not take
+   the data, so the worker frees the report itself.  At the end it hands the count back with kl_app_post
+   (lines 551-554).  The worker calls nothing of libkeiland but the two posts, the calls any thread may make.
+   Define "worker" here.
+5. Lines 155-165: the main loop is chapter 4's.  The posts arrive in the same queue as the input, and a post from
+   another thread wakes kl_app_dispatch, even when it waits with -1: no timer and no polling.
+6. Lines 344-369 (primes_event): where the posts arrive.  A post to the window arrives among the window's inputs, in
+   its place among them: a KL_APP_WINDOW event whose input.kind is KL_WINDOW_POST, with input.code and input.data
+   (lines 357-364).  A post to the application arrives as KL_APP_POST with event.code and event.data
+   (lines 366-368); so does a post to a window that closed before it came (window NULL, the same code and data).
+   The program sends both to primes_post, which frees the data either way.
+7. Lines 397-437 (primes_post): a report is shown and freed.  POST_FINISHED gives the record back: the worker's
+   thread is ending (the post was its last act), so thrd_join returns at once; the result is copied, the record
+   freed, and count NULL enables Start again.  Say why no report of a count can come after its POST_FINISHED: the
+   posts of one thread arrive in the order it made them (the comment of line 412).
+8. Lines 304-310: Stop raises the flag.  The worker sees it within STEP numbers and hands the count back as usual,
+   short of the limit, and the line says "Stopped" (lines 429-432).
+9. Lines 191-192 and 473-508 (primes_finish): the window closed while a count runs.  The program raises stop, joins
+   the thread, then takes the posts it left, dispatching without waiting, until the count came back.  Say why: the
+   application must not be closed while a thread may still post, and the posts not taken when it closes are dropped
+   with their data, which nobody would free.
+-->
+
+### The rules
+
+<!-- WRITE (chapter 8, rules), each with a link to the lines that show it:
+- kl_app_post(app, code, data) and kl_window_post(window, code, data) may be called from any thread.  Every other call
+  stays on the application's thread: a worker computes and posts; the application's thread draws (lines 529-554).
+- A post wakes kl_app_dispatch (lines 155-165).
+- A post to the window arrives among the window's inputs, as KL_WINDOW_POST with input.code and input.data; a post to
+  the application as KL_APP_POST with event.code and event.data; a post to a window that closed first as KL_APP_POST
+  with window NULL (lines 344-369).  Use the window's post for news that belongs with that window's input, the
+  application's for the rest.
+- The posts of one thread arrive in the order they were made, and none is dropped: what the queue has no room for
+  waits for the next dispatch.  The posts of two threads have no order between them.
+- The data goes to whoever takes the event.  libkeiland neither copies it nor frees it.  A post that fails (ENOMEM;
+  EINVAL for a NULL application or window) did not take the data (lines 536-541).
+- End the threads that post before kl_app_close, and take what they posted: the posts not taken are dropped with
+  their data (lines 473-508).
+- A value two threads use at once is atomic or under a mutex (stop, lines 47-61).
+-->
+
+### Pitfalls
+
+<!-- WRITE (chapter 8, pitfalls):
+- Calling another libkeiland function from the worker (drawing, kl_window_set_title, kl_tr): post the result instead.
+- Freeing the data after a post that succeeded, or never freeing it on the side that takes it, including a window's
+  post that arrives as KL_APP_POST.
+- Giving a KL_WINDOW_POST input to the widgets (kl_ui_window_input): check input.kind first (lines 359-362).
+- Reading the record while the worker owns it (count->primes before POST_FINISHED): read the reports.
+- Posting at every small step: each post is an event and usually a frame.  Report in steps (STEP).
+- Closing the application while a worker may still post.
+-->
+
+### When only the latest answer counts
+
+<!-- WRITE (chapter 8, the second program, summary): 08-language.c speaks the desktop's language as 07-services.c
+does, but reads each language's catalogs on a thread of its own, a reader, as a program does whose catalogs are large
+or on a slow disk.  Switch Language asks the desktop to switch between English and Japanese: it changes the desktop's
+setting ui.language, as Settings does, and the change comes back to this and every other application as
+KL_APP_LANGUAGE.  Three quick clicks make three changes (Japanese, English, Japanese); each starts a reading, a reading
+that comes back after a later change is set aside, and only the reading of the latest change is used.  So the window
+always ends in the language the desktop ends in.
+
+Picture keiland-examples/08-language.png: taken after three clicks 200 ms apart: the window in Japanese (こんにちは,
+the line naming "ja", the counts of catalogs used and set aside, the button 言語を切り替える, the title 言語).  Say that
+the two counts depend on timing: a fast disk reads each language before the next change comes, and then every
+reading is used.  The catalog keiland-examples/locale/ja/language.tr is shown under the program; install it as in
+chapter 7 to see Japanese.
+
+New against 07-services.c's language handling: the reader's shared record (struct reader) and its answer (struct
+reading), the number of each change (generation), language_changed, language_read, language_switch and
+language_reader.  Terms first defined here: reader, generation (the number given to each change; the answer that
+carries the latest number is the one to use).  The headers: keiland_tr.h (kl_tr_read, kl_tr_use, kl_tr_discard),
+keiland_app.h (KL_APP_LANGUAGE, kl_app_language), keiland_settings.h (kl_settings_set_int,
+kl_settings_take_result). -->
+
+<!-- example: keiland-examples/08-language.c -->
+```c
+/*
+ * zedBSD
+ * Copyright (C) 2026 Awe Morris
+ *
+ * SPDX-License-Identifier: Zlib
+ */
+
+/*
+ * A window in the desktop's language whose catalogs are read on a thread
+ * of their own (a reader), so that the window never waits for the files.
+ * Each change of the desktop's language comes as a KL_APP_LANGUAGE event
+ * and asks the reader for that language; only the reading of the latest
+ * change is used, so that a reading that comes late never puts back a
+ * language the user left.  Switch Language asks the desktop for the other
+ * language: the change comes back as an event like any other.
+ */
+
+#include <keiland/keiland.h>
+#include <errno.h>
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+#include <threads.h>
+
+/* Where the desktop's fonts are (/opt/keiland/share/fonts for a Linux build under /opt/keiland). */
+#ifndef FONT_DIR
+#define FONT_DIR	"/usr/share/fonts"
+#endif
+#define FONT		FONT_DIR "/keiland.ttf"
+#define FALLBACK_FONT	FONT_DIR "/keiland-fallback.ttf"
+
+/* The translations' domain: the catalogs are language.tr. */
+#define DOMAIN		"language"
+
+/* The widget's id, and the code of the reader's post. */
+#define ID_SWITCH	1U
+#define POST_READ	1U
+
+/* The button's width and the room around it, in pixels. */
+#define BUTTON_WIDTH	180
+#define MARGIN		24
+
+/*
+ * What the application's thread and the reader share, under the lock: the
+ * number of the latest change asked for (wanted) and its language, the
+ * number the reader took last, and whether the reader is to end.  The
+ * reader sleeps on changed while there is nothing new.
+ */
+struct reader {
+	mtx_t lock;
+	cnd_t changed;
+	struct kl_app *app;
+	unsigned long wanted;
+	unsigned long taken;
+	char language[KL_TR_NAME_MAX + 1U];
+	int quit;
+};
+
+/* One reading: the change's number, its language, and the catalogs read (NULL after a failure); freed by the one who takes the post. */
+struct reading {
+	unsigned long generation;
+	char language[KL_TR_NAME_MAX + 1U];
+	struct kl_tr_catalogs *catalogs;
+	int error;
+};
+
+/*
+ * Everything the program keeps: its connection, window and widgets, the
+ * settings it asks for a change through, the reader and its thread, the
+ * number of the latest change (generation), the language shown, how many
+ * readings were used and set aside, the language asked for last, and what
+ * the main loop has to do next.
+ */
+struct language {
+	struct kl_app *app;
+	struct kl_window *window;
+	struct kl_ui *ui;
+	struct kl_text text;
+	struct kl_style style;
+	struct kl_canvas canvas;
+	struct kl_settings *settings;
+	struct reader reader;
+	thrd_t thread;
+	uint32_t *pixels;
+	uint32_t width;
+	uint32_t height;
+	unsigned long generation;
+	char shown[KL_TR_NAME_MAX + 1U];
+	unsigned long used;
+	unsigned long discarded;
+	int asked;
+	int dirty;
+	int moving;
+	int resized;
+	int closed;
+};
+
+static int language_resize(struct language *language);
+static void language_draw(struct language *language, uint64_t now_us);
+static int language_frame(struct language *language);
+static void language_input(struct language *language, const struct kl_window_event *input);
+static void language_changed(struct language *language, const char *name);
+static void language_read(struct language *language, struct reading *reading);
+static void language_switch(struct language *language);
+static int language_reader(void *argument);
+
+int
+main(void)
+{
+	static struct language language;
+	struct kl_window_options window_options;
+	struct kl_app_options app_options;
+	struct kl_app_event event;
+	struct reading *reading;
+	uint32_t request;
+	int timeout;
+	int status;
+	int taken;
+	int error;
+
+	/* Connects to the desktop. */
+	memset(&app_options, 0, sizeof(app_options));
+	app_options.application = "org.example.Language";
+	language.app = kl_app_open(&app_options);
+	if (language.app == NULL) {
+		fprintf(stderr, "language: no desktop (%s)\n", strerror(errno));
+		return 1;
+	}
+
+	/* Reads the catalogs of the desktop's language now, on this thread: no window waits yet. */
+	snprintf(language.shown, sizeof(language.shown), "%s", kl_app_language(language.app));
+	status = kl_tr_open(DOMAIN, language.shown);
+	if (status != 0)
+		fprintf(stderr, "language: the texts stay in English (%s)\n", strerror(status));
+	if (strcmp(language.shown, "ja") == 0)
+		language.asked = 1;
+
+	/* The settings, only to ask the desktop for a change: the program never reads the language back from them. */
+	language.settings = kl_settings_open(kl_app_display(language.app), NULL);
+	if (language.settings == NULL)
+		return 1;
+
+	/* The reader: its shared record, then its thread, which sleeps until a change comes. */
+	language.reader.app = language.app;
+	status = mtx_init(&language.reader.lock, mtx_plain);
+	if (status != thrd_success)
+		return 1;
+	status = cnd_init(&language.reader.changed);
+	if (status != thrd_success)
+		return 1;
+	status = thrd_create(&language.thread, language_reader, &language.reader);
+	if (status != thrd_success)
+		return 1;
+
+	/* Opens the window, titled in the language read. */
+	memset(&window_options, 0, sizeof(window_options));
+	window_options.title = kl_tr("Language");
+	window_options.width = 440;
+	window_options.height = 220;
+	window_options.present = KL_PRESENT_VULKAN;
+	language.window = kl_app_window_create(language.app, &window_options);
+	if (language.window == NULL) {
+		fprintf(stderr, "language: no window (%s)\n", strerror(errno));
+		return 1;
+	}
+
+	/* Makes the widgets' record and opens the font. */
+	language.ui = kl_ui_create();
+	if (language.ui == NULL)
+		return 1;
+	status = kl_text_open(&language.text, FONT, FALLBACK_FONT);
+	if (status != 0) {
+		fprintf(stderr, "language: no font %s (%s)\n", FONT, strerror(status));
+		return 1;
+	}
+	language.style.text = &language.text;
+
+	/* Makes the first frame. */
+	status = language_resize(&language);
+	if (status != 0)
+		return 1;
+
+	/* Runs until the window is closed. */
+	while (!language.closed) {
+		/* Waits for the desktop or the reader: not at all while a frame is due, a frame's time while something moves. */
+		timeout = -1;
+		if (language.moving)
+			timeout = 16;
+		if (language.dirty || language.resized)
+			timeout = 0;
+		status = kl_app_dispatch(language.app, timeout);
+		if (status != 0)
+			break;
+
+		/* Takes the answers to the program's requests for a change; a refusal is told, the rest come back as events. */
+		(void)kl_settings_dispatch(language.settings);
+		for (;;) {
+			taken = kl_settings_take_result(language.settings, &request, &error);
+			if (!taken)
+				break;
+			if (error != 0)
+				fprintf(stderr, "language: the desktop refused the change (%s)\n", strerror(error));
+		}
+
+		/* Takes every event queued, in order. */
+		for (;;) {
+			taken = kl_app_take(language.app, &event);
+			if (!taken)
+				break;
+
+			/* The appearance changed: the theme's colours are new. */
+			if (event.kind == KL_APP_THEME)
+				language.dirty = 1;
+
+			/* The desktop's language changed: the language it changed to is in the event. */
+			if (event.kind == KL_APP_LANGUAGE)
+				language_changed(&language, event.language);
+
+			/* A reading came back. */
+			if (event.kind == KL_APP_POST && event.code == POST_READ)
+				language_read(&language, event.data);
+
+			/* An input of the window. */
+			if (event.kind == KL_APP_WINDOW && event.window == language.window)
+				language_input(&language, &event.input);
+		}
+
+		/* A new size: a new frame of that size. */
+		if (language.resized) {
+			language.resized = 0;
+			status = language_resize(&language);
+			if (status != 0)
+				break;
+		}
+
+		/* Something changed or moves: draws and shows a frame. */
+		if (language.dirty || language.moving) {
+			status = language_frame(&language);
+			if (status != 0)
+				break;
+		}
+	}
+
+	/* Ends the reader before the application closes: no thread may post after it. */
+	mtx_lock(&language.reader.lock);
+	language.reader.quit = 1;
+	cnd_signal(&language.reader.changed);
+	mtx_unlock(&language.reader.lock);
+	(void)thrd_join(language.thread, NULL);
+
+	/* Frees the readings the reader left: their catalogs are set aside unread. */
+	for (;;) {
+		status = kl_app_dispatch(language.app, 0);
+		if (status != 0)
+			break;
+		taken = kl_app_take(language.app, &event);
+		if (!taken)
+			break;
+		if (event.kind == KL_APP_POST && event.code == POST_READ) {
+			reading = event.data;
+			kl_tr_discard(reading->catalogs);
+			free(reading);
+		}
+	}
+
+	/* Frees the reader's record, the settings, the widgets' record, the frame, the font and the texts, and closes the connection. */
+	cnd_destroy(&language.reader.changed);
+	mtx_destroy(&language.reader.lock);
+	kl_settings_close(language.settings);
+	kl_ui_destroy(language.ui);
+	kl_canvas_release(&language.canvas);
+	free(language.pixels);
+	kl_text_close(&language.text);
+	kl_tr_close();
+	kl_app_close(language.app);
+
+	/* Succeeded: the window was closed. */
+	return 0;
+}
+
+/*
+ * Makes the frame at the window's size; nonzero when it cannot.
+ */
+static int
+language_resize(
+	struct language *language)
+{
+	uint32_t *pixels;
+	int status;
+
+	/* Sets the presenter to the window's size, which it reports. */
+	status = kl_window_present_resize(language->window, &language->width, &language->height);
+	if (status != 0)
+		return -1;
+
+	/* Allocates the frame. */
+	pixels = malloc((size_t)language->width * language->height * sizeof(pixels[0]));
+	if (pixels == NULL)
+		return -1;
+
+	/* Puts the canvas on the new pixels in place of the old ones; the widgets draw on it. */
+	if (language->pixels != NULL)
+		kl_canvas_release(&language->canvas);
+	free(language->pixels);
+	language->pixels = pixels;
+	status = kl_canvas_init(&language->canvas, language->pixels, language->width, (int)language->width, (int)language->height);
+	if (status != 0)
+		return -1;
+	language->style.canvas = &language->canvas;
+
+	/* Succeeded: the new frame is drawn next. */
+	language->dirty = 1;
+	return 0;
+}
+
+/*
+ * Draws one frame: a greeting, the language shown and what became of the
+ * readings, and Switch Language.  Every text goes through kl_tr, so the
+ * frame after a reading was used is all in the new language.
+ */
+static void
+language_draw(
+	struct language *language,
+	uint64_t now_us)
+{
+	const struct kl_theme *theme;
+	struct kl_rect whole;
+	struct kl_rect button;
+	char used[32];
+	char discarded[32];
+	char line[256];
+	int baseline;
+	int clicked;
+
+	/* Starts the frame. */
+	theme = kl_theme_default();
+	language->style.theme = theme;
+	kl_ui_begin(language->ui, now_us);
+
+	/* Paints the ground. */
+	whole.x = 0;
+	whole.y = 0;
+	whole.width = (int)language->width;
+	whole.height = (int)language->height;
+	kl_canvas_gradient(&language->canvas, &whole, theme->ground_top, theme->ground_bottom);
+
+	/* The greeting, and the language it is in. */
+	baseline = kl_text_center(theme->text_title, MARGIN, 40);
+	(void)kl_text_draw(&language->text, &language->canvas, MARGIN, baseline, kl_tr("Hello"), strlen(kl_tr("Hello")), theme->text_title, 1, theme->text);
+	(void)kl_tr_format(line, sizeof(line), kl_tr("This window speaks the desktop's language: {1}."), language->shown, (const char *)NULL);
+	baseline = kl_text_center(theme->text_body, MARGIN + 48, 24);
+	(void)kl_text_draw(&language->text, &language->canvas, MARGIN, baseline, line, strlen(line), theme->text_body, 0, theme->text);
+
+	/* What became of the readings: the latest change's was used, the older ones that came late were set aside. */
+	snprintf(used, sizeof(used), "%lu", language->used);
+	snprintf(discarded, sizeof(discarded), "%lu", language->discarded);
+	(void)kl_tr_format(line, sizeof(line), kl_tr("Catalogs used: {1}. Set aside: {2}."), used, discarded, (const char *)NULL);
+	baseline = kl_text_center(theme->text_body, MARGIN + 76, 24);
+	(void)kl_text_draw(&language->text, &language->canvas, MARGIN, baseline, line, strlen(line), theme->text_body, 0, theme->text_secondary);
+
+	/* Switch Language: asks the desktop for the other language. */
+	button.x = MARGIN;
+	button.y = (int)language->height - MARGIN - theme->control_height;
+	button.width = BUTTON_WIDTH;
+	button.height = theme->control_height;
+	clicked = kl_button(language->ui, &language->style, ID_SWITCH, &button, kl_tr("Switch Language"), KL_BUTTON_PRIMARY);
+	if (clicked)
+		language_switch(language);
+
+	/* Ends the frame. */
+	language->moving = kl_ui_end(language->ui, now_us);
+	kl_ui_window_text(language->ui, language->window);
+}
+
+/*
+ * Draws and shows a frame; nonzero when the frame cannot be shown.
+ */
+static int
+language_frame(
+	struct language *language)
+{
+	int status;
+
+	/* Draws the frame. */
+	language->dirty = 0;
+	language_draw(language, kl_clock_us());
+
+	/* Hands it to the compositor. */
+	status = kl_window_present(language->window, language->pixels, language->width);
+	if (status == EAGAIN) {
+		/* The window's size changed under the frame: a new frame of the new size. */
+		language->resized = 1;
+	} else if (status != 0) {
+		/* Refuses to go on when the frame could not be shown. */
+		return -1;
+	}
+
+	/* Succeeded: the frame is shown. */
+	return 0;
+}
+
+/*
+ * Gives one input of the window to the widgets, or acts on it.
+ */
+static void
+language_input(
+	struct language *language,
+	const struct kl_window_event *input)
+{
+	int taken;
+
+	/* The window's own inputs: a new size, the close button. */
+	if (input->kind == KL_WINDOW_RESIZE) {
+		language->resized = 1;
+		return;
+	}
+	if (input->kind == KL_WINDOW_CLOSE) {
+		language->closed = 1;
+		return;
+	}
+
+	/* The rest is the widgets'. */
+	taken = kl_ui_window_input(language->ui, input);
+	if (taken)
+		language->dirty = 1;
+}
+
+/*
+ * Takes a change of the desktop's language: gives it the next number and
+ * asks the reader for its catalogs.  The texts stay as they are until the
+ * reading comes back.
+ */
+static void
+language_changed(
+	struct language *language,
+	const char *name)
+{
+	/* The change's number: the reading that carries it back is the one to use. */
+	language->generation++;
+
+	/* Asks the reader for it, waking it if it sleeps; a change it has not taken yet is replaced. */
+	mtx_lock(&language->reader.lock);
+	language->reader.wanted = language->generation;
+	snprintf(language->reader.language, sizeof(language->reader.language), "%s", name);
+	cnd_signal(&language->reader.changed);
+	mtx_unlock(&language->reader.lock);
+}
+
+/*
+ * Takes a reading that came back: uses it when it carries the latest
+ * change's number, sets it aside otherwise.  It is freed either way.
+ */
+static void
+language_read(
+	struct language *language,
+	struct reading *reading)
+{
+	/* A reading of a change the desktop has since left: its catalogs go unused. */
+	if (reading->generation != language->generation) {
+		kl_tr_discard(reading->catalogs);
+		free(reading);
+		language->discarded++;
+		language->dirty = 1;
+		return;
+	}
+
+	/* The latest change's: its catalogs are the texts from now on (English when they could not be read). */
+	if (reading->error != 0) {
+		fprintf(stderr, "language: no catalogs for %s (%s)\n", reading->language, strerror(reading->error));
+		kl_tr_close();
+	} else {
+		kl_tr_use(reading->catalogs);
+	}
+	snprintf(language->shown, sizeof(language->shown), "%s", reading->language);
+	free(reading);
+	language->used++;
+
+	/* The title and every text of the next frame in the new language. */
+	kl_window_set_title(language->window, kl_tr("Language"));
+	language->dirty = 1;
+}
+
+/*
+ * Asks the desktop for the other language.  The program does not change
+ * its own texts here: the change comes back as KL_APP_LANGUAGE, as one
+ * made in Settings does.
+ */
+static void
+language_switch(
+	struct language *language)
+{
+	int status;
+
+	/* The other of English (0) and Japanese (1), the values of the desktop's ui.language. */
+	language->asked = !language->asked;
+	status = kl_settings_set_int(language->settings, "ui.language", language->asked, NULL);
+	if (status != 0)
+		fprintf(stderr, "language: cannot ask for a change (%s)\n", strerror(status));
+}
+
+/*
+ * The reader: sleeps until a change it has not taken comes, reads that
+ * language's catalogs, and posts the reading to the application.  It calls
+ * nothing of libkeiland but kl_tr_read, which any thread may, and the post.
+ */
+static int
+language_reader(
+	void *argument)
+{
+	struct reader *reader;
+	struct reading *reading;
+	int status;
+
+	/* Serves the changes one at a time until it is told to end. */
+	reader = argument;
+	for (;;) {
+		/* The reading of the latest change not taken yet, or the end. */
+		reading = calloc(1, sizeof(*reading));
+		if (reading == NULL)
+			return 0;
+		mtx_lock(&reader->lock);
+		while (!reader->quit && reader->wanted == reader->taken)
+			cnd_wait(&reader->changed, &reader->lock);
+		if (reader->quit) {
+			mtx_unlock(&reader->lock);
+			free(reading);
+			return 0;
+		}
+		reader->taken = reader->wanted;
+		reading->generation = reader->wanted;
+		snprintf(reading->language, sizeof(reading->language), "%s", reader->language);
+		mtx_unlock(&reader->lock);
+
+		/* Reads the catalogs, away from the windows' thread. */
+		reading->error = kl_tr_read(DOMAIN, reading->language, &reading->catalogs);
+
+		/* Hands the reading to the application's thread; without memory for the post it is lost. */
+		status = kl_app_post(reader->app, POST_READ, reading);
+		if (status != 0) {
+			kl_tr_discard(reading->catalogs);
+			free(reading);
+		}
+	}
+}
+```
+
+<!-- example: keiland-examples/locale/ja/language.tr -->
+```text
+# The texts of 08-language.c in Japanese (domain language).  Installed as KEILAND_DATADIR/keiland/locale/ja/language.tr.
+msg	Language	言語
+msg	Hello	こんにちは
+msg	This window speaks the desktop's language: {1}.	このウインドウはデスクトップの言語で話します: {1}。
+msg	Catalogs used: {1}. Set aside: {2}.	使ったカタログ: {1}。捨てたカタログ: {2}。
+msg	Switch Language	言語を切り替える
+```
+
+#### Reading the program
+
+<!-- WRITE (chapter 8, the second program, reading), in this order:
+1. Lines 130-136: the first catalogs are read on the application's thread, before any window exists (nothing waits
+   for them yet), with kl_app_language and kl_tr_open as in chapter 7.  asked starts as the language shown.
+2. Lines 138-141: a kl_settings is opened only to ask the desktop for a change.  The program never reads ui.language
+   back from it.
+3. Lines 43-65: struct reader is what the two threads share, under its lock: wanted (the number of the latest change
+   asked for) and its language, taken (the number the reader took last), quit, and the condition variable changed
+   the reader sleeps on.  struct reading is one answer, posted to the application.  Lines 143-153 make the lock, the
+   condition and the reader's thread.
+4. Lines 215-217 and 428-447 (language_changed): at each KL_APP_LANGUAGE the program numbers the change
+   (generation), and under the lock puts the number and the event's language where the reader takes them, and wakes
+   it.  A change the reader has not taken yet is replaced: it reads only the latest.  Define "generation" here.
+5. Lines 501-544 (language_reader): it sleeps until a change it has not taken comes (lines 517-532), reads that
+   language's catalogs with kl_tr_read (line 535: any thread may call it, and the texts in use do not change), and
+   posts the reading (lines 537-542).
+6. Lines 219-221 and 449-481 (language_read): a reading whose number is not the latest is set aside with
+   kl_tr_discard; the latest one's catalogs become the texts with kl_tr_use (English when they could not be read),
+   and the title and the frame follow.  Walk through the case the numbers exist for: the reader takes change 1; the
+   user changes twice more while it reads; change 1's reading comes back after the event of change 3.  Used, it would
+   put back a language the desktop has left.  With the numbers it is set aside, and change 3's reading is used.
+7. Lines 483-499 (language_switch): kl_settings_set_int(settings, "ui.language", 0 or 1) asks for the change.  The
+   program does not change its own texts here: the change comes back as an event, as one made in Settings does.
+8. Lines 195-203: kl_settings_dispatch and kl_settings_take_result take the answers to the program's requests, so that
+   a refusal (EPERM, for instance) is told.  The language itself comes as KL_APP_LANGUAGE.
+9. Lines 244-264: the end: quit under the lock, the reader woken and joined, and the readings it left taken and set
+   aside, as in the first program.
+-->
+
+#### The rules of following the language
+
+<!-- WRITE (chapter 8, the second program, rules), each with a link:
+- KL_APP_LANGUAGE carries the language the desktop changed to; changes come as events in the order they were made;
+  the last one tells the language now.  kl_app_language gives the language the application heard last.
+- Use the event's language.  Reading the setting back at the event may give a later change than the event's.
+- The catalogs can be changed on the application's thread (kl_tr_open at the event, 07-services.c) or read on another
+  thread (kl_tr_read there; kl_tr_use or kl_tr_discard on the application's thread).  Read them on a thread when
+  their reading may be slow.
+- Number each change, and use a reading only when it carries the latest number; set the others aside with
+  kl_tr_discard, which frees them.
+- A program that asks for a change learns of it as of any other change.
+-->
+
+#### Pitfalls
+
+<!-- WRITE (chapter 8, the second program, pitfalls):
+- kl_tr_use on the reader: it changes the texts the application's thread is drawing with.
+- Using each reading in the order it arrives: a late one puts back a language the user left.
+- Keeping a text kl_tr gave across a change (the title is set again, lines 478-480).
+- Changing the texts at the click, before the desktop's answer: the desktop may refuse, and other programs follow the
+  event, not the click.
+Then one sentence that leads to chapter 9: a thread is one way to do a long job; another is to have another program
+do it.
+-->
+
+## 9. Other programs
+
+<!-- WRITE (chapter 9, summary): The window starts the system's sort program as a process, writes eight words to its
+standard input, reads the sorted lines from its standard output, and shows how it ended.  Reverse runs sort -r; Bad
+Option gives sort an option it does not know, to show what it writes to its standard error and the code it ends with.
+Picture keiland-examples/09-sort.png: taken after Sort was clicked: the words, the sorted column (apple, banana,
+cherry, date, elderberry, fig, grape, pear) and "sort ended with the code 0.".
+
+It grows from 04-counter.c.  New: the process and the input kept in the struct, sorter_start, sorter_write,
+sorter_news, sorter_read and sorter_end.  Terms first defined here, in bold: process (a program the application
+starts and talks to), stream (the standard input, output and error of a process), news of a process (a
+KL_APP_PROCESS event; event.ready says what it tells), line and cut line, exit code.  The header: keiland_process.h.
+-->
+
+<!-- example: keiland-examples/09-sort.c -->
+```c
+/*
+ * zedBSD
+ * Copyright (C) 2026 Awe Morris
+ *
+ * SPDX-License-Identifier: Zlib
+ */
+
+/*
+ * A window that sorts a list of words with the system's sort program: it
+ * starts sort as a process, writes the words to its standard input, reads
+ * the sorted lines from its standard output, and shows how it ended.
+ * Reverse runs sort -r.  Bad Option gives sort an option it does not know,
+ * to show what it writes to its standard error and the code it ends with.
+ */
+
+#include <keiland/keiland.h>
+#include <errno.h>
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+
+/* Where the desktop's fonts are (/opt/keiland/share/fonts for a Linux build under /opt/keiland). */
+#ifndef FONT_DIR
+#define FONT_DIR	"/usr/share/fonts"
+#endif
+#define FONT		FONT_DIR "/keiland.ttf"
+#define FALLBACK_FONT	FONT_DIR "/keiland-fallback.ttf"
+
+/* The widgets' ids. */
+#define ID_SORT		1U
+#define ID_REVERSE	2U
+#define ID_BAD		3U
+
+/* The lines kept of the output and their longest length (with the NUL). */
+#define LINE_COUNT	10
+#define LINE_BYTES	64
+
+/* The layout, in pixels: the room around everything, a line's height, the second column, and the button's width. */
+#define MARGIN		24
+#define LINE_HEIGHT	20
+#define COLUMN		220
+#define BUTTON_WIDTH	96
+
+/* The words sorted, in the order they are written to sort. */
+static const char *const word_table[] = {
+	"pear", "apple", "fig", "cherry", "banana", "date", "elderberry", "grape"
+};
+#define WORD_COUNT	(sizeof(word_table) / sizeof(word_table[0]))
+
+/*
+ * Everything the program keeps: its connection, window and widgets, the
+ * process while it runs, the input written to it and how much of it went,
+ * the lines it wrote back (and whether the rest of a long one is being
+ * skipped), its last error line, how it ended, the switches, and what the
+ * main loop has to do next.
+ */
+struct sorter {
+	struct kl_app *app;
+	struct kl_window *window;
+	struct kl_ui *ui;
+	struct kl_text text;
+	struct kl_style style;
+	struct kl_canvas canvas;
+	uint32_t *pixels;
+	uint32_t width;
+	uint32_t height;
+	struct kl_process *process;
+	char input[512];
+	size_t input_length;
+	size_t written;
+	char lines[LINE_COUNT][LINE_BYTES];
+	size_t line_count;
+	int skipping;
+	char error[LINE_BYTES];
+	char ended[96];
+	int reverse;
+	int bad;
+	int dirty;
+	int moving;
+	int resized;
+	int closed;
+};
+
+static int sorter_resize(struct sorter *sorter);
+static void sorter_draw(struct sorter *sorter, uint64_t now_us);
+static int sorter_frame(struct sorter *sorter);
+static void sorter_input(struct sorter *sorter, const struct kl_window_event *input);
+static void sorter_start(struct sorter *sorter);
+static void sorter_write(struct sorter *sorter);
+static void sorter_news(struct sorter *sorter, unsigned ready);
+static void sorter_read(struct sorter *sorter);
+static void sorter_end(struct sorter *sorter);
+
+int
+main(void)
+{
+	static struct sorter sorter;
+	struct kl_window_options window_options;
+	struct kl_app_options app_options;
+	struct kl_app_event event;
+	size_t index;
+	int timeout;
+	int status;
+	int taken;
+
+	/* Connects to the desktop. */
+	memset(&app_options, 0, sizeof(app_options));
+	app_options.application = "org.example.Sort";
+	sorter.app = kl_app_open(&app_options);
+	if (sorter.app == NULL) {
+		fprintf(stderr, "sort: no desktop (%s)\n", strerror(errno));
+		return 1;
+	}
+
+	/* Opens the window. */
+	memset(&window_options, 0, sizeof(window_options));
+	window_options.title = "Sort";
+	window_options.width = 440;
+	window_options.height = 300;
+	window_options.present = KL_PRESENT_VULKAN;
+	sorter.window = kl_app_window_create(sorter.app, &window_options);
+	if (sorter.window == NULL) {
+		fprintf(stderr, "sort: no window (%s)\n", strerror(errno));
+		return 1;
+	}
+
+	/* Makes the widgets' record and opens the font. */
+	sorter.ui = kl_ui_create();
+	if (sorter.ui == NULL)
+		return 1;
+	status = kl_text_open(&sorter.text, FONT, FALLBACK_FONT);
+	if (status != 0) {
+		fprintf(stderr, "sort: no font %s (%s)\n", FONT, strerror(status));
+		return 1;
+	}
+	sorter.style.text = &sorter.text;
+
+	/* The input sort reads: the words, one to a line. */
+	for (index = 0; index < WORD_COUNT; index++) {
+		status = snprintf(sorter.input + sorter.input_length, sizeof(sorter.input) - sorter.input_length, "%s\n", word_table[index]);
+		sorter.input_length += (size_t)status;
+	}
+
+	/* Makes the first frame. */
+	status = sorter_resize(&sorter);
+	if (status != 0)
+		return 1;
+
+	/* Runs until the window is closed; the process's news arrives among the other events. */
+	while (!sorter.closed) {
+		/* Waits for the desktop or the process: not at all while a frame is due, a frame's time while something moves. */
+		timeout = -1;
+		if (sorter.moving)
+			timeout = 16;
+		if (sorter.dirty || sorter.resized)
+			timeout = 0;
+		status = kl_app_dispatch(sorter.app, timeout);
+		if (status != 0)
+			break;
+
+		/* Takes every event queued, in order. */
+		for (;;) {
+			taken = kl_app_take(sorter.app, &event);
+			if (!taken)
+				break;
+
+			/* The appearance changed: the theme's colours are new. */
+			if (event.kind == KL_APP_THEME)
+				sorter.dirty = 1;
+
+			/* News of the process: output to read, room for input, its end. */
+			if (event.kind == KL_APP_PROCESS && event.process == sorter.process)
+				sorter_news(&sorter, event.ready);
+
+			/* An input of the window. */
+			if (event.kind == KL_APP_WINDOW && event.window == sorter.window)
+				sorter_input(&sorter, &event.input);
+		}
+
+		/* A new size: a new frame of that size. */
+		if (sorter.resized) {
+			sorter.resized = 0;
+			status = sorter_resize(&sorter);
+			if (status != 0)
+				break;
+		}
+
+		/* Something changed or moves: draws and shows a frame. */
+		if (sorter.dirty || sorter.moving) {
+			status = sorter_frame(&sorter);
+			if (status != 0)
+				break;
+		}
+	}
+
+	/* Lets go of a process still running: the library reaps it when it ends, and it is not ended here. */
+	if (sorter.process != NULL)
+		kl_process_close(sorter.process);
+
+	/* Frees the widgets' record, the frame and the font, and closes the window and the connection. */
+	kl_ui_destroy(sorter.ui);
+	kl_canvas_release(&sorter.canvas);
+	free(sorter.pixels);
+	kl_text_close(&sorter.text);
+	kl_app_close(sorter.app);
+
+	/* Succeeded: the window was closed. */
+	return 0;
+}
+
+/*
+ * Makes the frame at the window's size; nonzero when it cannot.
+ */
+static int
+sorter_resize(
+	struct sorter *sorter)
+{
+	uint32_t *pixels;
+	int status;
+
+	/* Sets the presenter to the window's size, which it reports. */
+	status = kl_window_present_resize(sorter->window, &sorter->width, &sorter->height);
+	if (status != 0)
+		return -1;
+
+	/* Allocates the frame. */
+	pixels = malloc((size_t)sorter->width * sorter->height * sizeof(pixels[0]));
+	if (pixels == NULL)
+		return -1;
+
+	/* Puts the canvas on the new pixels in place of the old ones; the widgets draw on it. */
+	if (sorter->pixels != NULL)
+		kl_canvas_release(&sorter->canvas);
+	free(sorter->pixels);
+	sorter->pixels = pixels;
+	status = kl_canvas_init(&sorter->canvas, sorter->pixels, sorter->width, (int)sorter->width, (int)sorter->height);
+	if (status != 0)
+		return -1;
+	sorter->style.canvas = &sorter->canvas;
+
+	/* Succeeded: the new frame is drawn next. */
+	sorter->dirty = 1;
+	return 0;
+}
+
+/*
+ * Draws one frame: the words, the lines sort wrote back, how it ended,
+ * and the Sort button with its two switches.
+ */
+static void
+sorter_draw(
+	struct sorter *sorter,
+	uint64_t now_us)
+{
+	const struct kl_theme *theme;
+	struct kl_rect whole;
+	struct kl_rect button;
+	unsigned sort_flags;
+	size_t index;
+	int baseline;
+	int clicked;
+	int x;
+
+	/* Starts the frame. */
+	theme = kl_theme_default();
+	sorter->style.theme = theme;
+	kl_ui_begin(sorter->ui, now_us);
+
+	/* Paints the ground. */
+	whole.x = 0;
+	whole.y = 0;
+	whole.width = (int)sorter->width;
+	whole.height = (int)sorter->height;
+	kl_canvas_gradient(&sorter->canvas, &whole, theme->ground_top, theme->ground_bottom);
+
+	/* The columns' headings. */
+	baseline = kl_text_center(theme->text_body, MARGIN, LINE_HEIGHT);
+	(void)kl_text_draw(&sorter->text, &sorter->canvas, MARGIN, baseline, "Words", 5U, theme->text_body, 1, theme->text);
+	(void)kl_text_draw(&sorter->text, &sorter->canvas, COLUMN, baseline, "Sorted", 6U, theme->text_body, 1, theme->text);
+
+	/* The words as they are written to sort. */
+	for (index = 0; index < WORD_COUNT; index++) {
+		baseline = kl_text_center(theme->text_body, MARGIN + (int)(index + 1U) * LINE_HEIGHT, LINE_HEIGHT);
+		(void)kl_text_draw(&sorter->text, &sorter->canvas, MARGIN, baseline, word_table[index], strlen(word_table[index]), theme->text_body, 0, theme->text_secondary);
+	}
+
+	/* The lines sort wrote back, then its error line in the danger colour. */
+	for (index = 0; index < sorter->line_count; index++) {
+		baseline = kl_text_center(theme->text_body, MARGIN + (int)(index + 1U) * LINE_HEIGHT, LINE_HEIGHT);
+		(void)kl_text_draw(&sorter->text, &sorter->canvas, COLUMN, baseline, sorter->lines[index], strlen(sorter->lines[index]), theme->text_body, 0, theme->text);
+	}
+	if (sorter->error[0] != '\0') {
+		baseline = kl_text_center(theme->text_small, MARGIN + (int)(sorter->line_count + 1U) * LINE_HEIGHT, LINE_HEIGHT);
+		(void)kl_text_draw_fit(&sorter->text, &sorter->canvas, COLUMN, baseline, sorter->error, theme->text_small, 0, (int)sorter->width - COLUMN - MARGIN, theme->danger);
+	}
+
+	/* How it ended. */
+	baseline = kl_text_center(theme->text_small, (int)sorter->height - MARGIN - theme->control_height - 28, LINE_HEIGHT);
+	(void)kl_text_draw(&sorter->text, &sorter->canvas, MARGIN, baseline, sorter->ended, strlen(sorter->ended), theme->text_small, 0, theme->text_secondary);
+
+	/* Sort: starts sort; disabled while it runs. */
+	button.x = MARGIN;
+	button.y = (int)sorter->height - MARGIN - theme->control_height;
+	button.width = BUTTON_WIDTH;
+	button.height = theme->control_height;
+	sort_flags = KL_BUTTON_PRIMARY;
+	if (sorter->process != NULL)
+		sort_flags |= KL_BUTTON_DISABLED;
+	clicked = kl_button(sorter->ui, &sorter->style, ID_SORT, &button, "Sort", sort_flags);
+	if (clicked)
+		sorter_start(sorter);
+
+	/* The switches: Reverse, and Bad Option. */
+	x = button.x + BUTTON_WIDTH + 16;
+	baseline = kl_text_center(theme->text_body, button.y, theme->control_height);
+	(void)kl_switch(sorter->ui, &sorter->style, ID_REVERSE, x, button.y + (theme->control_height - theme->switch_height) / 2, &sorter->reverse, 0U);
+	(void)kl_text_draw(&sorter->text, &sorter->canvas, x + theme->switch_width + 8, baseline, "Reverse", 7U, theme->text_body, 0, theme->text);
+	x += theme->switch_width + 96;
+	(void)kl_switch(sorter->ui, &sorter->style, ID_BAD, x, button.y + (theme->control_height - theme->switch_height) / 2, &sorter->bad, 0U);
+	(void)kl_text_draw(&sorter->text, &sorter->canvas, x + theme->switch_width + 8, baseline, "Bad Option", 10U, theme->text_body, 0, theme->text);
+
+	/* Ends the frame. */
+	sorter->moving = kl_ui_end(sorter->ui, now_us);
+	kl_ui_window_text(sorter->ui, sorter->window);
+}
+
+/*
+ * Draws and shows a frame; nonzero when the frame cannot be shown.
+ */
+static int
+sorter_frame(
+	struct sorter *sorter)
+{
+	int status;
+
+	/* Draws the frame. */
+	sorter->dirty = 0;
+	sorter_draw(sorter, kl_clock_us());
+
+	/* Hands it to the compositor. */
+	status = kl_window_present(sorter->window, sorter->pixels, sorter->width);
+	if (status == EAGAIN) {
+		/* The window's size changed under the frame: a new frame of the new size. */
+		sorter->resized = 1;
+	} else if (status != 0) {
+		/* Refuses to go on when the frame could not be shown. */
+		return -1;
+	}
+
+	/* Succeeded: the frame is shown. */
+	return 0;
+}
+
+/*
+ * Gives one input of the window to the widgets, or acts on it.
+ */
+static void
+sorter_input(
+	struct sorter *sorter,
+	const struct kl_window_event *input)
+{
+	int taken;
+
+	/* The window's own inputs: a new size, the close button. */
+	if (input->kind == KL_WINDOW_RESIZE) {
+		sorter->resized = 1;
+		return;
+	}
+	if (input->kind == KL_WINDOW_CLOSE) {
+		sorter->closed = 1;
+		return;
+	}
+
+	/* The rest is the widgets'. */
+	taken = kl_ui_window_input(sorter->ui, input);
+	if (taken)
+		sorter->dirty = 1;
+}
+
+/*
+ * Starts sort with its input and output (and its error stream) the
+ * program's, and writes it the words.
+ */
+static void
+sorter_start(
+	struct sorter *sorter)
+{
+	struct kl_process_options options;
+	const char *argv[3];
+	int status;
+
+	/* The command: sort (looked for in PATH), with -r for Reverse or an option it refuses for Bad Option. */
+	argv[0] = "sort";
+	argv[1] = NULL;
+	argv[2] = NULL;
+	if (sorter->reverse)
+		argv[1] = "-r";
+	if (sorter->bad)
+		argv[1] = "--no-such-option";
+
+	/* The streams the program uses: it writes the input, and reads the output and the errors. */
+	memset(&options, 0, sizeof(options));
+	options.argv = argv;
+	options.streams = KL_PROCESS_INPUT | KL_PROCESS_OUTPUT | KL_PROCESS_ERROR;
+	options.data = sorter;
+	status = kl_process_start(sorter->app, &options, &sorter->process);
+	if (status != 0) {
+		snprintf(sorter->ended, sizeof(sorter->ended), "sort could not start (%s).", strerror(status));
+		sorter->process = NULL;
+		sorter->dirty = 1;
+		return;
+	}
+
+	/* A new run: nothing read back yet. */
+	sorter->line_count = 0;
+	sorter->skipping = 0;
+	sorter->error[0] = '\0';
+	snprintf(sorter->ended, sizeof(sorter->ended), "sort is running.");
+	sorter->written = 0;
+	sorter->dirty = 1;
+
+	/* Writes it the words. */
+	sorter_write(sorter);
+}
+
+/*
+ * Writes the rest of the input, and closes it once all is written: sort
+ * sorts when its input ends.  What does not fit now is written when the
+ * process tells there is room again.
+ */
+static void
+sorter_write(
+	struct sorter *sorter)
+{
+	size_t written;
+	int status;
+
+	/* Writes what is left; fewer bytes may be taken than given. */
+	status = kl_process_write(sorter->process, sorter->input + sorter->written, sorter->input_length - sorter->written, &written);
+	if (status != 0) {
+		/* sort ended before it read all (EPIPE): its end tells why. */
+		return;
+	}
+	sorter->written += written;
+
+	/* All written: closes the input, which sort reads as the end of the words. */
+	if (sorter->written == sorter->input_length)
+		(void)kl_process_close_input(sorter->process);
+}
+
+/*
+ * Acts on one piece of news of the process: room for the input, output
+ * and errors to read, its end.  An event may tell several; the output it
+ * tells is read before its end.
+ */
+static void
+sorter_news(
+	struct sorter *sorter,
+	unsigned ready)
+{
+	/* Room again for the input: writes on. */
+	if ((ready & KL_PROCESS_READY_INPUT) != 0U)
+		sorter_write(sorter);
+
+	/* Lines on its output or its error stream. */
+	if ((ready & (KL_PROCESS_READY_OUTPUT | KL_PROCESS_READY_ERROR)) != 0U)
+		sorter_read(sorter);
+
+	/* Its end, after the output read. */
+	if ((ready & KL_PROCESS_READY_EXIT) != 0U)
+		sorter_end(sorter);
+}
+
+/*
+ * Reads every whole line waiting on the output and the error stream.  A
+ * line too long for a line of the window is kept cut, and the rest of it
+ * is skipped.
+ */
+static void
+sorter_read(
+	struct sorter *sorter)
+{
+	char line[LINE_BYTES];
+	int found;
+
+	/* Takes the output's lines until no whole line waits. */
+	for (;;) {
+		found = kl_process_read_line(sorter->process, KL_PROCESS_OUTPUT, line, sizeof(line));
+		if (found == 0)
+			break;
+
+		/* The rest of a long line, which ends with this piece: skipped. */
+		if (sorter->skipping) {
+			if (found == KL_PROCESS_LINE)
+				sorter->skipping = 0;
+			continue;
+		}
+
+		/* A line, or the start of a long one (its rest is skipped). */
+		if (found == KL_PROCESS_LINE_CUT)
+			sorter->skipping = 1;
+		if (sorter->line_count < LINE_COUNT) {
+			snprintf(sorter->lines[sorter->line_count], LINE_BYTES, "%s", line);
+			sorter->line_count++;
+		}
+		sorter->dirty = 1;
+	}
+
+	/* Keeps the last line of the error stream (a long one cut). */
+	for (;;) {
+		found = kl_process_read_line(sorter->process, KL_PROCESS_ERROR, line, sizeof(line));
+		if (found == 0)
+			break;
+		snprintf(sorter->error, sizeof(sorter->error), "%s", line);
+		sorter->dirty = 1;
+	}
+}
+
+/*
+ * Tells how the process ended, and lets go of it.
+ */
+static void
+sorter_end(
+	struct sorter *sorter)
+{
+	unsigned how;
+	int code;
+
+	/* With an exit code (0 when it sorted), or by a signal. */
+	how = kl_process_exit(sorter->process, &code);
+	if (how == KL_PROCESS_EXITED) {
+		snprintf(sorter->ended, sizeof(sorter->ended), "sort ended with the code %d.", code);
+	} else if (how == KL_PROCESS_SIGNALED) {
+		snprintf(sorter->ended, sizeof(sorter->ended), "sort was ended by the signal %d.", code);
+	}
+
+	/* Done with it: no more of its news comes. */
+	kl_process_close(sorter->process);
+	sorter->process = NULL;
+	sorter->dirty = 1;
+}
+```
+
+### Reading the program
+
+<!-- WRITE (chapter 9, reading the program), in this order:
+1. Lines 44-47 and 138-142: the words, and the input sort reads: one word to a line.
+2. Lines 380-424 (sorter_start): the command is an argument list, argv[0] the program (a path, or a name looked for in
+   PATH, here "sort") and NULL at the end; no command line is parsed.  streams names the streams the program uses:
+   it writes the input and reads the output and the errors (lines 401-404).  kl_process_start returns 0 with the
+   process running, or ENOENT or EACCES (the program cannot be found or run), ENOMEM, EAGAIN or EINVAL; a program the
+   system finds but cannot run ends with the code 127.  data is the program's pointer (kl_process_data).  Then it
+   writes the words.  Define "process" and "stream" here.
+3. Lines 426-449 (sorter_write): kl_process_write copies the bytes and says how many it took; fewer when the input
+   waiting is full (KL_PROCESS_BUFFER, 64 KiB), and then KL_PROCESS_READY_INPUT comes when there is room.  EPIPE when
+   the input is closed or the process ended.  When all is written, kl_process_close_input: sort sorts when it reads
+   the end of its input.
+4. Lines 171-173: the process's news is a KL_APP_PROCESS event in the application's queue; event.process says whose.
+   Define "news" here.
+5. Lines 451-472 (sorter_news): event.ready may hold several things.  Room for the input, then the output and the
+   errors, then the end: the output an event tells comes before the end it tells.
+6. Lines 474-517 (sorter_read): kl_process_read_line returns KL_PROCESS_LINE (a whole line, its end not kept, ending
+   with a NUL), KL_PROCESS_LINE_CUT (the first size - 1 bytes of a longer line, whose rest comes next), or 0 (no whole
+   line waits).  The program keeps a cut line's start and skips the rest (lines 492-503).  The output is told for as
+   long as some of it waits: lines left unread are told again at the next dispatch.  The errors are read the same
+   way (lines 509-516).  Define "line" and "cut line" here.
+7. Lines 519-541 (sorter_end): kl_process_exit says how it ended: KL_PROCESS_EXITED with its exit code, or
+   KL_PROCESS_SIGNALED with a signal's number (on systems that have signals).  kl_process_close: the program is done
+   with it, and no more news comes.  Define "exit code" here.
+8. Lines 196-198: the window closed while sort runs: kl_process_close lets go of it without ending it; the library
+   waits for it and reaps it.  To end a process, kl_process_kill (TERMINATE asks it to end, KILL ends it).
+-->
+
+### The rules
+
+<!-- WRITE (chapter 9, rules), each with a link:
+- A process belongs to the application and is used from its thread.  Its news comes as KL_APP_PROCESS events in the
+  one queue, in order with everything else.
+- The streams the program names are the program's.  An input it does not name is empty; an output or error it does
+  not name goes where the application's goes.  environment changes the application's environment for the process
+  ("NAME=value" sets, "NAME" removes; NULL changes nothing), directory is where it starts (NULL: the application's).
+- Output is told while some waits; read as much as you like at each event.  The library keeps up to
+  KL_PROCESS_BUFFER bytes of a stream and stops reading it while it is full.
+- A write is copied; a short write is finished at KL_PROCESS_READY_INPUT; closing the input sends its end.
+- One event may tell several things; read the output before acting on the end.
+- kl_process_exit says how it ended, kl_process_close lets go of it, kl_process_kill asks it to end.  The library
+  waits for its processes: a program that uses kl_process never waits for "any child" itself.
+-->
+
+### Pitfalls
+
+<!-- WRITE (chapter 9, pitfalls):
+- Forgetting kl_process_close_input: sort waits for more words for ever.
+- Taking a write as complete: check written.
+- Reading the output but not the errors you asked for: a full error stream stops being read, and a program that writes
+  much to it then waits.  Read every stream you named.
+- Taking a cut line for a whole one.
+- Using the process after kl_process_close (the program sets its pointer to NULL, lines 537-540).
+- Passing a command line as argv[0]: no words are split.  A command line goes through the system's command
+  interpreter: argv {"/bin/sh", "-c", line, NULL} for a process, or kl_launch's command (chapter 10).
+-->
+
+### A program in a terminal
+
+<!-- WRITE (chapter 9, the second program, summary): 09-shell.c runs sh in a terminal of its own, shows the lines the
+terminal prints, and types the command written in the field into it.  It is not a terminal emulator: it keeps the
+text and drops the terminal's control sequences.  When the shell turns the echo off and reads by the line, as a
+program asking for a password does, the field hides what is typed.
+
+Picture keiland-examples/09-shell.png: taken after "echo hello from sh" and Enter, "stty -echo" and Enter, and
+"secret" typed in the field: the lines "$ echo hello from sh", "hello from sh", "$ stty -echo" and the prompt, the
+note "The shell turned the echo off: what you type is hidden." and the field showing dots.
+
+It grows from 09-sort.c, and its field is chapter 5's.  New: KL_PROCESS_TERMINAL, the terminal's size
+(kl_process_resize), its modes (kl_process_terminal_mode), reading bytes (kl_process_read), and hanging up.  Terms
+first defined here, in bold: terminal (what a program takes for its keyboard and screen: here one the library makes
+for the process), echo, line mode (the terminal hands the program a whole line once Enter is typed), a terminal's size
+in characters, hanging up. -->
+
+<!-- example: keiland-examples/09-shell.c -->
+```c
+/*
+ * zedBSD
+ * Copyright (C) 2026 Awe Morris
+ *
+ * SPDX-License-Identifier: Zlib
+ */
+
+/*
+ * A shell in a window: the program starts sh with a terminal of its own,
+ * shows the lines the terminal prints, and types the command written in
+ * the field into it.  It is not a terminal emulator: it keeps the text and
+ * drops the terminal's control sequences.  When the shell turns the echo
+ * off and reads by the line, as it does for a password, the field hides
+ * what is typed.
+ */
+
+#include <keiland/keiland.h>
+#include <errno.h>
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+
+/* Where the desktop's fonts are (/opt/keiland/share/fonts for a Linux build under /opt/keiland). */
+#ifndef FONT_DIR
+#define FONT_DIR	"/usr/share/fonts"
+#endif
+#define FONT		FONT_DIR "/keiland.ttf"
+#define FALLBACK_FONT	FONT_DIR "/keiland-fallback.ttf"
+
+/* The widget's id. */
+#define ID_COMMAND	1U
+
+/* The lines kept of what the terminal printed, and the longest (with the NUL). */
+#define LINE_COUNT	64
+#define LINE_BYTES	160
+
+/* The layout, in pixels: the room around everything and a line's height. */
+#define MARGIN		16
+#define LINE_HEIGHT	18
+
+/* The control characters the terminal prints: an escape, a backspace, a tab, a carriage return and a new line. */
+#define ESCAPE		0x1b
+#define BACKSPACE	0x08
+#define TAB		0x09
+#define RETURN		0x0d
+#define NEWLINE		0x0a
+
+/* Where the program is in a control sequence the terminal prints: outside one, after its escape, within its parameters. */
+#define SEQUENCE_NONE		0
+#define SEQUENCE_ESCAPE		1
+#define SEQUENCE_PARAMETERS	2
+
+/*
+ * Everything the program keeps: its connection, window and widgets, the
+ * shell while it runs, the terminal's size, the lines it printed (the
+ * last one is being written) and where it is in a control sequence, the
+ * command being typed into it and how much of it went, the field, whether
+ * the field hides what is typed, how the shell ended, and what the main
+ * loop has to do next.
+ */
+struct shell {
+	struct kl_app *app;
+	struct kl_window *window;
+	struct kl_ui *ui;
+	struct kl_text text;
+	struct kl_style style;
+	struct kl_canvas canvas;
+	uint32_t *pixels;
+	uint32_t width;
+	uint32_t height;
+	struct kl_process *process;
+	unsigned columns;
+	unsigned rows;
+	char lines[LINE_COUNT][LINE_BYTES];
+	size_t line_count;
+	size_t column;
+	int sequence;
+	char typed[KL_FIELD_MAX + 1U];
+	size_t typed_length;
+	size_t typed_written;
+	struct kl_field command;
+	int secret;
+	char ended[64];
+	int dirty;
+	int moving;
+	int resized;
+	int closed;
+};
+
+static int shell_resize(struct shell *shell);
+static void shell_size(struct shell *shell);
+static void shell_draw(struct shell *shell, uint64_t now_us);
+static int shell_frame(struct shell *shell);
+static void shell_input(struct shell *shell, const struct kl_window_event *input);
+static int shell_start(struct shell *shell);
+static void shell_type(struct shell *shell);
+static void shell_news(struct shell *shell, unsigned ready);
+static void shell_print(struct shell *shell, const char *bytes, size_t size);
+static void shell_new_line(struct shell *shell);
+
+int
+main(void)
+{
+	static struct shell shell;
+	struct kl_window_options window_options;
+	struct kl_app_options app_options;
+	struct kl_app_event event;
+	int timeout;
+	int status;
+	int taken;
+
+	/* Connects to the desktop. */
+	memset(&app_options, 0, sizeof(app_options));
+	app_options.application = "org.example.Shell";
+	shell.app = kl_app_open(&app_options);
+	if (shell.app == NULL) {
+		fprintf(stderr, "shell: no desktop (%s)\n", strerror(errno));
+		return 1;
+	}
+
+	/* Opens the window. */
+	memset(&window_options, 0, sizeof(window_options));
+	window_options.title = "Shell";
+	window_options.width = 560;
+	window_options.height = 360;
+	window_options.present = KL_PRESENT_VULKAN;
+	shell.window = kl_app_window_create(shell.app, &window_options);
+	if (shell.window == NULL) {
+		fprintf(stderr, "shell: no window (%s)\n", strerror(errno));
+		return 1;
+	}
+
+	/* Makes the widgets' record, opens the font, and gives the field the keyboard. */
+	shell.ui = kl_ui_create();
+	if (shell.ui == NULL)
+		return 1;
+	status = kl_text_open(&shell.text, FONT, FALLBACK_FONT);
+	if (status != 0) {
+		fprintf(stderr, "shell: no font %s (%s)\n", FONT, strerror(status));
+		return 1;
+	}
+	shell.style.text = &shell.text;
+	kl_ui_set_focus(shell.ui, ID_COMMAND, 0U);
+	shell.line_count = 1;
+
+	/* Makes the first frame, which tells the terminal's size. */
+	status = shell_resize(&shell);
+	if (status != 0)
+		return 1;
+
+	/* Starts the shell in its terminal. */
+	status = shell_start(&shell);
+	if (status != 0)
+		return 1;
+
+	/* Runs until the window is closed; the shell's news arrives among the other events. */
+	while (!shell.closed) {
+		/* Waits for the desktop or the shell: not at all while a frame is due, a frame's time while something moves. */
+		timeout = -1;
+		if (shell.moving)
+			timeout = 16;
+		if (shell.dirty || shell.resized)
+			timeout = 0;
+		status = kl_app_dispatch(shell.app, timeout);
+		if (status != 0)
+			break;
+
+		/* Takes every event queued, in order. */
+		for (;;) {
+			taken = kl_app_take(shell.app, &event);
+			if (!taken)
+				break;
+
+			/* The appearance changed: the theme's colours are new. */
+			if (event.kind == KL_APP_THEME)
+				shell.dirty = 1;
+
+			/* News of the shell: what its terminal printed, room for what is typed, its end. */
+			if (event.kind == KL_APP_PROCESS && event.process == shell.process)
+				shell_news(&shell, event.ready);
+
+			/* An input of the window. */
+			if (event.kind == KL_APP_WINDOW && event.window == shell.window)
+				shell_input(&shell, &event.input);
+		}
+
+		/* A new size: a new frame of that size, and the terminal told. */
+		if (shell.resized) {
+			shell.resized = 0;
+			status = shell_resize(&shell);
+			if (status != 0)
+				break;
+		}
+
+		/* Something changed or moves: draws and shows a frame. */
+		if (shell.dirty || shell.moving) {
+			status = shell_frame(&shell);
+			if (status != 0)
+				break;
+		}
+	}
+
+	/* Hangs up the shell's terminal, as closing a terminal does, and lets go of it. */
+	if (shell.process != NULL) {
+		(void)kl_process_kill(shell.process, KL_PROCESS_HANGUP);
+		kl_process_close(shell.process);
+	}
+
+	/* Frees the widgets' record, the frame and the font, and closes the window and the connection. */
+	kl_ui_destroy(shell.ui);
+	kl_canvas_release(&shell.canvas);
+	free(shell.pixels);
+	kl_text_close(&shell.text);
+	kl_app_close(shell.app);
+
+	/* Succeeded: the window was closed. */
+	return 0;
+}
+
+/*
+ * Makes the frame at the window's size, and tells the terminal its new
+ * size; nonzero when the frame cannot be made.
+ */
+static int
+shell_resize(
+	struct shell *shell)
+{
+	uint32_t *pixels;
+	int status;
+
+	/* Sets the presenter to the window's size, which it reports. */
+	status = kl_window_present_resize(shell->window, &shell->width, &shell->height);
+	if (status != 0)
+		return -1;
+
+	/* Allocates the frame. */
+	pixels = malloc((size_t)shell->width * shell->height * sizeof(pixels[0]));
+	if (pixels == NULL)
+		return -1;
+
+	/* Puts the canvas on the new pixels in place of the old ones; the widgets draw on it. */
+	if (shell->pixels != NULL)
+		kl_canvas_release(&shell->canvas);
+	free(shell->pixels);
+	shell->pixels = pixels;
+	status = kl_canvas_init(&shell->canvas, shell->pixels, shell->width, (int)shell->width, (int)shell->height);
+	if (status != 0)
+		return -1;
+	shell->style.canvas = &shell->canvas;
+
+	/* The terminal's size follows the window's. */
+	shell_size(shell);
+
+	/* Succeeded: the new frame is drawn next. */
+	shell->dirty = 1;
+	return 0;
+}
+
+/*
+ * Works out how many characters and lines the window shows, and tells the
+ * shell's terminal when it runs (programs such as ls fit their output to
+ * it).
+ */
+static void
+shell_size(
+	struct shell *shell)
+{
+	const struct kl_theme *theme;
+	int character;
+	int area;
+	int status;
+
+	/* A character's width (the font is not of one width: an average one) and the lines above the field. */
+	theme = kl_theme_default();
+	character = kl_text_width(&shell->text, "0", 1U, theme->text_small, 0);
+	if (character < 1)
+		character = 1;
+	area = (int)shell->height - 2 * MARGIN - theme->control_height - LINE_HEIGHT - 8;
+	if (area < LINE_HEIGHT)
+		area = LINE_HEIGHT;
+	shell->columns = (unsigned)(((int)shell->width - 2 * MARGIN) / character);
+	shell->rows = (unsigned)(area / LINE_HEIGHT);
+
+	/* Tells the terminal, which tells the programs in it. */
+	if (shell->process != NULL) {
+		status = kl_process_resize(shell->process, shell->columns, shell->rows);
+		if (status != 0)
+			fprintf(stderr, "shell: the terminal keeps its size (%s)\n", strerror(status));
+	}
+}
+
+/*
+ * Draws one frame: the last lines the terminal printed, what the field
+ * does, and the field.
+ */
+static void
+shell_draw(
+	struct shell *shell,
+	uint64_t now_us)
+{
+	const struct kl_theme *theme;
+	struct kl_rect whole;
+	struct kl_rect field;
+	const char *note;
+	size_t first;
+	size_t index;
+	unsigned changed;
+	int baseline;
+	int top;
+
+	/* Starts the frame. */
+	theme = kl_theme_default();
+	shell->style.theme = theme;
+	kl_ui_begin(shell->ui, now_us);
+
+	/* Paints the ground. */
+	whole.x = 0;
+	whole.y = 0;
+	whole.width = (int)shell->width;
+	whole.height = (int)shell->height;
+	kl_canvas_gradient(&shell->canvas, &whole, theme->ground_top, theme->ground_bottom);
+
+	/* The last lines that fit, the one being written at the bottom. */
+	first = 0;
+	if (shell->line_count > shell->rows)
+		first = shell->line_count - shell->rows;
+	top = MARGIN;
+	for (index = first; index < shell->line_count; index++) {
+		baseline = kl_text_center(theme->text_small, top, LINE_HEIGHT);
+		(void)kl_text_draw_fit(&shell->text, &shell->canvas, MARGIN, baseline, shell->lines[index], theme->text_small, 0, (int)shell->width - 2 * MARGIN, theme->text);
+		top += LINE_HEIGHT;
+	}
+
+	/* What the field does now: types a command, types unseen, or nothing once the shell ended. */
+	note = "Type a command and press Enter.";
+	if (shell->secret)
+		note = "The shell turned the echo off: what you type is hidden.";
+	if (shell->process == NULL)
+		note = shell->ended;
+	field.x = MARGIN;
+	field.y = (int)shell->height - MARGIN - theme->control_height;
+	field.width = (int)shell->width - 2 * MARGIN;
+	field.height = theme->control_height;
+	baseline = kl_text_center(theme->text_small, field.y - LINE_HEIGHT - 4, LINE_HEIGHT);
+	(void)kl_text_draw(&shell->text, &shell->canvas, MARGIN, baseline, note, strlen(note), theme->text_small, 0, theme->text_secondary);
+
+	/* The field: Enter types its line into the terminal. */
+	shell->command.secret = shell->secret;
+	changed = kl_field(shell->ui, &shell->style, ID_COMMAND, &field, &shell->command, "Command");
+	if ((changed & KL_FIELD_SUBMITTED) != 0U)
+		shell_type(shell);
+
+	/* Ends the frame. */
+	shell->moving = kl_ui_end(shell->ui, now_us);
+	kl_ui_window_text(shell->ui, shell->window);
+}
+
+/*
+ * Draws and shows a frame; nonzero when the frame cannot be shown.
+ */
+static int
+shell_frame(
+	struct shell *shell)
+{
+	int status;
+
+	/* Draws the frame. */
+	shell->dirty = 0;
+	shell_draw(shell, kl_clock_us());
+
+	/* Hands it to the compositor. */
+	status = kl_window_present(shell->window, shell->pixels, shell->width);
+	if (status == EAGAIN) {
+		/* The window's size changed under the frame: a new frame of the new size. */
+		shell->resized = 1;
+	} else if (status != 0) {
+		/* Refuses to go on when the frame could not be shown. */
+		return -1;
+	}
+
+	/* Succeeded: the frame is shown. */
+	return 0;
+}
+
+/*
+ * Gives one input of the window to the widgets, or acts on it.
+ */
+static void
+shell_input(
+	struct shell *shell,
+	const struct kl_window_event *input)
+{
+	int taken;
+
+	/* The window's own inputs: a new size, the close button. */
+	if (input->kind == KL_WINDOW_RESIZE) {
+		shell->resized = 1;
+		return;
+	}
+	if (input->kind == KL_WINDOW_CLOSE) {
+		shell->closed = 1;
+		return;
+	}
+
+	/* The rest is the widgets'. */
+	taken = kl_ui_window_input(shell->ui, input);
+	if (taken)
+		shell->dirty = 1;
+}
+
+/*
+ * Starts sh in a terminal of its own, of the size the window shows; nonzero
+ * when it cannot.
+ */
+static int
+shell_start(
+	struct shell *shell)
+{
+	static const char *const argv[] = { "/bin/sh", NULL };
+	static const char *const environment[] = { "TERM=dumb", "PS1=$ ", NULL };
+	struct kl_process_options options;
+	int status;
+
+	/*
+	 * A terminal in place of the three streams: the shell reads what is
+	 * typed and prints to it, and it tells the shell it is interactive.  A
+	 * dumb terminal asks programs for no control sequences.
+	 */
+	memset(&options, 0, sizeof(options));
+	options.argv = argv;
+	options.environment = environment;
+	options.streams = KL_PROCESS_TERMINAL;
+	options.columns = shell->columns;
+	options.rows = shell->rows;
+	status = kl_process_start(shell->app, &options, &shell->process);
+	if (status != 0) {
+		fprintf(stderr, "shell: no shell (%s)\n", strerror(status));
+		return -1;
+	}
+
+	/* Succeeded: the shell's prompt comes as its first news. */
+	return 0;
+}
+
+/*
+ * Types the field's line into the terminal, with the Enter that ends it,
+ * and empties the field.  What the terminal has no room for now is typed
+ * when it tells there is room again.
+ */
+static void
+shell_type(
+	struct shell *shell)
+{
+	size_t written;
+	int status;
+
+	/* A new line, once the last one went whole; nothing after the shell ended. */
+	if (shell->process == NULL)
+		return;
+	if (shell->typed_written == shell->typed_length) {
+		shell->typed_length = (size_t)snprintf(shell->typed, sizeof(shell->typed), "%s\n", shell->command.text);
+		shell->typed_written = 0;
+		kl_field_set(&shell->command, "");
+	}
+
+	/* Types what is left of it; fewer bytes may be taken than given. */
+	status = kl_process_write(shell->process, shell->typed + shell->typed_written, shell->typed_length - shell->typed_written, &written);
+	if (status != 0)
+		return;
+	shell->typed_written += written;
+}
+
+/*
+ * Acts on the shell's news: what its terminal printed, room for what is
+ * typed, its end.
+ */
+static void
+shell_news(
+	struct shell *shell,
+	unsigned ready)
+{
+	char bytes[4096];
+	unsigned mode;
+	size_t size;
+	unsigned how;
+	int status;
+	int code;
+
+	/* Room again in the terminal: types the rest of the line. */
+	if ((ready & KL_PROCESS_READY_INPUT) != 0U)
+		shell_type(shell);
+
+	/* What the terminal printed: all that waits, as bytes, not as lines (a prompt has no line's end). */
+	if ((ready & KL_PROCESS_READY_OUTPUT) != 0U) {
+		for (;;) {
+			size = kl_process_read(shell->process, KL_PROCESS_OUTPUT, bytes, sizeof(bytes));
+			if (size == 0)
+				break;
+			shell_print(shell, bytes, size);
+		}
+
+		/* The terminal's modes after what it printed: no echo but by the line is a password asked for. */
+		shell->secret = 0;
+		status = kl_process_terminal_mode(shell->process, &mode);
+		if (status == 0 && (mode & KL_PROCESS_TERMINAL_ECHO) == 0U) {
+			if ((mode & KL_PROCESS_TERMINAL_LINES) != 0U)
+				shell->secret = 1;
+		}
+		shell->dirty = 1;
+	}
+
+	/* Its end: told, and the program is done with it. */
+	if ((ready & KL_PROCESS_READY_EXIT) != 0U) {
+		how = kl_process_exit(shell->process, &code);
+		if (how == KL_PROCESS_EXITED) {
+			snprintf(shell->ended, sizeof(shell->ended), "The shell ended with the code %d.", code);
+		} else if (how == KL_PROCESS_SIGNALED) {
+			snprintf(shell->ended, sizeof(shell->ended), "The shell was ended by the signal %d.", code);
+		}
+		kl_process_close(shell->process);
+		shell->process = NULL;
+		shell->secret = 0;
+		shell->dirty = 1;
+	}
+}
+
+/*
+ * Puts what the terminal printed on the lines: the text as it is, a new
+ * line at its end, a backspace back one place, a tab to the next eighth
+ * place; carriage returns, other control characters and the control
+ * sequences are dropped.
+ */
+static void
+shell_print(
+	struct shell *shell,
+	const char *bytes,
+	size_t size)
+{
+	char *line;
+	size_t index;
+	unsigned char byte;
+
+	/* Takes the bytes one at a time. */
+	for (index = 0; index < size; index++) {
+		byte = (unsigned char)bytes[index];
+		line = shell->lines[shell->line_count - 1U];
+
+		/* Within a control sequence: an escape and one character, or an escape, '[' and its parameters up to a final letter. */
+		if (shell->sequence == SEQUENCE_ESCAPE) {
+			shell->sequence = SEQUENCE_NONE;
+			if (byte == '[')
+				shell->sequence = SEQUENCE_PARAMETERS;
+			continue;
+		}
+		if (shell->sequence == SEQUENCE_PARAMETERS) {
+			if (byte >= 0x40 && byte <= 0x7e)
+				shell->sequence = SEQUENCE_NONE;
+			continue;
+		}
+
+		/* The control characters this program follows; the others are dropped. */
+		if (byte == ESCAPE) {
+			shell->sequence = SEQUENCE_ESCAPE;
+			continue;
+		}
+		if (byte == NEWLINE) {
+			shell_new_line(shell);
+			continue;
+		}
+		if (byte == BACKSPACE) {
+			if (shell->column > 0) {
+				shell->column--;
+				line[shell->column] = '\0';
+			}
+			continue;
+		}
+		if (byte == TAB) {
+			while (shell->column % 8U != 7U && shell->column < LINE_BYTES - 2U) {
+				line[shell->column] = ' ';
+				shell->column++;
+			}
+			byte = ' ';
+		}
+		if (byte < 0x20 || byte == 0x7f)
+			continue;
+
+		/* A character's byte at the end of the line (a line longer than kept is cut). */
+		if (shell->column < LINE_BYTES - 1U) {
+			line[shell->column] = (char)byte;
+			shell->column++;
+			line[shell->column] = '\0';
+		}
+	}
+}
+
+/*
+ * Ends the line being written and starts the next, dropping the oldest
+ * line when all are used.
+ */
+static void
+shell_new_line(
+	struct shell *shell)
+{
+	/* All lines used: the oldest goes. */
+	if (shell->line_count == LINE_COUNT) {
+		memmove(shell->lines[0], shell->lines[1], sizeof(shell->lines[0]) * (LINE_COUNT - 1U));
+		shell->line_count--;
+	}
+
+	/* The next line, empty. */
+	shell->lines[shell->line_count][0] = '\0';
+	shell->line_count++;
+	shell->column = 0;
+}
+```
+
+#### Reading the program
+
+<!-- WRITE (chapter 9, the second program, reading), in this order:
+1. Lines 411-443 (shell_start): streams is KL_PROCESS_TERMINAL in place of the three: what the program writes is typed
+   into the terminal, and what the terminal shows is read as KL_PROCESS_OUTPUT (there is no separate error stream).
+   columns and rows are its size.  environment sets TERM=dumb, which asks the programs in it for no control
+   sequences, and the prompt PS1.  sh sees a terminal and runs as an interactive shell, with a prompt.  Define
+   "terminal" here.
+2. Lines 146-154: the first frame is made first, so that the size is known when the shell starts.
+3. Lines 259-290 (shell_size): the size in characters from the window's size and an average character's width.
+   kl_process_resize tells the terminal, which tells the programs in it (ls fits its columns to it).  It is called at
+   every new size (lines 251-252).
+4. Lines 473-525 (shell_news): the terminal's output is read as bytes with kl_process_read, all that waits (a prompt
+   has no line's end, so lines would never come).  Then kl_process_terminal_mode: when the echo is off and the input
+   is taken by the line, a program is asking for a password, and the field hides what is typed (lines 502-509).  The
+   mode is looked at after output because a program turns the echo off and then prints its prompt.  Define "echo" and
+   "line mode" here.  At the end: how it ended, and kl_process_close.
+5. Lines 527-594 (shell_print), briefly: the program keeps the text and drops the control sequences.  A terminal
+   emulator interprets them; that is the program's work, not libkeiland's.
+6. Lines 445-471 (shell_type): Enter in the field types its line and a new line into the terminal; a short write is
+   finished at KL_PROCESS_READY_INPUT (lines 489-491).
+7. Lines 334-351: the note and the field follow the mode.
+8. Lines 203-207: closing the window hangs the terminal up (KL_PROCESS_HANGUP), as closing a terminal's window does:
+   the shell ends as it does when its terminal goes.  Define "hanging up" here.
+-->
+
+#### The rules of a terminal
+
+<!-- WRITE (chapter 9, the second program, rules), each with a link:
+- KL_PROCESS_TERMINAL gives the process one terminal for its input, output and errors, read as KL_PROCESS_OUTPUT.
+- Read a terminal's output as bytes.
+- The size is in characters: give it at the start and at every new size.
+- kl_process_terminal_mode tells the echo and the line mode; no echo but line mode means a password is being typed.
+- kl_process_resize and kl_process_terminal_mode answer ENOTSUP for a process without a terminal (and the mode where
+  the system does not tell), and EIO once the terminal hung up.
+- End a terminal's process with KL_PROCESS_HANGUP.
+-->
+
+#### Pitfalls
+
+<!-- WRITE (chapter 9, the second program, pitfalls):
+- Waiting for lines from a terminal: a prompt never ends its line.
+- Forgetting the size: programs in it lay out for a size it does not have.
+- Showing the control sequences as text: drop them or interpret them (a terminal emulator).
+- Ending a shell with KILL: a hang-up lets it end as it does when its window closes.
+Then one sentence that leads to chapter 10: these processes belong to the window that started them; some programs are
+started to live on their own.
+-->
+
+## 10. Running once and starting programs
+
+<!-- WRITE (chapter 10, summary): 10-instance.c runs once per user, as Settings does: a second start hands its
+request (its first argument) to the copy that runs, and ends.  The copy that runs lists the requests it was handed and
+brings its window to the front for each.  Start Another starts the program again, apart from this one, with the
+request "Request N from Start Another"; that new copy finds this one, hands the request over and ends, so the request
+comes back here.  A file manager starts a program on a file the same way.
+
+Picture keiland-examples/10-instance.png: taken after Start Another was clicked twice and the program was started
+once more from a shell with the argument From-the-shell: the list "Request 1 from Start Another", "Request 2 from
+Start Another", "From-the-shell", and "Started: Request 2 from Start Another.".
+
+It grows from 04-counter.c.  New: the instance and the program's path in the struct, kl_instance_open before the
+connection, kl_instance_bind, requests_take with kl_activate, requests_launch with kl_launch, kl_instance_close.
+Terms first defined here, in bold: instance (the one copy of a program that runs, which later starts find), request (a
+line of text a start hands over; the program gives it its meaning, such as a page or a file), activation token (the
+compositor's leave for a window to come to the front), launch (a program started apart from the application).  The
+headers: keiland_instance.h, keiland_process.h (kl_launch).  To run it, XDG_RUNTIME_DIR must be the user's own
+directory (mode 0700); a Keiland session sets it so. -->
+
+<!-- example: keiland-examples/10-instance.c -->
+```c
+/*
+ * zedBSD
+ * Copyright (C) 2026 Awe Morris
+ *
+ * SPDX-License-Identifier: Zlib
+ */
+
+/*
+ * A program that runs once per user: a second start hands its request
+ * (its first argument) to the copy that runs, and ends.  The copy that
+ * runs lists the requests it was handed and brings its window to the
+ * front for each.  Start Another starts the program again, apart from
+ * this one (a launch), with a request of its own -- as a file manager
+ * starts a program on a file.
+ */
+
+#include <keiland/keiland.h>
+#include <errno.h>
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+
+/* Where the desktop's fonts are (/opt/keiland/share/fonts for a Linux build under /opt/keiland). */
+#ifndef FONT_DIR
+#define FONT_DIR	"/usr/share/fonts"
+#endif
+#define FONT		FONT_DIR "/keiland.ttf"
+#define FALLBACK_FONT	FONT_DIR "/keiland-fallback.ttf"
+
+/* The name the copies of the program find each other by. */
+#define INSTANCE_NAME	"example-requests"
+
+/* The widget's id. */
+#define ID_ANOTHER	1U
+
+/* The requests listed. */
+#define REQUEST_COUNT	8
+
+/* The layout, in pixels: the room around everything, a line's height, and the button's width. */
+#define MARGIN		24
+#define LINE_HEIGHT	22
+#define BUTTON_WIDTH	140
+
+/*
+ * Everything the program keeps: its connection, window and widgets, the
+ * one copy it is (NULL when it runs on its own), the path it was started
+ * by, the requests it was handed, how many programs it started, what the
+ * last start said, and what the main loop has to do next.
+ */
+struct requests {
+	struct kl_app *app;
+	struct kl_window *window;
+	struct kl_ui *ui;
+	struct kl_text text;
+	struct kl_style style;
+	struct kl_canvas canvas;
+	uint32_t *pixels;
+	uint32_t width;
+	uint32_t height;
+	struct kl_instance *instance;
+	const char *program;
+	char list[REQUEST_COUNT][KL_INSTANCE_REQUEST_MAX];
+	size_t count;
+	unsigned started;
+	char status[128];
+	int dirty;
+	int moving;
+	int resized;
+	int closed;
+};
+
+static int requests_resize(struct requests *requests);
+static void requests_draw(struct requests *requests, uint64_t now_us);
+static int requests_frame(struct requests *requests);
+static void requests_input(struct requests *requests, const struct kl_window_event *input);
+static void requests_add(struct requests *requests, const char *request);
+static void requests_take(struct requests *requests);
+static void requests_launch(struct requests *requests);
+
+int
+main(
+	int argc,
+	char *argv[])
+{
+	static struct requests requests;
+	struct kl_window_options window_options;
+	struct kl_app_options app_options;
+	struct kl_app_event event;
+	const char *request;
+	int timeout;
+	int status;
+	int taken;
+
+	/* The request of this start: the first argument, or none. */
+	request = "";
+	if (argc > 1)
+		request = argv[1];
+	requests.program = argv[0];
+
+	/* Becomes the one copy, or hands the request to the copy that runs: before connecting to the desktop. */
+	status = kl_instance_open(INSTANCE_NAME, request, &requests.instance);
+	if (status != 0) {
+		/* No way to find the other copies: this one runs on its own. */
+		fprintf(stderr, "requests: running on its own (%s)\n", strerror(status));
+		requests.instance = NULL;
+	} else if (requests.instance == NULL) {
+		/* Handed over: the copy that runs carries the request out. */
+		return 0;
+	}
+
+	/* Connects to the desktop. */
+	memset(&app_options, 0, sizeof(app_options));
+	app_options.application = "org.example.Requests";
+	requests.app = kl_app_open(&app_options);
+	if (requests.app == NULL) {
+		fprintf(stderr, "requests: no desktop (%s)\n", strerror(errno));
+		return 1;
+	}
+
+	/* The later starts' requests come as the application's events from now on. */
+	if (requests.instance != NULL) {
+		status = kl_instance_bind(requests.instance, requests.app);
+		if (status != 0)
+			fprintf(stderr, "requests: later starts are not heard (%s)\n", strerror(status));
+	}
+
+	/* Opens the window. */
+	memset(&window_options, 0, sizeof(window_options));
+	window_options.title = "Requests";
+	window_options.width = 440;
+	window_options.height = 300;
+	window_options.present = KL_PRESENT_VULKAN;
+	requests.window = kl_app_window_create(requests.app, &window_options);
+	if (requests.window == NULL) {
+		fprintf(stderr, "requests: no window (%s)\n", strerror(errno));
+		return 1;
+	}
+
+	/* Makes the widgets' record and opens the font. */
+	requests.ui = kl_ui_create();
+	if (requests.ui == NULL)
+		return 1;
+	status = kl_text_open(&requests.text, FONT, FALLBACK_FONT);
+	if (status != 0) {
+		fprintf(stderr, "requests: no font %s (%s)\n", FONT, strerror(status));
+		return 1;
+	}
+	requests.style.text = &requests.text;
+
+	/* The first request is this start's own. */
+	if (request[0] != '\0')
+		requests_add(&requests, request);
+
+	/* Makes the first frame. */
+	status = requests_resize(&requests);
+	if (status != 0)
+		return 1;
+
+	/* Runs until the window is closed. */
+	while (!requests.closed) {
+		/* Waits for the desktop or a later start: not at all while a frame is due, a frame's time while something moves. */
+		timeout = -1;
+		if (requests.moving)
+			timeout = 16;
+		if (requests.dirty || requests.resized)
+			timeout = 0;
+		status = kl_app_dispatch(requests.app, timeout);
+		if (status != 0)
+			break;
+
+		/* Takes every event queued, in order. */
+		for (;;) {
+			taken = kl_app_take(requests.app, &event);
+			if (!taken)
+				break;
+
+			/* The appearance changed: the theme's colours are new. */
+			if (event.kind == KL_APP_THEME)
+				requests.dirty = 1;
+
+			/* Later starts handed requests over. */
+			if (event.kind == KL_APP_INSTANCE && event.instance == requests.instance)
+				requests_take(&requests);
+
+			/* An input of the window. */
+			if (event.kind == KL_APP_WINDOW && event.window == requests.window)
+				requests_input(&requests, &event.input);
+		}
+
+		/* A new size: a new frame of that size. */
+		if (requests.resized) {
+			requests.resized = 0;
+			status = requests_resize(&requests);
+			if (status != 0)
+				break;
+		}
+
+		/* Something changed or moves: draws and shows a frame. */
+		if (requests.dirty || requests.moving) {
+			status = requests_frame(&requests);
+			if (status != 0)
+				break;
+		}
+	}
+
+	/* Stops being the one copy: a later start runs as the first. */
+	if (requests.instance != NULL)
+		kl_instance_close(requests.instance);
+
+	/* Frees the widgets' record, the frame and the font, and closes the window and the connection. */
+	kl_ui_destroy(requests.ui);
+	kl_canvas_release(&requests.canvas);
+	free(requests.pixels);
+	kl_text_close(&requests.text);
+	kl_app_close(requests.app);
+
+	/* Succeeded: the window was closed. */
+	return 0;
+}
+
+/*
+ * Makes the frame at the window's size; nonzero when it cannot.
+ */
+static int
+requests_resize(
+	struct requests *requests)
+{
+	uint32_t *pixels;
+	int status;
+
+	/* Sets the presenter to the window's size, which it reports. */
+	status = kl_window_present_resize(requests->window, &requests->width, &requests->height);
+	if (status != 0)
+		return -1;
+
+	/* Allocates the frame. */
+	pixels = malloc((size_t)requests->width * requests->height * sizeof(pixels[0]));
+	if (pixels == NULL)
+		return -1;
+
+	/* Puts the canvas on the new pixels in place of the old ones; the widgets draw on it. */
+	if (requests->pixels != NULL)
+		kl_canvas_release(&requests->canvas);
+	free(requests->pixels);
+	requests->pixels = pixels;
+	status = kl_canvas_init(&requests->canvas, requests->pixels, requests->width, (int)requests->width, (int)requests->height);
+	if (status != 0)
+		return -1;
+	requests->style.canvas = &requests->canvas;
+
+	/* Succeeded: the new frame is drawn next. */
+	requests->dirty = 1;
+	return 0;
+}
+
+/*
+ * Draws one frame: the requests handed over, what the last start said,
+ * and Start Another.
+ */
+static void
+requests_draw(
+	struct requests *requests,
+	uint64_t now_us)
+{
+	const struct kl_theme *theme;
+	struct kl_rect whole;
+	struct kl_rect button;
+	const char *heading;
+	size_t index;
+	int baseline;
+	int clicked;
+
+	/* Starts the frame. */
+	theme = kl_theme_default();
+	requests->style.theme = theme;
+	kl_ui_begin(requests->ui, now_us);
+
+	/* Paints the ground. */
+	whole.x = 0;
+	whole.y = 0;
+	whole.width = (int)requests->width;
+	whole.height = (int)requests->height;
+	kl_canvas_gradient(&requests->canvas, &whole, theme->ground_top, theme->ground_bottom);
+
+	/* The heading: whether this is the one copy. */
+	heading = "Requests handed to this copy";
+	if (requests->instance == NULL)
+		heading = "Running on its own: no requests come";
+	baseline = kl_text_center(theme->text_body, MARGIN, LINE_HEIGHT);
+	(void)kl_text_draw(&requests->text, &requests->canvas, MARGIN, baseline, heading, strlen(heading), theme->text_body, 1, theme->text);
+
+	/* The requests, oldest first. */
+	for (index = 0; index < requests->count; index++) {
+		baseline = kl_text_center(theme->text_body, MARGIN + (int)(index + 1U) * LINE_HEIGHT, LINE_HEIGHT);
+		(void)kl_text_draw_fit(&requests->text, &requests->canvas, MARGIN, baseline, requests->list[index], theme->text_body, 0, (int)requests->width - 2 * MARGIN, theme->text_secondary);
+	}
+
+	/* What the last start said. */
+	baseline = kl_text_center(theme->text_small, (int)requests->height - MARGIN - theme->control_height - LINE_HEIGHT - 4, LINE_HEIGHT);
+	(void)kl_text_draw(&requests->text, &requests->canvas, MARGIN, baseline, requests->status, strlen(requests->status), theme->text_small, 0, theme->text_secondary);
+
+	/* Start Another: the program again, apart from this one. */
+	button.x = MARGIN;
+	button.y = (int)requests->height - MARGIN - theme->control_height;
+	button.width = BUTTON_WIDTH;
+	button.height = theme->control_height;
+	clicked = kl_button(requests->ui, &requests->style, ID_ANOTHER, &button, "Start Another", KL_BUTTON_PRIMARY);
+	if (clicked)
+		requests_launch(requests);
+
+	/* Ends the frame. */
+	requests->moving = kl_ui_end(requests->ui, now_us);
+	kl_ui_window_text(requests->ui, requests->window);
+}
+
+/*
+ * Draws and shows a frame; nonzero when the frame cannot be shown.
+ */
+static int
+requests_frame(
+	struct requests *requests)
+{
+	int status;
+
+	/* Draws the frame. */
+	requests->dirty = 0;
+	requests_draw(requests, kl_clock_us());
+
+	/* Hands it to the compositor. */
+	status = kl_window_present(requests->window, requests->pixels, requests->width);
+	if (status == EAGAIN) {
+		/* The window's size changed under the frame: a new frame of the new size. */
+		requests->resized = 1;
+	} else if (status != 0) {
+		/* Refuses to go on when the frame could not be shown. */
+		return -1;
+	}
+
+	/* Succeeded: the frame is shown. */
+	return 0;
+}
+
+/*
+ * Gives one input of the window to the widgets, or acts on it.
+ */
+static void
+requests_input(
+	struct requests *requests,
+	const struct kl_window_event *input)
+{
+	int taken;
+
+	/* The window's own inputs: a new size, the close button. */
+	if (input->kind == KL_WINDOW_RESIZE) {
+		requests->resized = 1;
+		return;
+	}
+	if (input->kind == KL_WINDOW_CLOSE) {
+		requests->closed = 1;
+		return;
+	}
+
+	/* The rest is the widgets'. */
+	taken = kl_ui_window_input(requests->ui, input);
+	if (taken)
+		requests->dirty = 1;
+}
+
+/*
+ * Puts a request on the list, dropping the oldest when the list is full.
+ */
+static void
+requests_add(
+	struct requests *requests,
+	const char *request)
+{
+	/* A full list: the oldest goes. */
+	if (requests->count == REQUEST_COUNT) {
+		memmove(requests->list[0], requests->list[1], sizeof(requests->list[0]) * (REQUEST_COUNT - 1U));
+		requests->count--;
+	}
+
+	/* The request at the end. */
+	snprintf(requests->list[requests->count], sizeof(requests->list[0]), "%s", request);
+	requests->count++;
+	requests->dirty = 1;
+}
+
+/*
+ * Takes every request the later starts handed over, and brings the window
+ * to the front with each one's token: the user started the program to see
+ * it.
+ */
+static void
+requests_take(
+	struct requests *requests)
+{
+	char request[KL_INSTANCE_REQUEST_MAX];
+	char token[KL_ACTIVATION_TOKEN_MAX];
+	int taken;
+	int status;
+
+	/* Takes them until none is left; one event may stand for several. */
+	for (;;) {
+		taken = kl_instance_take(requests->instance, request, sizeof(request), token, sizeof(token));
+		if (!taken)
+			break;
+
+		/* An empty request (a start without an argument) is listed as such. */
+		if (request[0] == '\0')
+			snprintf(request, sizeof(request), "(started again)");
+		requests_add(requests, request);
+
+		/* To the front, when the start brought a token and the compositor lets it. */
+		if (token[0] != '\0') {
+			status = kl_activate(kl_app_display(requests->app), kl_window_surface(requests->window), token);
+			if (status != 0)
+				fprintf(stderr, "requests: the window stays where it is (%s)\n", strerror(status));
+		}
+	}
+}
+
+/*
+ * Starts the program again, apart from this one, with a request of its
+ * own.  The new copy finds this one and hands the request over, so it
+ * comes back here as a KL_APP_INSTANCE event.
+ */
+static void
+requests_launch(
+	struct requests *requests)
+{
+	struct kl_launch_options options;
+	const char *argv[3];
+	char request[64];
+	int status;
+
+	/* The command: this program, by the path it was started with, and the next request's text. */
+	requests->started++;
+	snprintf(request, sizeof(request), "Request %u from Start Another", requests->started);
+	argv[0] = requests->program;
+	argv[1] = request;
+	argv[2] = NULL;
+
+	/* Starts it; from the window, so that the compositor may let the new copy's window come to the front. */
+	memset(&options, 0, sizeof(options));
+	options.argv = argv;
+	options.from = requests->window;
+	status = kl_launch(requests->app, &options);
+	if (status != 0) {
+		snprintf(requests->status, sizeof(requests->status), "Could not start %s (%s).", requests->program, strerror(status));
+	} else {
+		snprintf(requests->status, sizeof(requests->status), "Started: %s.", request);
+	}
+	requests->dirty = 1;
+}
+```
+
+### Reading the program
+
+<!-- WRITE (chapter 10, reading the program), in this order:
+1. Lines 94-109: kl_instance_open(name, request, &instance) is the first call, before the connection.  It has three
+   outcomes: 0 with an instance (this is the one copy, and it listens for later starts); 0 with NULL (the request was
+   handed to the copy that runs: the program ends, line 108); an error (the program runs on its own, as without the
+   call: EINVAL for a bad name or request, ENOTSUP without a runtime directory that is the user's alone).  The name
+   is lowercase letters, digits and "-".  Define "instance" and "request" here.
+2. Lines 120-125: kl_instance_bind: from now on later starts' requests come as the application's KL_APP_INSTANCE
+   events.  A thread of the library takes them; up to eight wait to be taken.
+3. Lines 181-183 and 389-421 (requests_take): at KL_APP_INSTANCE the program takes requests until none is left (one
+   event may stand for several).  Each comes with an activation token: kl_activate(kl_app_display(app),
+   kl_window_surface(window), token) asks the compositor to bring the window to the front, and the compositor
+   decides whether the token allows it (lines 414-419).  Define "activation token" here.
+4. Lines 423-455 (requests_launch): kl_launch starts the program again, by the path it was started with (argv[0]), with
+   a request of its own.  options.argv, or options.command for a command line the system's command interpreter runs
+   (exactly one of the two); environment and directory as for a process; from, the window the user works in, so
+   that the compositor gives the new program leave to bring its window to the front.  The launched program runs
+   apart: it lives on when the application ends, its input is empty, it writes where the application does, and
+   nothing of it comes back.  It is on its way when kl_launch returns 0; ENOENT or EACCES when it cannot be found or
+   run.  Here the new copy finds this one and hands its request over, so it comes back as KL_APP_INSTANCE.  Define
+   "launch" here.
+5. Lines 206-208: kl_instance_close before the application closes: the copy stops listening, and a later start runs
+   as the first.
+-->
+
+### The rules
+
+<!-- WRITE (chapter 10, rules), each with a link:
+- Call kl_instance_open first, before the connection and anything the user sees; act on its three outcomes.
+- Bind the instance to the application, and take requests until none is left at each KL_APP_INSTANCE.
+- A request is a line of text, at most KL_INSTANCE_REQUEST_MAX bytes with its NUL; the program gives it its meaning.
+- Bring the window forward with each request's token; without a token the compositor may refuse.
+- kl_launch starts a program apart from the application; kl_process (chapter 9) starts one the application talks to.
+  A table of the two: lives after the application (yes / no: it belongs to it), its streams (the application's,
+  input empty / the program's), news and end (none / KL_APP_PROCESS), activation (from / none).  A program that wants
+  to know when the program it started ends uses kl_process with no streams.
+-->
+
+### Pitfalls
+
+<!-- WRITE (chapter 10, pitfalls):
+- Taking an error of kl_instance_open as fatal: the program can run on its own.
+- Taking one request per event: one event may stand for several.
+- A runtime directory shared with others (such as /tmp): ENOTSUP, and every start runs on its own.
+- Expecting to hear when a launched program ends: start it as a process instead.
+- A command line in argv[0]: use options.command.
+Then the guide's last sentence: for everything else, the headers under userland/desktop/include/keiland/ are the
+authority, one per component.
+-->
