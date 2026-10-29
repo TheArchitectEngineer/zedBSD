@@ -3,7 +3,8 @@
 # ws291-p010a nvrtx の executor に mview が要る物を足す（depth・index の draw・instance・mip・uniform buffer・cull）
 
 - 親: [WS291](../ws.md)。
-- 状態: in-progress（2026-10-29 07:30 P2 新設、q1670 の中で Q1 の判断。08:20 から q1670-i02 で P2 が実装）。
+- 状態: cleared（2026-10-29 10:55 P2、q1670-i04。Q1「p010a は depth・texture が参照と一致したので、受け入れの判断を phase.md に書いて cleared にしてよい（instance rate の実機の未確かめは残りとして記録）」）。
+  前: in-progress（2026-10-29 07:30 P2 新設、q1670 の中で Q1 の判断。08:20 から q1670-i02 で P2 が実装）。
 - 出典: Q1 の判断（2026-10-29、q1670）「(2) nvrtx の executor に depth・index・mip（mview が動くまで）→ 新しい p010a、その後 p011（scene-5000 の 50 fps）」
   「RDNA の p002a と同じ「機能を足してから比較」の形」。RDNA の手本は [p002a](../phase002a/phase.md)（2026-10-26 ユーザー「機能を足してから比較（推し）」）。
 - 依存: p010 の BAR1 の window の直し（06cdbf381）と work channel の VA の拡張（01478d325）。後続: p011。
@@ -187,3 +188,14 @@
   completer の thread）。GPU が 1 frame に約 19.6 ms なので、待たない形で CPU の約 4 ms を重ねれば 50 fps 前後に届く見込み（この件は WS291 の表の
   とおり WS250 p005 との分担を Q1 が決めてから）。足りなければ
   vertex の program（SM75 の compiler）の質を見る。
+
+### 受け入れの判断（2026-10-29 10:55 P2）
+
+- amd64 の vmunix の warning 0、nvrtx-vk-host-test.sh PASS 86 checks、nvrtx-sm75-host-test.sh 287 checks 0 failures（i02・i03 の記録）: 満たす。
+- 実機の mview（`--content=game --present=mailbox`）の copies 1 と 5000 が動く（o1: 444.00 fps・42.13 fps、GPU の error・fault 無し）: 満たす。
+- 見た目: copies 1 の深度の前後と texture が Linux の参照と一致（16 段以上の差は 2 画素）。参照は NVK ではなく RADV の linux-shot-1.png
+  （同じ scene・同じ mview）。5000 copies は格子の 5000 体が出る事を目で見ただけ（参照の画が無い）。
+- scene-5000 の起点: 42.2 fps（s1、frame 23.6 ms、GPU は 1 frame に約 19.6 ms）→ p011。
+- → cleared。残り: instance の rate（divisor）の実機の個別の確かめ（mview の copy_offset の instance の流れが 5000 体の格子に出る事で間接には動いている）、
+  NVK の参照の shot との比較、5000 copies の画素の比較、mip の遠い copy の見た目（block linear の mip の sampling は実装済み、比較は未実施）。
+  BUG-353（mailbox の mview の後の window が出ない）は範囲の外。
