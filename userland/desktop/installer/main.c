@@ -618,4 +618,8 @@ main_language_changed(
 	app = data;
 	app->dirty = 1;
 	inst_log("LANGUAGE language=%s", language);
+
+	/* The window's title, given when the window was made, follows the language too. */
+	if (app->window != NULL)
+		kl_window_set_title(app->window, kl_tr("Installer"));
 }
