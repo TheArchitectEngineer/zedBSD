@@ -453,13 +453,13 @@ main_frame(
 		if (status == 0)
 			return 0;
 
-		/* Anything but a stale swapchain is a failure. */
-		if (status != EAGAIN) {
-			fprintf(stderr, "INSTALLER FAILED operation=present error=%d\n", status);
-			return -1;
-		}
-
-		/* A stale swapchain is remade at the window's size. */
+		/*
+		 * A stale swapchain is remade at the window's size; so is one that
+		 * failed otherwise (a device that came back), for an installation
+		 * the window shows must not end with a frame that was not shown.
+		 */
+		if (status != EAGAIN)
+			inst_log("PRESENT error=%d attempt=%u", status, stale);
 		status = main_resize(app);
 		if (status != 0)
 			return -1;
