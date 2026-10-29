@@ -37,7 +37,7 @@
 | Phase | 目的 | 状態 | 依存 |
 | --- | --- | --- | --- |
 | [ws314-p001](phase001/phase.md) | `keiland.h` を `keiland_*.h` に分ける（定義の移動だけ、API・ABI は変えない。KL_VERSION の履歴の comment の置き場所も）。comment から開発の管理情報を除く（決定 10） | cleared | — |
-| ws314-p002 | `docs/` に Keiland のプログラミングの解説（英語）: app → window → titlebar → ui と main loop → widget → menu → その他。fd の API は書かない | planned | p001 |
+| [ws314-p002](phase002/phase.md) | `docs/` に Keiland のプログラミングの解説（英語）: app → window → titlebar → ui と main loop → widget → menu → その他。fd の API は書かない | cleared | p001 |
 | ws314-p003 | 設計: post・`kl_process`・`kl_instance` の event・libbrowser の network の thread（design.md、design-reviewer） | planned | p001 |
 | ws314-p004 | `kl_app_post`・`kl_window_post` の実装と Mailer の移行 | planned | p003 |
 | ws314-p005 | `kl_process_*` の実装と Installer・Terminal・起動する program の移行 | planned | p003 |
