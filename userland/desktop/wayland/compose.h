@@ -1150,6 +1150,7 @@ void kwl_heads_close_all(struct kwl_server *server, struct kwl_head_rest *rests,
 void kwl_heads_rest_destroy(struct kwl_server *server, struct kwl_head_rest *rests, unsigned count);
 void kwl_heads_make(struct kwl_server *server, struct kwl_head_opening *opening);
 int kwl_heads_sync_later(struct kwl_server *server);
+int kwl_displays_anchor_follow_later(struct kwl_server *server);
 int kwl_heads_lost(struct kwl_server *server);
 unsigned kwl_heads_wanted(struct kwl_server *server, unsigned *slots, unsigned room);
 unsigned kwl_heads_take(struct kwl_server *server, const struct kwl_render_held *held);

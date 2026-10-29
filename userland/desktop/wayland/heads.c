@@ -2649,6 +2649,64 @@ kwl_displays_anchor_follow(
 }
 
 /*
+ * Gives the desktop to a display on when the anchor's display is turned off,
+ * as kwl_displays_anchor_follow does, in a change of the display while the
+ * passes go on (the hotplug's looks): the displays on are tried in order.
+ * Returns 1 when the move began, 0 when none was needed or could begin.
+ */
+int
+kwl_displays_anchor_follow_later(
+	struct kwl_server *server)
+{
+	VkDisplayKHR candidates[KWL_COMPOSE_DISPLAYS];
+	struct kwl_compose *compose;
+	unsigned count;
+	unsigned index;
+	int anchor;
+	int off;
+	int error;
+
+	/* An open output whose display is turned off. */
+	compose = server->compose;
+	if (compose == NULL || !compose->output_open || compose->output_lost)
+		return 0;
+	anchor = heads_index(compose, compose->display);
+	if (anchor < 0)
+		return 0;
+	off = heads_off(compose, (unsigned)anchor);
+	if (!off)
+		return 0;
+
+	/* The displays on that may take the output, in order. */
+	count = 0U;
+	for (index = 0U; index < compose->display_count; index++) {
+		if ((int)index == anchor || compose->displays[index] == compose->kept_off)
+			continue;
+		if ((compose->limited & ((uint32_t)1U << index)) != 0U)
+			continue;
+		if ((compose->move_failed & ((uint32_t)1U << index)) != 0U)
+			continue;
+		off = heads_off(compose, index);
+		if (off)
+			continue;
+		if (count == 0U)
+			printf("KWL DISPLAYS anchor off name=%s to=%s\n", compose->display_name, compose->display_names[index]);
+		candidates[count] = compose->displays[index];
+		count++;
+	}
+
+	/* The move. */
+	if (count == 0U)
+		return 0;
+	error = kwl_output_move(server, candidates, NULL, count, NULL, NULL);
+	if (error != 0)
+		return 0;
+
+	/* Succeeded: the move runs. */
+	return 1;
+}
+
+/*
  * Takes in a move of the output that failed at its first frame and went
  * back to the display `back` (BUG-266): that display is on again in the
  * choice (an anchor turned off gave the desktop to the display that

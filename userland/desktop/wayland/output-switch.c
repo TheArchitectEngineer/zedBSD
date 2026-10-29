@@ -227,9 +227,9 @@ output_list_later(
 
 /*
  * Goes on with a look once the displays are read: the list taken in, then
- * by the look -- the first one's heads; after a signal, the output lost
- * when its display is gone (and moved), else the heads; the heads after
- * the output opened again; a lost output's move.
+ * by the look -- after a signal, the output lost when its display is gone
+ * (and moved); a lost output's move; else an anchor turned off moved, or
+ * the heads brought in line.
  */
 static void
 output_listed(
@@ -241,6 +241,7 @@ output_listed(
 	struct output_list *list;
 	VkResult listed;
 	unsigned look;
+	int moving;
 	int index;
 
 	/* The list taken in. */
@@ -286,9 +287,15 @@ output_listed(
 		}
 	}
 
-	/* The heads brought in line, and an anchor turned off by the user gives the desktop to a display on (ws113-p014). */
+	/*
+	 * An anchor turned off by the user gives the desktop to a display on
+	 * (ws113-p014; the heads follow the output's opening, heads_stale), else
+	 * the heads are brought in line.
+	 */
+	moving = kwl_displays_anchor_follow_later(server);
+	if (moving)
+		return;
 	output_heads_sync(server);
-	kwl_displays_anchor_follow(server);
 }
 
 /*
