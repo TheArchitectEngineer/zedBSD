@@ -398,6 +398,17 @@ struct kwl_cursor_thread;
 typedef void kwl_display_fn(struct kwl_server *server, int error, void *context);
 
 /*
+ * What is left of a head the main thread let go (heads.c): its swapchain
+ * and surface, its display, and its name, for the display thread to
+ * destroy and give back (kwl_heads_rest_destroy).
+ */
+struct kwl_head_rest {
+	struct vkdemo_display output;
+	VkDisplayKHR display;
+	char name[KWL_COMPOSE_NAME];
+};
+
+/*
  * A cursor plane taken off its output for its close (cursor-plane.c): the
  * cursor thread's record, the plane's copies the thread reads until it has
  * stopped, and whether the plane showed the cursor.
@@ -992,7 +1003,7 @@ int kwl_compose_want_layer(struct kwl_server *server);
 int kwl_compose_host_writable(struct kwl_server *server);
 void kwl_compose_park(struct kwl_server *server);
 void kwl_compose_want_nothing(struct kwl_server *server);
-void kwl_compose_output_let_go(struct kwl_server *server);
+void kwl_compose_output_let_go(struct kwl_server *server, struct kwl_head_rest *heads, unsigned *head_count);
 int kwl_compose_output_take(struct kwl_server *server, unsigned scene_supported, struct kwl_cursor_thread *cursor, VkExtent2D plane_extent, uint32_t plane_index);
 
 /* The display thread and the changes of the display (display-thread.c). */
@@ -1113,7 +1124,8 @@ uint64_t kwl_heads_config_ticket(void);
 int kwl_heads_config_settled(uint64_t ticket, int *error);
 void kwl_heads_sync(struct kwl_server *server);
 void kwl_heads_close_display(struct kwl_server *server, VkDisplayKHR display);
-void kwl_heads_close_all(struct kwl_server *server);
+void kwl_heads_close_all(struct kwl_server *server, struct kwl_head_rest *rests, unsigned *count);
+void kwl_heads_rest_destroy(struct kwl_server *server, struct kwl_head_rest *rests, unsigned count);
 int kwl_heads_lost(struct kwl_server *server);
 unsigned kwl_heads_wanted(struct kwl_server *server, unsigned *slots, unsigned room);
 unsigned kwl_heads_take(struct kwl_server *server, const struct kwl_render_held *held);

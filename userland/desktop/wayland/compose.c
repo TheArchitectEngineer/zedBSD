@@ -568,14 +568,16 @@ kwl_compose_output_take(
 /*
  * Lets go of what the output's frames use, the render thread parked and
  * drained (nothing it submitted still runs, display-thread.c): the images
- * it holds are forgotten, the heads closed, the layers' pictures, the
+ * it holds are forgotten, the heads let go, the layers' pictures, the
  * scene, the backdrop, the glass maps, the turn image and the targets
- * destroyed.  The cursor plane, the swapchain and the surface are the
- * display thread's to destroy after.  Nothing is wanted without an output.
+ * destroyed.  The cursor plane, the heads' and the output's swapchains and
+ * surfaces are the display thread's to destroy after.  Nothing is wanted without an output.
  */
 void
 kwl_compose_output_let_go(
-	struct kwl_server *server)
+	struct kwl_server *server,
+	struct kwl_head_rest *heads,
+	unsigned *head_count)
 {
 	struct kwl_compose *compose;
 
@@ -583,8 +585,8 @@ kwl_compose_output_let_go(
 	compose = server->compose;
 	kwl_compose_forget(server, 1U, (1U << KWL_HEADS) - 1U);
 
-	/* The heads go with the output. */
-	kwl_heads_close_all(server);
+	/* The heads go with the output (their swapchains, surfaces and displays in heads, for the display thread). */
+	kwl_heads_close_all(server, heads, head_count);
 
 	/* The layers' pictures, the backdrop, the targets. */
 	kwl_layers_close(compose);

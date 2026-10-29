@@ -430,6 +430,7 @@ output_move_opened(
 {
 	struct kwl_compose *compose;
 	struct output_move *move;
+	uint64_t started;
 	int index;
 
 	/* Refused: marked, and the output goes back to what it had. */
@@ -452,7 +453,9 @@ output_move_opened(
 	}
 
 	/* The desktop follows what the output shows now against what it showed when it last opened (review-4 C7). */
+	started = kwl_milliseconds();
 	(void)kwl_output_rotated(server);
+	printf("KWL DISPLAY step=fit ms=%llu\n", (unsigned long long)(kwl_milliseconds() - started));
 
 	/*
 	 * A move is proven by its first frame (BUG-266): until it is

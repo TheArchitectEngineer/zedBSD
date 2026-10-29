@@ -88,6 +88,8 @@ struct display_job {
 	struct vkdemo_display output;
 	VkDisplayKHR display;
 	struct kwl_cursor_parts parts;
+	struct kwl_head_rest heads[KWL_HEADS];
+	unsigned head_count;
 	unsigned plane;
 	struct kwl_cursor_thread *cursor;
 	VkExtent2D plane_extent;
@@ -368,8 +370,9 @@ kwl_display_end(
  * Closes the output, a step of a change of the display (the render thread
  * parked and drained): the main thread lets go of what the frames use and
  * takes the cursor plane off; the display thread stops the cursor thread,
- * waits for the device to be idle and destroys the plane's objects and the
- * output's swapchain and surface, which gives the display back.
+ * waits for the device to be idle and destroys the plane's objects, the
+ * heads' and the output's swapchains and surfaces, which gives the
+ * displays back.
  * then(server, 0, context) is called after.  A surface prepared but never
  * given a swapchain goes at once.
  */
@@ -381,6 +384,7 @@ kwl_display_close(
 {
 	struct kwl_compose *compose;
 	struct display_job *job;
+	uint64_t started;
 
 	/* A surface prepared but never given a swapchain goes on its own. */
 	compose = server->compose;
@@ -392,10 +396,12 @@ kwl_display_close(
 		return;
 	}
 
-	/* The plane taken off, then what the frames use let go. */
+	/* The plane taken off, then what the frames use let go (its time on the event loop logged). */
 	job = display_job_new(server, DISPLAY_CLOSE, then, context);
+	started = kwl_milliseconds();
 	kwl_cursor_plane_detach(server, &job->parts);
-	kwl_compose_output_let_go(server);
+	kwl_compose_output_let_go(server, job->heads, &job->head_count);
+	printf("KWL DISPLAY step=let-go ms=%llu\n", (unsigned long long)(kwl_milliseconds() - started));
 
 	/* The swapchain and the surface are the display thread's from now on. */
 	job->output = compose->output;
@@ -662,7 +668,8 @@ display_run(
 		if (job->error != 0)
 			break;
 
-		/* The swapchain and the surface, then the display given back. */
+		/* The heads' swapchains and surfaces, the output's, then the displays given back. */
+		kwl_heads_rest_destroy(job->server, job->heads, job->head_count);
 		vkdemo_display_close(compose->instance, compose->device, &job->output);
 		kwl_os_display_release(job->server, compose->physical, job->display);
 		break;
@@ -693,6 +700,8 @@ display_done(
 	uint32_t plane_index;
 	unsigned scene_supported;
 	void *then_context;
+	uint64_t started;
+	unsigned index;
 	int error;
 
 	/* What goes on with it, kept before the job goes. */
@@ -709,6 +718,8 @@ display_done(
 		/* The plane's copies and record go (a thread whose copies did not finish ends the compositor). */
 		if (job->parts.thread != NULL)
 			kwl_cursor_plane_detached(server, &job->parts, error);
+		for (index = 0U; index < job->head_count; index++)
+			printf("KWL OUTPUT head closed name=%s\n", job->heads[index].name);
 		display_job_free(job);
 		printf("KWL OUTPUT closed\n");
 		then(server, 0, then_context);
@@ -731,7 +742,9 @@ display_done(
 		plane_extent = job->plane_extent;
 		plane_index = job->plane_index;
 		display_job_free(job);
+		started = kwl_milliseconds();
 		error = kwl_compose_output_take(server, scene_supported, cursor, plane_extent, plane_index);
+		printf("KWL DISPLAY step=take ms=%llu\n", (unsigned long long)(kwl_milliseconds() - started));
 		then(server, error, then_context);
 		return;
 	default:

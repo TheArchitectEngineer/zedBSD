@@ -130,6 +130,7 @@ struct heads_pointer_shift {
 
 static int heads_open(struct kwl_server *server, struct kwl_head *head, VkDisplayKHR display, const char *name);
 static void heads_close(struct kwl_server *server, struct kwl_head *head);
+static void heads_let_go(struct kwl_server *server, struct kwl_head *head, struct kwl_head_rest *rest);
 static VkResult heads_targets(struct kwl_compose *compose, struct kwl_head *head);
 static void heads_targets_destroy(struct kwl_compose *compose, struct kwl_head *head);
 static struct kwl_head *heads_find(struct kwl_compose *compose, VkDisplayKHR display);
@@ -433,16 +434,25 @@ kwl_heads_close_display(
 	heads_changed(server);
 }
 
-/* Closes every head: the output closes (a hand-over, or the compositor's exit). */
+/*
+ * Lets go of every head with the output (a move, a hand-over, the game
+ * mode, the compositor's exit), the render thread parked and drained: each
+ * head's main part here, its swapchain, surface and display kept in rests
+ * (count of them, at most KWL_HEADS) for the display thread to destroy
+ * (kwl_heads_rest_destroy) with the output's.
+ */
 void
 kwl_heads_close_all(
-	struct kwl_server *server)
+	struct kwl_server *server,
+	struct kwl_head_rest *rests,
+	unsigned *count)
 {
 	struct kwl_compose *compose;
 	unsigned index;
 	unsigned changed;
 
 	/* Each open head. */
+	*count = 0U;
 	compose = server->compose;
 	if (compose == NULL)
 		return;
@@ -450,7 +460,8 @@ kwl_heads_close_all(
 	for (index = 0U; index < KWL_HEADS; index++) {
 		if (!compose->heads[index].open)
 			continue;
-		heads_close(server, &compose->heads[index]);
+		heads_let_go(server, &compose->heads[index], &rests[*count]);
+		(*count)++;
 		changed = 1U;
 	}
 
@@ -1058,8 +1069,39 @@ heads_close(
 	struct kwl_server *server,
 	struct kwl_head *head)
 {
+	struct kwl_head_rest rest;
 	struct kwl_compose *compose;
-	char name[KWL_COMPOSE_NAME];
+
+	/*
+	 * No frame may still use its images: the render thread parks after the
+	 * frame in flight and the tasks before (ws213-p004), forgets the image
+	 * it holds of it, and the device is idle.
+	 */
+	compose = server->compose;
+	kwl_compose_park(server);
+	heads_let_go(server, head, &rest);
+	kwl_device_wait_idle(compose);
+
+	/* The swapchain and surface, then the display given back; the render thread goes on. */
+	kwl_heads_rest_destroy(server, &rest, 1U);
+	kwl_compose_unpark(server);
+	printf("KWL OUTPUT head closed name=%s\n", rest.name);
+}
+
+/*
+ * Lets go of a head on the main thread, the render thread parked: its
+ * windows and the pointer go to the anchor, its global, the image the
+ * render thread holds of it, its targets and its semaphore; rest keeps its
+ * swapchain and surface and its display, for kwl_heads_rest_destroy once
+ * no frame and no present of it may still run.
+ */
+static void
+heads_let_go(
+	struct kwl_server *server,
+	struct kwl_head *head,
+	struct kwl_head_rest *rest)
+{
+	struct kwl_compose *compose;
 
 	/* Its windows and the pointer go to the anchor while its place is still known (D-HOTPLUG, ws113-p007). */
 	compose = server->compose;
@@ -1069,26 +1111,40 @@ heads_close(
 	if (head->global != 0U)
 		kwl_output_global_remove(server, head->global);
 
-	/*
-	 * No frame may still use its images: the render thread parks after the
-	 * frame in flight and forgets the image it holds of it (ws213-p004).
-	 */
-	kwl_compose_park(server);
+	/* The image held of it, its targets and its semaphore. */
 	kwl_compose_forget(server, 0U, 1U << (unsigned)(head - compose->heads));
-	kwl_device_wait_idle(compose);
-
-	/* Its objects, then the display given back once its swapchain is gone. */
 	heads_targets_destroy(compose, head);
 	if (head->acquired != VK_NULL_HANDLE)
 		vkDestroySemaphore(compose->device, head->acquired, NULL);
-	vkdemo_display_close(compose->instance, compose->device, &head->output);
-	kwl_os_display_release(server, compose->physical, head->display);
 
-	/* Forgotten, and the render thread goes on. */
-	memcpy(name, head->name, sizeof(name));
+	/* What is left, and the head forgotten. */
+	rest->output = head->output;
+	rest->display = head->display;
+	memcpy(rest->name, head->name, sizeof(rest->name));
 	memset(head, 0, sizeof(*head));
-	kwl_compose_unpark(server);
-	printf("KWL OUTPUT head closed name=%s\n", name);
+}
+
+/*
+ * Destroys heads' swapchains and surfaces and gives their displays back,
+ * once no frame and no present of them may still run (the device idle).
+ * It touches no field of the compositor's, so the display thread may call
+ * it (display-thread.c).
+ */
+void
+kwl_heads_rest_destroy(
+	struct kwl_server *server,
+	struct kwl_head_rest *rests,
+	unsigned count)
+{
+	struct kwl_compose *compose;
+	unsigned index;
+
+	/* Each, its display given back once its swapchain is gone. */
+	compose = server->compose;
+	for (index = 0U; index < count; index++) {
+		vkdemo_display_close(compose->instance, compose->device, &rests[index].output);
+		kwl_os_display_release(server, compose->physical, rests[index].display);
+	}
 }
 
 /* Creates a view, a framebuffer and a present semaphore for each of a head's images. */
