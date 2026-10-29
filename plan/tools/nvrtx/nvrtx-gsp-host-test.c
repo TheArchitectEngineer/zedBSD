@@ -627,6 +627,20 @@ test_vbios(void)
 	check(nvrtx_vbios_fwsec(&vbios, &fwsec) == EINVAL, "vbios v3: code not whole DMA blocks refused");
 }
 
+/* The falcons the boot stops at each point it is left at with a program that may still run. */
+static void
+test_hold(void)
+{
+	check(nvrtx_gsp_hold_falcons(NVRTX_GSP_HOLD_FWSEC) == NVRTX_GSP_HOLD_GSP_FALCON, "hold: FWSEC-FRTS stops the GSP's falcon (FWSEC runs there)");
+	check(nvrtx_gsp_hold_falcons(NVRTX_GSP_HOLD_BOOTER) == (NVRTX_GSP_HOLD_GSP_FALCON | NVRTX_GSP_HOLD_SEC2_FALCON),
+	    "hold: booter_load stops the secure processor and the GSP it may have started");
+	check(nvrtx_gsp_hold_falcons(NVRTX_GSP_HOLD_INIT) == NVRTX_GSP_HOLD_GSP_FALCON, "hold: gsp-init stops the GSP");
+	check(nvrtx_gsp_hold_falcons(NVRTX_GSP_HOLD_UNLOAD) == NVRTX_GSP_HOLD_GSP_FALCON, "hold: unload stops the GSP");
+	check(nvrtx_gsp_hold_falcons(NVRTX_GSP_HOLD_TEAR_DOWN) == (NVRTX_GSP_HOLD_GSP_FALCON | NVRTX_GSP_HOLD_SEC2_FALCON),
+	    "hold: the teardown stops both (FWSEC-SB on the GSP's falcon, booter_unload on the secure processor's)");
+	check(nvrtx_gsp_hold_falcons((enum nvrtx_gsp_hold)99) == (NVRTX_GSP_HOLD_GSP_FALCON | NVRTX_GSP_HOLD_SEC2_FALCON), "hold: an unknown point stops both");
+}
+
 /* The layouts of Ampere and Ada: the larger heap of libos 3, and the VRAM size register in MiB. */
 static void
 test_layout_ampere(void)
@@ -1505,6 +1519,7 @@ main(int argc, char **argv)
 	test_wire();
 	test_layout();
 	test_layout_ampere();
+	test_hold();
 	test_radix3();
 	test_queue();
 	test_vbios();

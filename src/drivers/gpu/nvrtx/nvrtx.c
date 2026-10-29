@@ -229,7 +229,7 @@ nvrtx_detach(
 	if (gpu->worker_running != 0)
 		return EBUSY;
 
-	/* Memory a falcon may still read stays until the power is cut. */
+	/* A held GPU keeps its memory (for a dump) until the power is cut. */
 	if (gpu->state == NVRTX_GSP_FAILED_HOLD)
 		return EBUSY;
 

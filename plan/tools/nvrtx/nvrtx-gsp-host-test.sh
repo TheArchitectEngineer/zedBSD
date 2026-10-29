@@ -23,7 +23,7 @@ src=$repo/src/drivers/gpu/nvrtx
 cc -std=c11 -Wall -Wextra -Werror -I"$repo/include" -I"$repo/src" -I"$repo" \
 	-o "$out/gsp-test" \
 	"$repo/plan/tools/nvrtx/nvrtx-gsp-host-test.c" \
-	"$src/wire.c" "$src/image.c" "$src/layout.c" "$src/radix3.c" "$src/queue.c" "$src/vbios.c" "$src/records.c" "$src/mmu.c" "$src/objects.c" "$src/display/disp-records.c" "$src/heap.c" "$src/work-records.c" "$src/display/disp-first.c" "$src/identify.c"
+	"$src/wire.c" "$src/image.c" "$src/layout.c" "$src/radix3.c" "$src/queue.c" "$src/vbios.c" "$src/records.c" "$src/mmu.c" "$src/objects.c" "$src/display/disp-records.c" "$src/heap.c" "$src/work-records.c" "$src/display/disp-first.c" "$src/identify.c" "$src/hold.c"
 if [ -d "$firmware" ]; then
 	"$out/gsp-test" "$firmware"
 else

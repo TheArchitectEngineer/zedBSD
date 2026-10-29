@@ -122,6 +122,7 @@ static int gsp_devinit_wait(struct nvrtx_gpu *gpu);
 static int gsp_region_set(struct nvrtx_gpu *gpu);
 static void gsp_finish(struct nvrtx_gpu *gpu);
 static int gsp_teardown(struct nvrtx_gpu *gpu);
+static void gsp_hold(struct nvrtx_gpu *gpu, enum nvrtx_gsp_hold point, const char *what);
 static void gsp_end(struct nvrtx_gpu *gpu);
 static int gsp_queue_setup_calls(struct nvrtx_gpu *gpu);
 static int gsp_boot_riscv(struct nvrtx_gpu *gpu);
@@ -1037,8 +1038,7 @@ gsp_region_set(
 	nvrtx_stage_mark("frts begin: FWSEC-FRTS at %llx", (unsigned long long)gpu->layout.frts);
 	error = nvrtx_fwsec_run(gpu, &gpu->memory.fwsec_frts);
 	if (error == ETIMEDOUT) {
-		gpu->state = NVRTX_GSP_FAILED_HOLD;
-		nvrtx_stage_mark("frts fail: FWSEC did not halt; memory kept, power cycle needed");
+		gsp_hold(gpu, NVRTX_GSP_HOLD_FWSEC, "frts fail: FWSEC did not halt");
 		return error;
 	}
 
@@ -1147,8 +1147,8 @@ gsp_teardown(
 	if (gpu->state == NVRTX_GSP_RUNNING) {
 		error = gsp_stop(gpu);
 		if (error != 0) {
-			gpu->state = NVRTX_GSP_FAILED_HOLD;
-			nvrtx_stage_mark("unload fail: the GSP did not stop (%d); memory kept, power cycle needed", error);
+			nvrtx_stage_mark("unload fail: the GSP did not stop (%d)", error);
+			gsp_hold(gpu, NVRTX_GSP_HOLD_UNLOAD, "unload fail");
 			return EBUSY;
 		}
 
@@ -1166,8 +1166,7 @@ gsp_teardown(
 	if (stopped && gpu->region_written != 0)
 		error = nvrtx_region_tear_down(gpu);
 	if (error == ETIMEDOUT) {
-		gpu->state = NVRTX_GSP_FAILED_HOLD;
-		nvrtx_stage_mark("unload fail: a program did not halt; memory kept, power cycle needed");
+		gsp_hold(gpu, NVRTX_GSP_HOLD_TEAR_DOWN, "unload fail: a program did not halt");
 		return EBUSY;
 	}
 
@@ -1183,6 +1182,56 @@ gsp_teardown(
 
 	/* Succeeded: nothing reads the memory any more; a region that stayed is left for a power cycle. */
 	return 0;
+}
+
+/*
+ * Leaves the boot at a point where a program may still run, giving the
+ * firmware's picture back: the GPU is cut off the system memory (its bus
+ * mastering off, so no falcon reads or writes it any more), the falcons that
+ * may run are reset, and the VRAM window is put back in the firmware's mode.
+ * The memory stays allocated (for a dump from outside the machine) and the
+ * GPU is held until power-off; the protected region may stay, so the next
+ * GSP boot needs a power cycle.
+ *
+ * Procedure referenced: Linux v6.19
+ * drivers/gpu/drm/nouveau/nvkm/subdev/gsp/tu102.c (tu102_gsp_fini: the GSP's
+ * falcon reset once its firmware is stopped).
+ */
+static void
+gsp_hold(
+	struct nvrtx_gpu *gpu,
+	enum nvrtx_gsp_hold point,
+	const char *what)
+{
+	uint32_t falcons;
+	int master_error;
+	int gsp_error;
+	int sec2_error;
+
+	/* Held from here on: the memory is never given back. */
+	gpu->state = NVRTX_GSP_FAILED_HOLD;
+
+	/* Cuts the GPU off the system memory first, so nothing it still runs reaches the memory. */
+	master_error = drv_pci_device_set_bus_master(gpu->identity.pci, false);
+
+	/* Resets the falcons that may still run there. */
+	falcons = nvrtx_gsp_hold_falcons(point);
+	gsp_error = 0;
+	sec2_error = 0;
+	if ((falcons & NVRTX_GSP_HOLD_GSP_FALCON) != 0U)
+		gsp_error = nvrtx_falcon_reset(gpu, &gpu->gsp_falcon);
+	if ((falcons & NVRTX_GSP_HOLD_SEC2_FALCON) != 0U)
+		sec2_error = nvrtx_falcon_reset(gpu, &gpu->sec2_falcon);
+
+	/* Gives the firmware's picture its window back. */
+	nvrtx_console_restore(gpu);
+
+	/* Says what is left. */
+	nvrtx_stage_mark("%s; bus master off (%d), falcon reset gsp %d sec2 %d; the firmware's picture is back, memory kept for a dump, power cycle before the next GSP boot",
+	    what,
+	    master_error,
+	    gsp_error,
+	    sec2_error);
 }
 
 /*
@@ -1303,8 +1352,7 @@ gsp_boot_riscv(
 	record = gpu->memory.record.dma.device_address;
 	error = nvrtx_booter_run(gpu, &gpu->load, (uint32_t)(record & 0xffffffffU), (uint32_t)(record >> 32));
 	if (error == ETIMEDOUT) {
-		gpu->state = NVRTX_GSP_FAILED_HOLD;
-		nvrtx_stage_mark("booter fail: booter_load did not halt; memory kept, power cycle needed");
+		gsp_hold(gpu, NVRTX_GSP_HOLD_BOOTER, "booter fail: booter_load did not halt");
 		return error;
 	}
 
@@ -1332,8 +1380,10 @@ gsp_boot_riscv(
  * meanwhile.
  *
  * The wait is cut at a few points to show how far the firmware got.  When
- * the event does not come, the memory is kept, so the logs and the queues
- * can be dumped from outside the machine, and the host is rebooted.
+ * the event does not come, the GSP is stopped and the GPU cut off the
+ * system memory, the firmware's picture gets its window back, and the
+ * memory is kept, so the logs and the queues can be dumped from outside the
+ * machine (gsp_hold()).
  *
  * Procedure referenced: Linux v6.19
  * drivers/gpu/drm/nouveau/nvkm/subdev/gsp/rm/r535/gsp.c (r535_gsp_init).
@@ -1377,8 +1427,8 @@ gsp_init_done(
 		if (error != ETIMEDOUT)
 			gsp_progress(gpu, (uint32_t)(elapsed / 1000U));
 
-		gpu->state = NVRTX_GSP_FAILED_HOLD;
-		nvrtx_stage_mark("gsp-init fail (%d): memory kept for a dump; reboot the host", error);
+		nvrtx_stage_mark("gsp-init fail (%d)", error);
+		gsp_hold(gpu, NVRTX_GSP_HOLD_INIT, "gsp-init fail");
 		return error;
 	}
 
