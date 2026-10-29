@@ -568,8 +568,8 @@ kwl_compose_output_take(
 /*
  * Lets go of what the output's frames use, the render thread parked and
  * drained (nothing it submitted still runs, display-thread.c): the images
- * it holds are forgotten, the heads let go, the layers' pictures, the
- * scene, the backdrop, the turn image and the targets destroyed.  The cursor plane, the heads' and the output's swapchains and
+ * it holds are forgotten, the heads let go, the scene, the backdrop, the
+ * turn image and the targets destroyed.  The cursor plane, the heads' and the output's swapchains and
  * surfaces are the display thread's to destroy after.  Nothing is wanted without an output.
  */
 void
@@ -588,12 +588,12 @@ kwl_compose_output_let_go(
 	kwl_heads_close_all(server, heads, head_count);
 
 	/*
-	 * The layers' pictures, the backdrop, the targets.  The glass maps stay:
-	 * a map of another size goes at its next drawing (glass-map.c), and one
-	 * of the same size is not made again (its memory is slow to get on some
-	 * devices).
+	 * The scene, the backdrop, the targets.  The layers' pictures and the
+	 * glass maps stay: those of another size go when the output opens again
+	 * (layer-cache.c) or at their next drawing (glass-map.c), and those of
+	 * the same size are not made again (their memory is slow to get on
+	 * some devices).
 	 */
-	kwl_layers_close(compose);
 	kwl_scene_close(&compose->scene, compose->device);
 	kwl_backdrop_destroy(compose);
 	kwl_turn_close(compose, &compose->turn);
@@ -1087,6 +1087,7 @@ kwl_compose_close(
 		kwl_device_wait_idle(compose);
 	(void)compose_graves(compose, 1U);
 	kwl_compose_output_close(server);
+	kwl_layers_close(compose);
 	kwl_glass_maps_destroy(compose);
 	kwl_arrow_destroy(server);
 	kwl_glass_close(server);

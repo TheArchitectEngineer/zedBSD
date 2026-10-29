@@ -83,20 +83,37 @@ static const char *layers_name(unsigned which);
 
 /*
  * Makes the layers' pictures for the output just opened: the pass and every
- * image.  Without all of them the pictures are unavailable for the output's life.
+ * image, or those of the output before when they are of its size (kept by
+ * the output's close; their memory is slow to get on some devices), else
+ * those go first.  Without all of them the pictures are unavailable for
+ * the output's life.  Nothing drawn before is taken as drawn.
  */
 void
 kwl_layers_open(
 	struct kwl_server *server)
 {
+	struct kwl_layer_image images[KWL_LAYERS];
 	struct kwl_compose *compose;
 	struct kwl_layers *layers;
+	VkRenderPass pass;
 	VkResult result;
 	unsigned index;
+	unsigned kept;
 
-	/* Nothing is drawn yet; the size is the output's, the generation a new one. */
+	/* The pictures kept, when of the size drawn at and wanted; others go. */
 	compose = server->compose;
 	layers = &compose->layers;
+	kept = 0U;
+	if (layers->ready && !server->layer_cache_off &&
+	    layers->width == compose->target_width && layers->height == compose->target_height) {
+		pass = layers->pass;
+		memcpy(images, layers->images, sizeof(images));
+		kept = 1U;
+	} else {
+		kwl_layers_close(compose);
+	}
+
+	/* Nothing is drawn yet; the size is the output's, the generation a new one. */
 	memset(layers, 0, sizeof(*layers));
 	layers->width = compose->target_width;
 	layers->height = compose->target_height;
@@ -108,6 +125,15 @@ kwl_layers_open(
 	if (server->layer_cache_off) {
 		layers->failed = 1U;
 		printf("KWL LAYER unavailable reason=off\n");
+		return;
+	}
+
+	/* The pictures kept are ready again. */
+	if (kept) {
+		layers->pass = pass;
+		memcpy(layers->images, images, sizeof(images));
+		layers->ready = 1U;
+		printf("KWL LAYER ready width=%u height=%u images=%u kept=1\n", layers->width, layers->height, KWL_LAYERS);
 		return;
 	}
 
@@ -129,7 +155,7 @@ kwl_layers_open(
 	printf("KWL LAYER ready width=%u height=%u images=%u\n", layers->width, layers->height, KWL_LAYERS);
 }
 
-/* Destroys the layers' pictures with the output (the device is idle); a drawing still to complete is not taken. */
+/* Destroys the layers' pictures (nothing in flight draws or reads them); a drawing still to complete is not taken. */
 void
 kwl_layers_close(
 	struct kwl_compose *compose)
