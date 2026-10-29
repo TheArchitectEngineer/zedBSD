@@ -213,7 +213,8 @@
 
 - main に入れる物: e8f83ab8f（h1、効果あり、回帰なし）、5a2c5f4ff（s1、RDNA と同じ形、効果は揺れの内〜小、回帰は d1 の hang・shot で確かめ済み）。
   入れない物: 5ec449b99（d1）・57f4c5a62（r1）、効果なし（branch agent/p5-ws291 に残す。d1 は比べを軽くすれば state の繰り返しが多い app には効く見込み）。
-  r1・d1 は s1 の上に積んであるので、merge は 5a2c5f4ff までにする。
+  d1・r1 は fc0b16136 で戻した（branch の先頭の source は s1 と同じ。vmunix は s1 と byte 一致 cksum 1379757871）。先頭を merge してよい。
+  d1・r1 の code は 5ec449b99・57f4c5a62 に残る。
 - 次の候補（効く順の見込み）: (1) kernel の record の decode（1 MiB に 3.7 ms。record_push の draw ごとの kern_malloc・free、wire の byte 単位の読み、
   record_append の写しを調べる）、(2) subs の kernel の 1 submit 66 µs の内訳（work channel の submit の USERD の書き込みが window_lock と PRAMIN を
   通るか、executor の 16 draw）、(3) reserve 24 µs・reap 21 µs。nvrtx.vk.perf と kernel の時間の印で内訳を取ってから直す。
