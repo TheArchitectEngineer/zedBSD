@@ -104,7 +104,17 @@
   - `grave-guest.sh` PASS。`hand-guest.sh` 1 回目 FAIL（上の揺れ）、直す前の 2 回目 PASS、直した後 PASS。
   - `scanout-guest.sh`（新）PASS: Venus でもゲームモードに入る（`KWL SCANOUT direct=1 … switch_ms=831`、その後 `direct=0 reason=no-window`、window mode が開き直り、
     still の mview が写る、`OUTPUT/shot.png` を目で確かめた）。比べに image の元の compositor（基点）でも同じ script が PASS: QEMU では BUG-353 は再現しない（nvrtx に固有の見込み）。
-- 未実施: RTX（枠は 15:35 以降、Q1）、回転・head の open と close の T3 化・backlight・列挙・lid と Settings の anchor の非同期化、let-go の破棄の T3 化、arm64・riscv64 の build。
+- 続き（WIP 81df51bd1・96f3e71de・889365c9d・27d4ecfde）:
+  - 回転（output-rotate.c）: 壁紙は `kwl_glass_resize`（A1・T9、古い絵を引き伸ばして描く）、`kwl_device_wait_idle` を外し park の drain に。
+    `kwl_glass_size_prepare/swap/drop` を消した。QEMU 新しい `rotate-guest.sh` PASS（ROTATE 90 と 0、壁紙は thread、その間に frame 4、capture は画）。
+    回転の残りの main の時間は大きさの caches の作り直し（scene・layers・backdrop、Venus で約 1.05 s）。
+  - head: hotplug の tick の整列を変更の操作に（`kwl_heads_sync_later`、head の swapchain の作成 `kwl_heads_make` と破棄は T3）。Settings の経路は
+    その場で（`kwl_heads_sync`）。変更の手順の中から呼ばれた時（`display_in_step`）は入れ子で、外から来た時は変更の終わりを待つ。
+  - 列挙: tick と recover は T3 が読んだ一覧（`kwl_display_enumerate`）で続く（`output_listed`）。
+  - backlight: 上の「答えの形」のとおり T3 の job と main の写し。
+  - QEMU: resize（head の open も T3 に出た、pass_max 0.96 s）・scanout・grave PASS。
+- 未実施: RTX（枠は Q1 の知らせ待ち）、backlight の成功の経路（QEMU に backlight が無い。実機で）、lid の外部・内部と Settings の anchor の非同期化（その場のまま）、
+  let-go の破棄の T3 化（layers・glass maps は main の構造に触るので別の形が要る）、seat の pause の答えを T3 の完了で返す形（p016 と一緒）、arm64・riscv64 の build（背景で実行中）。
 
 ## 注意
 
