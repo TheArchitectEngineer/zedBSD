@@ -3,7 +3,7 @@
 # for each, the median of the steady rate (from 20 s, after the first slow start), and the ratio CUBIC / Reno against
 # the expectation.  Timed runs of 300 s of the model's clock.  Prints a line per scenario and the last line
 # "cc-model: PASS" when every expectation holds.
-#   plan/ws311/tests/cc-model.sh [NAME...]      OUT= the build folder (default build/ws311-host), JOBS= runs at once (10)
+#   plan/tools/tcp-cc/cc-model.sh [NAME...]      OUT= the build folder (default build/ws311-host), JOBS= runs at once (10)
 # Copyright (C) 2026 Awe Morris; SPDX-License-Identifier: Zlib
 set -u
 cd "$(dirname -- "$0")/../../.."

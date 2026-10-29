@@ -5,7 +5,7 @@
 # plan/ws221/tests/vf2-tcp.sh --kernel); this copies tcp-perf to its /tmp and runs ROUNDS rounds of reno then cubic
 # (tcp-perf --cc), each SECONDS long, against plan/ws221/tests/perf-peer.py on the 5330.  Judged from the programs' own
 # lines over SSH, never the console; the board's net.tcpstats halfway through each run must name the control asked for.
-#   plan/ws311/tests/vf2-cc.sh [--bin DIR] [--seconds N] [--rounds N] [--netem "ARGS"] [--mtu N] NAME
+#   plan/tools/tcp-cc/vf2-cc.sh [--bin DIR] [--seconds N] [--rounds N] [--netem "ARGS"] [--mtu N] NAME
 # --mtu N sets the board's adapter (en0) and the 5330's to N for the runs, both back to 1500 at the end (trap EXIT).
 # PEER_ADDRESS may be the 5330's IPv6 address (the runs are then over IPv6).
 # --netem ARGS: the netem qdisc's arguments on the 5330's ifb device (for example "delay 80ms rate 35mbit loss 0.004%
