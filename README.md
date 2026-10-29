@@ -181,13 +181,19 @@ tightly integrated, cohesive desktop experience directly at the OS level.
 
 - The desktop server integrates Wayland, audio, Wi-Fi, Bluetooth, SMS,
   and image/video media management.
+
 - The compositor supports Touch Mode (single app), Desktop Mode
   (multiple windows), and Game Mode (direct scanout).
+
 - Users can seamlessly switch between modes via the touch UI/UX.
+
 - The compositor integrates various on-screen keyboards and
   touch-oriented IMEs.
-- A unified UI toolkit is used for both touch and mouse inputs.
-- GTK/Qt apps can run via the standard Wayland protocol.
+
+- A unified, immediate-mode UI toolkit is used for both touch and
+  mouse inputs.
+
+- GTK/Qt apps are also available via the standard Wayland protocol.
 
 ---
 
