@@ -6,7 +6,7 @@
 | 担当 | 定義 | 仕事（Queue） | worktree / branch | 状態 | 最後の merge |
 | --- | --- | --- | --- | --- | --- |
 | P1 | phase-runner | ws309 (q1662-i06) | `/home/awe/zedBSD-worktrees/p1-ws309f` / `agent/p1-ws309f` | running | 429c6b2dc（merge ffad67106） |
-| P2 | phase-runner | ws291 の NVIDIA の段 (q1670-i05) | `/home/awe/zedBSD-worktrees/p2-ws291q` / `agent/p2-ws291q` | running | 0b35eee90（merge 5aa6b291a） |
+| P2 | phase-runner | ws291 の NVIDIA の段 (q1670-i05) | `/home/awe/zedBSD-worktrees/p2-ws291q` / `agent/p2-ws291q` | returned（2026-10-29 12:1x、p011 cleared） | 6846a495c（merge 73d78bb16） |
 | P3 | phase-runner | ws311 (q1673-i01) | `/home/awe/zedBSD-worktrees/p3-ws311` / `agent/p3-ws311` | running | 642d812f3（merge 1fd28c4de） |
 | P4 | phase-runner | ws307 (q1665-i08) | `/home/awe/zedBSD-worktrees/p4-ws307l` / `agent/p4-ws307l` | running | d6139052b（merge 6b115e9fd） |
 | P5 | phase-runner | ws307 p015 (q1674-i01) | `/home/awe/zedBSD-worktrees/p5-ws307lock` / `agent/p5-ws307lock` | returned（2026-10-29。p5-ws307p002 は upload 待ちで残す） | 8755132b3（merge 478c88fdf） |
