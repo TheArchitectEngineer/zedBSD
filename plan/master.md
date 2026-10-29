@@ -41,6 +41,8 @@ web の取得は禁止のまま。HAL の差分の承認は無い（WS307 の ha
 
 **ユーザー不在の間の自律実行（2026-10-29 12:4x ユーザー「夜まで寝ます。しばらく質問に回答できないので、疑問で止まったphaseがあれば、質問はメッセージ表示だけしてクリック回答にはせず、別なphaseに移って作業を進めてください。」）**: 判断が要る Phase は uncleared・止めにして理由と要る判断を記録し、Q1 は問いをメッセージで書くだけ（クリックの問いにしない）。担当は別の Phase に移る。
 
+**手が空いた担当の進め方（2026-10-29 ユーザー「作業の手が空いてしまったら、テストなしで実装だけ進める戦略で、残っているWSのphaseをまんべんなく進めましょう。」）**: 手の空いた担当は、残っている WS の Phase を試験なしで実装だけ進める（build warning 0 と host の試験まで、実機・QEMU は無し）。Phase は「実装済み・試験未実施」と記録し cleared にしない。branch は試験の後に merge する（P6 の 2026-10-29 の運用と同じ、Q1 の解釈）。
+
 ### 統合の注意
 
 <!-- master:merge:start -->
@@ -104,7 +106,7 @@ web の取得は禁止のまま。HAL の差分の承認は無い（WS307 の ha
 ### 次の番号
 
 <!-- master:next:start -->
-BUG-356 · q1676 · WS314 · KL_VERSION 97。使う前に衝突を確かめる（`ls plan/bugs`・`ls -d plan/ws*`・`grep q16 plan/queue.md`）。
+BUG-356 · q1678 · WS314 · KL_VERSION 97。使う前に衝突を確かめる（`ls plan/bugs`・`ls -d plan/ws*`・`grep q16 plan/queue.md`）。
 <!-- master:next:end -->
 
 ## 目的
