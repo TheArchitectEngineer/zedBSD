@@ -10,10 +10,11 @@
  * VRAM, mapped in the work channel's space), the executor's own GPU memory, and
  * the running of its push buffers on the work channel.
  *
- * The executor runs under the node's lock, and so do these, except
- * nvrtx_vk_node_blob_attach(), which the node calls from a blob's
- * creation and which takes the lock itself, and nvrtx_vk_node_run_wait(),
- * which the renderer's completer calls without it.  Every run is mapped
+ * The executor runs under the session's exec_lock and the node's lock,
+ * and so do these, except nvrtx_vk_node_blob_attach(), which the node
+ * calls from a blob's creation and which takes both itself, and
+ * nvrtx_vk_node_run_wait(), which the renderer's completer calls without
+ * them; nvrtx_vk_gpu_wait() lets the node's lock go while it waits.  Every run is mapped
  * once for the work channel: the VA it gets lives as long as the run.
  *
  * A push buffer is put on the session's channel (its own, or the shared
@@ -113,9 +114,10 @@ nvrtx_vk_node_blob_attach(
 	if (error != 0)
 		return error;
 
-	/* The memory takes its reference under the node's lock, as everything the executor holds. */
+	/* The memory takes its reference holding the session's executor and the node's lock, as everything the executor holds. */
 	cpu = vk_node_backing_view(node, backing);
 
+	mutex_lock(&session->exec_lock);
 	mutex_lock(&node->lock);
 
 	error = nvrtx_vk_memory_attach(session->vk, blob_id, bytes, cpu, va, backing);
@@ -123,6 +125,7 @@ nvrtx_vk_node_blob_attach(
 		backing->refs++;
 
 	mutex_unlock(&node->lock);
+	mutex_unlock(&session->exec_lock);
 
 	/* A blob no memory takes keeps no mapping. */
 	if (error != 0) {
@@ -434,9 +437,13 @@ nvrtx_vk_gpu_submit(
 }
 
 /*
- * Waits for a run of the session's to end, up to its time from the
- * submission; the wait under the node's lock is counted.  Returns 0, or
- * EIO when it did not end in time or the session's runs are lost.
+ * Waits for a run of the session's to end (the executor, for one of its
+ * push buffers' slots), up to its time; the wait is counted.  The node's
+ * lock, which the executor holds, is let go while the wait lasts, so other
+ * sessions' frames go on: the session's executor stays its frame's (the
+ * session's exec_lock), and nothing the frame holds across the wait is the
+ * node's.  Returns 0, or EIO when it did not end in time or the session's
+ * runs are lost.
  */
 int
 nvrtx_vk_gpu_wait(
@@ -447,6 +454,7 @@ nvrtx_vk_gpu_wait(
 	struct nvrtx_node *node;
 	uint64_t waited;
 	bool passed;
+	int held;
 	int error;
 
 	session = owner;
@@ -457,8 +465,17 @@ nvrtx_vk_gpu_wait(
 	if (passed)
 		return 0;
 
-	/* Waits, and counts the wait. */
+	/* Waits without the node's lock, and counts the wait. */
+	held = mutex_owned(&node->lock);
+	if (held != 0)
+		mutex_unlock(&node->lock);
+
 	error = vk_node_wait(session, ticket->fence, ticket->submitted_us, &waited);
+
+	if (held != 0)
+		mutex_lock(&node->lock);
+
+	/* Counted as a wait of the executor's. */
 	nvrtx_node_count(node, &node->counts.blocked, 1U);
 	nvrtx_node_count(node, &node->counts.blocked_us, waited);
 	if (error != 0)
@@ -589,19 +606,36 @@ nvrtx_vk_gpu_last(
 }
 
 /*
- * Waits until the session's runs have ended (its newest one).  Returns 0,
- * or EIO when it did not end in time or the session's runs are lost.
+ * Waits until the session's runs have ended (its newest one), keeping the
+ * node's lock (the waits of a memory's or a run's freeing, a copy by the
+ * CPU and vkQueueWaitIdle, whose callers hold what the node's lock guards
+ * across them); the wait is counted.  Returns 0, or EIO when it did not end
+ * in time or the session's runs are lost.
  */
 int
 nvrtx_vk_gpu_idle(
 	void *owner)
 {
+	struct nvrtx_session *session;
+	struct nvrtx_node *node;
 	struct nvrtx_vk_ticket last;
+	uint64_t waited;
+	bool passed;
 	int error;
 
-	/* The newest run. */
+	session = owner;
+	node = session->node;
+
+	/* The newest run; one that ended is no wait. */
 	nvrtx_vk_gpu_last(owner, &last);
-	error = nvrtx_vk_gpu_wait(owner, &last);
+	passed = vk_node_passed(session, last.fence);
+	if (passed)
+		return 0;
+
+	/* Waits, and counts the wait. */
+	error = vk_node_wait(session, last.fence, last.submitted_us, &waited);
+	nvrtx_node_count(node, &node->counts.blocked, 1U);
+	nvrtx_node_count(node, &node->counts.blocked_us, waited);
 	if (error != 0)
 		return error;
 

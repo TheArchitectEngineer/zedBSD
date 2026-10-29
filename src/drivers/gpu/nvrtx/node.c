@@ -470,10 +470,11 @@ node_open(
 	struct nvrtx_session *opened;
 	int error;
 
-	/* Allocates the session. */
+	/* Allocates the session, with the lock of its executor. */
 	opened = kern_calloc(1U, sizeof(*opened));
 	if (opened == NULL)
 		return ENOMEM;
+	(void)mutex_init(&opened->exec_lock, LOCK_RANK_DEVICE, "nvrtx session executor");
 
 	/* Opens its executor session. */
 	error = nvrtx_vk_session_open(opened, &opened->vk);
@@ -504,12 +505,14 @@ node_close(
 	/* Ends the session's lease, if it holds it. */
 	nvrtx_present_session_close(node, session);
 
-	/* Closes the executor session; a payload still held keeps it (and is shown). */
+	/* Closes the executor session holding it; a payload still held keeps it (and is shown). */
+	mutex_lock(&closing->exec_lock);
 	mutex_lock(&node->lock);
 
 	error = nvrtx_vk_session_close(&closing->vk);
 
 	mutex_unlock(&node->lock);
+	mutex_unlock(&closing->exec_lock);
 
 	if (error != 0)
 		nvrtx_stage_mark("gpu-device: an executor session closed with %d", error);

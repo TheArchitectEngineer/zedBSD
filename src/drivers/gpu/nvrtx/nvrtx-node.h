@@ -127,6 +127,12 @@ struct nvrtx_resource {
  * made, or the boot asked for none), whose runs all sessions share.
  * quarantined (under queue_lock) is set by the core's isolate: the
  * session's channel and memory are kept the device's (never given back).
+ * lane is the renderer's lane its frames and markers go through (set with
+ * channel: its number's lane, NULL for the node's main lane).  exec_lock
+ * (taken before the node's lock) holds the session's executor for one
+ * frame, a blob's attach or the close: the node's lock is let go while a
+ * frame waits for one of its runs to end, and the session's executor stays
+ * its frame's meanwhile.
  */
 struct nvrtx_session {
 	struct nvrtx_node *node;
@@ -142,6 +148,8 @@ struct nvrtx_session {
 	struct nvrtx_work_channel *channel;
 	int shared;
 	int quarantined;
+	struct nvrtx_lane *lane;
+	struct mutex exec_lock;
 };
 
 /*
@@ -163,6 +171,28 @@ struct nvrtx_node_entry {
 	uint8_t *wire;
 	uint32_t run_fence;
 	uint64_t run_us;
+};
+
+/*
+ * One lane of the renderer (runtime.c): a queue of frames and markers (head
+ * to tail) its worker thread takes in order, woken by available, and the
+ * markers parked for their runs (parked_head to parked_tail) its completer
+ * thread completes in order, woken by parked_more; all under the node's
+ * queue_lock.  The node's main lane serves every session that shares the
+ * work channel; each session's number on the runlist has a lane of its own,
+ * whose threads are made the first time a session takes the number
+ * (started) and serve every session that has it, one after the other, for
+ * the node's life.
+ */
+struct nvrtx_lane {
+	struct nvrtx_node *node;
+	struct nvrtx_node_entry *head;
+	struct nvrtx_node_entry *tail;
+	struct wait_queue available;
+	struct nvrtx_node_entry *parked_head;
+	struct nvrtx_node_entry *parked_tail;
+	struct wait_queue parked_more;
+	int started;
 };
 
 /*
@@ -254,10 +284,10 @@ struct nvrtx_node_perf {
  * cursor_has_image is set, so an image equal to it is not sent again.
  *
  * The renderer (runtime.c, nvrtx.vk=1; renderer is set when it is bound):
- * queue_lock (IRQ-safe) guards the queue from head to tail, the parked
- * markers from parked_head to parked_tail, the markers, every session's
- * pending and queued counts and faulted; available wakes the worker,
- * parked_more the completer, retired the drains.  faulted is set by the GPU
+ * queue_lock (IRQ-safe) guards the lanes (main_lane, and lanes, one per
+ * session's number: their queues and parked markers), the markers, every
+ * session's pending and queued counts and faulted; retired wakes the
+ * drains.  faulted is set by the GPU
  * core's fault: nothing new is taken and what is queued or parked completes
  * with EIO.
  *
@@ -324,13 +354,9 @@ struct nvrtx_node {
 	uint32_t *cursor_pixels;
 	int renderer;
 	struct spinlock queue_lock;
-	struct wait_queue available;
 	struct wait_queue retired;
-	struct nvrtx_node_entry *head;
-	struct nvrtx_node_entry *tail;
-	struct wait_queue parked_more;
-	struct nvrtx_node_entry *parked_head;
-	struct nvrtx_node_entry *parked_tail;
+	struct nvrtx_lane main_lane;
+	struct nvrtx_lane lanes[NVRTX_WORK_SESSION_CHANNELS];
 	struct nvrtx_node_entry markers[NVRTX_NODE_MARKERS];
 	int faulted;
 	struct mutex channel_lock;

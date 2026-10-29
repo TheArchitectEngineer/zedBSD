@@ -127,6 +127,9 @@ static void runtime_channel_error(void *argument, uint32_t chid, uint32_t type);
 static bool runtime_session_stopped(struct nvrtx_node *node, struct nvrtx_session *session);
 static void runtime_worker(void *argument);
 static void runtime_completer(void *argument);
+static int runtime_lane_start(struct nvrtx_lane *lane);
+static struct nvrtx_lane *runtime_lane(struct nvrtx_node *node, struct nvrtx_session *session);
+static void runtime_wake_lanes(struct nvrtx_node *node);
 static bool runtime_park(struct nvrtx_node *node, struct nvrtx_node_entry *entry);
 static void runtime_dequeued(struct nvrtx_node *node, struct nvrtx_session *owner);
 static void runtime_retire(struct nvrtx_node *node, struct nvrtx_node_entry *entry);
@@ -168,15 +171,26 @@ void
 nvrtx_runtime_bind(
 	struct nvrtx_node *node)
 {
+	struct nvrtx_lane *lane;
+	uint32_t index;
 	bool wanted;
 
-	/* The queue, the parked markers, their lock and the wait queues. */
+	/* The lanes (the main one and one per session's number), their lock and the wait queues. */
 	spin_init(&node->queue_lock, LOCK_RANK_DEVICE, "nvrtx queue");
-	waitq_init(&node->available, "nvrtx queue available");
 	waitq_init(&node->retired, "nvrtx queue retired");
-	waitq_init(&node->parked_more, "nvrtx queue parked");
-	node->parked_head = NULL;
-	node->parked_tail = NULL;
+	for (index = 0U; index <= NVRTX_WORK_SESSION_CHANNELS; index++) {
+		lane = &node->main_lane;
+		if (index < NVRTX_WORK_SESSION_CHANNELS)
+			lane = &node->lanes[index];
+		lane->node = node;
+		lane->head = NULL;
+		lane->tail = NULL;
+		lane->parked_head = NULL;
+		lane->parked_tail = NULL;
+		lane->started = 0;
+		waitq_init(&lane->available, "nvrtx lane available");
+		waitq_init(&lane->parked_more, "nvrtx lane parked");
+	}
 
 	/* The sessions' channels: none made yet, the first number taken first, unless the boot asked for none. */
 	(void)mutex_init(&node->channel_lock, LOCK_RANK_DEVICE, "nvrtx channels");
@@ -228,16 +242,17 @@ nvrtx_runtime_start(
 		/* The GSP's error reports on channels reach the recovery from now on. */
 		__atomic_store_n(&node->gpu->channel_error_argument, node, __ATOMIC_RELEASE);
 		__atomic_store_n(&node->gpu->channel_error, runtime_channel_error, __ATOMIC_RELEASE);
-		error = kthread_create(runtime_completer, node, SCHED_PRIORITY_DEFAULT, &completer);
+		error = kthread_create(runtime_completer, &node->main_lane, SCHED_PRIORITY_DEFAULT, &completer);
 	}
 	if (error == 0) {
 		completer->detached = 1;
 		thread_start(completer);
-		error = kthread_create(runtime_worker, node, SCHED_PRIORITY_DEFAULT, &worker);
+		error = kthread_create(runtime_worker, &node->main_lane, SCHED_PRIORITY_DEFAULT, &worker);
 	}
 	if (error == 0) {
 		worker->detached = 1;
 		thread_start(worker);
+		node->main_lane.started = 1;
 		return;
 	}
 
@@ -274,7 +289,7 @@ nvrtx_runtime_stop(
 
 	node->faulted = 1;
 	node->reaper_stop = 1;
-	waitq_wake_all(&node->available);
+	runtime_wake_lanes(node);
 
 	spin_unlock_irqrestore(&node->queue_lock, enabled);
 
@@ -485,6 +500,9 @@ runtime_submit(
 	if (bytes != 0U && wire == NULL)
 		return EINVAL;
 
+	/* The session's channel and lane before its first entry is queued. */
+	runtime_channel(node, session);
+
 	/* Allocates the entry with its copy of the frame. */
 	entry = kern_calloc(1U, sizeof(*entry) + bytes);
 	if (entry == NULL)
@@ -576,6 +594,9 @@ runtime_reserve(
 	owned = runtime_timeline_owned(owner, timeline);
 	if (!owned)
 		return EINVAL;
+
+	/* The session's channel and lane before its first marker is queued. */
+	runtime_channel(node, owner);
 
 	/* Takes a free marker unless the device faulted or the session is being stopped. */
 	enabled = spin_lock_irqsave(&node->queue_lock);
@@ -853,7 +874,7 @@ runtime_fault(
 	if (node->faulted == 0)
 		first = true;
 	node->faulted = 1;
-	waitq_wake_all(&node->available);
+	runtime_wake_lanes(node);
 
 	spin_unlock_irqrestore(&node->queue_lock, enabled);
 
@@ -913,6 +934,7 @@ static void
 runtime_worker(
 	void *argument)
 {
+	struct nvrtx_lane *lane;
 	struct nvrtx_node *node;
 	struct nvrtx_node_entry *entry;
 	struct nvrtx_session *owner;
@@ -922,21 +944,22 @@ runtime_worker(
 	int faulted;
 	int error;
 
-	node = argument;
+	lane = argument;
+	node = lane->node;
 
-	/* Takes entries one at a time, sleeping while the queue is empty. */
+	/* Takes the lane's entries one at a time, sleeping while its queue is empty. */
 	for (;;) {
 		enabled = spin_lock_irqsave(&node->queue_lock);
 
-		while (node->head == NULL) {
-			observed = waitq_sequence(&node->available);
-			(void)waitq_sleep(&node->available, &node->queue_lock, observed, 0U, 0U);
+		while (lane->head == NULL) {
+			observed = waitq_sequence(&lane->available);
+			(void)waitq_sleep(&lane->available, &node->queue_lock, observed, 0U, 0U);
 		}
 
-		entry = node->head;
-		node->head = entry->next;
-		if (node->head == NULL)
-			node->tail = NULL;
+		entry = lane->head;
+		lane->head = entry->next;
+		if (lane->head == NULL)
+			lane->tail = NULL;
 		entry->next = NULL;
 		entry->state = NVRTX_ENTRY_RUNNING;
 		owner = entry->session;
@@ -1006,6 +1029,7 @@ static void
 runtime_completer(
 	void *argument)
 {
+	struct nvrtx_lane *lane;
 	struct nvrtx_node *node;
 	struct nvrtx_node_entry *entry;
 	unsigned long enabled;
@@ -1013,19 +1037,20 @@ runtime_completer(
 	int faulted;
 	int error;
 
-	node = argument;
+	lane = argument;
+	node = lane->node;
 
-	/* Takes the oldest parked marker, sleeping while none is parked. */
+	/* Takes the lane's oldest parked marker, sleeping while none is parked. */
 	for (;;) {
 		enabled = spin_lock_irqsave(&node->queue_lock);
 
-		while (node->parked_head == NULL) {
-			observed = waitq_sequence(&node->parked_more);
-			(void)waitq_sleep(&node->parked_more, &node->queue_lock, observed, 0U, 0U);
+		while (lane->parked_head == NULL) {
+			observed = waitq_sequence(&lane->parked_more);
+			(void)waitq_sleep(&lane->parked_more, &node->queue_lock, observed, 0U, 0U);
 		}
 
 		/* The head stays parked (counted pending) until it is completed. */
-		entry = node->parked_head;
+		entry = lane->parked_head;
 		faulted = node->faulted;
 
 		spin_unlock_irqrestore(&node->queue_lock, enabled);
@@ -1041,9 +1066,9 @@ runtime_completer(
 		/* Takes it off the parked list, then retires it. */
 		enabled = spin_lock_irqsave(&node->queue_lock);
 
-		node->parked_head = entry->next;
-		if (node->parked_head == NULL)
-			node->parked_tail = NULL;
+		lane->parked_head = entry->next;
+		if (lane->parked_head == NULL)
+			lane->parked_tail = NULL;
 		entry->next = NULL;
 
 		spin_unlock_irqrestore(&node->queue_lock, enabled);
@@ -1062,8 +1087,12 @@ runtime_park(
 	struct nvrtx_node *node,
 	struct nvrtx_node_entry *entry)
 {
+	struct nvrtx_lane *lane;
 	unsigned long enabled;
 	bool passed;
+
+	/* The lane of the marker's session. */
+	lane = runtime_lane(node, entry->session);
 
 	/* The session's newest run, as its frames before the marker left it. */
 	mutex_lock(&node->lock);
@@ -1084,19 +1113,19 @@ runtime_park(
 	enabled = spin_lock_irqsave(&node->queue_lock);
 
 	entry->session->queued--;
-	if (passed && node->parked_head == NULL) {
+	if (passed && lane->parked_head == NULL) {
 		spin_unlock_irqrestore(&node->queue_lock, enabled);
 		return false;
 	}
 	entry->state = NVRTX_ENTRY_PARKED;
 	entry->next = NULL;
-	if (node->parked_tail == NULL) {
-		node->parked_head = entry;
+	if (lane->parked_tail == NULL) {
+		lane->parked_head = entry;
 	} else {
-		node->parked_tail->next = entry;
+		lane->parked_tail->next = entry;
 	}
-	node->parked_tail = entry;
-	waitq_wake_one(&node->parked_more);
+	lane->parked_tail = entry;
+	waitq_wake_one(&lane->parked_more);
 
 	spin_unlock_irqrestore(&node->queue_lock, enabled);
 
@@ -1539,11 +1568,12 @@ runtime_execute(
 	/* The session's channel, before its first frame takes the node's lock. */
 	runtime_channel(node, session);
 
-	/* Runs the frame, timing the lock's wait and hold only when the counts are asked for. */
+	/* Runs the frame holding the session's executor, timing the node's lock's wait and hold only when the counts are asked for. */
 	asked = 0U;
 	if (node->perf != 0)
 		asked = nvrtx_now_us();
 
+	mutex_lock(&session->exec_lock);
 	mutex_lock(&node->lock);
 
 	taken = 0U;
@@ -1552,6 +1582,7 @@ runtime_execute(
 	error = nvrtx_vk_stream_execute(session->vk, wire, bytes, nvrtx_vk_dispatch);
 
 	mutex_unlock(&node->lock);
+	mutex_unlock(&session->exec_lock);
 
 	/* Counts the frame, its wait and its hold. */
 	if (node->perf != 0) {
@@ -1570,10 +1601,12 @@ runtime_execute(
 }
 
 /*
- * Gives a session its channel when it has none yet: a channel of its own
- * under the next free number, or the driver's work channel to share when
- * the boot asked for none, every number is in use or the making failed.
- * The node's lock is not held (the making calls the GSP).
+ * Gives a session its channel when it has none yet (before its first
+ * frame or marker is queued or run): a channel of its own under the next
+ * free number, with that number's lane, or the driver's work channel to
+ * share (and the main lane) when the boot asked for none, every number is
+ * in use or the making failed.  A faulted device or a stopping session
+ * gets none.  The node's lock is not held (the making calls the GSP).
  */
 static void
 runtime_channel(
@@ -1583,8 +1616,10 @@ runtime_channel(
 	struct nvrtx_work_channel *made;
 	struct nvrtx_work_channel *given;
 	unsigned long enabled;
+	int refused;
 	int number;
 	int error;
+	int lane_error;
 
 	/* A session that has its channel keeps it (it is given once and never changes). */
 	given = __atomic_load_n(&session->channel, __ATOMIC_ACQUIRE);
@@ -1595,6 +1630,20 @@ runtime_channel(
 	mutex_lock(&node->channel_lock);
 
 	if (session->channel != NULL) {
+		mutex_unlock(&node->channel_lock);
+		return;
+	}
+
+	/* A faulted device, or a session being stopped, gets none (its work answers EIO). */
+	enabled = spin_lock_irqsave(&node->queue_lock);
+
+	refused = node->faulted;
+	if (session->stopping != 0)
+		refused = 1;
+
+	spin_unlock_irqrestore(&node->queue_lock, enabled);
+
+	if (refused != 0) {
 		mutex_unlock(&node->channel_lock);
 		return;
 	}
@@ -1634,6 +1683,12 @@ runtime_channel(
 
 		spin_unlock_irqrestore(&node->queue_lock, enabled);
 
+		/* Its number's lane, when its threads run (else the main lane). */
+		lane_error = runtime_lane_start(&node->lanes[number]);
+		if (lane_error == 0)
+			__atomic_store_n(&session->lane, &node->lanes[number], __ATOMIC_RELEASE);
+		if (lane_error != 0)
+			nvrtx_stage_mark("renderer: channel %u's lane has no threads (%d); the main lane serves it", (unsigned)made->chid, lane_error);
 		__atomic_store_n(&session->channel, made, __ATOMIC_RELEASE);
 	} else {
 		session->shared = 1;
@@ -1647,26 +1702,95 @@ runtime_channel(
 		nvrtx_stage_mark("renderer: a session shares the work channel (%d)", error);
 }
 
-/* Appends an entry to the queue and wakes the worker; the caller holds queue_lock. */
+/*
+ * Starts a lane's completer and worker the first time a session takes its
+ * number; they serve the lane for the node's life.  Returns 0 once both
+ * run (a lane started before needs nothing), else the thread's error: the
+ * session then goes through the main lane.
+ */
+static int
+runtime_lane_start(
+	struct nvrtx_lane *lane)
+{
+	struct thread *completer;
+	struct thread *worker;
+	int error;
+
+	/* A lane already served. */
+	if (lane->started != 0)
+		return 0;
+
+	/* The completer of its parked markers, then its worker. */
+	error = kthread_create(runtime_completer, lane, SCHED_PRIORITY_DEFAULT, &completer);
+	if (error != 0)
+		return error;
+	completer->detached = 1;
+	thread_start(completer);
+
+	error = kthread_create(runtime_worker, lane, SCHED_PRIORITY_DEFAULT, &worker);
+	if (error != 0)
+		return error;
+	worker->detached = 1;
+	thread_start(worker);
+
+	/* Succeeded: the lane takes entries. */
+	lane->started = 1;
+	return 0;
+}
+
+/* Gives the lane a session's frames and markers go through: its number's, or the main one. */
+static struct nvrtx_lane *
+runtime_lane(
+	struct nvrtx_node *node,
+	struct nvrtx_session *session)
+{
+	struct nvrtx_lane *lane;
+
+	/* The session's own lane, set with its channel, else the main one. */
+	lane = __atomic_load_n(&session->lane, __ATOMIC_ACQUIRE);
+	if (lane == NULL)
+		return &node->main_lane;
+
+	/* Succeeded: the session's lane. */
+	return lane;
+}
+
+/* Wakes every lane's worker (a fault or the stop: what is queued completes with EIO); the caller holds queue_lock. */
+static void
+runtime_wake_lanes(
+	struct nvrtx_node *node)
+{
+	uint32_t index;
+
+	/* The main lane, then each session's number's. */
+	waitq_wake_all(&node->main_lane.available);
+	for (index = 0U; index < NVRTX_WORK_SESSION_CHANNELS; index++)
+		waitq_wake_all(&node->lanes[index].available);
+}
+
+/* Appends an entry to its session's lane and wakes the lane's worker; the caller holds queue_lock. */
 static void
 runtime_enqueue(
 	struct nvrtx_node *node,
 	struct nvrtx_node_entry *entry)
 {
-	/* At the tail, counted in its session's queue. */
+	struct nvrtx_lane *lane;
+
+	/* At the tail of its session's lane, counted in its session's queue. */
 	entry->state = NVRTX_ENTRY_QUEUED;
 	entry->session->queued++;
 	entry->next = NULL;
-	if (node->tail == NULL) {
-		node->head = entry;
+	lane = runtime_lane(node, entry->session);
+	if (lane->tail == NULL) {
+		lane->head = entry;
 	} else {
-		node->tail->next = entry;
+		lane->tail->next = entry;
 	}
 
-	node->tail = entry;
+	lane->tail = entry;
 
 	/* The worker takes it. */
-	waitq_wake_one(&node->available);
+	waitq_wake_one(&lane->available);
 }
 
 /* Finds the marker a token names for the session and completion, or NULL; the caller holds queue_lock. */
