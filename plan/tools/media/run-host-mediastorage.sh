@@ -13,7 +13,7 @@ printf '#!/bin/sh\nLD_LIBRARY_PATH=%s exec %s "$@"\n' "$media_linux/lib" "$media
 	>"$media_host/libexec/keiland-preview"
 chmod 0755 "$media_host/libexec/keiland-preview"
 cp include/libc/sha2.h "$media_host/inc/sha2.h"
-cp userland/desktop/include/keiland/keiland.h "$media_host/inc/keiland/keiland.h"
+cp userland/desktop/include/keiland/keiland*.h "$media_host/inc/keiland/"
 ${CC:-cc} -std=gnu99 -D_GNU_SOURCE -O1 -g -w -I"$media_host/inc" \
 	-c src/libc/openbsd-sha2.c -o "$media_host/sha2.o"
 ${CC:-cc} -std=gnu99 -D_GNU_SOURCE -O1 -g -Wall -Wextra -Werror \

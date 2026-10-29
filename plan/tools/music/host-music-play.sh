@@ -9,7 +9,7 @@ cd "$(dirname -- "$0")/../../.."
 out=${1:-build/ws177/host-music-play}
 dir=$(dirname -- "$out")
 mkdir -p "$dir/inc/keiland"
-cp userland/desktop/include/keiland/keiland.h "$dir/inc/keiland/keiland.h"
+cp userland/desktop/include/keiland/keiland*.h "$dir/inc/keiland/"
 ${CC:-cc} -std=gnu11 -D_GNU_SOURCE -O1 -g -Wall -Wextra -Werror \
 	-fsanitize=address,undefined -fno-sanitize-recover=all -fno-omit-frame-pointer \
 	-I. -I"$dir/inc" -Iuserland/desktop/music plan/tools/music/host-music-play.c userland/desktop/music/play.c \

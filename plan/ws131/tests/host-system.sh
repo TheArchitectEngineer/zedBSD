@@ -9,8 +9,8 @@ set -eu
 cd "$(dirname -- "$0")/../../.."
 out=${1:-build/ws131-host/host-system}
 mkdir -p "$(dirname -- "$out")/include/keiland"
-# Only keiland/keiland.h from the tree: the tree's wayland-client.h is zedBSD's, the host's is the one to link with.
-cp userland/desktop/include/keiland/keiland.h "$(dirname -- "$out")/include/keiland/keiland.h"
+# Only keiland/keiland*.h from the tree: the tree's wayland-client.h is zedBSD's, the host's is the one to link with.
+cp userland/desktop/include/keiland/keiland*.h "$(dirname -- "$out")/include/keiland/"
 ${CC:-cc} -std=gnu99 -D_GNU_SOURCE -O1 -g -Wall -Wextra -Werror -pthread \
 	-fsanitize=address,undefined -fno-sanitize-recover=all -fno-omit-frame-pointer \
 	-I. -I"$(dirname -- "$out")/include" \

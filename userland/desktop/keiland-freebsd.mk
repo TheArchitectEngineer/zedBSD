@@ -186,7 +186,8 @@ install: all install-headers
 KEILAND_FREEBSD_PUBLIC_HEADERS := $(shell find userland/desktop/include/wayland -type f -name '*.h') \
 	$(addprefix userland/desktop/include/,wayland-client.h wayland-client-core.h wayland-client-protocol.h \
 	wayland-util.h xdg-shell-client-protocol.h primary-selection-unstable-v1-client-protocol.h \
-	tablet-unstable-v2-client-protocol.h truetype/truetype.h keiland/keiland.h)
+	tablet-unstable-v2-client-protocol.h truetype/truetype.h) \
+	$(sort $(wildcard userland/desktop/include/keiland/keiland*.h))
 install-headers:
 	@mkdir -p "$(DESTDIR)$(KEILAND_PREFIX)/include"
 	install -m 0644 include/libc/pdf.h "$(DESTDIR)$(KEILAND_PREFIX)/include/pdf.h"

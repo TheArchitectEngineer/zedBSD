@@ -3,7 +3,7 @@
 # WS314 libkeiland の公開の API を component ごとの header に分け、プログラミングの解説を書き、fd と UNIX への依存を API から外す
 
 - Master: [plan/master.md](../master.md)（2026-10-30 作成）。Primary Milestone: MG006。
-- Status: planning（2026-10-30 Q1 が作成、q1690 で P2）
+- Status: incomplete（2026-10-30 Q1 が作成、q1690 で P2 が p001 から実行中）
 - 目標: (1) `userland/desktop/include/keiland/keiland.h` の定義を component ごとの `keiland_*.h` に分け、`keiland.h` はそれらを include する入口にする。
   (2) Keiland のプログラミングの解説（英語）を `docs/` に書く。(3) app・desktop の program が fd・pipe・socket・fork に触れない API に置き換え、
   `kl_app_watch_fd()` と `kl_instance_fd()` を公開の API から外す。その後に解説へ新しい API を足す。
@@ -19,6 +19,7 @@
 7. 「libkeilandについて提案していただいたことをすべて承認します。」（下の「承認された案」）
 8. 「include/keiland/keiland.hにすべての定義が入っていますが、include/keiland/keiland_*.hに、それぞれのkl_xxxのコンポーネントの定義を、分割して移したいです。トップレベルはkeiland.hのままで、そこからincludeされます。さらに、kl_uiのimmediate mode UIのプログラミングモデルを、docs/にドキュメント化してほしいです。Keilandのプログラミングの解説ドキュメントです。appの作成、windowの作成、タイトルバーの作成、uiの作成とメインループ、widgetの作成、メニューの作成、その他の機能の使い方、の順で、人間が呼んでも理解しやすい構成にしてほしいです。英語で記述してください。そのあとで、fdを削除するという、先ほどまでの合意事項のリファクタリングを行います。ドキュメントには、fdのAPIのことは書かないで進めておき、fdの削除後、作成されたAPIに関する説明を追記します。」
 9. 「以上のことを、WSを立てて、サブエージェントですすめてほしいです。」
+10. （Q1 経由）「ws314のp001で、コメントから開発情報を削除してほしいです。」
 
 ## 承認された案（2026-10-30 Q1 の提案、上の 7 で承認）
 
@@ -35,7 +36,7 @@
 
 | Phase | 目的 | 状態 | 依存 |
 | --- | --- | --- | --- |
-| ws314-p001 | `keiland.h` を `keiland_*.h` に分ける（定義の移動だけ、API・ABI は変えない。KL_VERSION の履歴の comment の置き場所も） | planned | — |
+| [ws314-p001](phase001/phase.md) | `keiland.h` を `keiland_*.h` に分ける（定義の移動だけ、API・ABI は変えない。KL_VERSION の履歴の comment の置き場所も）。comment から開発の管理情報を除く（決定 10） | cleared | — |
 | ws314-p002 | `docs/` に Keiland のプログラミングの解説（英語）: app → window → titlebar → ui と main loop → widget → menu → その他。fd の API は書かない | planned | p001 |
 | ws314-p003 | 設計: post・`kl_process`・`kl_instance` の event・libbrowser の network の thread（design.md、design-reviewer） | planned | p001 |
 | ws314-p004 | `kl_app_post`・`kl_window_post` の実装と Mailer の移行 | planned | p003 |
@@ -49,3 +50,4 @@
 ## Resume point
 
 - 2026-10-30 Q1: 作成。P2 が q1690 で p001 から。
+- 2026-10-30 P2: p001 cleared（30 の header、zedBSD 3 arch・Linux の前後の symbol が同じ）。p002 の解説を書いた。

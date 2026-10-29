@@ -14,9 +14,9 @@ cc=${CC:-clang}
 . plan/tools/fresh-out.sh
 fresh_out "$out"
 
-# Only <keiland/keiland.h> is taken from the desktop's headers: include/libc is zedBSD's C library.
+# Only <keiland/keiland*.h> are taken from the desktop's headers: include/libc is zedBSD's C library.
 mkdir -p "$out/include/keiland"
-ln -sf "$root/userland/desktop/include/keiland/keiland.h" "$out/include/keiland/keiland.h"
+ln -sf "$root/userland/desktop/include/keiland/"keiland*.h "$out/include/keiland/"
 
 for variant in plain asan ubsan; do
 	extra=
