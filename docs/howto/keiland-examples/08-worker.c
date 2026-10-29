@@ -144,6 +144,8 @@ main(void)
 		fprintf(stderr, "primes: no font %s (%s)\n", FONT, strerror(status));
 		return 1;
 	}
+
+	/* Gives the widgets the font. */
 	primes.style.text = &primes.text;
 	snprintf(primes.status, sizeof(primes.status), "Not counted yet.");
 
@@ -360,6 +362,8 @@ primes_event(
 			primes_post(primes, event->input.code, event->input.data);
 			return;
 		}
+
+		/* Offers any other input to the widgets. */
 		primes_input(primes, &event->input);
 	}
 
@@ -383,6 +387,8 @@ primes_input(
 		primes->resized = 1;
 		return;
 	}
+
+	/* The close button ends the program. */
 	if (input->kind == KL_WINDOW_CLOSE) {
 		primes->closed = 1;
 		return;
@@ -452,6 +458,8 @@ primes_start(
 		snprintf(primes->status, sizeof(primes->status), "No memory to count.");
 		return;
 	}
+
+	/* Gives the thread what it works with. */
 	count->app = primes->app;
 	count->window = primes->window;
 	count->limit = LIMIT;
@@ -464,6 +472,8 @@ primes_start(
 		snprintf(primes->status, sizeof(primes->status), "No thread to count on.");
 		return;
 	}
+
+	/* Remembers the running count. */
 	primes->count = count;
 	primes->done = 0;
 	primes->found = 0;
@@ -545,6 +555,8 @@ primes_count(
 		if (prime)
 			count->primes++;
 	}
+
+	/* Notes how far the count went. */
 	count->done = number;
 
 	/* Hands the count back; it fails only without memory, and then the window shows the count as running. */

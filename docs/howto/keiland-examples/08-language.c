@@ -115,6 +115,7 @@ main(void)
 	uint32_t request;
 	int timeout;
 	int status;
+	int japanese;
 	int taken;
 	int error;
 
@@ -132,7 +133,8 @@ main(void)
 	status = kl_tr_open(DOMAIN, language.shown);
 	if (status != 0)
 		fprintf(stderr, "language: the texts stay in English (%s)\n", strerror(status));
-	if (strcmp(language.shown, "ja") == 0)
+	japanese = strcmp(language.shown, "ja");
+	if (japanese == 0)
 		language.asked = 1;
 
 	/* The settings, only to ask the desktop for a change: the program never reads the language back from them. */
@@ -173,6 +175,8 @@ main(void)
 		fprintf(stderr, "language: no font %s (%s)\n", FONT, strerror(status));
 		return 1;
 	}
+
+	/* Gives the widgets the font. */
 	language.style.text = &language.text;
 
 	/* Makes the first frame. */
@@ -414,6 +418,8 @@ language_input(
 		language->resized = 1;
 		return;
 	}
+
+	/* The close button ends the program. */
 	if (input->kind == KL_WINDOW_CLOSE) {
 		language->closed = 1;
 		return;
@@ -471,6 +477,8 @@ language_read(
 	} else {
 		kl_tr_use(reading->catalogs);
 	}
+
+	/* Shows the language the catalogs were read for. */
 	snprintf(language->shown, sizeof(language->shown), "%s", reading->language);
 	free(reading);
 	language->used++;
@@ -526,6 +534,8 @@ language_reader(
 			free(reading);
 			return 0;
 		}
+
+		/* Notes which change this reading answers. */
 		reader->taken = reader->wanted;
 		reading->generation = reader->wanted;
 		snprintf(reading->language, sizeof(reading->language), "%s", reader->language);

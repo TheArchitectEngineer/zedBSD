@@ -955,6 +955,8 @@ colours_draw(
 		} else {
 			kl_canvas_ring(&colours->canvas, x, y, DOT_RADIUS, 2.0f, 1.0f, theme->panel);
 		}
+
+		/* Moves on to the next dot. */
 		x += (float)DOT_SPACING;
 	}
 }
@@ -1036,6 +1038,7 @@ colours_input(
 			colours->current++;
 			colours_show(colours);
 		}
+
 		break;
 	case KL_WINDOW_CONTROL_TEXT:
 		/* The search field's text as it is typed: the first colour it names. */
@@ -1044,6 +1047,7 @@ colours_input(
 			colours->current = (size_t)found;
 			colours_show(colours);
 		}
+
 		break;
 	case KL_WINDOW_CONTROL_DONE:
 		/* The search ended (Enter, Escape or elsewhere): the field is emptied for the next one. */
@@ -1074,6 +1078,8 @@ colours_find(
 	size_t length;
 	size_t index;
 	size_t at;
+	int name_letter;
+	int text_letter;
 	int same;
 
 	/* An empty search names no colour. */
@@ -1085,12 +1091,15 @@ colours_find(
 	for (index = 0; index < COLOUR_COUNT; index++) {
 		same = 1;
 		for (at = 0; at < length; at++) {
-			if (colour_table[index].name[at] == '\0' ||
-			    tolower((unsigned char)colour_table[index].name[at]) != tolower((unsigned char)text[at])) {
+			name_letter = tolower((unsigned char)colour_table[index].name[at]);
+			text_letter = tolower((unsigned char)text[at]);
+			if (colour_table[index].name[at] == '\0' || name_letter != text_letter) {
 				same = 0;
 				break;
 			}
 		}
+
+		/* Answers with the first colour whose name the text starts. */
 		if (same)
 			return (long)index;
 	}
@@ -1149,7 +1158,7 @@ if (status == 0)
 
 A compositor without the titlebar presentation returns `ENOTSUP`. The window still works; it keeps only its title. After the table is given, `kl_window_set_control_text` sets the search field's placeholder, the hint shown while it is empty.
 
-**Describing the state ([lines 288-314](keiland-examples/03-titlebar.c#L288-L314), `colours_show`).** After every change, the program tells the desktop what the titlebar must now look like.
+**Describing the state ([lines 290-316](keiland-examples/03-titlebar.c#L290-L316), `colours_show`).** After every change, the program tells the desktop what the titlebar must now look like.
 
 ```c
 kl_window_set_title(colours->window, colour_table[colours->current].name);
@@ -1166,7 +1175,7 @@ It sets the title and the **action state** of Back and Forward. An action state 
 
 Compare this with chapter 2. There the program drew the picture. Here the program does not draw the titlebar. It describes it, and the compositor draws it.
 
-**The titlebar's inputs ([lines 316-362](keiland-examples/03-titlebar.c#L316-L362), `colours_input`).** Choosing a control queues an input in the same queue as every other input.
+**The titlebar's inputs ([lines 318-366](keiland-examples/03-titlebar.c#L318-L366), `colours_input`).** Choosing a control queues an input in the same queue as every other input.
 
 ```c
 case KL_WINDOW_ACTION:
@@ -1198,9 +1207,9 @@ case KL_WINDOW_CONTROL_DONE:
 
 ### The rules
 
-- The titlebar is **declarative and retained**. Declarative: the program says what the titlebar is, not how to draw it. Retained: the compositor keeps what the program gave until the program gives something else. The program gives the whole table whenever something changes. The library compares it with what is shown and sends only the difference ([lines 124-131](keiland-examples/03-titlebar.c#L124-L131), [288-314](keiland-examples/03-titlebar.c#L288-L314)).
+- The titlebar is **declarative and retained**. Declarative: the program says what the titlebar is, not how to draw it. Retained: the compositor keeps what the program gave until the program gives something else. The program gives the whole table whenever something changes. The library compares it with what is shown and sends only the difference ([lines 124-131](keiland-examples/03-titlebar.c#L124-L131), [290-316](keiland-examples/03-titlebar.c#L290-L316)).
 - An action is the program's request, a control is one way to make it ([lines 26-29](keiland-examples/03-titlebar.c#L26-L29), [85-90](keiland-examples/03-titlebar.c#L85-L90)).
-- An action state applies to every control and menu item of its action ([lines 303-310](keiland-examples/03-titlebar.c#L303-L310)).
+- An action state applies to every control and menu item of its action ([lines 305-312](keiland-examples/03-titlebar.c#L305-L312)).
 - There are three presentations: the menu (the default), controls and tabs. A count of 0 in `kl_window_set_controls` gives the titlebar back to the menu.
 - Tabs: `kl_window_set_tabs` shows a table of `struct kl_tab_entry` (an ID, a title and `KL_TAB_*` flags). A tab chosen, closed or asked for comes as `KL_WINDOW_TAB`, with `KL_WINDOW_TAB_*` in `code` and the tab's ID in `id`. This guide has no example for tabs.
 - The compositor decides how everything looks. The program picks roles and priorities, not pixels.
@@ -1209,7 +1218,7 @@ The headers are [keiland_titlebar.h](../../userland/desktop/include/keiland/keil
 
 ### Pitfalls
 
-- Expecting the compositor to disable Back by itself. It does not. Set the action state ([lines 303-310](keiland-examples/03-titlebar.c#L303-L310)).
+- Expecting the compositor to disable Back by itself. It does not. Set the action state ([lines 305-312](keiland-examples/03-titlebar.c#L305-L312)).
 - Using the same ID for two controls.
 - Treating `ENOTSUP` as fatal. The window works without a titlebar presentation.
 
@@ -1556,6 +1565,8 @@ counter_input(
 		counter->resized = 1;
 		return;
 	}
+
+	/* The close button ends the program. */
 	if (input->kind == KL_WINDOW_CLOSE) {
 		counter->closed = 1;
 		return;
@@ -1730,13 +1741,13 @@ Here is what happens when the user clicks More. Call the frame that is on the sc
    	counter->dirty = 1;
    ```
 
-   The window's own inputs, `KL_WINDOW_RESIZE` and `KL_WINDOW_CLOSE`, are handled by the program ([lines 325-333](keiland-examples/04-counter.c#L325-L333)). Everything else goes to `kl_ui_window_input`, which resolves it against the records of frame N. It sees a press and a release on the More button, so it counts a click. It returns 1, and the program sets `dirty`.
+   The window's own inputs, `KL_WINDOW_RESIZE` and `KL_WINDOW_CLOSE`, are handled by the program ([lines 325-335](keiland-examples/04-counter.c#L325-L335)). Everything else goes to `kl_ui_window_input`, which resolves it against the records of frame N. It sees a press and a release on the More button, so it counts a click. It returns 1, and the program sets `dirty`.
 3. **The loop draws frame N+1** ([lines 152-157](keiland-examples/04-counter.c#L152-L157)). In it, the call for More returns 1 ([line 271](keiland-examples/04-counter.c#L271)). `count` becomes 1. The program sets `dirty` again, because the number was already drawn above the buttons ([line 241](keiland-examples/04-counter.c#L241)) with the old value.
 4. **Frame N+2 shows 1.**
 
 The extra frame is normal in immediate mode, and it is cheap. It is also the reason that `counter_frame` clears `dirty` *before* it draws ([line 295](keiland-examples/04-counter.c#L295)). If it cleared `dirty` afterwards, the `dirty` that frame N+1 set would be lost, and the screen would keep showing 0.
 
-**The input no widget took ([lines 341-370](keiland-examples/04-counter.c#L341-L370)).** After the frame is shown, `counter_unclaimed` asks for what no widget took.
+**The input no widget took ([lines 343-372](keiland-examples/04-counter.c#L343-L372)).** After the frame is shown, `counter_unclaimed` asks for what no widget took.
 
 ```c
 taken = kl_ui_take(counter->ui, &event);
@@ -1777,14 +1788,14 @@ Immediate mode is a set of rules, each of which you can see in the counter.
 1. **A widget is a call, not an object.** It exists in a frame because the program called it in that frame ([lines 253-275](keiland-examples/04-counter.c#L253-L275)). There is nothing to create, show, hide or destroy.
 2. **What a widget shows is the program's state,** passed in every frame ([line 239](keiland-examples/04-counter.c#L239), [262-263](keiland-examples/04-counter.c#L262-L263)). The library keeps no copy that could disagree with the program. Chapter 5 adds a field's text, a switch's position and a list's selection.
 3. **A widget is named by an ID and an index.** The ID is chosen by the program ([lines 27-30](keiland-examples/04-counter.c#L27-L30)). The index tells apart several widgets of one ID: the rows of a list, a row of swatches (chapter 5). `kl_button` takes an ID alone. The pair must be the same from frame to frame for the same widget. The keyboard focus is such a pair too (`kl_ui_set_focus`, `kl_ui_has_focus`).
-4. **Input is resolved when it arrives, against the records of the frame last drawn.** The latest recorded wins, because it is on top. A press and a release on the same widget click it. The wheel goes to the scroll under the pointer. A finger's tap goes to the widget it touched ([lines 335-338](keiland-examples/04-counter.c#L335-L338)).
-5. **The result comes back from the widget's call in the next frame, once.** `kl_ui_end` uses it up ([line 278](keiland-examples/04-counter.c#L278)). What met no widget is taken after the frame with `kl_ui_take` ([lines 351-359](keiland-examples/04-counter.c#L351-L359)). Its kinds are the `KL_EVENT_*` values, including `KL_EVENT_KEY`. Only the oldest unclaimed key is handed over per frame; later keys wait for the next frame, which is one reason `kl_ui_end` reports that more frames are wanted.
+4. **Input is resolved when it arrives, against the records of the frame last drawn.** The latest recorded wins, because it is on top. A press and a release on the same widget click it. The wheel goes to the scroll under the pointer. A finger's tap goes to the widget it touched ([lines 337-340](keiland-examples/04-counter.c#L337-L340)).
+5. **The result comes back from the widget's call in the next frame, once.** `kl_ui_end` uses it up ([line 278](keiland-examples/04-counter.c#L278)). What met no widget is taken after the frame with `kl_ui_take` ([lines 353-361](keiland-examples/04-counter.c#L353-L361)). Its kinds are the `KL_EVENT_*` values, including `KL_EVENT_KEY`. Only the oldest unclaimed key is handed over per frame; later keys wait for the next frame, which is one reason `kl_ui_end` reports that more frames are wanted.
 6. **A frame is drawn when something changed:** an input the widgets took, a change in the program's own state, a new theme. It is also drawn while `kl_ui_end` returns nonzero. Nothing redraws by itself ([lines 152-157](keiland-examples/04-counter.c#L152-L157)).
 7. **The window's frame is not immediate.** The titlebar, the controls, the menus and the glass panels are declarative and retained (chapters 3 and 6). The two models are mixed on purpose: the compositor draws the frame around the window, and the program draws what is inside it.
 
 What the input calls return:
 
-- `kl_ui_window_input` returns 1 when the input was of a kind the widgets take: the pointer, a button, the wheel, the keys, the fingers and an input method's text. It returns 0 for any other kind, which is the program's. It does **not** tell whether the window must be drawn again. A program that uses it draws after every input it returned 1 for, as the counter does ([lines 335-338](keiland-examples/04-counter.c#L335-L338)).
+- `kl_ui_window_input` returns 1 when the input was of a kind the widgets take: the pointer, a button, the wheel, the keys, the fingers and an input method's text. It returns 0 for any other kind, which is the program's. It does **not** tell whether the window must be drawn again. A program that uses it draws after every input it returned 1 for, as the counter does ([lines 337-340](keiland-examples/04-counter.c#L337-L340)).
 - The lower calls tell more. `kl_ui_pointer_motion` and `kl_ui_pointer_leave` return 1 only when the lit widget changed. The partial frames in the next section use that.
 - `kl_ui_end` returns nonzero while the frame needs more frames by itself: a finger is down, a drag is going, keys are waiting for the next frame, the lit widget is changing under a still pointer, or a scroll is gliding or its bars are fading ([line 278](keiland-examples/04-counter.c#L278)).
 
@@ -2149,9 +2160,13 @@ counter_frame(
 			counter->lit = 0;
 			return 0;
 		}
+
+		/* A whole-window frame means everything is drawn again. */
 		if (need == KL_FRAME_WHOLE)
 			count = 0U;
 	}
+
+	/* Takes the frame's work as done. */
 	counter->dirty = 0;
 	counter->lit = 0;
 
@@ -2292,7 +2307,7 @@ return pace;
 
 The **frame wait** is the time before the next frame may be drawn. 0 means draw now. A positive number is the most milliseconds to wait. `-1` means wait for the compositor alone: its answer wakes the dispatch. The call changes nothing. The loop calls `counter_wait` for its timeout ([lines 128-130](keiland-examples/04-counter-parts.c#L128-L130)).
 
-**Which input is which ([lines 376-416](keiland-examples/04-counter-parts.c#L376-L416), `counter_input`).** Motions and leaves go to the lower calls, whose result says whether the lit widget changed. Everything else goes to `kl_ui_window_input` and dirties the whole frame.
+**Which input is which ([lines 380-420](keiland-examples/04-counter-parts.c#L380-L420), `counter_input`).** Motions and leaves go to the lower calls, whose result says whether the lit widget changed. Everything else goes to `kl_ui_window_input` and dirties the whole frame.
 
 ```c
 changed = kl_ui_pointer_motion(counter->ui, input->x, input->y);
@@ -2306,7 +2321,7 @@ if (changed)
 
 The **lit** widget is the one the pointer is over; it is drawn lighter. This is why the program cannot use `kl_ui_window_input` for motions: it returns 1 for every motion, so it cannot tell that only the light changed.
 
-**Drawing only the changed parts ([lines 309-374](keiland-examples/04-counter-parts.c#L309-L374), `counter_frame`).** First the frame waits for its pace.
+**Drawing only the changed parts ([lines 309-378](keiland-examples/04-counter-parts.c#L309-L378), `counter_frame`).** First the frame waits for its pace.
 
 ```c
 now_us = kl_clock_us();
@@ -2343,7 +2358,7 @@ for (index = 0; index < count; index++) {
 }
 ```
 
-`counter_draw` runs completely for every part, so that every widget is still recorded. Only the pixels inside the clip are changed; the rest of the frame keeps its pixels. Then `kl_window_present_parts` shows the parts, or the whole frame when the count is 0 ([line 360](keiland-examples/04-counter-parts.c#L360)).
+`counter_draw` runs completely for every part, so that every widget is still recorded. Only the pixels inside the clip are changed; the rest of the frame keeps its pixels. Then `kl_window_present_parts` shows the parts, or the whole frame when the count is 0 ([line 364](keiland-examples/04-counter-parts.c#L364)).
 
 A press or a key still draws the whole frame, because `kl_ui_take_frame` knows only the parts of the light. A change of the program's own content, such as a number, would be added with `kl_ui_damage` (a rectangle) or `kl_ui_damage_whole`. This program does not need them: the changes it makes set `dirty` and draw everything.
 
@@ -2351,8 +2366,8 @@ A press or a key still draws the whole frame, because `kl_ui_take_frame` knows o
 
 - `KL_PACING_MOTION` merges motions queued together. `KL_PACING_FRAME` waits for the compositor. `kl_window_frame_wait` says what to wait for ([lines 101-103](keiland-examples/04-counter-parts.c#L101-L103), [296-306](keiland-examples/04-counter-parts.c#L296-L306)).
 - With `KL_PACING_FRAME`, input other than motions and the wheel is drawn at once, once.
-- `kl_ui_take_frame` takes the parts and forgets them. `kl_ui_begin` forgets them too. Ask before you draw ([lines 338-346](keiland-examples/04-counter-parts.c#L338-L346)).
-- A partial frame runs every widget call between `kl_ui_begin` and `kl_ui_end`. Only the pixels outside the clip are kept ([lines 351-357](keiland-examples/04-counter-parts.c#L351-L357)).
+- `kl_ui_take_frame` takes the parts and forgets them. `kl_ui_begin` forgets them too. Ask before you draw ([lines 338-348](keiland-examples/04-counter-parts.c#L338-L348)).
+- A partial frame runs every widget call between `kl_ui_begin` and `kl_ui_end`. Only the pixels outside the clip are kept ([lines 355-361](keiland-examples/04-counter-parts.c#L355-L361)).
 - Pitfall: calling `kl_ui_take_frame` after drawing. It always returns `KL_FRAME_NONE` then.
 
 Next: more widgets than a button.
@@ -2504,6 +2519,8 @@ main(void)
 		fprintf(stderr, "greeter: no font %s (%s)\n", FONT, strerror(status));
 		return 1;
 	}
+
+	/* Gives the widgets the font. */
 	greeter.style.text = &greeter.text;
 	greeter.style.glass = 0;
 
@@ -2773,6 +2790,8 @@ greeter_swatches(
 		} else if ((hit & KL_HIT_HOT) != 0U) {
 			kl_canvas_round_border(&greeter->canvas, (float)rect.x - 3.0f, (float)rect.y - 3.0f, (float)rect.width + 6.0f, (float)rect.height + 6.0f, 10.0f, 1.0f, theme->separator);
 		}
+
+		/* Moves on to the next swatch. */
 		rect.x += SWATCH_SIZE + 12;
 	}
 }
@@ -2852,6 +2871,8 @@ greeter_input(
 		greeter->resized = 1;
 		return;
 	}
+
+	/* The close button ends the program. */
 	if (input->kind == KL_WINDOW_CLOSE) {
 		greeter->closed = 1;
 		return;
@@ -2907,7 +2928,7 @@ size_t swatch;
 
 The widgets read these and change them when the input says so.
 
-**First values ([lines 139-145](keiland-examples/05-widgets.c#L139-L145)).** The state is given its first values before the first frame, and the list is freed at the end ([lines 195-196](keiland-examples/05-widgets.c#L195-L196)).
+**First values ([lines 141-147](keiland-examples/05-widgets.c#L141-L147)).** The state is given its first values before the first frame, and the list is freed at the end ([lines 197-198](keiland-examples/05-widgets.c#L197-L198)).
 
 ```c
 kl_field_set(&greeter.name, "World");
@@ -2919,7 +2940,7 @@ greeter.size = 24.0;
 
 `kl_field_set` puts text in the field. A zeroed field is empty with the caret at 0. `kl_list_init` makes the list's scroll, and `kl_list_release` frees it.
 
-**The order of the calls ([lines 267-269](keiland-examples/05-widgets.c#L267-L269)).** The order of drawing is also the order in which Tab moves the focus.
+**The order of the calls ([lines 269-271](keiland-examples/05-widgets.c#L269-L271)).** The order of drawing is also the order in which Tab moves the focus.
 
 ```c
 /* Draws the widgets, in the order Tab moves the keyboard's focus through them. */
@@ -2929,7 +2950,7 @@ greeter_list(greeter, theme);
 
 The **focus** is which widget has the keyboard. A click or a tap gives it to a widget that takes keys (a field, a text area, a list). Tab and Shift+Tab move it through those widgets in the order in which they were drawn.
 
-**The field ([lines 297-304](keiland-examples/05-widgets.c#L297-L304)).**
+**The field ([lines 299-306](keiland-examples/05-widgets.c#L299-L306)).**
 
 ```c
 field = kl_field(greeter->ui, &greeter->style, ID_NAME, &rect, &greeter->name, "Your name");
@@ -2937,9 +2958,9 @@ if ((field & KL_FIELD_SUBMITTED) != 0U)
 	greeter_greet(greeter);
 ```
 
-`kl_field` returns bits: `KL_FIELD_CHANGED`, `KL_FIELD_SUBMITTED` (Enter) and `KL_FIELD_CANCELLED` (Escape). The field takes the keys and the input method's text while it has the focus. `kl_ui_window_text` ([line 279](keiland-examples/05-widgets.c#L279)) is what asks the compositor for the input method and ties the field's Cut, Copy and Paste to the window's clipboard.
+`kl_field` returns bits: `KL_FIELD_CHANGED`, `KL_FIELD_SUBMITTED` (Enter) and `KL_FIELD_CANCELLED` (Escape). The field takes the keys and the input method's text while it has the focus. `kl_ui_window_text` ([line 281](keiland-examples/05-widgets.c#L281)) is what asks the compositor for the input method and ties the field's Cut, Copy and Paste to the window's clipboard.
 
-**The switch and the slider ([lines 306-316](keiland-examples/05-widgets.c#L306-L316)).**
+**The switch and the slider ([lines 308-318](keiland-examples/05-widgets.c#L308-L318)).**
 
 ```c
 changed = kl_switch(greeter->ui, &greeter->style, ID_SHOUT, MARGIN, rect.y, &greeter->shout, 0U);
@@ -2951,7 +2972,7 @@ if (changed)
 
 `kl_switch` and `kl_slider` change the variable they are given and return 1 when they did.
 
-**The list ([lines 330-368](keiland-examples/05-widgets.c#L330-L368), `greeter_list`).** A list draws only the rows in sight. The program says how many rows there are, and the list says which rows to draw.
+**The list ([lines 332-370](keiland-examples/05-widgets.c#L332-L370), `greeter_list`).** A list draws only the rows in sight. The program says how many rows there are, and the list says which rows to draw.
 
 ```c
 changes = kl_list_begin(greeter->ui, &greeter->style, ID_GREETINGS, &rect, &greeter->greetings, GREETING_COUNT, &first, &last);
@@ -2976,7 +2997,7 @@ if ((changes & KL_LIST_ACTIVATED) != 0U)
 
 The program ORs the results of `kl_list_begin` and of every `kl_list_row`. A key's activation comes from `kl_list_begin`. A double click's comes from the `kl_list_row` of the row clicked. Checking only `kl_list_begin` misses double clicks.
 
-**A widget of the program's own ([lines 370-407](keiland-examples/05-widgets.c#L370-L407), `greeter_swatches`).** The swatches are not a library widget. The program draws each swatch with the canvas and records it with `kl_ui_hit`.
+**A widget of the program's own ([lines 372-411](keiland-examples/05-widgets.c#L372-L411), `greeter_swatches`).** The swatches are not a library widget. The program draws each swatch with the canvas and records it with `kl_ui_hit`.
 
 ```c
 hit = kl_ui_hit(greeter->ui, ID_SWATCH, (uint32_t)index, &rect);
@@ -2986,11 +3007,11 @@ if ((hit & KL_HIT_CLICKED) != 0U) {
 }
 ```
 
-`kl_ui_hit(ui, id, index, rect)` records a rectangle under an ID and an **index**, and returns bits that say what the input did to it. Here there is one ID, `ID_SWATCH`, and one index per swatch. `KL_HIT_CLICKED` says it was clicked since the last frame. `KL_HIT_HOT` says the pointer is over it ([line 402](keiland-examples/05-widgets.c#L402)). This is chapter 4's rule 3 at work: the pair (ID, index) names a swatch.
+`kl_ui_hit(ui, id, index, rect)` records a rectangle under an ID and an **index**, and returns bits that say what the input did to it. Here there is one ID, `ID_SWATCH`, and one index per swatch. `KL_HIT_CLICKED` says it was clicked since the last frame. `KL_HIT_HOT` says the pointer is over it ([line 404](keiland-examples/05-widgets.c#L404)). This is chapter 4's rule 3 at work: the pair (ID, index) names a swatch.
 
-**Acting on a result ([lines 409-436](keiland-examples/05-widgets.c#L409-L436), `greeter_greet`).** Every widget that can greet calls this function where its result is reported ([lines 303-304](keiland-examples/05-widgets.c#L303-L304), [309-310](keiland-examples/05-widgets.c#L309-L310), [326-327](keiland-examples/05-widgets.c#L326-L327), [366-367](keiland-examples/05-widgets.c#L366-L367)). It reads the other widgets' state from the program's own structure, not from the widgets.
+**Acting on a result ([lines 413-440](keiland-examples/05-widgets.c#L413-L440), `greeter_greet`).** Every widget that can greet calls this function where its result is reported ([lines 305-306](keiland-examples/05-widgets.c#L305-L306), [311-312](keiland-examples/05-widgets.c#L311-L312), [328-329](keiland-examples/05-widgets.c#L328-L329), [368-369](keiland-examples/05-widgets.c#L368-L369)). It reads the other widgets' state from the program's own structure, not from the widgets.
 
-**Unclaimed keys ([lines 495-518](keiland-examples/05-widgets.c#L495-L518)).** Only keys that no widget took come here. Escape in the field cancels the field, and never arrives. Escape elsewhere clears the greeting.
+**Unclaimed keys ([lines 501-524](keiland-examples/05-widgets.c#L501-L524)).** Only keys that no widget took come here. Escape in the field cancels the field, and never arrives. Escape elsewhere clears the greeting.
 
 ```c
 if (event.kind == KL_EVENT_KEY && event.code == KL_KEY_ESC) {
@@ -3005,13 +3026,13 @@ The widgets, with what each shows and returns:
 
 | Call | What it shows | Returns | In the example |
 | --- | --- | --- | --- |
-| `kl_button(ui, style, id, rect, label, flags)` | A push button. Flags: `KL_BUTTON_PRIMARY`, `_DANGER`, `_DISABLED`. | 1 when pressed since the last frame | [line 325](keiland-examples/05-widgets.c#L325) |
+| `kl_button(ui, style, id, rect, label, flags)` | A push button. Flags: `KL_BUTTON_PRIMARY`, `_DANGER`, `_DISABLED`. | 1 when pressed since the last frame | [line 327](keiland-examples/05-widgets.c#L327) |
 | `kl_icon_button(ui, style, id, index, rect, icon, pixels, flags)` | A button that is a picture (`KL_ICON_*`). Flags: `KL_BUTTON_ROUND`, `_QUIET`. | 1 when pressed | - |
-| `kl_switch(ui, style, id, x, y, &on, flags)` | An on/off switch over an `int` | 1 when `on` changed | [line 308](keiland-examples/05-widgets.c#L308) |
-| `kl_slider(ui, style, id, rect, min, max, step, &value)` | A slider over a `double` | 1 when `value` changed | [line 316](keiland-examples/05-widgets.c#L316) |
-| `kl_field(ui, style, id, rect, &field, placeholder)` | A one-line text field over a `struct kl_field` | `KL_FIELD_CHANGED`, `_SUBMITTED`, `_CANCELLED` bits | [line 302](keiland-examples/05-widgets.c#L302) |
+| `kl_switch(ui, style, id, x, y, &on, flags)` | An on/off switch over an `int` | 1 when `on` changed | [line 310](keiland-examples/05-widgets.c#L310) |
+| `kl_slider(ui, style, id, rect, min, max, step, &value)` | A slider over a `double` | 1 when `value` changed | [line 318](keiland-examples/05-widgets.c#L318) |
+| `kl_field(ui, style, id, rect, &field, placeholder)` | A one-line text field over a `struct kl_field` | `KL_FIELD_CHANGED`, `_SUBMITTED`, `_CANCELLED` bits | [line 304](keiland-examples/05-widgets.c#L304) |
 | `kl_text_area(ui, style, id, rect, &area, placeholder)` | Text of several lines over a `struct kl_text_area` | `KL_FIELD_*` bits | - |
-| `kl_list_begin`, `kl_list_row`, `kl_list_end` | A scrolling list over a `struct kl_list` | `KL_LIST_SELECTED`, `_ACTIVATED` bits | [lines 353-363](keiland-examples/05-widgets.c#L353-L363) |
+| `kl_list_begin`, `kl_list_row`, `kl_list_end` | A scrolling list over a `struct kl_list` | `KL_LIST_SELECTED`, `_ACTIVATED` bits | [lines 355-365](keiland-examples/05-widgets.c#L355-L365) |
 | `kl_sidebar_section`, `kl_sidebar_item(ui, style, id, index, rect, icon, label, current)` | A sidebar's titles and places | 1 when an item was chosen | - |
 | `kl_panel`, `kl_card`, `kl_header`, `kl_row` | Panels, cards with titles, a page's header, a card's rows of label and value | The edge below what they drew | - (`kl_panel` is in chapter 7) |
 | `kl_dialog(ui, style, id, area, title, body, labels, count)` | A question over the window with its buttons | The index of the button chosen, or -1 | - |
@@ -3023,8 +3044,8 @@ Every widget takes the `struct kl_ui` and the frame's `struct kl_style`, an ID (
 More rules:
 
 - **State.** A widget's state lives in the program's structure and is passed in every frame ([lines 49-69](keiland-examples/05-widgets.c#L49-L69)). `struct kl_field` and `struct kl_list` hold the text, the caret, the selection and the scroll. `kl_list_init` and `kl_list_release` make and free a list.
-- **Focus.** A click or a tap gives the focus to a widget that takes keys. Tab and Shift+Tab move it in the order of drawing ([lines 267-269](keiland-examples/05-widgets.c#L267-L269)). The keys that the focused widget does not take, and every key while no widget has the focus, come back from `kl_ui_take` as `KL_EVENT_KEY` ([lines 507-516](keiland-examples/05-widgets.c#L507-L516)).
-- **The program's own widgets.** `kl_ui_hit(ui, id, index, rect)` returns the same `KL_HIT_*` bits that the widgets read: `KL_HIT_HOT` (under the pointer), `KL_HIT_ACTIVE` (held), `KL_HIT_CLICKED` (clicked since the last frame), `KL_HIT_DOUBLE`, `KL_HIT_FOCUSED` and `KL_HIT_TOUCHED` (a finger's tap). `kl_ui_hit_still` is the same for a widget that draws the same lit or not, so that the pointer coming onto it asks for no frame ([lines 392-404](keiland-examples/05-widgets.c#L392-L404)).
+- **Focus.** A click or a tap gives the focus to a widget that takes keys. Tab and Shift+Tab move it in the order of drawing ([lines 269-271](keiland-examples/05-widgets.c#L269-L271)). The keys that the focused widget does not take, and every key while no widget has the focus, come back from `kl_ui_take` as `KL_EVENT_KEY` ([lines 513-522](keiland-examples/05-widgets.c#L513-L522)).
+- **The program's own widgets.** `kl_ui_hit(ui, id, index, rect)` returns the same `KL_HIT_*` bits that the widgets read: `KL_HIT_HOT` (under the pointer), `KL_HIT_ACTIVE` (held), `KL_HIT_CLICKED` (clicked since the last frame), `KL_HIT_DOUBLE`, `KL_HIT_FOCUSED` and `KL_HIT_TOUCHED` (a finger's tap). `kl_ui_hit_still` is the same for a widget that draws the same lit or not, so that the pointer coming onto it asks for no frame ([lines 394-406](keiland-examples/05-widgets.c#L394-L406)).
 - **Scrolling content of your own.** Content larger than its place scrolls with a `struct kl_scroll` (`kl_scroll_init`, `kl_scroll_set_size`), which the program records each frame with `kl_ui_scroll_region`. The wheel, a touch pad and a finger then move it, and the program draws its content at the scroll's `x` and `y`. This guide has no example for it.
 - **Drawing of your own.** Between the widgets, a program uses the canvas (`kl_canvas_fill`, `kl_canvas_round`, `kl_canvas_line`, `kl_canvas_image` and more), the text calls (`kl_text_draw`, `kl_text_width`, `kl_text_metrics`) and the icons (`kl_icon_draw`).
 
@@ -3208,6 +3229,8 @@ main(void)
 		fprintf(stderr, "counter: no font %s (%s)\n", FONT, strerror(status));
 		return 1;
 	}
+
+	/* Gives the widgets the font. */
 	counter.style.text = &counter.text;
 	counter.style.glass = 0;
 
@@ -3439,6 +3462,8 @@ counter_input(
 				fprintf(stderr, "counter: no context menu (%s)\n", strerror(status));
 			break;
 		}
+
+		/* Offers any other input to the widgets. */
 		taken = kl_ui_window_input(counter->ui, input);
 		if (taken)
 			counter->dirty = 1;
@@ -3561,6 +3586,8 @@ counter_states(
 		small = 0U;
 		large = KL_ACTION_CHECKED;
 	}
+
+	/* Tells the desktop which size is checked. */
 	(void)kl_window_set_action_state(counter->window, ACTION_SMALL, small);
 	(void)kl_window_set_action_state(counter->window, ACTION_LARGE, large);
 
@@ -3584,7 +3611,7 @@ counter_states(
 #define ACTION_RESET	6U
 ```
 
-What changed from the counter: the buttons no longer change `count` themselves. They call `counter_act` ([lines 307-319](keiland-examples/06-menu.c#L307-L319)), which does what an action asks, whichever menu, key or button asked it.
+What changed from the counter: the buttons no longer change `count` themselves. They call `counter_act` ([lines 309-321](keiland-examples/06-menu.c#L309-L321)), which does what an action asks, whichever menu, key or button asked it.
 
 **The menu table ([lines 82-102](keiland-examples/06-menu.c#L82-L102)).** A **menu table** is a list of rows, one per item.
 
@@ -3614,7 +3641,7 @@ counter_states(&counter);
 
 `kl_window_set_menu` gives the whole table. Without the compositor's System Menu it returns `ENOTSUP` and shows nothing; the keys and the buttons still work. Then `counter_states` gives the actions their states.
 
-**The action states ([lines 493-521](keiland-examples/06-menu.c#L493-L521), `counter_states`).** The program ticks the radio items and disables Reset with action states, as chapter 3 did for Back.
+**The action states ([lines 497-527](keiland-examples/06-menu.c#L497-L527), `counter_states`).** The program ticks the radio items and disables Reset with action states, as chapter 3 did for Back.
 
 ```c
 small = KL_ACTION_CHECKED;
@@ -3629,7 +3656,7 @@ if (counter->large) {
 
 The compositor never ticks an item by itself. The program does. The state applies to the menu and the context menu alike.
 
-**The inputs ([lines 357-402](keiland-examples/06-menu.c#L357-L402), `counter_input`).** A choice in the menu, by the pointer or by its shortcut, comes in the queue among the other inputs.
+**The inputs ([lines 359-406](keiland-examples/06-menu.c#L359-L406), `counter_input`).** A choice in the menu, by the pointer or by its shortcut, comes in the queue among the other inputs.
 
 ```c
 case KL_WINDOW_ACTION:
@@ -3655,9 +3682,9 @@ case KL_WINDOW_BUTTON:
 
 A **context menu** is a table of top-level items shown once at a point of the window. `kl_window_popup_menu` shows the one in `context_table` ([lines 104-109](keiland-examples/06-menu.c#L104-L109)) at the press's place. It acts on the window's last press, so call it when the press arrives. The program checks for a right press *before* it calls `kl_ui_window_input`, since that call takes every `KL_WINDOW_BUTTON`.
 
-A finger has no right button. A long press arrives as `KL_EVENT_LONG_PRESS` from `kl_ui_take`, and opens the same menu ([lines 421-425](keiland-examples/06-menu.c#L421-L425)).
+A finger has no right button. A long press arrives as `KL_EVENT_LONG_PRESS` from `kl_ui_take`, and opens the same menu ([lines 425-429](keiland-examples/06-menu.c#L425-L429)).
 
-**One place for the actions ([lines 435-491](keiland-examples/06-menu.c#L435-L491), `counter_act`).** Quit, Copy, Paste, Less, More, Reset and the two sizes are done here.
+**One place for the actions ([lines 439-495](keiland-examples/06-menu.c#L439-L495), `counter_act`).** Quit, Copy, Paste, Less, More, Reset and the two sizes are done here.
 
 ```c
 case ACTION_COPY:
@@ -3667,15 +3694,15 @@ case ACTION_COPY:
 	break;
 ```
 
-Copy and Paste use `kl_window_copy` and `kl_window_paste`; chapter 7 says more about the clipboard. At the end the function gives the menus the new states and sets `dirty` ([lines 488-490](keiland-examples/06-menu.c#L488-L490)).
+Copy and Paste use `kl_window_copy` and `kl_window_paste`; chapter 7 says more about the clipboard. At the end the function gives the menus the new states and sets `dirty` ([lines 492-494](keiland-examples/06-menu.c#L492-L494)).
 
 ### The rules
 
 - The menu is declarative and retained, like the titlebar. Give the whole table whenever it changes ([line 144](keiland-examples/06-menu.c#L144)).
 - IDs belong to the program: not 0, unique in the table.
-- An action is shared by menu items, controls, buttons and context menus. A choice comes as `KL_WINDOW_ACTION`, with the item's action in `input.code` and its ID in `input.id` ([lines 379-382](keiland-examples/06-menu.c#L379-L382)).
+- An action is shared by menu items, controls, buttons and context menus. A choice comes as `KL_WINDOW_ACTION`, with the item's action in `input.code` and its ID in `input.id` ([lines 381-384](keiland-examples/06-menu.c#L381-L384)).
 - The types are `KL_MENU_ITEM_NORMAL`, `_SEPARATOR`, `_CHECKBOX`, `_RADIO` and `_SUBMENU`.
-- A checkbox or radio item is ticked only by `kl_window_set_action_state` with `KL_ACTION_CHECKED` ([lines 506-514](keiland-examples/06-menu.c#L506-L514)).
+- A checkbox or radio item is ticked only by `kl_window_set_action_state` with `KL_ACTION_CHECKED` ([lines 510-520](keiland-examples/06-menu.c#L510-L520)).
 - The window's menu shows in the titlebar, and in the system bar while the window is maximized.
 - A context menu shows once. It goes when an item is chosen or the user clicks elsewhere. Its choice comes as `KL_WINDOW_ACTION`, like the window menu's.
 
@@ -3836,6 +3863,8 @@ main(void)
 		fprintf(stderr, "services: no font %s (%s)\n", FONT, strerror(status));
 		return 1;
 	}
+
+	/* Gives the widgets the font. */
 	services.style.text = &services.text;
 
 	/* Makes the first frame, and learns whether the window is see-through: then it stands on glass. */
@@ -4106,6 +4135,8 @@ services_input(
 		services->resized = 1;
 		return;
 	}
+
+	/* The close button ends the program. */
 	if (input->kind == KL_WINDOW_CLOSE) {
 		services->closed = 1;
 		return;
@@ -4158,6 +4189,8 @@ services_chosen(
 {
 	struct services *services;
 
+
+	/* The chooser and the filter are not needed here. */
 	(void)chooser;
 	(void)filter;
 
@@ -4197,9 +4230,9 @@ services_language(
 
 ### Appearance, theme and accent
 
-`kl_theme_default()` gives the colours and sizes that every widget draws with. They follow the desktop's **appearance**, light or dark, and the **accent**, the colour the user chose to mark selections and main buttons. When either changes, a `KL_APP_THEME` event comes and the program draws its windows again ([lines 158-160](keiland-examples/07-services.c#L158-L160)). The program asks for the theme afresh in every frame ([lines 267-270](keiland-examples/07-services.c#L267-L270)).
+`kl_theme_default()` gives the colours and sizes that every widget draws with. They follow the desktop's **appearance**, light or dark, and the **accent**, the colour the user chose to mark selections and main buttons. When either changes, a `KL_APP_THEME` event comes and the program draws its windows again ([lines 160-162](keiland-examples/07-services.c#L160-L162)). The program asks for the theme afresh in every frame ([lines 269-272](keiland-examples/07-services.c#L269-L272)).
 
-`kl_appearance_get(NULL)` tells which appearance is shown ([lines 290-297](keiland-examples/07-services.c#L290-L297)):
+`kl_appearance_get(NULL)` tells which appearance is shown ([lines 292-299](keiland-examples/07-services.c#L292-L299)):
 
 ```c
 shown = kl_appearance_get(NULL);
@@ -4219,7 +4252,7 @@ see_through = kl_window_see_through(services.window);
 services.style.glass = see_through;
 ```
 
-A window is see-through when its frames are blended by their alpha: always for `KL_PRESENT_SHM`, and for `KL_PRESENT_VULKAN` when its swapchain is premultiplied. `kl_window_see_through` tells which. Then the program changes its drawing in two ways. It clears the ground to nothing, because the compositor draws the glass there. And it draws the card with `kl_panel`, which draws the veil over the glass ([lines 272-288](keiland-examples/07-services.c#L272-L288)):
+A window is see-through when its frames are blended by their alpha: always for `KL_PRESENT_SHM`, and for `KL_PRESENT_VULKAN` when its swapchain is premultiplied. `kl_window_see_through` tells which. Then the program changes its drawing in two ways. It clears the ground to nothing, because the compositor draws the glass there. And it draws the card with `kl_panel`, which draws the veil over the glass ([lines 274-290](keiland-examples/07-services.c#L274-L290)):
 
 ```c
 if (services->style.glass) {
@@ -4231,7 +4264,7 @@ if (services->style.glass) {
 kl_panel(&services->style, card, 0);
 ```
 
-After each frame it says where the panel is ([lines 356-370](keiland-examples/07-services.c#L356-L370)):
+After each frame it says where the panel is ([lines 358-372](keiland-examples/07-services.c#L358-L372)):
 
 ```c
 panel.radius = CARD_RADIUS;
@@ -4239,7 +4272,7 @@ panel.kind = KL_GLASS_CARD;
 status = kl_window_set_glass(services->window, &panel, 1U);
 ```
 
-The panel's rectangle and radius go to the compositor with `kl_window_set_glass`. If it fails, with `ENOTSUP` or another error, the program stops using glass: the next frame is drawn opaque ([lines 365-369](keiland-examples/07-services.c#L365-L369)). The header is [keiland_glass.h](../../userland/desktop/include/keiland/keiland_glass.h).
+The panel's rectangle and radius go to the compositor with `kl_window_set_glass`. If it fails, with `ENOTSUP` or another error, the program stops using glass: the next frame is drawn opaque ([lines 367-371](keiland-examples/07-services.c#L367-L371)). The header is [keiland_glass.h](../../userland/desktop/include/keiland/keiland_glass.h).
 
 ### Text in the user's language
 
@@ -4256,7 +4289,7 @@ if (status != 0)
 
 A **language name** is what `kl_tr_open` takes: `"en"`, `"ja"`, and so on.
 
-When the user changes the language, the application gets a **`KL_APP_LANGUAGE`** event, and `event.language` names the language it changed to ([lines 162-164](keiland-examples/07-services.c#L162-L164)):
+When the user changes the language, the application gets a **`KL_APP_LANGUAGE`** event, and `event.language` names the language it changed to ([lines 164-166](keiland-examples/07-services.c#L164-L166)):
 
 ```c
 /* The desktop's language changed: the event names the language it changed to. */
@@ -4264,7 +4297,7 @@ if (event.kind == KL_APP_LANGUAGE)
 	services_language(&services, event.language);
 ```
 
-`services_language` ([lines 468-487](keiland-examples/07-services.c#L468-L487)) reads the catalogs of that language with `kl_tr_open(DOMAIN, language)`, sets the window's title again (the title is a text too), and sets `dirty`, so that the next frame is all in the new language ([lines 479-486](keiland-examples/07-services.c#L479-L486)):
+`services_language` ([lines 474-493](keiland-examples/07-services.c#L474-L493)) reads the catalogs of that language with `kl_tr_open(DOMAIN, language)`, sets the window's title again (the title is a text too), and sets `dirty`, so that the next frame is all in the new language ([lines 485-492](keiland-examples/07-services.c#L485-L492)):
 
 ```c
 /* The new language's catalogs (English after a failure). */
@@ -4283,7 +4316,7 @@ The rules of this part:
 - A text `kl_tr` gave lives until the language changes. Keep none across the event; that is why the title is set again.
 - `kl_tr` is used from one thread.
 
-In a frame, `kl_tr` gives a text ([lines 290-302](keiland-examples/07-services.c#L290-L302)). `kl_trn` chooses the singular or a plural for a count. `kl_tr_format` fills `{1}` to `{9}` with the strings that follow, in any order the language needs, and a `NULL` ends them:
+In a frame, `kl_tr` gives a text ([lines 292-304](keiland-examples/07-services.c#L292-L304)). `kl_trn` chooses the singular or a plural for a count. `kl_tr_format` fills `{1}` to `{9}` with the strings that follow, in any order the language needs, and a `NULL` ends them:
 
 ```c
 (void)kl_tr_format(line, sizeof(line), kl_trn("{1} file opened", "{1} files opened", services->opened), count, (const char *)NULL);
@@ -4331,7 +4364,7 @@ options.fallback_font = FALLBACK_FONT;
 services->chooser = kl_file_chooser_open(kl_app_display(services->app), kl_window_toplevel(services->window), &options, &services_chooser_listener, services);
 ```
 
-The program asks for it over its window with `kl_file_chooser_open`, and passes a **listener**: a structure of callbacks ([lines 80-82](keiland-examples/07-services.c#L80-L82)). Only one chooser is open at a time, and the Open button is disabled while it is ([lines 312-313](keiland-examples/07-services.c#L312-L313), [423-425](keiland-examples/07-services.c#L423-L425)).
+The program asks for it over its window with `kl_file_chooser_open`, and passes a **listener**: a structure of callbacks ([lines 80-82](keiland-examples/07-services.c#L80-L82)). Only one chooser is open at a time, and the Open button is disabled while it is ([lines 314-315](keiland-examples/07-services.c#L314-L315), [427-429](keiland-examples/07-services.c#L427-L429)).
 
 The program keeps running. The answer comes once, through the listener, during a dispatch:
 
@@ -4345,15 +4378,15 @@ if (result == KL_FILE_CHOOSER_CHOSEN) {
 services->answered = 1;
 ```
 
-The callback keeps the path and adds it to the desktop's **recent list** with `kl_recent_add`. The chooser must be destroyed afterwards. Here the main loop does it, once it sees that the answer came ([lines 171-177](keiland-examples/07-services.c#L171-L177)). The callback may destroy it too. The headers are [keiland_file_chooser.h](../../userland/desktop/include/keiland/keiland_file_chooser.h) and [keiland_recent.h](../../userland/desktop/include/keiland/keiland_recent.h).
+The callback keeps the path and adds it to the desktop's **recent list** with `kl_recent_add`. The chooser must be destroyed afterwards. Here the main loop does it, once it sees that the answer came ([lines 173-179](keiland-examples/07-services.c#L173-L179)). The callback may destroy it too. The headers are [keiland_file_chooser.h](../../userland/desktop/include/keiland/keiland_file_chooser.h) and [keiland_recent.h](../../userland/desktop/include/keiland/keiland_recent.h).
 
 ### The clipboard
 
-`kl_window_copy(window, text, length)` puts text on the clipboard ([line 326](keiland-examples/07-services.c#L326)). `kl_window_paste(window, buffer, size)` reads it, as the Paste action does in chapter 6, and `kl_window_can_paste(window)` tells whether there is text. The text widgets of chapter 5 use the window's clipboard by themselves, once `kl_ui_window_text` has tied them to it.
+`kl_window_copy(window, text, length)` puts text on the clipboard ([line 328](keiland-examples/07-services.c#L328)). `kl_window_paste(window, buffer, size)` reads it, as the Paste action does in chapter 6, and `kl_window_can_paste(window)` tells whether there is text. The text widgets of chapter 5 use the window's clipboard by themselves, once `kl_ui_window_text` has tied them to it.
 
 ### Notifications
 
-`kl_app_notify(app, title, body)` shows a notification under the program's application ID ([line 333](keiland-examples/07-services.c#L333)). `kl_app_notify_lock` also says what the lock screen shows of it.
+`kl_app_notify(app, title, body)` shows a notification under the program's application ID ([line 335](keiland-examples/07-services.c#L335)). `kl_app_notify_lock` also says what the lock screen shows of it.
 
 ### The desktop's settings and system
 `kl_settings_open(kl_app_display(app), name)` reads, watches and asks to change the desktop's settings (`kl_settings_get`, `kl_settings_watch`, `kl_settings_set`). `kl_app_system(app)` gives the desktop's system, `kl_system_*`: the network, the sound, the power, the removable devices, the displays and the printers. Each of these is asked of the compositor. The program reads no system file and talks to no daemon itself. The desktop's language is a setting too (`ui.language`), but an application learns of its changes from `KL_APP_LANGUAGE`, not by watching the setting. A program asks for a change with `kl_settings_set` or `kl_settings_set_int`; the change comes back as a change, to it and to every other program (`08-language.c` does this, in chapter 8). The headers are [keiland_settings.h](../../userland/desktop/include/keiland/keiland_settings.h) and [keiland_system.h](../../userland/desktop/include/keiland/keiland_system.h).
@@ -4523,6 +4556,8 @@ main(void)
 		fprintf(stderr, "primes: no font %s (%s)\n", FONT, strerror(status));
 		return 1;
 	}
+
+	/* Gives the widgets the font. */
 	primes.style.text = &primes.text;
 	snprintf(primes.status, sizeof(primes.status), "Not counted yet.");
 
@@ -4739,6 +4774,8 @@ primes_event(
 			primes_post(primes, event->input.code, event->input.data);
 			return;
 		}
+
+		/* Offers any other input to the widgets. */
 		primes_input(primes, &event->input);
 	}
 
@@ -4762,6 +4799,8 @@ primes_input(
 		primes->resized = 1;
 		return;
 	}
+
+	/* The close button ends the program. */
 	if (input->kind == KL_WINDOW_CLOSE) {
 		primes->closed = 1;
 		return;
@@ -4831,6 +4870,8 @@ primes_start(
 		snprintf(primes->status, sizeof(primes->status), "No memory to count.");
 		return;
 	}
+
+	/* Gives the thread what it works with. */
 	count->app = primes->app;
 	count->window = primes->window;
 	count->limit = LIMIT;
@@ -4843,6 +4884,8 @@ primes_start(
 		snprintf(primes->status, sizeof(primes->status), "No thread to count on.");
 		return;
 	}
+
+	/* Remembers the running count. */
 	primes->count = count;
 	primes->done = 0;
 	primes->found = 0;
@@ -4924,6 +4967,8 @@ primes_count(
 		if (prime)
 			count->primes++;
 	}
+
+	/* Notes how far the count went. */
 	count->done = number;
 
 	/* Hands the count back; it fails only without memory, and then the window shows the count as running. */
@@ -4995,7 +5040,7 @@ struct progress {
 
 At any moment one thread **owns** a record: it alone reads and writes it, and a post hands the ownership over. `struct count` goes to the worker at the start and comes back at the end. While the worker has it, only `stop` is shared, and `stop` is an `atomic_int`, read and written with `atomic_load` and `atomic_store`. `struct progress` is one report: the worker makes it, and whoever takes the post frees it.
 
-**Starting a count ([lines 439-471](keiland-examples/08-worker.c#L439-L471), `primes_start`).** The function fills the record and starts the worker with it ([lines 460-466](keiland-examples/08-worker.c#L460-L466)):
+**Starting a count ([lines 445-481](keiland-examples/08-worker.c#L445-L481), `primes_start`).** The function fills the record and starts the worker with it ([lines 468-474](keiland-examples/08-worker.c#L468-L474)):
 
 ```c
 status = thrd_create(&primes->worker, primes_count, count);
@@ -5005,7 +5050,7 @@ primes->count = count;
 
 From here until `POST_FINISHED` comes back, the program does not touch the record but for `stop`.
 
-**The worker ([lines 509-557](keiland-examples/08-worker.c#L509-L557), `primes_count`).** A **worker** is a thread of the program's own that does a long job. This one looks at every number below the limit. Every `STEP` numbers it reads `stop` and ends when it is asked, or posts a report to the window with `kl_window_post` ([lines 528-541](keiland-examples/08-worker.c#L528-L541)):
+**The worker ([lines 519-569](keiland-examples/08-worker.c#L519-L569), `primes_count`).** A **worker** is a thread of the program's own that does a long job. This one looks at every number below the limit. Every `STEP` numbers it reads `stop` and ends when it is asked, or posts a report to the window with `kl_window_post` ([lines 538-551](keiland-examples/08-worker.c#L538-L551)):
 
 ```c
 if (number % STEP == 0) {
@@ -5018,7 +5063,7 @@ if (number % STEP == 0) {
 			free(progress);
 ```
 
-When a post fails it did not take the data, so the worker frees the report itself. At the end it hands the count back with `kl_app_post` ([lines 550-553](keiland-examples/08-worker.c#L550-L553)):
+When a post fails it did not take the data, so the worker frees the report itself. At the end it hands the count back with `kl_app_post` ([lines 562-565](keiland-examples/08-worker.c#L562-L565)):
 
 ```c
 status = kl_app_post(count->app, POST_FINISHED, count);
@@ -5028,7 +5073,7 @@ if (status != 0)
 
 The worker calls nothing of libkeiland but these two posts, the calls any thread may make.
 
-**The main loop ([lines 155-165](keiland-examples/08-worker.c#L155-L165)).** The loop is chapter 4's. The posts arrive in the same queue as the input, and a post from another thread wakes `kl_app_dispatch`, even when it waits with -1: there is no timer and no polling.
+**The main loop ([lines 157-167](keiland-examples/08-worker.c#L157-L167)).** The loop is chapter 4's. The posts arrive in the same queue as the input, and a post from another thread wakes `kl_app_dispatch`, even when it waits with -1: there is no timer and no polling.
 
 ```c
 timeout = -1;
@@ -5039,7 +5084,7 @@ if (primes.dirty || primes.resized)
 status = kl_app_dispatch(primes.app, timeout);
 ```
 
-**Where the posts arrive ([lines 344-369](keiland-examples/08-worker.c#L344-L369), `primes_event`).** A post to the window arrives among the window's inputs, in its place among them: a `KL_APP_WINDOW` event whose `input.kind` is `KL_WINDOW_POST`, with `input.code` and `input.data` ([lines 357-364](keiland-examples/08-worker.c#L357-L364)). A post to the application arrives as `KL_APP_POST` with `event.code` and `event.data` ([lines 366-368](keiland-examples/08-worker.c#L366-L368)). So does a post to a window that closed before the post came: `window` is `NULL`, and the code and the data are the same.
+**Where the posts arrive ([lines 346-373](keiland-examples/08-worker.c#L346-L373), `primes_event`).** A post to the window arrives among the window's inputs, in its place among them: a `KL_APP_WINDOW` event whose `input.kind` is `KL_WINDOW_POST`, with `input.code` and `input.data` ([lines 359-368](keiland-examples/08-worker.c#L359-L368)). A post to the application arrives as `KL_APP_POST` with `event.code` and `event.data` ([lines 370-372](keiland-examples/08-worker.c#L370-L372)). So does a post to a window that closed before the post came: `window` is `NULL`, and the code and the data are the same.
 
 ```c
 	if (event->input.kind == KL_WINDOW_POST) {
@@ -5053,7 +5098,7 @@ if (event->kind == KL_APP_POST)
 
 The program sends both to `primes_post`, which frees the data either way.
 
-**Taking a post ([lines 397-437](keiland-examples/08-worker.c#L397-L437), `primes_post`).** A report is shown and freed. `POST_FINISHED` gives the record back: the worker's thread is ending (the post was its last act), so `thrd_join` returns at once. The result is copied, the record is freed, and a `NULL` count enables Start again ([lines 426-434](keiland-examples/08-worker.c#L426-L434)):
+**Taking a post ([lines 403-443](keiland-examples/08-worker.c#L403-L443), `primes_post`).** A report is shown and freed. `POST_FINISHED` gives the record back: the worker's thread is ending (the post was its last act), so `thrd_join` returns at once. The result is copied, the record is freed, and a `NULL` count enables Start again ([lines 432-440](keiland-examples/08-worker.c#L432-L440)):
 
 ```c
 (void)thrd_join(primes->worker, NULL);
@@ -5063,18 +5108,18 @@ free(count);
 primes->count = NULL;
 ```
 
-No report of a count can come after its `POST_FINISHED`: the posts of one thread arrive in the order it made them (the comment at [line 412](keiland-examples/08-worker.c#L412)).
+No report of a count can come after its `POST_FINISHED`: the posts of one thread arrive in the order it made them (the comment at [line 418](keiland-examples/08-worker.c#L418)).
 
-**Stop ([lines 304-310](keiland-examples/08-worker.c#L304-L310)).** The button raises the flag.
+**Stop ([lines 306-312](keiland-examples/08-worker.c#L306-L312)).** The button raises the flag.
 
 ```c
 if (clicked && primes->count != NULL)
 	atomic_store(&primes->count->stop, 1);
 ```
 
-The worker sees it within `STEP` numbers and hands the count back as usual, short of the limit, and the line says "Stopped" ([lines 429-432](keiland-examples/08-worker.c#L429-L432)).
+The worker sees it within `STEP` numbers and hands the count back as usual, short of the limit, and the line says "Stopped" ([lines 435-438](keiland-examples/08-worker.c#L435-L438)).
 
-**The end of the program ([191-192](keiland-examples/08-worker.c#L191-L192) and [473-507](keiland-examples/08-worker.c#L473-L507), `primes_finish`).** The window may close while a count runs. The program raises `stop`, then takes the posts the worker left, dispatching without waiting, until the count came back; taking that last post joins the thread, so the thread is joined exactly once:
+**The end of the program ([193-194](keiland-examples/08-worker.c#L193-L194) and [483-517](keiland-examples/08-worker.c#L483-L517), `primes_finish`).** The window may close while a count runs. The program raises `stop`, then takes the posts the worker left, dispatching without waiting, until the count came back; taking that last post joins the thread, so the thread is joined exactly once:
 
 ```c
 atomic_store(&primes->count->stop, 1);
@@ -5090,19 +5135,19 @@ It does this because the application must not be closed while a thread may still
 
 ### The rules
 
-- `kl_app_post(app, code, data)` and `kl_window_post(window, code, data)` may be called from any thread. Every other call stays on the application's thread: a worker computes and posts, and the application's thread draws ([lines 528-553](keiland-examples/08-worker.c#L528-L553)).
-- A post wakes `kl_app_dispatch` ([lines 155-165](keiland-examples/08-worker.c#L155-L165)).
-- A post to the window arrives among the window's inputs, as `KL_WINDOW_POST` with `input.code` and `input.data`. A post to the application arrives as `KL_APP_POST` with `event.code` and `event.data`, and so does a post to a window that closed first, with `window` `NULL` ([lines 344-369](keiland-examples/08-worker.c#L344-L369)). Use the window's post for news that belongs with that window's input, and the application's for the rest.
+- `kl_app_post(app, code, data)` and `kl_window_post(window, code, data)` may be called from any thread. Every other call stays on the application's thread: a worker computes and posts, and the application's thread draws ([lines 538-565](keiland-examples/08-worker.c#L538-L565)).
+- A post wakes `kl_app_dispatch` ([lines 157-167](keiland-examples/08-worker.c#L157-L167)).
+- A post to the window arrives among the window's inputs, as `KL_WINDOW_POST` with `input.code` and `input.data`. A post to the application arrives as `KL_APP_POST` with `event.code` and `event.data`, and so does a post to a window that closed first, with `window` `NULL` ([lines 346-373](keiland-examples/08-worker.c#L346-L373)). Use the window's post for news that belongs with that window's input, and the application's for the rest.
 - The posts of one thread arrive in the order they were made, and none is dropped: what the queue has no room for waits for the next dispatch. The posts of two threads have no order between them.
-- The data goes to whoever takes the event. libkeiland neither copies it nor frees it. A post that fails (`ENOMEM`, or `EINVAL` for a `NULL` application or window) did not take the data ([lines 535-540](keiland-examples/08-worker.c#L535-L540)).
-- End the threads that post before `kl_app_close`, and take what they posted: the posts not taken are dropped with their data ([lines 473-507](keiland-examples/08-worker.c#L473-L507)).
+- The data goes to whoever takes the event. libkeiland neither copies it nor frees it. A post that fails (`ENOMEM`, or `EINVAL` for a `NULL` application or window) did not take the data ([lines 545-550](keiland-examples/08-worker.c#L545-L550)).
+- End the threads that post before `kl_app_close`, and take what they posted: the posts not taken are dropped with their data ([lines 483-517](keiland-examples/08-worker.c#L483-L517)).
 - A value two threads use at once is atomic or under a mutex (`stop`, [lines 47-61](keiland-examples/08-worker.c#L47-L61)).
 
 ### Pitfalls
 
 - Calling another libkeiland function from the worker (drawing, `kl_window_set_title`, `kl_tr`). Post the result instead.
 - Freeing the data after a post that succeeded, or never freeing it on the side that takes it, including a window's post that arrives as `KL_APP_POST`.
-- Giving a `KL_WINDOW_POST` input to the widgets (`kl_ui_window_input`). Check `input.kind` first ([lines 359-362](keiland-examples/08-worker.c#L359-L362)).
+- Giving a `KL_WINDOW_POST` input to the widgets (`kl_ui_window_input`). Check `input.kind` first ([lines 361-364](keiland-examples/08-worker.c#L361-L364)).
 - Reading the record while the worker owns it (`count->primes` before `POST_FINISHED`). Read the reports.
 - Posting at every small step: each post is an event and usually a frame. Report in steps (`STEP`).
 - Closing the application while a worker may still post.
@@ -5240,6 +5285,7 @@ main(void)
 	uint32_t request;
 	int timeout;
 	int status;
+	int japanese;
 	int taken;
 	int error;
 
@@ -5257,7 +5303,8 @@ main(void)
 	status = kl_tr_open(DOMAIN, language.shown);
 	if (status != 0)
 		fprintf(stderr, "language: the texts stay in English (%s)\n", strerror(status));
-	if (strcmp(language.shown, "ja") == 0)
+	japanese = strcmp(language.shown, "ja");
+	if (japanese == 0)
 		language.asked = 1;
 
 	/* The settings, only to ask the desktop for a change: the program never reads the language back from them. */
@@ -5298,6 +5345,8 @@ main(void)
 		fprintf(stderr, "language: no font %s (%s)\n", FONT, strerror(status));
 		return 1;
 	}
+
+	/* Gives the widgets the font. */
 	language.style.text = &language.text;
 
 	/* Makes the first frame. */
@@ -5539,6 +5588,8 @@ language_input(
 		language->resized = 1;
 		return;
 	}
+
+	/* The close button ends the program. */
 	if (input->kind == KL_WINDOW_CLOSE) {
 		language->closed = 1;
 		return;
@@ -5596,6 +5647,8 @@ language_read(
 	} else {
 		kl_tr_use(reading->catalogs);
 	}
+
+	/* Shows the language the catalogs were read for. */
 	snprintf(language->shown, sizeof(language->shown), "%s", reading->language);
 	free(reading);
 	language->used++;
@@ -5651,6 +5704,8 @@ language_reader(
 			free(reading);
 			return 0;
 		}
+
+		/* Notes which change this reading answers. */
 		reader->taken = reader->wanted;
 		reading->generation = reader->wanted;
 		snprintf(reading->language, sizeof(reading->language), "%s", reader->language);
@@ -5681,17 +5736,18 @@ msg	Switch Language	言語を切り替える
 
 #### Reading the program
 
-**The first catalogs ([lines 130-136](keiland-examples/08-language.c#L130-L136)).** They are read on the application's thread, before any window exists, so nothing waits for them yet. The calls are the ones of chapter 7: `kl_app_language` and `kl_tr_open`. `asked` starts as the language shown.
+**The first catalogs ([lines 131-138](keiland-examples/08-language.c#L131-L138)).** They are read on the application's thread, before any window exists, so nothing waits for them yet. The calls are the ones of chapter 7: `kl_app_language` and `kl_tr_open`. `asked` starts as the language shown.
 
 ```c
 snprintf(language.shown, sizeof(language.shown), "%s", kl_app_language(language.app));
 status = kl_tr_open(DOMAIN, language.shown);
 /* ... */
-if (strcmp(language.shown, "ja") == 0)
+japanese = strcmp(language.shown, "ja");
+if (japanese == 0)
 	language.asked = 1;
 ```
 
-**The settings ([lines 138-141](keiland-examples/08-language.c#L138-L141)).** A `kl_settings` is opened only to ask the desktop for a change. The program never reads `ui.language` back from it.
+**The settings ([lines 140-143](keiland-examples/08-language.c#L140-L143)).** A `kl_settings` is opened only to ask the desktop for a change. The program never reads `ui.language` back from it.
 
 ```c
 language.settings = kl_settings_open(kl_app_display(language.app), NULL);
@@ -5699,7 +5755,7 @@ if (language.settings == NULL)
 	return 1;
 ```
 
-**What the threads share ([lines 43-65](keiland-examples/08-language.c#L43-L65)).** `struct reader` is what the two threads share, under its lock: `wanted`, the number of the latest change asked for, and its language; `taken`, the number the reader took last; `quit`; and the condition variable `changed` that the reader sleeps on. `struct reading` is one answer, posted to the application. Lines [143-153](keiland-examples/08-language.c#L143-L153) make the lock, the condition and the reader's thread.
+**What the threads share ([lines 43-65](keiland-examples/08-language.c#L43-L65)).** `struct reader` is what the two threads share, under its lock: `wanted`, the number of the latest change asked for, and its language; `taken`, the number the reader took last; `quit`; and the condition variable `changed` that the reader sleeps on. `struct reading` is one answer, posted to the application. Lines [145-155](keiland-examples/08-language.c#L145-L155) make the lock, the condition and the reader's thread.
 
 ```c
 mtx_t lock;
@@ -5711,7 +5767,7 @@ char language[KL_TR_NAME_MAX + 1U];
 int quit;
 ```
 
-**A change ([215-217](keiland-examples/08-language.c#L215-L217) and [lines 428-447](keiland-examples/08-language.c#L428-L447), `language_changed`).** At each `KL_APP_LANGUAGE` the program numbers the change: this number is its **generation**. Under the lock it puts the number and the event's language where the reader takes them, and wakes the reader. A change the reader has not taken yet is replaced, so the reader reads only the latest.
+**A change ([219-221](keiland-examples/08-language.c#L219-L221) and [lines 434-453](keiland-examples/08-language.c#L434-L453), `language_changed`).** At each `KL_APP_LANGUAGE` the program numbers the change: this number is its **generation**. Under the lock it puts the number and the event's language where the reader takes them, and wakes the reader. A change the reader has not taken yet is replaced, so the reader reads only the latest.
 
 ```c
 language->generation++;
@@ -5723,7 +5779,7 @@ cnd_signal(&language->reader.changed);
 mtx_unlock(&language->reader.lock);
 ```
 
-**The reader ([lines 501-544](keiland-examples/08-language.c#L501-L544), `language_reader`).** It sleeps until a change it has not taken comes ([lines 517-532](keiland-examples/08-language.c#L517-L532)). It reads that language's catalogs with `kl_tr_read` ([line 535](keiland-examples/08-language.c#L535)): any thread may call it, and the texts in use do not change. Then it posts the reading ([lines 537-542](keiland-examples/08-language.c#L537-L542)).
+**The reader ([lines 509-554](keiland-examples/08-language.c#L509-L554), `language_reader`).** It sleeps until a change it has not taken comes ([lines 525-542](keiland-examples/08-language.c#L525-L542)). It reads that language's catalogs with `kl_tr_read` ([line 545](keiland-examples/08-language.c#L545)): any thread may call it, and the texts in use do not change. Then it posts the reading ([lines 547-552](keiland-examples/08-language.c#L547-L552)).
 
 ```c
 while (!reader->quit && reader->wanted == reader->taken)
@@ -5734,7 +5790,7 @@ reading->error = kl_tr_read(DOMAIN, reading->language, &reading->catalogs);
 status = kl_app_post(reader->app, POST_READ, reading);
 ```
 
-**A reading comes back ([219-221](keiland-examples/08-language.c#L219-L221) and [lines 449-481](keiland-examples/08-language.c#L449-L481), `language_read`).** A reading whose number is not the latest is set aside with `kl_tr_discard`. The latest one's catalogs become the texts with `kl_tr_use` (English when they could not be read), and the title and the frame follow ([lines 459-462](keiland-examples/08-language.c#L459-L462), [472](keiland-examples/08-language.c#L472), [479-480](keiland-examples/08-language.c#L479-L480)):
+**A reading comes back ([223-225](keiland-examples/08-language.c#L223-L225) and [lines 455-489](keiland-examples/08-language.c#L455-L489), `language_read`).** A reading whose number is not the latest is set aside with `kl_tr_discard`. The latest one's catalogs become the texts with `kl_tr_use` (English when they could not be read), and the title and the frame follow ([lines 465-468](keiland-examples/08-language.c#L465-L468), [478](keiland-examples/08-language.c#L478), [487-488](keiland-examples/08-language.c#L487-L488)):
 
 ```c
 if (reading->generation != language->generation) {
@@ -5752,14 +5808,14 @@ language->dirty = 1;
 
 The numbers exist for this case. The reader takes change 1. While it reads, the user changes the language twice more. The event of change 3 comes, and then change 1's reading comes back. Used, it would put back a language the desktop has left. With the numbers it is set aside, and change 3's reading, which the reader takes next, is used.
 
-**Asking for a change ([lines 483-499](keiland-examples/08-language.c#L483-L499), `language_switch`).** `kl_settings_set_int(settings, "ui.language", 0 or 1)` asks the desktop for the change. The program does not change its own texts here: the change comes back as an event, as one made in Settings does.
+**Asking for a change ([lines 491-507](keiland-examples/08-language.c#L491-L507), `language_switch`).** `kl_settings_set_int(settings, "ui.language", 0 or 1)` asks the desktop for the change. The program does not change its own texts here: the change comes back as an event, as one made in Settings does.
 
 ```c
 language->asked = !language->asked;
 status = kl_settings_set_int(language->settings, "ui.language", language->asked, NULL);
 ```
 
-**The answers ([lines 195-203](keiland-examples/08-language.c#L195-L203)).** `kl_settings_dispatch` and `kl_settings_take_result` take the answers to the program's requests, so that a refusal (`EPERM`, for instance) is told. The language itself comes as `KL_APP_LANGUAGE`.
+**The answers ([lines 199-207](keiland-examples/08-language.c#L199-L207)).** `kl_settings_dispatch` and `kl_settings_take_result` take the answers to the program's requests, so that a refusal (`EPERM`, for instance) is told. The language itself comes as `KL_APP_LANGUAGE`.
 
 ```c
 (void)kl_settings_dispatch(language.settings);
@@ -5770,7 +5826,7 @@ for (;;) {
 		fprintf(stderr, "language: the desktop refused the change (%s)\n", strerror(error));
 ```
 
-**The end ([lines 244-264](keiland-examples/08-language.c#L244-L264)).** `quit` is set under the lock, the reader is woken and joined, and the readings it left are taken and set aside, as in the first program.
+**The end ([lines 248-268](keiland-examples/08-language.c#L248-L268)).** `quit` is set under the lock, the reader is woken and joined, and the readings it left are taken and set aside, as in the first program.
 
 ```c
 mtx_lock(&language.reader.lock);
@@ -5782,17 +5838,17 @@ mtx_unlock(&language.reader.lock);
 
 #### The rules of following the language
 
-- `KL_APP_LANGUAGE` carries the language the desktop changed to. Changes come as events in the order they were made, and the last one tells the language now. `kl_app_language` gives the language the application heard last ([line 131](keiland-examples/08-language.c#L131), [lines 215-217](keiland-examples/08-language.c#L215-L217)).
+- `KL_APP_LANGUAGE` carries the language the desktop changed to. Changes come as events in the order they were made, and the last one tells the language now. `kl_app_language` gives the language the application heard last ([line 132](keiland-examples/08-language.c#L132), [lines 219-221](keiland-examples/08-language.c#L219-L221)).
 - Use the event's language. Reading the setting back at the event may give a later change than the event's.
-- The catalogs can be changed on the application's thread (`kl_tr_open` at the event, `07-services.c`), or read on another thread (`kl_tr_read` there, then `kl_tr_use` or `kl_tr_discard` on the application's thread). Read them on a thread when their reading may be slow ([line 535](keiland-examples/08-language.c#L535), [lines 449-481](keiland-examples/08-language.c#L449-L481)).
-- Number each change, and use a reading only when it carries the latest number. Set the others aside with `kl_tr_discard`, which frees them ([lines 459-465](keiland-examples/08-language.c#L459-L465)).
-- A program that asks for a change learns of it as of any other change ([lines 483-499](keiland-examples/08-language.c#L483-L499)).
+- The catalogs can be changed on the application's thread (`kl_tr_open` at the event, `07-services.c`), or read on another thread (`kl_tr_read` there, then `kl_tr_use` or `kl_tr_discard` on the application's thread). Read them on a thread when their reading may be slow ([line 545](keiland-examples/08-language.c#L545), [lines 455-489](keiland-examples/08-language.c#L455-L489)).
+- Number each change, and use a reading only when it carries the latest number. Set the others aside with `kl_tr_discard`, which frees them ([lines 465-471](keiland-examples/08-language.c#L465-L471)).
+- A program that asks for a change learns of it as of any other change ([lines 491-507](keiland-examples/08-language.c#L491-L507)).
 
 #### Pitfalls
 
 - Calling `kl_tr_use` on the reader's thread: it changes the texts the application's thread is drawing with.
 - Using each reading in the order it arrives: a late one puts back a language the user left.
-- Keeping a text `kl_tr` gave across a change. The title is set again ([lines 478-480](keiland-examples/08-language.c#L478-L480)).
+- Keeping a text `kl_tr` gave across a change. The title is set again ([lines 486-488](keiland-examples/08-language.c#L486-L488)).
 - Changing the texts at the click, before the desktop's answer: the desktop may refuse, and other programs follow the event, not the click.
 
 A thread is one way to do a long job. Another is to have another program do it.
@@ -5944,6 +6000,8 @@ main(void)
 		fprintf(stderr, "sort: no font %s (%s)\n", FONT, strerror(status));
 		return 1;
 	}
+
+	/* Gives the widgets the font. */
 	sorter.style.text = &sorter.text;
 
 	/* The input sort reads: the words, one to a line. */
@@ -6100,6 +6158,8 @@ sorter_draw(
 		baseline = kl_text_center(theme->text_body, MARGIN + (int)(index + 1U) * LINE_HEIGHT, LINE_HEIGHT);
 		(void)kl_text_draw(&sorter->text, &sorter->canvas, COLUMN, baseline, sorter->lines[index], strlen(sorter->lines[index]), theme->text_body, 0, theme->text);
 	}
+
+	/* The error line, if sort wrote one. */
 	if (sorter->error[0] != '\0') {
 		baseline = kl_text_center(theme->text_small, MARGIN + (int)(sorter->line_count + 1U) * LINE_HEIGHT, LINE_HEIGHT);
 		(void)kl_text_draw_fit(&sorter->text, &sorter->canvas, COLUMN, baseline, sorter->error, theme->text_small, 0, (int)sorter->width - COLUMN - MARGIN, theme->danger);
@@ -6177,6 +6237,8 @@ sorter_input(
 		sorter->resized = 1;
 		return;
 	}
+
+	/* The close button ends the program. */
 	if (input->kind == KL_WINDOW_CLOSE) {
 		sorter->closed = 1;
 		return;
@@ -6252,6 +6314,8 @@ sorter_write(
 		/* sort ended before it read all (EPIPE): its end tells why. */
 		return;
 	}
+
+	/* Counts the bytes sort took. */
 	sorter->written += written;
 
 	/* All written: closes the input, which sort reads as the end of the words. */
@@ -6314,6 +6378,8 @@ sorter_read(
 			snprintf(sorter->lines[sorter->line_count], LINE_BYTES, "%s", line);
 			sorter->line_count++;
 		}
+
+		/* Draws the lines again. */
 		sorter->dirty = 1;
 	}
 
@@ -6354,7 +6420,7 @@ sorter_end(
 
 ### Reading the program
 
-**The words ([44-47](keiland-examples/09-sort.c#L44-L47) and [138-142](keiland-examples/09-sort.c#L138-L142)).** The input `sort` reads is the words, one to a line.
+**The words ([44-47](keiland-examples/09-sort.c#L44-L47) and [140-144](keiland-examples/09-sort.c#L140-L144)).** The input `sort` reads is the words, one to a line.
 
 ```c
 for (index = 0; index < WORD_COUNT; index++) {
@@ -6363,7 +6429,7 @@ for (index = 0; index < WORD_COUNT; index++) {
 }
 ```
 
-**Starting the process ([lines 380-424](keiland-examples/09-sort.c#L380-L424), `sorter_start`).** The command is an argument list: `argv[0]` is the program (a path, or a name looked for in `PATH`, here `"sort"`) and a `NULL` ends the list. No command line is parsed. `streams` names the **streams** the program uses, the process's standard input, output and error. Here the program writes the input and reads the output and the errors ([lines 401-404](keiland-examples/09-sort.c#L401-L404)). `data` is the program's own pointer, which `kl_process_data` gives back.
+**Starting the process ([lines 386-430](keiland-examples/09-sort.c#L386-L430), `sorter_start`).** The command is an argument list: `argv[0]` is the program (a path, or a name looked for in `PATH`, here `"sort"`) and a `NULL` ends the list. No command line is parsed. `streams` names the **streams** the program uses, the process's standard input, output and error. Here the program writes the input and reads the output and the errors ([lines 407-410](keiland-examples/09-sort.c#L407-L410)). `data` is the program's own pointer, which `kl_process_data` gives back.
 
 ```c
 argv[0] = "sort";
@@ -6377,7 +6443,7 @@ status = kl_process_start(sorter->app, &options, &sorter->process);
 
 `kl_process_start` returns 0 with the process running, or `ENOENT` or `EACCES` (the program cannot be found or run), `ENOMEM`, `EAGAIN` or `EINVAL`. A program the system finds but cannot run ends with the code 127. After a successful start the function writes the words.
 
-**Writing the input ([lines 426-449](keiland-examples/09-sort.c#L426-L449), `sorter_write`).** `kl_process_write` copies the bytes and says how many it took. It takes fewer when the input waiting is full (`KL_PROCESS_BUFFER`, 64 KiB), and then `KL_PROCESS_READY_INPUT` comes when there is room. It returns `EPIPE` when the input is closed or the process ended. When everything is written, the program closes the input: `sort` sorts when it reads the end of its input.
+**Writing the input ([lines 432-457](keiland-examples/09-sort.c#L432-L457), `sorter_write`).** `kl_process_write` copies the bytes and says how many it took. It takes fewer when the input waiting is full (`KL_PROCESS_BUFFER`, 64 KiB), and then `KL_PROCESS_READY_INPUT` comes when there is room. It returns `EPIPE` when the input is closed or the process ended. When everything is written, the program closes the input: `sort` sorts when it reads the end of its input.
 
 ```c
 status = kl_process_write(sorter->process, sorter->input + sorter->written, sorter->input_length - sorter->written, &written);
@@ -6388,14 +6454,14 @@ if (sorter->written == sorter->input_length)
 	(void)kl_process_close_input(sorter->process);
 ```
 
-**The news ([lines 171-173](keiland-examples/09-sort.c#L171-L173)).** The **news** of a process is a `KL_APP_PROCESS` event in the application's queue; `event.process` says whose it is.
+**The news ([lines 173-175](keiland-examples/09-sort.c#L173-L175)).** The **news** of a process is a `KL_APP_PROCESS` event in the application's queue; `event.process` says whose it is.
 
 ```c
 if (event.kind == KL_APP_PROCESS && event.process == sorter.process)
 	sorter_news(&sorter, event.ready);
 ```
 
-**Acting on the news ([lines 451-472](keiland-examples/09-sort.c#L451-L472), `sorter_news`).** `event.ready` may hold several things: room for the input, then the output and the errors, then the end. The output an event tells comes before the end it tells.
+**Acting on the news ([lines 459-480](keiland-examples/09-sort.c#L459-L480), `sorter_news`).** `event.ready` may hold several things: room for the input, then the output and the errors, then the end. The output an event tells comes before the end it tells.
 
 ```c
 if ((ready & KL_PROCESS_READY_INPUT) != 0U)
@@ -6408,7 +6474,7 @@ if ((ready & KL_PROCESS_READY_EXIT) != 0U)
 	sorter_end(sorter);
 ```
 
-**Reading lines ([lines 474-517](keiland-examples/09-sort.c#L474-L517), `sorter_read`).** `kl_process_read_line` returns one of three things. `KL_PROCESS_LINE` is a whole **line**: its end is not kept, and it ends with a NUL. `KL_PROCESS_LINE_CUT` is a **cut line**: the first `size - 1` bytes of a longer line, whose rest comes next. 0 means that no whole line waits.
+**Reading lines ([lines 482-527](keiland-examples/09-sort.c#L482-L527), `sorter_read`).** `kl_process_read_line` returns one of three things. `KL_PROCESS_LINE` is a whole **line**: its end is not kept, and it ends with a NUL. `KL_PROCESS_LINE_CUT` is a **cut line**: the first `size - 1` bytes of a longer line, whose rest comes next. 0 means that no whole line waits.
 
 ```c
 found = kl_process_read_line(sorter->process, KL_PROCESS_OUTPUT, line, sizeof(line));
@@ -6419,9 +6485,9 @@ if (found == KL_PROCESS_LINE_CUT)
 	sorter->skipping = 1;
 ```
 
-The program keeps a cut line's start and skips the rest ([lines 492-503](keiland-examples/09-sort.c#L492-L503)). The output is told for as long as some of it waits, so lines left unread are told again at the next dispatch. The errors are read the same way ([lines 509-516](keiland-examples/09-sort.c#L509-L516)).
+The program keeps a cut line's start and skips the rest ([lines 500-511](keiland-examples/09-sort.c#L500-L511)). The output is told for as long as some of it waits, so lines left unread are told again at the next dispatch. The errors are read the same way ([lines 519-526](keiland-examples/09-sort.c#L519-L526)).
 
-**How it ended ([lines 519-541](keiland-examples/09-sort.c#L519-L541), `sorter_end`).** `kl_process_exit` says how it ended: `KL_PROCESS_EXITED` with its **exit code**, the number a program ends with (0 means that it went well), or `KL_PROCESS_SIGNALED` with a signal's number, on systems that have signals. `kl_process_close` says that the program is done with the process: no more news comes.
+**How it ended ([lines 529-551](keiland-examples/09-sort.c#L529-L551), `sorter_end`).** `kl_process_exit` says how it ended: `KL_PROCESS_EXITED` with its **exit code**, the number a program ends with (0 means that it went well), or `KL_PROCESS_SIGNALED` with a signal's number, on systems that have signals. `kl_process_close` says that the program is done with the process: no more news comes.
 
 ```c
 how = kl_process_exit(sorter->process, &code);
@@ -6431,7 +6497,7 @@ kl_process_close(sorter->process);
 sorter->process = NULL;
 ```
 
-**Closing the window while `sort` runs ([lines 196-198](keiland-examples/09-sort.c#L196-L198)).** `kl_process_close` lets go of the process without ending it: the library waits for it and reaps it. To end a process, call `kl_process_kill`: `KL_PROCESS_TERMINATE` asks it to end, and `KL_PROCESS_KILL` ends it.
+**Closing the window while `sort` runs ([lines 198-200](keiland-examples/09-sort.c#L198-L200)).** `kl_process_close` lets go of the process without ending it: the library waits for it and reaps it. To end a process, call `kl_process_kill`: `KL_PROCESS_TERMINATE` asks it to end, and `KL_PROCESS_KILL` ends it.
 
 ```c
 if (sorter.process != NULL)
@@ -6440,20 +6506,20 @@ if (sorter.process != NULL)
 
 ### The rules
 
-- A process belongs to the application and is used from its thread. Its news comes as `KL_APP_PROCESS` events in the one queue, in order with everything else ([lines 171-173](keiland-examples/09-sort.c#L171-L173)).
-- The streams the program names are the program's. An input it does not name is empty, and an output or error it does not name goes where the application's goes. `environment` changes the application's environment for the process (`"NAME=value"` sets, `"NAME"` removes, `NULL` changes nothing), and `directory` is where it starts (`NULL`: the application's) ([lines 401-406](keiland-examples/09-sort.c#L401-L406)).
-- Output is told while some waits. Read as much as you like at each event. The library keeps up to `KL_PROCESS_BUFFER` bytes of a stream and stops reading it while it is full ([lines 474-517](keiland-examples/09-sort.c#L474-L517)).
-- A write is copied. A short write is finished at `KL_PROCESS_READY_INPUT`, and closing the input sends its end ([lines 426-449](keiland-examples/09-sort.c#L426-L449)).
-- One event may tell several things. Read the output before acting on the end ([lines 451-472](keiland-examples/09-sort.c#L451-L472)).
-- `kl_process_exit` says how it ended, `kl_process_close` lets go of it, and `kl_process_kill` asks it to end. The library waits for its processes: a program that uses `kl_process` never waits for "any child" itself ([lines 519-541](keiland-examples/09-sort.c#L519-L541)).
+- A process belongs to the application and is used from its thread. Its news comes as `KL_APP_PROCESS` events in the one queue, in order with everything else ([lines 173-175](keiland-examples/09-sort.c#L173-L175)).
+- The streams the program names are the program's. An input it does not name is empty, and an output or error it does not name goes where the application's goes. `environment` changes the application's environment for the process (`"NAME=value"` sets, `"NAME"` removes, `NULL` changes nothing), and `directory` is where it starts (`NULL`: the application's) ([lines 407-412](keiland-examples/09-sort.c#L407-L412)).
+- Output is told while some waits. Read as much as you like at each event. The library keeps up to `KL_PROCESS_BUFFER` bytes of a stream and stops reading it while it is full ([lines 482-527](keiland-examples/09-sort.c#L482-L527)).
+- A write is copied. A short write is finished at `KL_PROCESS_READY_INPUT`, and closing the input sends its end ([lines 432-457](keiland-examples/09-sort.c#L432-L457)).
+- One event may tell several things. Read the output before acting on the end ([lines 459-480](keiland-examples/09-sort.c#L459-L480)).
+- `kl_process_exit` says how it ended, `kl_process_close` lets go of it, and `kl_process_kill` asks it to end. The library waits for its processes: a program that uses `kl_process` never waits for "any child" itself ([lines 529-551](keiland-examples/09-sort.c#L529-L551)).
 
 ### Pitfalls
 
 - Forgetting `kl_process_close_input`: `sort` waits for more words for ever.
 - Taking a write as complete. Check `written`.
-- Reading the output but not the errors you asked for. A full error stream stops being read, and a program that writes much to it then waits. Read every stream you named ([lines 509-516](keiland-examples/09-sort.c#L509-L516)).
+- Reading the output but not the errors you asked for. A full error stream stops being read, and a program that writes much to it then waits. Read every stream you named ([lines 519-526](keiland-examples/09-sort.c#L519-L526)).
 - Taking a cut line for a whole one.
-- Using the process after `kl_process_close`. The program sets its pointer to `NULL` ([lines 537-540](keiland-examples/09-sort.c#L537-L540)).
+- Using the process after `kl_process_close`. The program sets its pointer to `NULL` ([lines 547-550](keiland-examples/09-sort.c#L547-L550)).
 - Passing a command line as `argv[0]`: no words are split. A command line goes through the system's command interpreter: `argv` `{"/bin/sh", "-c", line, NULL}` for a process, or the command of `kl_launch` (chapter 10).
 
 ### A program in a terminal
@@ -6609,6 +6675,8 @@ main(void)
 		fprintf(stderr, "shell: no font %s (%s)\n", FONT, strerror(status));
 		return 1;
 	}
+
+	/* Gives the widgets the font. */
 	shell.style.text = &shell.text;
 	kl_ui_set_focus(shell.ui, ID_COMMAND, 0U);
 	shell.line_count = 1;
@@ -6867,6 +6935,8 @@ shell_input(
 		shell->resized = 1;
 		return;
 	}
+
+	/* The close button ends the program. */
 	if (input->kind == KL_WINDOW_CLOSE) {
 		shell->closed = 1;
 		return;
@@ -6976,6 +7046,8 @@ shell_news(
 			if ((mode & KL_PROCESS_TERMINAL_LINES) != 0U)
 				shell->secret = 1;
 		}
+
+		/* Draws the screen again. */
 		shell->dirty = 1;
 	}
 
@@ -6987,6 +7059,8 @@ shell_news(
 		} else if (how == KL_PROCESS_SIGNALED) {
 			snprintf(shell->ended, sizeof(shell->ended), "The shell was ended by the signal %d.", code);
 		}
+
+		/* Closes the process that ended. */
 		kl_process_close(shell->process);
 		shell->process = NULL;
 		shell->secret = 0;
@@ -7022,6 +7096,8 @@ shell_print(
 				shell->sequence = SEQUENCE_PARAMETERS;
 			continue;
 		}
+
+		/* Inside the parameters, every byte is dropped up to the final one. */
 		if (shell->sequence == SEQUENCE_PARAMETERS) {
 			if (byte >= 0x40 && byte <= 0x7e)
 				shell->sequence = SEQUENCE_NONE;
@@ -7033,24 +7109,35 @@ shell_print(
 			shell->sequence = SEQUENCE_ESCAPE;
 			continue;
 		}
+
+		/* A new line starts a new row. */
 		if (byte == NEWLINE) {
 			shell_new_line(shell);
 			continue;
 		}
+
+		/* A backspace takes the last character back. */
 		if (byte == BACKSPACE) {
 			if (shell->column > 0) {
 				shell->column--;
 				line[shell->column] = '\0';
 			}
+
 			continue;
 		}
+
+		/* A tab fills up to the next stop. */
 		if (byte == TAB) {
 			while (shell->column % 8U != 7U && shell->column < LINE_BYTES - 2U) {
 				line[shell->column] = ' ';
 				shell->column++;
 			}
+
+			/* A tab then counts as a space. */
 			byte = ' ';
 		}
+
+		/* Any other control character is dropped. */
 		if (byte < 0x20 || byte == 0x7f)
 			continue;
 
@@ -7086,7 +7173,7 @@ shell_new_line(
 
 #### Reading the program
 
-**Starting the shell ([lines 411-443](keiland-examples/09-shell.c#L411-L443), `shell_start`).** `streams` is `KL_PROCESS_TERMINAL` in place of the three: what the program writes is typed into the terminal, and what the terminal shows is read as `KL_PROCESS_OUTPUT`. There is no separate error stream. `columns` and `rows` are the terminal's size. `environment` sets `TERM=dumb`, which asks the programs in it for no control sequences, and the prompt `PS1`. `sh` sees a terminal and runs as an interactive shell, with a prompt.
+**Starting the shell ([lines 415-447](keiland-examples/09-shell.c#L415-L447), `shell_start`).** `streams` is `KL_PROCESS_TERMINAL` in place of the three: what the program writes is typed into the terminal, and what the terminal shows is read as `KL_PROCESS_OUTPUT`. There is no separate error stream. `columns` and `rows` are the terminal's size. `environment` sets `TERM=dumb`, which asks the programs in it for no control sequences, and the prompt `PS1`. `sh` sees a terminal and runs as an interactive shell, with a prompt.
 
 ```c
 static const char *const environment[] = { "TERM=dumb", "PS1=$ ", NULL };
@@ -7097,7 +7184,7 @@ options.rows = shell->rows;
 status = kl_process_start(shell->app, &options, &shell->process);
 ```
 
-**The first frame first ([lines 146-154](keiland-examples/09-shell.c#L146-L154)).** The program makes the first frame before it starts the shell, so that the size is known when the shell starts.
+**The first frame first ([lines 148-156](keiland-examples/09-shell.c#L148-L156)).** The program makes the first frame before it starts the shell, so that the size is known when the shell starts.
 
 ```c
 status = shell_resize(&shell);
@@ -7105,7 +7192,7 @@ status = shell_resize(&shell);
 status = shell_start(&shell);
 ```
 
-**The size ([lines 259-290](keiland-examples/09-shell.c#L259-L290), `shell_size`).** A terminal's size is in **characters**. The program works it out from the window's size and an average character's width, and `kl_process_resize` tells the terminal, which tells the programs in it (`ls` fits its columns to it). It is called at every new size ([lines 251-252](keiland-examples/09-shell.c#L251-L252)).
+**The size ([lines 261-292](keiland-examples/09-shell.c#L261-L292), `shell_size`).** A terminal's size is in **characters**. The program works it out from the window's size and an average character's width, and `kl_process_resize` tells the terminal, which tells the programs in it (`ls` fits its columns to it). It is called at every new size ([lines 253-254](keiland-examples/09-shell.c#L253-L254)).
 
 ```c
 character = kl_text_width(&shell->text, "0", 1U, theme->text_small, 0);
@@ -7116,7 +7203,7 @@ shell->rows = (unsigned)(area / LINE_HEIGHT);
 	status = kl_process_resize(shell->process, shell->columns, shell->rows);
 ```
 
-**The terminal's output ([lines 473-525](keiland-examples/09-shell.c#L473-L525), `shell_news`).** The output is read as bytes with `kl_process_read`, all that waits: a prompt has no line's end, so lines would never come. Then `kl_process_terminal_mode` tells the terminal's modes ([lines 502-509](keiland-examples/09-shell.c#L502-L509)):
+**The terminal's output ([lines 477-533](keiland-examples/09-shell.c#L477-L533), `shell_news`).** The output is read as bytes with `kl_process_read`, all that waits: a prompt has no line's end, so lines would never come. Then `kl_process_terminal_mode` tells the terminal's modes ([lines 506-515](keiland-examples/09-shell.c#L506-L515)):
 
 ```c
 	size = kl_process_read(shell->process, KL_PROCESS_OUTPUT, bytes, sizeof(bytes));
@@ -7133,16 +7220,16 @@ if (status == 0 && (mode & KL_PROCESS_TERMINAL_ECHO) == 0U) {
 
 The program looks at the mode after it has read the output, because a program turns the echo off and then prints its prompt. The mode is the terminal's as the program reading it now set it. The **echo** shows what is typed on the terminal's screen. In **line mode** the terminal edits the input and hands the program a whole line once Enter is typed. A shell that edits its own command line, as zedBSD's `sh` does, turns the echo and the line mode off while it waits at its prompt, and echoes by itself. While `read` waits after `stty -echo`, the terminal has no echo but the line mode. That is a program asking for a password, and then the field hides what is typed (the picture). At the end of the function, the exit code and `kl_process_close` come as in the first program.
 
-**Showing the text ([lines 527-594](keiland-examples/09-shell.c#L527-L594), `shell_print`).** The program keeps the text and drops the control sequences. A terminal emulator interprets them; that is the program's work, not libkeiland's.
+**Showing the text ([lines 535-615](keiland-examples/09-shell.c#L535-L615), `shell_print`).** The program keeps the text and drops the control sequences. A terminal emulator interprets them; that is the program's work, not libkeiland's.
 
-**Typing ([lines 445-471](keiland-examples/09-shell.c#L445-L471), `shell_type`).** Enter in the field types its line and a new line into the terminal. A short write is finished at `KL_PROCESS_READY_INPUT` ([lines 489-491](keiland-examples/09-shell.c#L489-L491)):
+**Typing ([lines 449-475](keiland-examples/09-shell.c#L449-L475), `shell_type`).** Enter in the field types its line and a new line into the terminal. A short write is finished at `KL_PROCESS_READY_INPUT` ([lines 493-495](keiland-examples/09-shell.c#L493-L495)):
 
 ```c
 if ((ready & KL_PROCESS_READY_INPUT) != 0U)
 	shell_type(shell);
 ```
 
-**The note and the field ([lines 334-351](keiland-examples/09-shell.c#L334-L351)).** They follow the mode.
+**The note and the field ([lines 336-353](keiland-examples/09-shell.c#L336-L353)).** They follow the mode.
 
 ```c
 if (shell->secret)
@@ -7151,7 +7238,7 @@ if (shell->secret)
 shell->command.secret = shell->secret;
 ```
 
-**Closing the window ([lines 203-207](keiland-examples/09-shell.c#L203-L207)).** The terminal is **hung up**, as closing a terminal's window does: `KL_PROCESS_HANGUP` makes the terminal tell the shell that its user is gone, and the shell ends as it does then.
+**Closing the window ([lines 205-209](keiland-examples/09-shell.c#L205-L209)).** The terminal is **hung up**, as closing a terminal's window does: `KL_PROCESS_HANGUP` makes the terminal tell the shell that its user is gone, and the shell ends as it does then.
 
 ```c
 if (shell.process != NULL) {
@@ -7161,12 +7248,12 @@ if (shell.process != NULL) {
 
 #### The rules of a terminal
 
-- `KL_PROCESS_TERMINAL` gives the process one terminal for its input, output and errors, read as `KL_PROCESS_OUTPUT` ([line 432](keiland-examples/09-shell.c#L432)).
-- Read a terminal's output as bytes ([lines 493-500](keiland-examples/09-shell.c#L493-L500)).
-- The size is in characters: give it at the start and at every new size ([lines 433-434](keiland-examples/09-shell.c#L433-L434), [lines 251-252](keiland-examples/09-shell.c#L251-L252)).
-- `kl_process_terminal_mode` tells the echo and the line mode as the program reading the terminal now set them. No echo but line mode means that a password is being typed ([lines 502-509](keiland-examples/09-shell.c#L502-L509)).
+- `KL_PROCESS_TERMINAL` gives the process one terminal for its input, output and errors, read as `KL_PROCESS_OUTPUT` ([line 436](keiland-examples/09-shell.c#L436)).
+- Read a terminal's output as bytes ([lines 497-504](keiland-examples/09-shell.c#L497-L504)).
+- The size is in characters: give it at the start and at every new size ([lines 437-438](keiland-examples/09-shell.c#L437-L438), [lines 253-254](keiland-examples/09-shell.c#L253-L254)).
+- `kl_process_terminal_mode` tells the echo and the line mode as the program reading the terminal now set them. No echo but line mode means that a password is being typed ([lines 506-515](keiland-examples/09-shell.c#L506-L515)).
 - `kl_process_resize` and `kl_process_terminal_mode` answer `ENOTSUP` for a process without a terminal (and the mode where the system does not tell), and `EIO` once the terminal hung up.
-- End a terminal's process with `KL_PROCESS_HANGUP` ([lines 203-207](keiland-examples/09-shell.c#L203-L207)).
+- End a terminal's process with `KL_PROCESS_HANGUP` ([lines 205-209](keiland-examples/09-shell.c#L205-L209)).
 
 #### Pitfalls
 
@@ -7336,6 +7423,8 @@ main(
 		fprintf(stderr, "requests: no font %s (%s)\n", FONT, strerror(status));
 		return 1;
 	}
+
+	/* Gives the widgets the font. */
 	requests.style.text = &requests.text;
 
 	/* The first request is this start's own. */
@@ -7546,6 +7635,8 @@ requests_input(
 		requests->resized = 1;
 		return;
 	}
+
+	/* The close button ends the program. */
 	if (input->kind == KL_WINDOW_CLOSE) {
 		requests->closed = 1;
 		return;
@@ -7642,6 +7733,8 @@ requests_launch(
 	} else {
 		snprintf(requests->status, sizeof(requests->status), "Started: %s.", request);
 	}
+
+	/* Draws the new status. */
 	requests->dirty = 1;
 }
 ```
@@ -7671,7 +7764,7 @@ if (status != 0)
 	fprintf(stderr, "requests: later starts are not heard (%s)\n", strerror(status));
 ```
 
-**Taking the requests ([181-183](keiland-examples/10-instance.c#L181-L183) and [lines 389-421](keiland-examples/10-instance.c#L389-L421), `requests_take`).** At `KL_APP_INSTANCE` the program takes requests until none is left, because one event may stand for several. Each comes with an **activation token**, the compositor's leave for a window to come to the front. `kl_activate(kl_app_display(app), kl_window_surface(window), token)` asks the compositor to bring the window to the front, and the compositor decides whether the token allows it ([lines 414-419](keiland-examples/10-instance.c#L414-L419)).
+**Taking the requests ([183-185](keiland-examples/10-instance.c#L183-L185) and [lines 393-425](keiland-examples/10-instance.c#L393-L425), `requests_take`).** At `KL_APP_INSTANCE` the program takes requests until none is left, because one event may stand for several. Each comes with an **activation token**, the compositor's leave for a window to come to the front. `kl_activate(kl_app_display(app), kl_window_surface(window), token)` asks the compositor to bring the window to the front, and the compositor decides whether the token allows it ([lines 418-423](keiland-examples/10-instance.c#L418-L423)).
 
 ```c
 taken = kl_instance_take(requests->instance, request, sizeof(request), token, sizeof(token));
@@ -7680,7 +7773,7 @@ if (token[0] != '\0') {
 	status = kl_activate(kl_app_display(requests->app), kl_window_surface(requests->window), token);
 ```
 
-**Starting the program again ([lines 423-455](keiland-examples/10-instance.c#L423-L455), `requests_launch`).** To **launch** is to start a program apart from the application. `kl_launch` starts the program again, by the path it was started with (`argv[0]`), with a request of its own. `options.argv` is the argument list, or `options.command` is a command line that the system's command interpreter runs (exactly one of the two). `environment` and `directory` are as for a process. `from` is the window the user works in, so that the compositor gives the new program leave to bring its window to the front.
+**Starting the program again ([lines 427-461](keiland-examples/10-instance.c#L427-L461), `requests_launch`).** To **launch** is to start a program apart from the application. `kl_launch` starts the program again, by the path it was started with (`argv[0]`), with a request of its own. `options.argv` is the argument list, or `options.command` is a command line that the system's command interpreter runs (exactly one of the two). `environment` and `directory` are as for a process. `from` is the window the user works in, so that the compositor gives the new program leave to bring its window to the front.
 
 ```c
 argv[0] = requests->program;
@@ -7694,7 +7787,7 @@ status = kl_launch(requests->app, &options);
 
 The launched program runs apart: it lives on when the application ends, its input is empty, it writes where the application does, and nothing of it comes back. It is on its way when `kl_launch` returns 0, or the call returns `ENOENT` or `EACCES` when it cannot be found or run. Here the new copy finds this one and hands its request over, so the request comes back as `KL_APP_INSTANCE`.
 
-**Stopping ([lines 206-208](keiland-examples/10-instance.c#L206-L208)).** `kl_instance_close` is called before the application closes: the copy stops listening, and a later start runs as the first.
+**Stopping ([lines 208-210](keiland-examples/10-instance.c#L208-L210)).** `kl_instance_close` is called before the application closes: the copy stops listening, and a later start runs as the first.
 
 ```c
 if (requests.instance != NULL)
@@ -7704,10 +7797,10 @@ if (requests.instance != NULL)
 ### The rules
 
 - Call `kl_instance_open` first, before the connection and anything the user sees, and act on its three outcomes ([lines 94-109](keiland-examples/10-instance.c#L94-L109)).
-- Bind the instance to the application, and take requests until none is left at each `KL_APP_INSTANCE` ([lines 120-125](keiland-examples/10-instance.c#L120-L125), [lines 389-421](keiland-examples/10-instance.c#L389-L421)).
-- A request is a line of text, at most `KL_INSTANCE_REQUEST_MAX` bytes with its NUL. The program gives it its meaning ([line 398](keiland-examples/10-instance.c#L398)).
-- Bring the window forward with each request's token. Without a token the compositor may refuse ([lines 414-419](keiland-examples/10-instance.c#L414-L419)).
-- `kl_launch` starts a program apart from the application. `kl_process_start` (chapter 9) starts one the application talks to ([lines 423-455](keiland-examples/10-instance.c#L423-L455)). The two differ in this:
+- Bind the instance to the application, and take requests until none is left at each `KL_APP_INSTANCE` ([lines 120-125](keiland-examples/10-instance.c#L120-L125), [lines 393-425](keiland-examples/10-instance.c#L393-L425)).
+- A request is a line of text, at most `KL_INSTANCE_REQUEST_MAX` bytes with its NUL. The program gives it its meaning ([line 402](keiland-examples/10-instance.c#L402)).
+- Bring the window forward with each request's token. Without a token the compositor may refuse ([lines 418-423](keiland-examples/10-instance.c#L418-L423)).
+- `kl_launch` starts a program apart from the application. `kl_process_start` (chapter 9) starts one the application talks to ([lines 427-461](keiland-examples/10-instance.c#L427-L461)). The two differ in this:
 
   | | `kl_launch` | `kl_process_start` |
   | --- | --- | --- |
@@ -7721,7 +7814,7 @@ if (requests.instance != NULL)
 ### Pitfalls
 
 - Taking an error of `kl_instance_open` as fatal. The program can run on its own ([lines 102-105](keiland-examples/10-instance.c#L102-L105)).
-- Taking one request per event. One event may stand for several ([lines 403-407](keiland-examples/10-instance.c#L403-L407)).
+- Taking one request per event. One event may stand for several ([lines 407-411](keiland-examples/10-instance.c#L407-L411)).
 - A runtime directory shared with others (such as `/tmp`): `ENOTSUP`, and every start runs on its own.
 - Expecting to hear when a launched program ends. Start it as a process instead.
 - A command line in `argv[0]`. Use `options.command`.

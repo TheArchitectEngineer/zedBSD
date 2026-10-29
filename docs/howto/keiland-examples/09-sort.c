@@ -133,6 +133,8 @@ main(void)
 		fprintf(stderr, "sort: no font %s (%s)\n", FONT, strerror(status));
 		return 1;
 	}
+
+	/* Gives the widgets the font. */
 	sorter.style.text = &sorter.text;
 
 	/* The input sort reads: the words, one to a line. */
@@ -289,6 +291,8 @@ sorter_draw(
 		baseline = kl_text_center(theme->text_body, MARGIN + (int)(index + 1U) * LINE_HEIGHT, LINE_HEIGHT);
 		(void)kl_text_draw(&sorter->text, &sorter->canvas, COLUMN, baseline, sorter->lines[index], strlen(sorter->lines[index]), theme->text_body, 0, theme->text);
 	}
+
+	/* The error line, if sort wrote one. */
 	if (sorter->error[0] != '\0') {
 		baseline = kl_text_center(theme->text_small, MARGIN + (int)(sorter->line_count + 1U) * LINE_HEIGHT, LINE_HEIGHT);
 		(void)kl_text_draw_fit(&sorter->text, &sorter->canvas, COLUMN, baseline, sorter->error, theme->text_small, 0, (int)sorter->width - COLUMN - MARGIN, theme->danger);
@@ -366,6 +370,8 @@ sorter_input(
 		sorter->resized = 1;
 		return;
 	}
+
+	/* The close button ends the program. */
 	if (input->kind == KL_WINDOW_CLOSE) {
 		sorter->closed = 1;
 		return;
@@ -441,6 +447,8 @@ sorter_write(
 		/* sort ended before it read all (EPIPE): its end tells why. */
 		return;
 	}
+
+	/* Counts the bytes sort took. */
 	sorter->written += written;
 
 	/* All written: closes the input, which sort reads as the end of the words. */
@@ -503,6 +511,8 @@ sorter_read(
 			snprintf(sorter->lines[sorter->line_count], LINE_BYTES, "%s", line);
 			sorter->line_count++;
 		}
+
+		/* Draws the lines again. */
 		sorter->dirty = 1;
 	}
 
